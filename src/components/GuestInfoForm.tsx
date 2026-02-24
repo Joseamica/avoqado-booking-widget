@@ -1,7 +1,7 @@
 import { h } from 'preact'
 import { useState } from 'preact/hooks'
 import { z } from 'zod'
-import type { PublicVenueInfo } from '../types'
+import type { PublicVenueInfo, PublicSlot } from '../types'
 import type { TFunction } from '../i18n'
 import { Input, Textarea } from './ui/Input'
 import { Button } from './ui/Button'
@@ -17,6 +17,7 @@ export interface GuestFormData {
 
 interface GuestInfoFormProps {
   venueInfo: PublicVenueInfo
+  selectedSlot?: PublicSlot | null
   onSubmit: (data: GuestFormData) => void
   isSubmitting: boolean
   t: TFunction
@@ -34,7 +35,7 @@ function createSchema(requireEmail: boolean) {
   })
 }
 
-export function GuestInfoForm({ venueInfo, onSubmit, isSubmitting, t }: GuestInfoFormProps) {
+export function GuestInfoForm({ venueInfo, selectedSlot, onSubmit, isSubmitting, t }: GuestInfoFormProps) {
   const [phone, setPhone] = useState('')
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
@@ -63,6 +64,15 @@ export function GuestInfoForm({ venueInfo, onSubmit, isSubmitting, t }: GuestInf
       }
       setErrors(errs)
       return
+    }
+
+    // Validate party size against CLASS slot remaining capacity
+    if (selectedSlot?.remaining != null) {
+      const requestedSize = result.data.partySize ?? 1
+      if (requestedSize > selectedSlot.remaining) {
+        setErrors({ partySize: t(selectedSlot.remaining === 1 ? 'validation.partySizeExceeded_one' : 'validation.partySizeExceeded', { count: selectedSlot.remaining }) })
+        return
+      }
     }
 
     setErrors({})
@@ -130,9 +140,11 @@ export function GuestInfoForm({ venueInfo, onSubmit, isSubmitting, t }: GuestInf
           type="number"
           value={partySize}
           min={1}
-          max={100}
+          max={selectedSlot?.remaining != null ? selectedSlot.remaining : 100}
           onInput={(e) => setPartySize((e.target as HTMLInputElement).value)}
+          error={errors.partySize}
         />
+        {errors.partySize && <p class="text-sm text-red-600">{errors.partySize}</p>}
       </div>
 
       {/* Special requests */}

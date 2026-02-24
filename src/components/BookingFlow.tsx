@@ -47,8 +47,8 @@ export function BookingFlow({ props }: BookingFlowProps) {
       .finally(() => { isLoading.value = false })
   }, [props.venue])
 
-  // Load availability when date changes
-  useEffect(() => {
+  // Fetch available slots for a date
+  function fetchSlots() {
     const date = selectedDate.value
     const info = venueInfo.value
     if (!date || !info) return
@@ -61,6 +61,11 @@ export function BookingFlow({ props }: BookingFlowProps) {
       .then(res => setSlots(res.slots))
       .catch(() => setSlots([]))
       .finally(() => setSlotsLoading(false))
+  }
+
+  // Load availability when date changes
+  useEffect(() => {
+    fetchSlots()
   }, [selectedDate.value, selectedProduct.value?.id])
 
   // Dispatch custom events on host element
@@ -132,8 +137,10 @@ export function BookingFlow({ props }: BookingFlowProps) {
   const showBack = step.value > (hasServiceStep.value ? config.serviceStep : config.dateStep) && step.value < config.confirmStep
 
   function handleBack() {
-    if (step.value === config.formStep) step.value = config.timeStep
-    else if (step.value === config.timeStep) step.value = config.dateStep
+    if (step.value === config.formStep) {
+      fetchSlots() // Refresh capacity data when going back to time picker
+      step.value = config.timeStep
+    } else if (step.value === config.timeStep) step.value = config.dateStep
     else if (step.value === config.dateStep && hasServiceStep.value) step.value = config.serviceStep
   }
 
@@ -145,12 +152,14 @@ export function BookingFlow({ props }: BookingFlowProps) {
       const result = await api.createReservation(props.venue, {
         startsAt: slot.startsAt,
         endsAt: slot.endsAt,
-        duration: selectedProduct.value?.duration ?? 60,
+        duration: selectedProduct.value?.duration
+          ?? Math.round((new Date(slot.endsAt).getTime() - new Date(slot.startsAt).getTime()) / 60000),
         guestName: data.guestName,
         guestPhone: data.guestPhone,
         guestEmail: data.guestEmail || undefined,
         partySize: data.partySize || undefined,
         productId: selectedProduct.value?.id,
+        classSessionId: slot.classSessionId || undefined,
         specialRequests: data.specialRequests || undefined,
       })
       bookingResult.value = result
@@ -165,6 +174,7 @@ export function BookingFlow({ props }: BookingFlowProps) {
       if (err.status === 409) {
         showToast(t('errors.slotTaken'), 'error')
         selectedSlot.value = null
+        fetchSlots() // Refresh slots so user sees updated capacity
         step.value = config.timeStep
       } else {
         showToast(err.data?.message ?? t('errors.generic'), 'error')
@@ -254,6 +264,7 @@ export function BookingFlow({ props }: BookingFlowProps) {
       {step.value === config.formStep && (
         <GuestInfoForm
           venueInfo={info}
+          selectedSlot={selectedSlot.value}
           onSubmit={handleFormSubmit}
           isSubmitting={isLoading.value}
           t={t}

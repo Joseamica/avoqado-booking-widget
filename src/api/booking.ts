@@ -10,7 +10,14 @@ const BASE = (import.meta.env?.VITE_API_URL as string | undefined)
   || 'https://api.avoqado.io/api/v1/public'
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(url, { ...init, headers: { 'Content-Type': 'application/json', ...(init?.headers ?? {}) } })
+  const res = await fetch(url, {
+    ...init,
+    headers: {
+      'Content-Type': 'application/json',
+      'ngrok-skip-browser-warning': '1',
+      ...(init?.headers ?? {}),
+    },
+  })
   if (!res.ok) {
     let err: any
     try { err = await res.json() } catch { err = { message: `HTTP ${res.status}` } }

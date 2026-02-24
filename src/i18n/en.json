@@ -10,7 +10,8 @@
   "service": {
     "title": "Select a service",
     "duration": "{{min}} min",
-    "noProducts": "No services available"
+    "noProducts": "No services available",
+    "groupClass": "Group class"
   },
   "date": {
     "title": "Select a date"
@@ -18,7 +19,10 @@
   "time": {
     "title": "Select a time",
     "noSlots": "No available times for this date",
-    "loading": "Loading available times..."
+    "loading": "Loading available times...",
+    "spotsLeft": "{{count}} spots left",
+    "spotsLeft_one": "{{count}} spot left",
+    "full": "Full"
   },
   "form": {
     "title": "Your details",
@@ -38,7 +42,9 @@
     "phoneRequired": "Phone is required",
     "nameRequired": "Name is required",
     "emailInvalid": "Enter a valid email",
-    "emailRequired": "Email is required"
+    "emailRequired": "Email is required",
+    "partySizeExceeded": "Only {{count}} spots left",
+    "partySizeExceeded_one": "Only {{count}} spot left"
   },
   "confirmation": {
     "title": "Reservation Confirmed!",
