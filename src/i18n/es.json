@@ -1,0 +1,97 @@
+{
+  "poweredBy": "Con tecnología de Avoqado",
+  "steps": {
+    "service": "Servicio",
+    "date": "Fecha",
+    "time": "Hora",
+    "info": "Datos",
+    "confirmation": "Confirmado"
+  },
+  "service": {
+    "title": "Selecciona un servicio",
+    "duration": "{{min}} min",
+    "noProducts": "No hay servicios disponibles"
+  },
+  "date": {
+    "title": "Selecciona una fecha"
+  },
+  "time": {
+    "title": "Selecciona un horario",
+    "noSlots": "No hay horarios disponibles para esta fecha",
+    "loading": "Cargando horarios disponibles..."
+  },
+  "form": {
+    "title": "Tus datos",
+    "phone": "Teléfono",
+    "phonePlaceholder": "Tu número de teléfono",
+    "name": "Nombre",
+    "namePlaceholder": "Tu nombre",
+    "email": "Correo (opcional)",
+    "emailPlaceholder": "tucorreo@email.com",
+    "partySize": "Número de personas",
+    "specialRequests": "Peticiones especiales",
+    "specialRequestsPlaceholder": "Alergias, cumpleaños, necesidades de accesibilidad...",
+    "submit": "Confirmar Reservación",
+    "submitting": "Reservando..."
+  },
+  "validation": {
+    "phoneRequired": "El teléfono es requerido",
+    "nameRequired": "El nombre es requerido",
+    "emailInvalid": "Ingresa un correo válido",
+    "emailRequired": "El correo es requerido"
+  },
+  "confirmation": {
+    "title": "¡Reservación Confirmada!",
+    "code": "Código de Confirmación",
+    "dateTime": "Fecha y Hora",
+    "addToCalendar": "Agregar a Google Calendar",
+    "downloadIcs": "Descargar .ics",
+    "manageBooking": "Gestionar Reservación",
+    "newBooking": "Hacer Otra Reservación"
+  },
+  "manage": {
+    "title": "Tu Reservación",
+    "cancelButton": "Cancelar Reservación",
+    "cancelTitle": "Cancelar Reservación",
+    "cancelDescription": "¿Estás seguro de que deseas cancelar esta reservación? Esta acción no se puede deshacer.",
+    "cancelReasonLabel": "Motivo (opcional)",
+    "cancelReasonPlaceholder": "¿Por qué cancelas?",
+    "cancelConfirm": "Confirmar Cancelación",
+    "cancelledStatus": "Esta reservación ha sido cancelada",
+    "deposit": "Depósito",
+    "table": "Mesa",
+    "staff": "Asignado a",
+    "specialRequests": "Peticiones Especiales",
+    "backToBooking": "Hacer una Nueva Reservación"
+  },
+  "deposit": {
+    "title": "Se Requiere Depósito",
+    "description": "Se requiere un depósito para confirmar esta reservación.",
+    "atVenueNote": "El pago se realizará en el establecimiento."
+  },
+  "errors": {
+    "venueNotFound": "Establecimiento no encontrado",
+    "venueNotFoundDescription": "El enlace de reservación puede ser incorrecto o el establecimiento ya no está disponible.",
+    "bookingDisabled": "Reservaciones en línea no disponibles",
+    "bookingDisabledDescription": "Este establecimiento no está aceptando reservaciones en línea en este momento.",
+    "bookingDisabledContact": "Llama al {{phone}} para hacer una reservación",
+    "reservationNotFound": "Reservación no encontrada",
+    "reservationNotFoundDescription": "Este enlace de reservación puede haber expirado o ser inválido.",
+    "slotTaken": "Este horario ya no está disponible. Por favor elige otro horario.",
+    "generic": "Algo salió mal. Por favor intenta de nuevo."
+  },
+  "actions": {
+    "goBack": "Atrás",
+    "retry": "Intentar de Nuevo",
+    "open": "Reservar una Mesa"
+  },
+  "status": {
+    "PENDING": "Pendiente",
+    "CONFIRMED": "Confirmada",
+    "CHECKED_IN": "En curso",
+    "COMPLETED": "Completada",
+    "CANCELLED": "Cancelada",
+    "NO_SHOW": "No Show"
+  },
+  "duration": "{{min}} min"
+}

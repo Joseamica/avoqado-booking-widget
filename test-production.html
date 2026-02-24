@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Test WordPress Embed — Producción</title>
+    <style>
+      /* Simula un sitio de cliente con sus propios estilos */
+      body { font-family: Georgia, serif; padding: 2rem; background: #fff; color: #333; }
+      h1 { font-size: 2rem; margin-bottom: 0.5rem; }
+      p { color: #666; margin-bottom: 2rem; }
+      .conflict { color: red !important; font-size: 8px !important; }
+    </style>
+  </head>
+  <body>
+    <h1>Mi Restaurante</h1>
+    <p>Reserva tu mesa directamente aquí.</p>
+
+    <!-- En dev: apunta al servidor local. En prod: cambiar a https://cdn.avoqado.io/widget.js -->
+    <script src="/src/widget.ts" type="module"></script>
+    <avoqado-booking
+      venue="avoqado-full"
+      locale="es"
+      theme="auto"
+      mode="inline"
+    ></avoqado-booking>
+  </body>
+</html>

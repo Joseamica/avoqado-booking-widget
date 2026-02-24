@@ -1,0 +1,9 @@
+/* Tailwind v4 entry — minimal reset for shadow DOM isolation */
+@import "tailwindcss";
+
+/* Scope all styles to .avq-root to ensure shadow DOM isolation */
+.avq-root {
+  all: initial;
+  display: block;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}

@@ -1,0 +1,24 @@
+{
+  "name": "@avoqado/booking-widget",
+  "version": "1.0.0",
+  "description": "Avoqado embeddable booking widget — Web Component",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "preact": "^10.25.4",
+    "@preact/signals": "^1.3.2",
+    "date-fns": "^4.1.0",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "vite": "^6.3.5",
+    "@preact/preset-vite": "^2.9.3",
+    "@tailwindcss/vite": "^4.1.8",
+    "tailwindcss": "^4.1.8",
+    "typescript": "^5.8.3"
+  }
+}

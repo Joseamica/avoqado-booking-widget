@@ -1,0 +1,97 @@
+{
+  "poweredBy": "Powered by Avoqado",
+  "steps": {
+    "service": "Service",
+    "date": "Date",
+    "time": "Time",
+    "info": "Details",
+    "confirmation": "Confirmed"
+  },
+  "service": {
+    "title": "Select a service",
+    "duration": "{{min}} min",
+    "noProducts": "No services available"
+  },
+  "date": {
+    "title": "Select a date"
+  },
+  "time": {
+    "title": "Select a time",
+    "noSlots": "No available times for this date",
+    "loading": "Loading available times..."
+  },
+  "form": {
+    "title": "Your details",
+    "phone": "Phone",
+    "phonePlaceholder": "Your phone number",
+    "name": "Name",
+    "namePlaceholder": "Your name",
+    "email": "Email (optional)",
+    "emailPlaceholder": "your@email.com",
+    "partySize": "Party size",
+    "specialRequests": "Special requests",
+    "specialRequestsPlaceholder": "Allergies, birthday, accessibility needs...",
+    "submit": "Confirm Reservation",
+    "submitting": "Booking..."
+  },
+  "validation": {
+    "phoneRequired": "Phone is required",
+    "nameRequired": "Name is required",
+    "emailInvalid": "Enter a valid email",
+    "emailRequired": "Email is required"
+  },
+  "confirmation": {
+    "title": "Reservation Confirmed!",
+    "code": "Confirmation Code",
+    "dateTime": "Date & Time",
+    "addToCalendar": "Add to Google Calendar",
+    "downloadIcs": "Download .ics",
+    "manageBooking": "Manage Booking",
+    "newBooking": "Book Another"
+  },
+  "manage": {
+    "title": "Your Reservation",
+    "cancelButton": "Cancel Reservation",
+    "cancelTitle": "Cancel Reservation",
+    "cancelDescription": "Are you sure you want to cancel this reservation? This action cannot be undone.",
+    "cancelReasonLabel": "Reason (optional)",
+    "cancelReasonPlaceholder": "Why are you cancelling?",
+    "cancelConfirm": "Confirm Cancellation",
+    "cancelledStatus": "This reservation has been cancelled",
+    "deposit": "Deposit",
+    "table": "Table",
+    "staff": "Assigned to",
+    "specialRequests": "Special Requests",
+    "backToBooking": "Book a New Reservation"
+  },
+  "deposit": {
+    "title": "Deposit Required",
+    "description": "A deposit is required to confirm this reservation.",
+    "atVenueNote": "Payment will be collected at the venue."
+  },
+  "errors": {
+    "venueNotFound": "Venue not found",
+    "venueNotFoundDescription": "The booking link may be incorrect or the venue is no longer available.",
+    "bookingDisabled": "Online booking not available",
+    "bookingDisabledDescription": "This venue is not accepting online reservations at this time.",
+    "bookingDisabledContact": "Call {{phone}} to make a reservation",
+    "reservationNotFound": "Reservation not found",
+    "reservationNotFoundDescription": "This booking link may be expired or invalid.",
+    "slotTaken": "This time slot is no longer available. Please choose another time.",
+    "generic": "Something went wrong. Please try again."
+  },
+  "actions": {
+    "goBack": "Back",
+    "retry": "Try Again",
+    "open": "Book a Table"
+  },
+  "status": {
+    "PENDING": "Pending",
+    "CONFIRMED": "Confirmed",
+    "CHECKED_IN": "Checked In",
+    "COMPLETED": "Completed",
+    "CANCELLED": "Cancelled",
+    "NO_SHOW": "No Show"
+  },
+  "duration": "{{min}} min"
+}
