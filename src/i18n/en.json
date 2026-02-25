@@ -75,6 +75,19 @@
     "description": "A deposit is required to confirm this reservation.",
     "atVenueNote": "Payment will be collected at the venue."
   },
+  "seats": {
+    "title": "Choose your spot",
+    "description": "Select the spot you prefer",
+    "available": "Available",
+    "selected": "Selected",
+    "taken": "Taken",
+    "instructor": "Instructor",
+    "spot": "Spot",
+    "spotTaken": "Spot taken",
+    "selectedCount": "{{count}} spot(s) selected",
+    "noSelection": "Select at least one spot",
+    "confirm": "Continue"
+  },
   "errors": {
     "venueNotFound": "Venue not found",
     "venueNotFoundDescription": "The booking link may be incorrect or the venue is no longer available.",

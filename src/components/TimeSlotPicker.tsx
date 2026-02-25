@@ -110,6 +110,19 @@ export function TimeSlotPicker({ slots, selectedSlot, onSelect, timezone, isLoad
                     }}
                   >
                     <span>{time}</span>
+                    {isClass && slot.instructor && (
+                      <span style={{
+                        fontSize: '11px',
+                        fontWeight: '500',
+                        color: isFull
+                          ? 'var(--avq-muted-fg, #9ca3af)'
+                          : isSelected
+                            ? 'var(--avq-accent, #6366f1)'
+                            : 'var(--avq-muted-fg, #6b7280)',
+                      }}>
+                        {slot.instructor.firstName} {slot.instructor.lastName}
+                      </span>
+                    )}
                     {isClass && (
                       <span style={{
                         fontSize: '11px',

@@ -8,6 +8,7 @@ export const venueInfo = signal<PublicVenueInfo | null>(null)
 export const selectedProduct = signal<Product | null>(null)
 export const selectedDate = signal<string | null>(null)   // YYYY-MM-DD
 export const selectedSlot = signal<PublicSlot | null>(null)
+export const selectedSpotIds = signal<string[]>([])
 export const bookingResult = signal<PublicBookingResult | null>(null)
 
 export const isLoading = signal(false)
@@ -29,6 +30,7 @@ export function getStepConfig(hasService: boolean) {
 export function resetBooking(venueData: PublicVenueInfo) {
   const config = getStepConfig((venueData.products.length) > 1)
   selectedSlot.value = null
+  selectedSpotIds.value = []
   bookingResult.value = null
   selectedDate.value = null
   manageSecret.value = null

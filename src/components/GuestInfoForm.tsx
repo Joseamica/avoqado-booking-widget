@@ -18,6 +18,7 @@ export interface GuestFormData {
 interface GuestInfoFormProps {
   venueInfo: PublicVenueInfo
   selectedSlot?: PublicSlot | null
+  selectedSpotCount?: number
   onSubmit: (data: GuestFormData) => void
   isSubmitting: boolean
   t: TFunction
@@ -35,7 +36,7 @@ function createSchema(requireEmail: boolean) {
   })
 }
 
-export function GuestInfoForm({ venueInfo, selectedSlot, onSubmit, isSubmitting, t }: GuestInfoFormProps) {
+export function GuestInfoForm({ venueInfo, selectedSlot, selectedSpotCount, onSubmit, isSubmitting, t }: GuestInfoFormProps) {
   const [phone, setPhone] = useState('')
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
@@ -133,22 +134,35 @@ export function GuestInfoForm({ venueInfo, selectedSlot, onSubmit, isSubmitting,
           {errors.guestEmail && <p style={{ margin: 0, fontSize: '12px', color: '#ef4444' }}>{errors.guestEmail}</p>}
         </div>
 
-        {/* Party size */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-          <label for="avq-party" style={{ fontSize: '13px', fontWeight: '500', color: 'var(--avq-fg, #111827)' }}>
-            {t('form.partySize')}
-          </label>
-          <Input
-            id="avq-party"
-            type="number"
-            value={partySize}
-            min={1}
-            max={selectedSlot?.remaining != null ? selectedSlot.remaining : 100}
-            onInput={(e) => setPartySize((e.target as HTMLInputElement).value)}
-            error={errors.partySize}
-          />
-          {errors.partySize && <p style={{ margin: 0, fontSize: '12px', color: '#ef4444' }}>{errors.partySize}</p>}
-        </div>
+        {/* Party size — hidden when spots were pre-selected */}
+        {selectedSpotCount && selectedSpotCount > 0 ? (
+          <div style={{
+            padding: '12px 16px', borderRadius: '10px',
+            background: 'color-mix(in srgb, var(--avq-accent, #6366f1) 6%, var(--avq-bg, #fff))',
+            border: '1px solid color-mix(in srgb, var(--avq-accent, #6366f1) 15%, var(--avq-border, #e8eaed))',
+            fontSize: '13px', color: 'var(--avq-fg, #111827)',
+            display: 'flex', alignItems: 'center', gap: '8px',
+          }}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--avq-accent, #6366f1)" stroke-width="2"><rect x="3" y="3" width="7" height="7" /><rect x="14" y="3" width="7" height="7" /><rect x="14" y="14" width="7" height="7" /><rect x="3" y="14" width="7" height="7" /></svg>
+            {t('seats.selectedCount', { count: selectedSpotCount })}
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            <label for="avq-party" style={{ fontSize: '13px', fontWeight: '500', color: 'var(--avq-fg, #111827)' }}>
+              {t('form.partySize')}
+            </label>
+            <Input
+              id="avq-party"
+              type="number"
+              value={partySize}
+              min={1}
+              max={selectedSlot?.remaining != null ? selectedSlot.remaining : 100}
+              onInput={(e) => setPartySize((e.target as HTMLInputElement).value)}
+              error={errors.partySize}
+            />
+            {errors.partySize && <p style={{ margin: 0, fontSize: '12px', color: '#ef4444' }}>{errors.partySize}</p>}
+          </div>
+        )}
 
         {/* Special requests */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>

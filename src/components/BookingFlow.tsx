@@ -6,13 +6,14 @@ import { createT } from '../i18n'
 import * as api from '../api/booking'
 import {
   step, venueInfo, selectedProduct, selectedDate, selectedSlot,
-  bookingResult, isLoading, apiError, manageSecret, hasServiceStep,
-  getStepConfig, resetBooking, showToast,
+  selectedSpotIds, bookingResult, isLoading, apiError, manageSecret,
+  hasServiceStep, getStepConfig, resetBooking, showToast,
 } from '../state/booking'
 import { StepIndicator } from './StepIndicator'
 import { ServiceSelector } from './ServiceSelector'
 import { DatePicker } from './DatePicker'
 import { TimeSlotPicker } from './TimeSlotPicker'
+import { SeatPicker } from './SeatPicker'
 import { GuestInfoForm } from './GuestInfoForm'
 import { DepositStep } from './DepositStep'
 import { Confirmation } from './Confirmation'
@@ -52,6 +53,7 @@ export function BookingFlow({ props }: BookingFlowProps) {
   const t = createT(props.locale)
   const [slots, setSlots] = useState<PublicSlot[]>([])
   const [slotsLoading, setSlotsLoading] = useState(false)
+  const [seatPickerActive, setSeatPickerActive] = useState(false)
 
   // Load venue info on mount
   useEffect(() => {
@@ -179,14 +181,29 @@ export function BookingFlow({ props }: BookingFlowProps) {
     ? [t('steps.service'), t('steps.date'), t('steps.time'), t('steps.info'), t('steps.confirmation')]
     : [t('steps.date'), t('steps.time'), t('steps.info'), t('steps.confirmation')]
 
-  const showBack = step.value > (hasServiceStep.value ? config.serviceStep : config.dateStep) && step.value < config.confirmStep
+  const showBack = (step.value > (hasServiceStep.value ? config.serviceStep : config.dateStep) && step.value < config.confirmStep)
+    || (step.value === config.timeStep && seatPickerActive)
 
   function handleBack() {
     if (step.value === config.formStep) {
-      fetchSlots() // Refresh capacity data when going back to time picker
-      step.value = config.timeStep
-    } else if (step.value === config.timeStep) step.value = config.dateStep
-    else if (step.value === config.dateStep && hasServiceStep.value) step.value = config.serviceStep
+      // If product has layout, go back to seat picker
+      if (selectedProduct.value?.layoutConfig && selectedSlot.value?.classSessionId) {
+        setSeatPickerActive(true)
+        step.value = config.timeStep
+      } else {
+        fetchSlots() // Refresh capacity data when going back to time picker
+        step.value = config.timeStep
+      }
+    } else if (step.value === config.timeStep) {
+      if (seatPickerActive) {
+        // Going back from seat picker to time slot selection
+        setSeatPickerActive(false)
+        selectedSlot.value = null
+        selectedSpotIds.value = []
+      } else {
+        step.value = config.dateStep
+      }
+    } else if (step.value === config.dateStep && hasServiceStep.value) step.value = config.serviceStep
   }
 
   async function handleFormSubmit(data: GuestFormData) {
@@ -194,6 +211,7 @@ export function BookingFlow({ props }: BookingFlowProps) {
     if (!slot) return
     isLoading.value = true
     try {
+      const spots = selectedSpotIds.value
       const result = await api.createReservation(props.venue, {
         startsAt: slot.startsAt,
         endsAt: slot.endsAt,
@@ -202,9 +220,10 @@ export function BookingFlow({ props }: BookingFlowProps) {
         guestName: data.guestName,
         guestPhone: data.guestPhone,
         guestEmail: data.guestEmail || undefined,
-        partySize: data.partySize || undefined,
+        partySize: spots.length > 0 ? spots.length : (data.partySize || undefined),
         productId: selectedProduct.value?.id,
         classSessionId: slot.classSessionId || undefined,
+        spotIds: spots.length > 0 ? spots : undefined,
         specialRequests: data.specialRequests || undefined,
       })
       bookingResult.value = result
@@ -319,16 +338,43 @@ export function BookingFlow({ props }: BookingFlowProps) {
           />
         )}
 
-        {step.value === config.timeStep && (
+        {step.value === config.timeStep && !seatPickerActive && (
           <TimeSlotPicker
             slots={slots}
             selectedSlot={selectedSlot.value}
             onSelect={(slot) => {
               selectedSlot.value = slot
-              step.value = config.formStep
+              selectedSpotIds.value = []
+              // If CLASS with layout, show seat picker
+              if (selectedProduct.value?.layoutConfig && slot.classSessionId) {
+                setSeatPickerActive(true)
+              } else {
+                step.value = config.formStep
+              }
             }}
             timezone={info.timezone}
             isLoading={slotsLoading}
+            t={t}
+          />
+        )}
+
+        {step.value === config.timeStep && seatPickerActive && selectedProduct.value?.layoutConfig && selectedSlot.value && (
+          <SeatPicker
+            layout={selectedProduct.value.layoutConfig}
+            takenSpotIds={selectedSlot.value.takenSpotIds ?? []}
+            selectedSpotIds={selectedSpotIds.value}
+            onToggleSpot={(spotId) => {
+              const current = selectedSpotIds.value
+              if (current.includes(spotId)) {
+                selectedSpotIds.value = current.filter(id => id !== spotId)
+              } else {
+                selectedSpotIds.value = [...current, spotId]
+              }
+            }}
+            onConfirm={() => {
+              setSeatPickerActive(false)
+              step.value = config.formStep
+            }}
             t={t}
           />
         )}
@@ -337,6 +383,7 @@ export function BookingFlow({ props }: BookingFlowProps) {
           <GuestInfoForm
             venueInfo={info}
             selectedSlot={selectedSlot.value}
+            selectedSpotCount={selectedSpotIds.value.length}
             onSubmit={handleFormSubmit}
             isSubmitting={isLoading.value}
             t={t}

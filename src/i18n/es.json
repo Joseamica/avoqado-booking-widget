@@ -75,6 +75,19 @@
     "description": "Se requiere un depósito para confirmar esta reservación.",
     "atVenueNote": "El pago se realizará en el establecimiento."
   },
+  "seats": {
+    "title": "Elige tu lugar",
+    "description": "Selecciona el lugar que prefieras",
+    "available": "Disponible",
+    "selected": "Seleccionado",
+    "taken": "Ocupado",
+    "instructor": "Instructor",
+    "spot": "Lugar",
+    "spotTaken": "Lugar ocupado",
+    "selectedCount": "{{count}} lugar(es) seleccionado(s)",
+    "noSelection": "Selecciona al menos un lugar",
+    "confirm": "Continuar"
+  },
   "errors": {
     "venueNotFound": "Establecimiento no encontrado",
     "venueNotFoundDescription": "El enlace de reservación puede ser incorrecto o el establecimiento ya no está disponible.",

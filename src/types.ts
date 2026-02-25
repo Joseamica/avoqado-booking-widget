@@ -1,3 +1,19 @@
+export interface LayoutSpot {
+  id: string
+  row: number
+  col: number
+  label: string
+  enabled: boolean
+}
+
+export interface LayoutConfig {
+  iconType: 'circle' | 'bike' | 'mat' | 'reformer' | 'bed' | 'chair' | 'generic'
+  rows: number
+  cols: number
+  showInstructor?: boolean
+  spots: LayoutSpot[]
+}
+
 export interface Product {
   id: string
   name: string
@@ -6,6 +22,7 @@ export interface Product {
   eventCapacity: number | null
   type?: 'APPOINTMENTS_SERVICE' | 'EVENT' | 'CLASS'
   maxParticipants?: number | null
+  layoutConfig?: LayoutConfig | null
 }
 
 export interface PublicVenueInfo {
@@ -48,6 +65,8 @@ export interface PublicSlot {
   capacity?: number
   enrolled?: number
   remaining?: number
+  takenSpotIds?: string[]
+  instructor?: { firstName: string; lastName: string } | null
 }
 
 export interface PublicAvailabilityResponse {
@@ -65,6 +84,7 @@ export interface PublicCreateReservationRequest {
   partySize?: number
   productId?: string
   classSessionId?: string
+  spotIds?: string[]
   specialRequests?: string
 }
 
