@@ -31,9 +31,9 @@ export function TimeSlotPicker({ slots, selectedSlot, onSelect, timezone, isLoad
 
   if (isLoading) {
     return (
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px', padding: '48px 0', color: 'var(--avq-muted-fg, #6b7280)' }}>
-        <Spinner size={20} />
-        <span style={{ fontSize: '14px' }}>{t('time.loading')}</span>
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '10px', padding: '48px 0', color: 'var(--avq-muted-fg, #6b7280)' }}>
+        <Spinner size={24} />
+        <span style={{ fontSize: '13px' }}>{t('time.loading')}</span>
       </div>
     )
   }
@@ -41,9 +41,9 @@ export function TimeSlotPicker({ slots, selectedSlot, onSelect, timezone, isLoad
   if (slots.length === 0) {
     return (
       <div style={{ padding: '48px 0', textAlign: 'center' }}>
-        <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style={{ color: 'var(--avq-border, #e5e7eb)', margin: '0 auto 12px', display: 'block' }}>
-          <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
-        </svg>
+        <div style={{ width: '48px', height: '48px', borderRadius: '50%', background: 'var(--avq-muted, #f8f9fb)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 12px' }}>
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--avq-muted-fg, #9ca3af)" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+        </div>
         <p style={{ fontSize: '14px', color: 'var(--avq-muted-fg, #6b7280)' }}>{t('time.noSlots')}</p>
       </div>
     )
@@ -51,7 +51,7 @@ export function TimeSlotPicker({ slots, selectedSlot, onSelect, timezone, isLoad
 
   return (
     <div>
-      <h2 style={{ fontSize: '18px', fontWeight: '600', marginBottom: '20px', color: 'var(--avq-fg, #111827)' }}>
+      <h2 style={{ fontSize: '16px', fontWeight: '600', marginBottom: '16px', color: 'var(--avq-fg, #111827)' }}>
         {t('time.title')}
       </h2>
 
@@ -84,26 +84,29 @@ export function TimeSlotPicker({ slots, selectedSlot, onSelect, timezone, isLoad
                     onMouseLeave={() => setHoveredKey(null)}
                     disabled={isFull}
                     style={{
-                      height: isClass ? 'auto' : '44px',
+                      height: isClass ? 'auto' : '42px',
                       minWidth: '80px',
-                      padding: isClass ? '8px 18px' : '0 18px',
-                      borderRadius: '22px',
+                      padding: isClass ? '8px 16px' : '0 16px',
+                      borderRadius: '12px',
                       border: isSelected
                         ? '2px solid var(--avq-accent, #6366f1)'
-                        : `1.5px solid ${isHov && !isFull ? 'var(--avq-muted-fg, #9ca3af)' : 'var(--avq-border, #e5e7eb)'}`,
+                        : `1.5px solid ${isFull ? 'var(--avq-border, #e8eaed)' : isHov ? 'var(--avq-muted-fg, #9ca3af)' : 'var(--avq-border, #e8eaed)'}`,
                       background: isFull
-                        ? 'var(--avq-muted, #f3f4f6)'
+                        ? 'var(--avq-muted, #f8f9fb)'
                         : isSelected
-                          ? 'var(--avq-accent, #6366f1)'
-                          : isHov ? 'var(--avq-muted, #f3f4f6)' : 'transparent',
+                          ? 'color-mix(in srgb, var(--avq-accent, #6366f1) 6%, var(--avq-bg, #ffffff))'
+                          : isHov ? 'var(--avq-muted, #f8f9fb)' : 'var(--avq-bg, #ffffff)',
                       color: isFull
                         ? 'var(--avq-muted-fg, #9ca3af)'
-                        : isSelected ? '#ffffff' : 'var(--avq-fg, #111827)',
-                      fontSize: '14px', fontWeight: '500',
+                        : isSelected ? 'var(--avq-accent, #6366f1)' : 'var(--avq-fg, #111827)',
+                      fontSize: '14px', fontWeight: isSelected ? '600' : '500',
                       cursor: isFull ? 'not-allowed' : 'pointer',
-                      opacity: isFull ? 0.6 : 1,
-                      transition: 'all 150ms ease',
+                      opacity: isFull ? 0.55 : 1,
+                      transition: 'all 0.15s ease',
                       display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px',
+                      boxShadow: isSelected
+                        ? '0 0 0 3px color-mix(in srgb, var(--avq-accent, #6366f1) 8%, transparent)'
+                        : isHov && !isFull ? 'var(--avq-card-shadow, 0 1px 3px rgba(0,0,0,0.04))' : 'none',
                     }}
                   >
                     <span>{time}</span>
@@ -114,7 +117,7 @@ export function TimeSlotPicker({ slots, selectedSlot, onSelect, timezone, isLoad
                         color: isFull
                           ? 'var(--avq-muted-fg, #9ca3af)'
                           : isSelected
-                            ? 'rgba(255,255,255,0.8)'
+                            ? 'var(--avq-accent, #6366f1)'
                             : (slot.remaining ?? 0) <= 3
                               ? '#f59e0b'
                               : '#10b981',

@@ -80,92 +80,96 @@ export function GuestInfoForm({ venueInfo, selectedSlot, onSubmit, isSubmitting,
   }
 
   return (
-    <form onSubmit={handleSubmit} class="space-y-5">
-      <h2 class="text-lg font-semibold text-[var(--avq-fg,#111827)]">{t('form.title')}</h2>
+    <form onSubmit={handleSubmit}>
+      <h2 style={{ fontSize: '16px', fontWeight: '600', marginBottom: '20px', color: 'var(--avq-fg, #111827)' }}>
+        {t('form.title')}
+      </h2>
 
-      {/* Phone */}
-      <div class="space-y-1.5">
-        <label for="avq-phone" class="block text-sm font-medium text-[var(--avq-fg,#111827)]">
-          {t('form.phone')} *
-        </label>
-        <Input
-          id="avq-phone"
-          type="tel"
-          value={phone}
-          placeholder={t('form.phonePlaceholder')}
-          onInput={(e) => setPhone((e.target as HTMLInputElement).value)}
-          error={errors.guestPhone}
-        />
-        {errors.guestPhone && <p class="text-sm text-red-600">{errors.guestPhone}</p>}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
+        {/* Phone */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+          <label for="avq-phone" style={{ fontSize: '13px', fontWeight: '500', color: 'var(--avq-fg, #111827)' }}>
+            {t('form.phone')} *
+          </label>
+          <Input
+            id="avq-phone"
+            type="tel"
+            value={phone}
+            placeholder={t('form.phonePlaceholder')}
+            onInput={(e) => setPhone((e.target as HTMLInputElement).value)}
+            error={errors.guestPhone}
+          />
+          {errors.guestPhone && <p style={{ margin: 0, fontSize: '12px', color: '#ef4444' }}>{errors.guestPhone}</p>}
+        </div>
+
+        {/* Name */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+          <label for="avq-name" style={{ fontSize: '13px', fontWeight: '500', color: 'var(--avq-fg, #111827)' }}>
+            {t('form.name')} *
+          </label>
+          <Input
+            id="avq-name"
+            value={name}
+            placeholder={t('form.namePlaceholder')}
+            onInput={(e) => setName((e.target as HTMLInputElement).value)}
+            error={errors.guestName}
+          />
+          {errors.guestName && <p style={{ margin: 0, fontSize: '12px', color: '#ef4444' }}>{errors.guestName}</p>}
+        </div>
+
+        {/* Email */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+          <label for="avq-email" style={{ fontSize: '13px', fontWeight: '500', color: 'var(--avq-fg, #111827)' }}>
+            {venueInfo.publicBooking.requireEmail ? `${t('form.email').replace(' (optional)', '').replace(' (opcional)', '')} *` : t('form.email')}
+          </label>
+          <Input
+            id="avq-email"
+            type="email"
+            value={email}
+            placeholder={t('form.emailPlaceholder')}
+            onInput={(e) => setEmail((e.target as HTMLInputElement).value)}
+            error={errors.guestEmail}
+          />
+          {errors.guestEmail && <p style={{ margin: 0, fontSize: '12px', color: '#ef4444' }}>{errors.guestEmail}</p>}
+        </div>
+
+        {/* Party size */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+          <label for="avq-party" style={{ fontSize: '13px', fontWeight: '500', color: 'var(--avq-fg, #111827)' }}>
+            {t('form.partySize')}
+          </label>
+          <Input
+            id="avq-party"
+            type="number"
+            value={partySize}
+            min={1}
+            max={selectedSlot?.remaining != null ? selectedSlot.remaining : 100}
+            onInput={(e) => setPartySize((e.target as HTMLInputElement).value)}
+            error={errors.partySize}
+          />
+          {errors.partySize && <p style={{ margin: 0, fontSize: '12px', color: '#ef4444' }}>{errors.partySize}</p>}
+        </div>
+
+        {/* Special requests */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+          <label for="avq-requests" style={{ fontSize: '13px', fontWeight: '500', color: 'var(--avq-fg, #111827)' }}>
+            {t('form.specialRequests')}
+          </label>
+          <Textarea
+            id="avq-requests"
+            value={requests}
+            placeholder={t('form.specialRequestsPlaceholder')}
+            onInput={(e) => setRequests((e.target as HTMLTextAreaElement).value)}
+            rows={3}
+          />
+        </div>
+
+        <Button type="submit" fullWidth disabled={isSubmitting}>
+          {isSubmitting ? (
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}><Spinner size={16} />{t('form.submitting')}</span>
+          ) : t('form.submit')}
+        </Button>
       </div>
-
-      {/* Name */}
-      <div class="space-y-1.5">
-        <label for="avq-name" class="block text-sm font-medium text-[var(--avq-fg,#111827)]">
-          {t('form.name')} *
-        </label>
-        <Input
-          id="avq-name"
-          value={name}
-          placeholder={t('form.namePlaceholder')}
-          onInput={(e) => setName((e.target as HTMLInputElement).value)}
-          error={errors.guestName}
-        />
-        {errors.guestName && <p class="text-sm text-red-600">{errors.guestName}</p>}
-      </div>
-
-      {/* Email */}
-      <div class="space-y-1.5">
-        <label for="avq-email" class="block text-sm font-medium text-[var(--avq-fg,#111827)]">
-          {venueInfo.publicBooking.requireEmail ? `${t('form.email').replace(' (optional)', '')} *` : t('form.email')}
-        </label>
-        <Input
-          id="avq-email"
-          type="email"
-          value={email}
-          placeholder={t('form.emailPlaceholder')}
-          onInput={(e) => setEmail((e.target as HTMLInputElement).value)}
-          error={errors.guestEmail}
-        />
-        {errors.guestEmail && <p class="text-sm text-red-600">{errors.guestEmail}</p>}
-      </div>
-
-      {/* Party size */}
-      <div class="space-y-1.5">
-        <label for="avq-party" class="block text-sm font-medium text-[var(--avq-fg,#111827)]">
-          {t('form.partySize')}
-        </label>
-        <Input
-          id="avq-party"
-          type="number"
-          value={partySize}
-          min={1}
-          max={selectedSlot?.remaining != null ? selectedSlot.remaining : 100}
-          onInput={(e) => setPartySize((e.target as HTMLInputElement).value)}
-          error={errors.partySize}
-        />
-        {errors.partySize && <p class="text-sm text-red-600">{errors.partySize}</p>}
-      </div>
-
-      {/* Special requests */}
-      <div class="space-y-1.5">
-        <label for="avq-requests" class="block text-sm font-medium text-[var(--avq-fg,#111827)]">
-          {t('form.specialRequests')}
-        </label>
-        <Textarea
-          id="avq-requests"
-          value={requests}
-          placeholder={t('form.specialRequestsPlaceholder')}
-          onInput={(e) => setRequests((e.target as HTMLTextAreaElement).value)}
-          rows={3}
-        />
-      </div>
-
-      <Button type="submit" fullWidth disabled={isSubmitting}>
-        {isSubmitting ? (
-          <span class="flex items-center gap-2"><Spinner size={16} />{t('form.submitting')}</span>
-        ) : t('form.submit')}
-      </Button>
     </form>
   )
 }

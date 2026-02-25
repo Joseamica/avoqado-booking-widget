@@ -26,6 +26,28 @@ interface BookingFlowProps {
 
 const MANAGE_STEP = 99
 
+/** Avoqado avocado icon — inline SVG for Shadow DOM */
+function AvoqadoLogo() {
+  return (
+    <svg viewBox="0 0 732.5 893.3" width="16" height="20" style={{ flexShrink: 0 }}>
+      <path
+        fill="#69E185"
+        d="M712.7,486.2c-3.3-83.5-37.8-157.2-99.8-213.1c-27.9-28.7-63.2-57.2-104.9-84.8c16-81.7,12.9-116.7-31.4-155.5
+        l-2.4-2.1l-3.1-0.9c-33-9.4-58.6-7.7-78.1,5.1c-29.8,19.5-39.9,60.9-45.2,117.3c-131.6,12.1-242.1,95.5-296.3,224.2
+        c-56.5,134-37,280.8,49.8,374.1c3.4,3.5,10.3,10.6,157,98l1.1,0.7l1.2,0.5c36,13.2,72.6,19.8,108.8,19.8
+        c39.2,0,78.1-7.7,115.4-23.2c63.9-26.5,121.9-75.8,163.3-138.7C692.8,639.9,715.7,561.3,712.7,486.2z M580.3,507.4
+        c-0.3,58-40.2,116.3-118.7,173.3C374.3,744.2,279.3,710,228,651.3c-43.8-50-65.3-119.8-56.1-182c4.8-32.5,20.5-77.7,68-108.3
+        c64.6-41.7,110-56.7,144.4-56.7c45.6,0,71.8,26.4,97.4,52.4c10.4,10.5,20.2,20.4,31.3,28.6C545.7,409.4,580.5,454.2,580.3,507.4z"
+      />
+      <path
+        fill="#C9712F"
+        d="M362.2,412c-26.8,0-53.6,17.9-75.5,50.5c-18.4,27.3-30.3,61.1-30.3,86c0,49.5,47.4,89.7,105.7,89.7
+        S468,598,468,548.5c0-24.9-11.9-58.7-30.3-86C415.8,430,389,412,362.2,412z"
+      />
+    </svg>
+  )
+}
+
 export function BookingFlow({ props }: BookingFlowProps) {
   const t = createT(props.locale)
   const [slots, setSlots] = useState<PublicSlot[]>([])
@@ -75,20 +97,24 @@ export function BookingFlow({ props }: BookingFlowProps) {
 
   if (isLoading.value) {
     return (
-      <div class="flex items-center justify-center py-16">
-        <Spinner size={32} />
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '64px 0', gap: '12px' }}>
+        <Spinner size={28} />
+        <p style={{ fontSize: '13px', color: 'var(--avq-muted-fg, #9ca3af)' }}>{t('time.loading')}</p>
       </div>
     )
   }
 
   if (apiError.value) {
     return (
-      <div class="space-y-4 py-8 text-center">
-        <p class="font-semibold text-[var(--avq-fg,#111827)]">{apiError.value}</p>
+      <div class="avq-animate-in" style={{ padding: '48px 0', textAlign: 'center' }}>
+        <div style={{ width: '48px', height: '48px', borderRadius: '50%', background: 'var(--avq-muted, #f8f9fb)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px' }}>
+          <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--avq-muted-fg, #6b7280)" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+        </div>
+        <p style={{ fontWeight: '600', color: 'var(--avq-fg, #111827)', marginBottom: '8px' }}>{apiError.value}</p>
         <button
           type="button"
           onClick={() => { apiError.value = null; isLoading.value = false }}
-          class="text-sm text-[var(--avq-accent,#6366f1)] underline"
+          style={{ fontSize: '14px', color: 'var(--avq-accent, #6366f1)', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline', textUnderlineOffset: '2px' }}
         >
           {t('actions.retry')}
         </button>
@@ -101,14 +127,24 @@ export function BookingFlow({ props }: BookingFlowProps) {
 
   if (!info.publicBooking.enabled) {
     return (
-      <div class="space-y-4 py-8 text-center">
-        <h2 class="text-xl font-semibold text-[var(--avq-fg,#111827)]">{t('errors.bookingDisabled')}</h2>
-        <p class="text-[var(--avq-muted-fg,#6b7280)]">{t('errors.bookingDisabledDescription')}</p>
+      <div class="avq-animate-in" style={{ padding: '48px 0', textAlign: 'center' }}>
+        <div style={{ width: '56px', height: '56px', borderRadius: '50%', background: 'var(--avq-muted, #f8f9fb)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px' }}>
+          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--avq-muted-fg, #6b7280)" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+        </div>
+        <h2 style={{ fontSize: '18px', fontWeight: '600', color: 'var(--avq-fg, #111827)', marginBottom: '6px' }}>{t('errors.bookingDisabled')}</h2>
+        <p style={{ fontSize: '14px', color: 'var(--avq-muted-fg, #6b7280)', marginBottom: '20px' }}>{t('errors.bookingDisabledDescription')}</p>
         {info.phone && (
           <a
             href={`tel:${info.phone}`}
-            class="inline-block rounded-lg border border-[var(--avq-border,#e5e7eb)] px-4 py-2.5 text-sm text-[var(--avq-fg,#111827)] hover:border-[var(--avq-accent,#6366f1)]"
+            style={{
+              display: 'inline-flex', alignItems: 'center', gap: '8px',
+              padding: '10px 20px', borderRadius: '10px',
+              border: '1px solid var(--avq-border, #e8eaed)',
+              fontSize: '14px', color: 'var(--avq-fg, #111827)',
+              textDecoration: 'none', transition: 'border-color 0.2s ease',
+            }}
           >
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
             {t('errors.bookingDisabledContact', { phone: info.phone })}
           </a>
         )}
@@ -119,13 +155,22 @@ export function BookingFlow({ props }: BookingFlowProps) {
   // Manage booking screen
   if (step.value === MANAGE_STEP) {
     return (
-      <ManageBooking
-        venueSlug={props.venue}
-        cancelSecret={manageSecret.value!}
-        timezone={info.timezone}
-        t={t}
-        onBack={() => resetBooking(info)}
-      />
+      <div>
+        <ManageBooking
+          venueSlug={props.venue}
+          cancelSecret={manageSecret.value!}
+          timezone={info.timezone}
+          t={t}
+          onBack={() => resetBooking(info)}
+        />
+        {/* Avoqado footer */}
+        <div style={{ marginTop: '32px', textAlign: 'center', paddingBottom: '4px' }}>
+          <a href="https://avoqado.io" target="_blank" rel="noopener noreferrer" class="avq-footer-link" style={{ fontSize: '12px', justifyContent: 'center' }}>
+            <AvoqadoLogo />
+            <span>{t('poweredBy')}</span>
+          </a>
+        </div>
+      </div>
     )
   }
 
@@ -187,15 +232,34 @@ export function BookingFlow({ props }: BookingFlowProps) {
   return (
     <div>
       {/* Venue header */}
-      <div class="mb-6 flex flex-col items-center gap-3">
+      <div style={{
+        display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px',
+        marginBottom: '28px', paddingTop: '4px',
+      }}>
         {info.logo ? (
-          <img src={info.logo} alt={info.name} class="h-16 w-16 rounded-full object-cover" />
+          <img
+            src={info.logo}
+            alt={info.name}
+            style={{
+              width: '56px', height: '56px', borderRadius: '14px', objectFit: 'cover',
+              boxShadow: 'var(--avq-card-shadow, 0 1px 3px rgba(0,0,0,0.04))',
+              border: '1px solid var(--avq-border, #e8eaed)',
+            }}
+          />
         ) : (
-          <div class="flex h-16 w-16 items-center justify-center rounded-full bg-[var(--avq-accent,#6366f1)] text-2xl font-bold text-white">
+          <div style={{
+            width: '56px', height: '56px', borderRadius: '14px',
+            background: 'var(--avq-accent, #6366f1)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            fontSize: '22px', fontWeight: '700', color: '#ffffff',
+            boxShadow: '0 2px 8px rgba(99,102,241,0.25)',
+          }}>
             {info.name.charAt(0).toUpperCase()}
           </div>
         )}
-        <h1 class="text-xl font-semibold text-[var(--avq-fg,#111827)]">{info.name}</h1>
+        <h1 style={{ fontSize: '18px', fontWeight: '700', color: 'var(--avq-fg, #111827)', margin: 0, letterSpacing: '-0.01em' }}>
+          {info.name}
+        </h1>
       </div>
 
       {/* Step indicator */}
@@ -212,93 +276,105 @@ export function BookingFlow({ props }: BookingFlowProps) {
         <button
           type="button"
           onClick={handleBack}
-          class="mb-4 flex items-center gap-1 text-sm text-[var(--avq-muted-fg,#6b7280)] hover:text-[var(--avq-fg,#111827)] transition-colors"
+          style={{
+            display: 'flex', alignItems: 'center', gap: '4px',
+            marginBottom: '16px', padding: '4px 0',
+            fontSize: '13px', fontWeight: '500',
+            color: 'var(--avq-muted-fg, #6b7280)',
+            background: 'none', border: 'none', cursor: 'pointer',
+            transition: 'color 0.2s ease',
+          }}
         >
-          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
           {t('actions.goBack')}
         </button>
       )}
 
       {/* Steps */}
-      {step.value === config.serviceStep && hasServiceStep.value && (
-        <ServiceSelector
-          products={info.products}
-          selectedProductId={selectedProduct.value?.id ?? null}
-          onSelect={(product) => {
-            selectedProduct.value = product
-            step.value = config.dateStep
-          }}
-          t={t}
-        />
-      )}
+      <div class="avq-animate-in" key={step.value}>
+        {step.value === config.serviceStep && hasServiceStep.value && (
+          <ServiceSelector
+            products={info.products}
+            selectedProductId={selectedProduct.value?.id ?? null}
+            onSelect={(product) => {
+              selectedProduct.value = product
+              step.value = config.dateStep
+            }}
+            t={t}
+          />
+        )}
 
-      {step.value === config.dateStep && (
-        <DatePicker
-          selectedDate={selectedDate.value}
-          onSelect={(date) => {
-            selectedDate.value = date
-            selectedSlot.value = null
-            step.value = config.timeStep
-          }}
-          maxAdvanceDays={30}
-          timezone={info.timezone}
-          operatingHours={info.operatingHours}
-          t={t}
-        />
-      )}
+        {step.value === config.dateStep && (
+          <DatePicker
+            selectedDate={selectedDate.value}
+            onSelect={(date) => {
+              selectedDate.value = date
+              selectedSlot.value = null
+              step.value = config.timeStep
+            }}
+            maxAdvanceDays={30}
+            timezone={info.timezone}
+            operatingHours={info.operatingHours}
+            t={t}
+          />
+        )}
 
-      {step.value === config.timeStep && (
-        <TimeSlotPicker
-          slots={slots}
-          selectedSlot={selectedSlot.value}
-          onSelect={(slot) => {
-            selectedSlot.value = slot
-            step.value = config.formStep
-          }}
-          timezone={info.timezone}
-          isLoading={slotsLoading}
-          t={t}
-        />
-      )}
+        {step.value === config.timeStep && (
+          <TimeSlotPicker
+            slots={slots}
+            selectedSlot={selectedSlot.value}
+            onSelect={(slot) => {
+              selectedSlot.value = slot
+              step.value = config.formStep
+            }}
+            timezone={info.timezone}
+            isLoading={slotsLoading}
+            t={t}
+          />
+        )}
 
-      {step.value === config.formStep && (
-        <GuestInfoForm
-          venueInfo={info}
-          selectedSlot={selectedSlot.value}
-          onSubmit={handleFormSubmit}
-          isSubmitting={isLoading.value}
-          t={t}
-        />
-      )}
+        {step.value === config.formStep && (
+          <GuestInfoForm
+            venueInfo={info}
+            selectedSlot={selectedSlot.value}
+            onSubmit={handleFormSubmit}
+            isSubmitting={isLoading.value}
+            t={t}
+          />
+        )}
 
-      {step.value === config.confirmStep && bookingResult.value && !bookingResult.value.depositRequired && (
-        <Confirmation
-          booking={bookingResult.value}
-          venueInfo={info}
-          onManageBooking={() => {
-            manageSecret.value = bookingResult.value!.cancelSecret
-            step.value = MANAGE_STEP
-          }}
-          onNewBooking={() => resetBooking(info)}
-          t={t}
-        />
-      )}
+        {step.value === config.confirmStep && bookingResult.value && !bookingResult.value.depositRequired && (
+          <Confirmation
+            booking={bookingResult.value}
+            venueInfo={info}
+            onManageBooking={() => {
+              manageSecret.value = bookingResult.value!.cancelSecret
+              step.value = MANAGE_STEP
+            }}
+            onNewBooking={() => resetBooking(info)}
+            t={t}
+          />
+        )}
 
-      {step.value === config.confirmStep && bookingResult.value?.depositRequired && (
-        <DepositStep
-          booking={bookingResult.value}
-          t={t}
-          onContinue={() => {
-            // After acknowledging deposit, show confirmation
-            const result = bookingResult.value!
-            bookingResult.value = { ...result, depositRequired: false }
-          }}
-        />
-      )}
+        {step.value === config.confirmStep && bookingResult.value?.depositRequired && (
+          <DepositStep
+            booking={bookingResult.value}
+            t={t}
+            onContinue={() => {
+              // After acknowledging deposit, show confirmation
+              const result = bookingResult.value!
+              bookingResult.value = { ...result, depositRequired: false }
+            }}
+          />
+        )}
+      </div>
 
-      {/* Footer */}
-      <div class="mt-8 text-center">
-        <p class="text-xs text-[var(--avq-muted-fg,#6b7280)]">{t('poweredBy')}</p>
+      {/* Avoqado footer */}
+      <div style={{ marginTop: '32px', textAlign: 'center', paddingBottom: '4px' }}>
+        <a href="https://avoqado.io" target="_blank" rel="noopener noreferrer" class="avq-footer-link" style={{ fontSize: '12px', justifyContent: 'center' }}>
+          <AvoqadoLogo />
+          <span>{t('poweredBy')}</span>
+        </a>
       </div>
     </div>
   )

@@ -1,4 +1,5 @@
 import { h } from 'preact'
+import { useState } from 'preact/hooks'
 import type { TFunction } from '../i18n'
 import type { PublicBookingResult } from '../types'
 
@@ -9,26 +10,52 @@ interface DepositStepProps {
 }
 
 export function DepositStep({ booking, t, onContinue }: DepositStepProps) {
+  const [hov, setHov] = useState(false)
+
   return (
-    <div class="space-y-6 text-center">
-      <div class="flex justify-center">
-        <div class="flex h-16 w-16 items-center justify-center rounded-full bg-yellow-100">
-          <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 text-yellow-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+    <div class="avq-animate-scale" style={{ textAlign: 'center' }}>
+      <div style={{
+        width: '64px', height: '64px', borderRadius: '50%',
+        background: 'linear-gradient(135deg, #fef9c3 0%, #fde68a 100%)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        margin: '0 auto 20px',
+        boxShadow: '0 4px 14px rgba(202, 138, 4, 0.15)',
+      }}>
+        <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#ca8a04" stroke-width="2">
+          <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+        </svg>
       </div>
-      </div>
-      <div>
-        <h2 class="text-xl font-semibold text-[var(--avq-fg,#111827)]">{t('deposit.title')}</h2>
-        {booking.depositAmount && (
-          <p class="mt-2 text-3xl font-bold text-[var(--avq-accent,#6366f1)]">
-            ${booking.depositAmount}
-          </p>
-        )}
-      </div>
-      <p class="text-[var(--avq-muted-fg,#6b7280)]">{t('deposit.atVenueNote')}</p>
+
+      <h2 style={{ fontSize: '20px', fontWeight: '700', color: 'var(--avq-fg, #111827)', margin: '0 0 8px' }}>
+        {t('deposit.title')}
+      </h2>
+
+      {booking.depositAmount && (
+        <p style={{ margin: '0 0 16px', fontSize: '32px', fontWeight: '700', color: 'var(--avq-accent, #6366f1)' }}>
+          ${booking.depositAmount}
+        </p>
+      )}
+
+      <p style={{ fontSize: '14px', color: 'var(--avq-muted-fg, #6b7280)', margin: '0 0 28px' }}>
+        {t('deposit.atVenueNote')}
+      </p>
+
       <button
         type="button"
         onClick={onContinue}
-        class="h-12 w-full rounded-lg bg-[var(--avq-accent,#6366f1)] text-white font-medium hover:opacity-90 transition-opacity"
+        onMouseEnter={() => setHov(true)}
+        onMouseLeave={() => setHov(false)}
+        style={{
+          width: '100%', height: '46px', borderRadius: '12px',
+          background: 'var(--avq-accent, #6366f1)',
+          color: '#ffffff', fontWeight: '600', fontSize: '14px',
+          border: 'none', cursor: 'pointer',
+          transition: 'all 0.2s ease',
+          boxShadow: hov
+            ? '0 4px 14px color-mix(in srgb, var(--avq-accent, #6366f1) 40%, transparent)'
+            : '0 2px 8px color-mix(in srgb, var(--avq-accent, #6366f1) 25%, transparent)',
+          transform: hov ? 'translateY(-1px)' : 'translateY(0)',
+        }}
       >
         Entendido
       </button>

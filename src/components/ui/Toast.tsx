@@ -16,12 +16,21 @@ export function Toast() {
   if (!visible.value || !toastMessage.value) return null
 
   const { text, type } = toastMessage.value
-  const bgClass = type === 'error' ? 'bg-red-600' : 'bg-[var(--avq-accent,#6366f1)]'
+  const isError = type === 'error'
 
   return (
     <div
-      class={`fixed bottom-4 left-1/2 z-50 -translate-x-1/2 rounded-lg px-4 py-3 text-sm font-medium text-white shadow-lg transition-all ${bgClass}`}
-      style={{ maxWidth: '90vw' }}
+      class="avq-animate-in"
+      style={{
+        position: 'fixed', bottom: '16px', left: '50%', transform: 'translateX(-50%)',
+        zIndex: 50, maxWidth: '90vw',
+        borderRadius: '12px', padding: '12px 20px',
+        fontSize: '13px', fontWeight: '500', color: '#ffffff',
+        background: isError ? '#ef4444' : 'var(--avq-accent, #6366f1)',
+        boxShadow: isError
+          ? '0 8px 24px rgba(239, 68, 68, 0.3)'
+          : '0 8px 24px color-mix(in srgb, var(--avq-accent, #6366f1) 35%, transparent)',
+      }}
     >
       {text}
     </div>

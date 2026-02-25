@@ -1,4 +1,5 @@
 import { h } from 'preact'
+import { useState } from 'preact/hooks'
 
 interface InputProps {
   id?: string
@@ -16,6 +17,8 @@ interface InputProps {
 }
 
 export function Input({ id, type = 'text', value, placeholder, onInput, onChange, required, min, max, class: cls, error }: InputProps) {
+  const [focused, setFocused] = useState(false)
+
   return (
     <input
       id={id}
@@ -27,12 +30,35 @@ export function Input({ id, type = 'text', value, placeholder, onInput, onChange
       required={required}
       min={min as any}
       max={max as any}
-      class={`h-12 w-full rounded-lg border px-3 text-base transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--avq-accent,#6366f1)] ${error ? 'border-red-500' : 'border-[var(--avq-border,#e5e7eb)]'} bg-[var(--avq-bg,#ffffff)] text-[var(--avq-fg,#111827)] placeholder-[var(--avq-muted-fg,#6b7280)] ${cls ?? ''}`}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+      style={{
+        height: '46px', width: '100%', borderRadius: '12px',
+        padding: '0 14px', fontSize: '15px',
+        border: error
+          ? '1.5px solid #ef4444'
+          : focused
+            ? '1.5px solid var(--avq-accent, #6366f1)'
+            : '1.5px solid var(--avq-border, #e8eaed)',
+        background: 'var(--avq-bg, #ffffff)',
+        color: 'var(--avq-fg, #111827)',
+        outline: 'none',
+        transition: 'border-color 0.2s ease, box-shadow 0.2s ease',
+        boxShadow: focused && !error
+          ? '0 0 0 3px color-mix(in srgb, var(--avq-accent, #6366f1) 10%, transparent)'
+          : error
+            ? '0 0 0 3px rgba(239, 68, 68, 0.08)'
+            : 'none',
+        boxSizing: 'border-box',
+      } as any}
+      class={cls ?? ''}
     />
   )
 }
 
 export function Textarea({ id, value, placeholder, onInput, rows = 3, class: cls, error }: InputProps & { rows?: number }) {
+  const [focused, setFocused] = useState(false)
+
   return (
     <textarea
       id={id}
@@ -40,7 +66,28 @@ export function Textarea({ id, value, placeholder, onInput, rows = 3, class: cls
       placeholder={placeholder}
       onInput={onInput}
       rows={rows}
-      class={`w-full rounded-lg border px-3 py-2 text-base transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--avq-accent,#6366f1)] ${error ? 'border-red-500' : 'border-[var(--avq-border,#e5e7eb)]'} bg-[var(--avq-bg,#ffffff)] text-[var(--avq-fg,#111827)] placeholder-[var(--avq-muted-fg,#6b7280)] ${cls ?? ''}`}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+      style={{
+        width: '100%', borderRadius: '12px',
+        padding: '12px 14px', fontSize: '15px',
+        border: error
+          ? '1.5px solid #ef4444'
+          : focused
+            ? '1.5px solid var(--avq-accent, #6366f1)'
+            : '1.5px solid var(--avq-border, #e8eaed)',
+        background: 'var(--avq-bg, #ffffff)',
+        color: 'var(--avq-fg, #111827)',
+        outline: 'none',
+        transition: 'border-color 0.2s ease, box-shadow 0.2s ease',
+        boxShadow: focused && !error
+          ? '0 0 0 3px color-mix(in srgb, var(--avq-accent, #6366f1) 10%, transparent)'
+          : 'none',
+        resize: 'vertical',
+        fontFamily: 'inherit',
+        boxSizing: 'border-box',
+      } as any}
+      class={cls ?? ''}
     />
   )
 }

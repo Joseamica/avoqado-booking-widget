@@ -15,6 +15,15 @@ interface ManageBookingProps {
   onBack: () => void
 }
 
+const statusConfig: Record<string, { bg: string; text: string }> = {
+  PENDING: { bg: '#fef9c3', text: '#854d0e' },
+  CONFIRMED: { bg: '#dcfce7', text: '#166534' },
+  CHECKED_IN: { bg: '#dbeafe', text: '#1e40af' },
+  COMPLETED: { bg: '#f3f4f6', text: '#1f2937' },
+  CANCELLED: { bg: '#fee2e2', text: '#991b1b' },
+  NO_SHOW: { bg: '#ffedd5', text: '#9a3412' },
+}
+
 export function ManageBooking({ venueSlug, cancelSecret, timezone, t, onBack }: ManageBookingProps) {
   const [reservation, setReservation] = useState<PublicReservationDetail | null>(null)
   const [loading, setLoading] = useState(true)
@@ -46,17 +55,20 @@ export function ManageBooking({ venueSlug, cancelSecret, timezone, t, onBack }: 
 
   if (loading) {
     return (
-      <div class="flex items-center justify-center py-16">
-        <Spinner size={32} />
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '64px 0' }}>
+        <Spinner size={28} />
       </div>
     )
   }
 
   if (error || !reservation) {
     return (
-      <div class="space-y-4 py-8 text-center">
-        <p class="text-[var(--avq-fg,#111827)] font-semibold">{t('errors.reservationNotFound')}</p>
-        <p class="text-[var(--avq-muted-fg,#6b7280)]">{t('errors.reservationNotFoundDescription')}</p>
+      <div class="avq-animate-in" style={{ padding: '48px 0', textAlign: 'center' }}>
+        <div style={{ width: '48px', height: '48px', borderRadius: '50%', background: 'var(--avq-muted, #f8f9fb)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 12px' }}>
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--avq-muted-fg, #9ca3af)" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+        </div>
+        <p style={{ fontWeight: '600', color: 'var(--avq-fg, #111827)', marginBottom: '4px' }}>{t('errors.reservationNotFound')}</p>
+        <p style={{ fontSize: '14px', color: 'var(--avq-muted-fg, #6b7280)', marginBottom: '20px' }}>{t('errors.reservationNotFoundDescription')}</p>
         <Button variant="outline" onClick={onBack}>{t('actions.goBack')}</Button>
       </div>
     )
@@ -70,55 +82,74 @@ export function ManageBooking({ venueSlug, cancelSecret, timezone, t, onBack }: 
   })
   const timeStr = `${startDate.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', timeZone: timezone })} - ${endDate.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', timeZone: timezone })}`
 
-  const statusColors: Record<string, string> = {
-    PENDING: 'bg-yellow-100 text-yellow-800',
-    CONFIRMED: 'bg-green-100 text-green-800',
-    CHECKED_IN: 'bg-blue-100 text-blue-800',
-    COMPLETED: 'bg-gray-100 text-gray-800',
-    CANCELLED: 'bg-red-100 text-red-800',
-    NO_SHOW: 'bg-orange-100 text-orange-800',
-  }
+  const sc = statusConfig[reservation.status] ?? statusConfig.COMPLETED
 
   return (
-    <div class="space-y-5">
-      <h2 class="text-lg font-semibold text-[var(--avq-fg,#111827)]">{t('manage.title')}</h2>
+    <div class="avq-animate-in">
+      <h2 style={{ fontSize: '18px', fontWeight: '700', color: 'var(--avq-fg, #111827)', marginBottom: '20px' }}>
+        {t('manage.title')}
+      </h2>
 
       {/* Status */}
-      <div class="flex justify-center">
-        <span class={`rounded-full px-3 py-1 text-sm font-medium ${statusColors[reservation.status] ?? 'bg-gray-100 text-gray-800'}`}>
+      <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '16px' }}>
+        <span style={{
+          borderRadius: '8px', padding: '4px 12px',
+          fontSize: '12px', fontWeight: '600',
+          background: sc.bg, color: sc.text,
+          letterSpacing: '0.02em',
+        }}>
           {t(`status.${reservation.status}`)}
         </span>
       </div>
 
       {/* Code */}
-      <div class="rounded-xl bg-[var(--avq-muted,#f3f4f6)] p-4 text-center">
-        <p class="text-sm text-[var(--avq-muted-fg,#6b7280)]">Código</p>
-        <p class="mt-1 text-3xl font-bold tracking-wider text-[var(--avq-fg,#111827)]">{reservation.confirmationCode}</p>
+      <div style={{
+        borderRadius: '14px', padding: '16px',
+        background: 'var(--avq-muted, #f8f9fb)',
+        border: '1px solid var(--avq-border, #e8eaed)',
+        textAlign: 'center', marginBottom: '16px',
+      }}>
+        <p style={{ margin: '0 0 4px', fontSize: '12px', color: 'var(--avq-muted-fg, #6b7280)', fontWeight: '500', textTransform: 'uppercase', letterSpacing: '0.03em' }}>
+          {t('confirmation.code')}
+        </p>
+        <p style={{ margin: 0, fontSize: '26px', fontWeight: '700', letterSpacing: '0.06em', color: 'var(--avq-fg, #111827)' }}>
+          {reservation.confirmationCode}
+        </p>
       </div>
 
       {/* Details */}
-      <div class="space-y-3 rounded-xl border border-[var(--avq-border,#e5e7eb)] p-4">
-        <div class="flex items-start gap-3">
-          <svg xmlns="http://www.w3.org/2000/svg" class="mt-0.5 h-5 w-5 text-[var(--avq-muted-fg,#6b7280)]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+      <div style={{
+        borderRadius: '14px', border: '1px solid var(--avq-border, #e8eaed)',
+        padding: '16px', marginBottom: '20px',
+        display: 'flex', flexDirection: 'column', gap: '14px',
+      }}>
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
+          <div style={{ width: '36px', height: '36px', borderRadius: '8px', background: 'var(--avq-muted, #f8f9fb)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--avq-muted-fg, #6b7280)" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+          </div>
           <div>
-            <p class="font-medium text-[var(--avq-fg,#111827)]">{dateStr}</p>
-            <p class="text-sm text-[var(--avq-muted-fg,#6b7280)]">{timeStr}</p>
+            <p style={{ margin: 0, fontSize: '14px', fontWeight: '500', color: 'var(--avq-fg, #111827)', textTransform: 'capitalize' }}>{dateStr}</p>
+            <p style={{ margin: '2px 0 0', fontSize: '13px', color: 'var(--avq-muted-fg, #6b7280)' }}>{timeStr}</p>
           </div>
         </div>
 
         {reservation.product && (
-          <div class="flex items-center gap-3">
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-[var(--avq-muted-fg,#6b7280)]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-            <p class="text-[var(--avq-fg,#111827)]">{reservation.product.name}</p>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <div style={{ width: '36px', height: '36px', borderRadius: '8px', background: 'var(--avq-muted, #f8f9fb)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--avq-muted-fg, #6b7280)" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+            </div>
+            <p style={{ margin: 0, fontSize: '14px', color: 'var(--avq-fg, #111827)' }}>{reservation.product.name}</p>
           </div>
         )}
 
         {reservation.specialRequests && (
-          <div class="flex items-start gap-3">
-            <svg xmlns="http://www.w3.org/2000/svg" class="mt-0.5 h-5 w-5 text-[var(--avq-muted-fg,#6b7280)]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
+            <div style={{ width: '36px', height: '36px', borderRadius: '8px', background: 'var(--avq-muted, #f8f9fb)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--avq-muted-fg, #6b7280)" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+            </div>
             <div>
-              <p class="text-sm font-medium text-[var(--avq-fg,#111827)]">{t('manage.specialRequests')}</p>
-              <p class="text-sm text-[var(--avq-muted-fg,#6b7280)]">{reservation.specialRequests}</p>
+              <p style={{ margin: '0 0 2px', fontSize: '13px', fontWeight: '500', color: 'var(--avq-fg, #111827)' }}>{t('manage.specialRequests')}</p>
+              <p style={{ margin: 0, fontSize: '13px', color: 'var(--avq-muted-fg, #6b7280)' }}>{reservation.specialRequests}</p>
             </div>
           </div>
         )}
@@ -126,11 +157,15 @@ export function ManageBooking({ venueSlug, cancelSecret, timezone, t, onBack }: 
 
       {/* Cancel dialog inline */}
       {showCancel && (
-        <div class="rounded-xl border border-red-200 bg-red-50 p-4 space-y-3">
-          <h3 class="font-semibold text-red-800">{t('manage.cancelTitle')}</h3>
-          <p class="text-sm text-red-700">{t('manage.cancelDescription')}</p>
-          <div class="space-y-1">
-            <label class="block text-sm font-medium text-red-800">{t('manage.cancelReasonLabel')}</label>
+        <div style={{
+          borderRadius: '14px', border: '1.5px solid #fecaca',
+          background: '#fef2f2', padding: '16px',
+          marginBottom: '16px',
+        }}>
+          <h3 style={{ margin: '0 0 6px', fontSize: '15px', fontWeight: '600', color: '#991b1b' }}>{t('manage.cancelTitle')}</h3>
+          <p style={{ margin: '0 0 12px', fontSize: '13px', color: '#b91c1c' }}>{t('manage.cancelDescription')}</p>
+          <div style={{ marginBottom: '12px' }}>
+            <label style={{ display: 'block', fontSize: '13px', fontWeight: '500', color: '#991b1b', marginBottom: '6px' }}>{t('manage.cancelReasonLabel')}</label>
             <Textarea
               value={cancelReason}
               onInput={(e) => setCancelReason((e.target as HTMLTextAreaElement).value)}
@@ -138,22 +173,17 @@ export function ManageBooking({ venueSlug, cancelSecret, timezone, t, onBack }: 
               rows={2}
             />
           </div>
-          <div class="flex gap-2">
+          <div style={{ display: 'flex', gap: '8px' }}>
             <Button variant="outline" onClick={() => setShowCancel(false)} class="flex-1">{t('actions.goBack')}</Button>
-            <button
-              type="button"
-              onClick={handleCancel}
-              disabled={cancelling}
-              class="flex-1 rounded-lg bg-red-600 text-white text-sm font-medium py-2.5 hover:bg-red-700 disabled:opacity-50 transition-colors"
-            >
+            <Button variant="destructive" onClick={handleCancel} disabled={cancelling} class="flex-1">
               {cancelling ? <Spinner size={16} /> : t('manage.cancelConfirm')}
-            </button>
+            </Button>
           </div>
         </div>
       )}
 
       {/* Actions */}
-      <div class="space-y-3">
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
         {!isCancelled && reservation.status !== 'COMPLETED' && reservation.status !== 'NO_SHOW' && !showCancel && (
           <Button variant="destructive" fullWidth onClick={() => setShowCancel(true)}>
             {t('manage.cancelButton')}

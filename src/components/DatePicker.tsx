@@ -52,11 +52,15 @@ export function DatePicker({ selectedDate, onSelect, maxAdvanceDays = 30, timezo
 
   return (
     <div>
-      <h2 style={{ fontSize: '18px', fontWeight: '600', marginBottom: '20px', color: 'var(--avq-fg, #111827)' }}>
+      <h2 style={{ fontSize: '16px', fontWeight: '600', marginBottom: '16px', color: 'var(--avq-fg, #111827)' }}>
         {t('date.title')}
       </h2>
 
-      <div style={{ borderRadius: '16px', border: '1px solid var(--avq-border, #e5e7eb)', padding: '20px', background: 'var(--avq-bg, #fff)' }}>
+      <div style={{
+        borderRadius: '16px', border: '1px solid var(--avq-border, #e8eaed)',
+        padding: '20px', background: 'var(--avq-bg, #fff)',
+        boxShadow: 'var(--avq-card-shadow, 0 1px 3px rgba(0,0,0,0.04))',
+      }}>
         {/* Month nav */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px' }}>
           <button
@@ -66,12 +70,12 @@ export function DatePicker({ selectedDate, onSelect, maxAdvanceDays = 30, timezo
             onMouseEnter={() => setPrevHovered(true)}
             onMouseLeave={() => setPrevHovered(false)}
             style={{
-              width: '32px', height: '32px', borderRadius: '8px', border: 'none',
-              background: prevHovered && canGoPrev ? 'var(--avq-muted, #f3f4f6)' : 'transparent',
-              color: canGoPrev ? 'var(--avq-fg, #111827)' : 'var(--avq-border, #e5e7eb)',
+              width: '36px', height: '36px', borderRadius: '10px', border: 'none',
+              background: prevHovered && canGoPrev ? 'var(--avq-muted, #f8f9fb)' : 'transparent',
+              color: canGoPrev ? 'var(--avq-fg, #111827)' : 'var(--avq-border, #e8eaed)',
               cursor: canGoPrev ? 'pointer' : 'not-allowed',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
-              transition: 'background 150ms ease',
+              transition: 'background 0.2s ease',
             }}
           >
             <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
@@ -87,11 +91,11 @@ export function DatePicker({ selectedDate, onSelect, maxAdvanceDays = 30, timezo
             onMouseEnter={() => setNextHovered(true)}
             onMouseLeave={() => setNextHovered(false)}
             style={{
-              width: '32px', height: '32px', borderRadius: '8px', border: 'none',
-              background: nextHovered ? 'var(--avq-muted, #f3f4f6)' : 'transparent',
+              width: '36px', height: '36px', borderRadius: '10px', border: 'none',
+              background: nextHovered ? 'var(--avq-muted, #f8f9fb)' : 'transparent',
               color: 'var(--avq-fg, #111827)', cursor: 'pointer',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
-              transition: 'background 150ms ease',
+              transition: 'background 0.2s ease',
             }}
           >
             <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
@@ -99,16 +103,20 @@ export function DatePicker({ selectedDate, onSelect, maxAdvanceDays = 30, timezo
         </div>
 
         {/* Week headers */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', marginBottom: '4px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', marginBottom: '6px' }}>
           {WEEK_HEADERS.map(d => (
-            <div key={d} style={{ textAlign: 'center', fontSize: '12px', fontWeight: '600', color: 'var(--avq-muted-fg, #9ca3af)', padding: '4px 0', letterSpacing: '0.05em' }}>
+            <div key={d} style={{
+              textAlign: 'center', fontSize: '12px', fontWeight: '600',
+              color: 'var(--avq-muted-fg, #9ca3af)', padding: '4px 0',
+              letterSpacing: '0.05em',
+            }}>
               {d}
             </div>
           ))}
         </div>
 
         {/* Days grid */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '2px' }}>
           {days.map(day => {
             const key = format(day, 'yyyy-MM-dd')
             const notThisMonth = !isSameMonth(day, viewMonth)
@@ -120,7 +128,7 @@ export function DatePicker({ selectedDate, onSelect, maxAdvanceDays = 30, timezo
             if (notThisMonth) return <div key={key} style={{ height: '40px' }} />
 
             return (
-              <div key={key} style={{ display: 'flex', justifyContent: 'center', padding: '2px 0' }}>
+              <div key={key} style={{ display: 'flex', justifyContent: 'center', padding: '1px 0' }}>
                 <button
                   type="button"
                   disabled={disabled}
@@ -128,20 +136,21 @@ export function DatePicker({ selectedDate, onSelect, maxAdvanceDays = 30, timezo
                   onMouseEnter={() => !disabled && setHoveredKey(key)}
                   onMouseLeave={() => setHoveredKey(null)}
                   style={{
-                    width: '36px', height: '36px', borderRadius: '50%', padding: 0,
+                    width: '38px', height: '38px', borderRadius: '10px', padding: 0,
                     border: isTodayDate && !isSelected ? '1.5px solid var(--avq-accent, #6366f1)' : 'none',
                     background: isSelected
                       ? 'var(--avq-accent, #6366f1)'
-                      : isHov ? 'var(--avq-muted, #f3f4f6)' : 'transparent',
+                      : isHov ? 'var(--avq-muted, #f8f9fb)' : 'transparent',
                     color: isSelected ? '#ffffff'
                       : isTodayDate ? 'var(--avq-accent, #6366f1)'
                       : 'var(--avq-fg, #111827)',
                     fontSize: '14px',
                     fontWeight: isSelected || isTodayDate ? '600' : '400',
                     cursor: disabled ? 'not-allowed' : 'pointer',
-                    opacity: disabled ? 0.28 : 1,
-                    transition: 'background 150ms ease, color 150ms ease',
+                    opacity: disabled ? 0.25 : 1,
+                    transition: 'all 0.15s ease',
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    boxShadow: isSelected ? '0 2px 8px color-mix(in srgb, var(--avq-accent, #6366f1) 30%, transparent)' : 'none',
                   }}
                 >
                   {format(day, 'd')}

@@ -19,18 +19,24 @@ class AvoqadoBookingWidget extends HTMLElement {
     // Inject styles (Tailwind CSS inlined by Vite build)
     const styleEl = document.createElement('style')
     styleEl.textContent = `
-      :host { display: block; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+      :host { display: block; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
       .avq-root { box-sizing: border-box; }
       *, *::before, *::after { box-sizing: inherit; }
-      [data-avq-theme="light"] { --avq-bg: #ffffff; --avq-fg: #111827; --avq-muted: #f3f4f6; --avq-muted-hover: #e5e7eb; --avq-muted-fg: #6b7280; --avq-border: #e5e7eb; }
-      [data-avq-theme="dark"] { --avq-bg: #0f172a; --avq-fg: #f8fafc; --avq-muted: #1e293b; --avq-muted-hover: #334155; --avq-muted-fg: #94a3b8; --avq-border: #334155; }
-      [data-avq-theme="auto"] { --avq-bg: #ffffff; --avq-fg: #111827; --avq-muted: #f3f4f6; --avq-muted-hover: #e5e7eb; --avq-muted-fg: #6b7280; --avq-border: #e5e7eb; }
+      [data-avq-theme="light"] { --avq-bg: #ffffff; --avq-fg: #111827; --avq-muted: #f8f9fb; --avq-muted-hover: #eef0f4; --avq-muted-fg: #6b7280; --avq-border: #e8eaed; --avq-card-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.02); }
+      [data-avq-theme="dark"] { --avq-bg: #0f172a; --avq-fg: #f8fafc; --avq-muted: #1e293b; --avq-muted-hover: #334155; --avq-muted-fg: #94a3b8; --avq-border: #334155; --avq-card-shadow: 0 1px 3px rgba(0,0,0,0.3), 0 1px 2px rgba(0,0,0,0.2); }
+      [data-avq-theme="auto"] { --avq-bg: #ffffff; --avq-fg: #111827; --avq-muted: #f8f9fb; --avq-muted-hover: #eef0f4; --avq-muted-fg: #6b7280; --avq-border: #e8eaed; --avq-card-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.02); }
       @media (prefers-color-scheme: dark) {
-        [data-avq-theme="auto"] { --avq-bg: #0f172a; --avq-fg: #f8fafc; --avq-muted: #1e293b; --avq-muted-hover: #334155; --avq-muted-fg: #94a3b8; --avq-border: #334155; }
+        [data-avq-theme="auto"] { --avq-bg: #0f172a; --avq-fg: #f8fafc; --avq-muted: #1e293b; --avq-muted-hover: #334155; --avq-muted-fg: #94a3b8; --avq-border: #334155; --avq-card-shadow: 0 1px 3px rgba(0,0,0,0.3), 0 1px 2px rgba(0,0,0,0.2); }
       }
       .avq-root { background: var(--avq-bg, #ffffff); color: var(--avq-fg, #111827); }
       .animate-spin { animation: spin 1s linear infinite; }
       @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+      @keyframes avq-fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+      @keyframes avq-scaleIn { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: scale(1); } }
+      @keyframes avq-checkmark { 0% { stroke-dashoffset: 24; } 100% { stroke-dashoffset: 0; } }
+      @keyframes avq-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.6; } }
+      .avq-animate-in { animation: avq-fadeIn 0.35s ease-out; }
+      .avq-animate-scale { animation: avq-scaleIn 0.3s ease-out; }
       .space-y-1 > * + * { margin-top: 0.25rem; }
       .space-y-1\\.5 > * + * { margin-top: 0.375rem; }
       .space-y-2 > * + * { margin-top: 0.5rem; }
@@ -117,9 +123,9 @@ class AvoqadoBookingWidget extends HTMLElement {
       .-translate-x-1\\/2 { transform: translateX(-50%); }
       .object-cover { object-fit: cover; }
       .overflow-hidden { overflow: hidden; }
-      .transition-all { transition: all 0.15s ease; }
-      .transition-colors { transition: color 0.15s ease, background-color 0.15s ease, border-color 0.15s ease; }
-      .transition-opacity { transition: opacity 0.15s ease; }
+      .transition-all { transition: all 0.2s cubic-bezier(0.4,0,0.2,1); }
+      .transition-colors { transition: color 0.2s ease, background-color 0.2s ease, border-color 0.2s ease; }
+      .transition-opacity { transition: opacity 0.2s ease; }
       .duration-300 { transition-duration: 300ms; }
       .opacity-30 { opacity: 0.3; }
       .opacity-50 { opacity: 0.5; }
@@ -127,7 +133,7 @@ class AvoqadoBookingWidget extends HTMLElement {
       .invisible { visibility: hidden; }
       .shadow-lg { box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1), 0 4px 6px -2px rgba(0,0,0,0.05); }
       .focus\\:outline-none:focus { outline: none; }
-      .focus\\:ring-2:focus { box-shadow: 0 0 0 2px var(--avq-accent, #6366f1); }
+      .focus\\:ring-2:focus { box-shadow: 0 0 0 3px color-mix(in srgb, var(--avq-accent, #6366f1) 25%, transparent); }
       .disabled\\:opacity-50:disabled { opacity: 0.5; }
       .disabled\\:cursor-not-allowed:disabled { cursor: not-allowed; }
       .hover\\:opacity-90:hover { opacity: 0.9; }
@@ -148,6 +154,7 @@ class AvoqadoBookingWidget extends HTMLElement {
       .text-red-700 { color: #b91c1c; }
       .text-red-800 { color: #991b1b; }
       .border-red-200 { border-color: #fecaca; }
+      .border-red-500 { border-color: #ef4444; }
       .hover\\:bg-red-700:hover { background-color: #b91c1c; }
       .bg-blue-100 { background-color: #dbeafe; }
       .text-blue-800 { color: #1e40af; }
@@ -156,6 +163,8 @@ class AvoqadoBookingWidget extends HTMLElement {
       .bg-gray-100 { background-color: #f3f4f6; }
       .text-gray-800 { color: #1f2937; }
       .text-white { color: #ffffff; }
+      .avq-footer-link { color: var(--avq-muted-fg, #9ca3af); text-decoration: none; display: inline-flex; align-items: center; gap: 6px; transition: color 0.2s ease; }
+      .avq-footer-link:hover { color: var(--avq-fg, #111827); }
     `
     this._shadow.appendChild(styleEl)
 
