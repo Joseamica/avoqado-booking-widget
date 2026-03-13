@@ -8,6 +8,8 @@ import {
   step, venueInfo, selectedProduct, selectedDate, selectedSlot,
   selectedSpotIds, bookingResult, isLoading, apiError, manageSecret,
   hasServiceStep, getStepConfig, resetBooking, showToast,
+  creditPacks, customerCredits, selectedCreditBalance, creditPacksLoading,
+  showPortal, portalData, customerToken, customerInfo, setCustomerSession, clearCustomerSession,
 } from '../state/booking'
 import { StepIndicator } from './StepIndicator'
 import { ServiceSelector } from './ServiceSelector'
@@ -19,6 +21,9 @@ import { DepositStep } from './DepositStep'
 import { Confirmation } from './Confirmation'
 import { ManageBooking } from './ManageBooking'
 import { Spinner } from './ui/Spinner'
+import { CreditPackBanner } from './CreditPackBanner'
+import { CreditSelector } from './CreditSelector'
+import { CustomerPortal } from './CustomerPortal'
 import type { GuestFormData } from './GuestInfoForm'
 
 interface BookingFlowProps {
@@ -54,6 +59,13 @@ export function BookingFlow({ props }: BookingFlowProps) {
   const [slots, setSlots] = useState<PublicSlot[]>([])
   const [slotsLoading, setSlotsLoading] = useState(false)
   const [seatPickerActive, setSeatPickerActive] = useState(false)
+  const [buyingPackId, setBuyingPackId] = useState<string | null>(null)
+  const [checkoutPackId, setCheckoutPackId] = useState<string | null>(null)
+  const [checkoutPhone, setCheckoutPhone] = useState('')
+  const [checkoutEmail, setCheckoutEmail] = useState('')
+  const [pendingFormData, setPendingFormData] = useState<GuestFormData | null>(null)
+  const [showCreditSelector, setShowCreditSelector] = useState(false)
+  const [showNoCreditsBuyPrompt, setShowNoCreditsBuyPrompt] = useState(false)
 
   // Load venue info on mount
   useEffect(() => {
@@ -64,11 +76,31 @@ export function BookingFlow({ props }: BookingFlowProps) {
       .then(info => {
         venueInfo.value = info
         resetBooking(info)
+        // Load credit packs in background
+        api.getCreditPacks(props.venue).then(packs => {
+          creditPacks.value = packs
+        }).catch(() => { /* silently ignore */ })
       })
       .catch((err) => {
         apiError.value = err.status === 404 ? t('errors.venueNotFound') : t('errors.generic')
       })
       .finally(() => { isLoading.value = false })
+  }, [props.venue])
+
+  // Load full portal data in background if customer is logged in
+  useEffect(() => {
+    if (customerToken.value && !portalData.value) {
+      api.getCustomerPortal(props.venue, customerToken.value).then(data => {
+        portalData.value = data
+        // Backfill customerInfo if not yet stored (e.g. login from older version)
+        if (!customerInfo.value && data.customer) {
+          const { id, firstName, lastName, email, phone } = data.customer
+          setCustomerSession(customerToken.value!, { id, firstName, lastName, email, phone })
+        }
+      }).catch(() => {
+        clearCustomerSession()
+      })
+    }
   }, [props.venue])
 
   // Fetch available slots for a date
@@ -154,6 +186,47 @@ export function BookingFlow({ props }: BookingFlowProps) {
     )
   }
 
+  // Customer portal screen
+  if (showPortal.value) {
+    return (
+      <div>
+        {/* Venue header */}
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px', marginBottom: '28px', paddingTop: '4px' }}>
+          {info.logo ? (
+            <img src={info.logo} alt={info.name} style={{ width: '56px', height: '56px', borderRadius: '14px', objectFit: 'cover', boxShadow: 'var(--avq-card-shadow, 0 1px 3px rgba(0,0,0,0.04))', border: '1px solid var(--avq-border, #e8eaed)' }} />
+          ) : (
+            <div style={{ width: '56px', height: '56px', borderRadius: '14px', background: 'var(--avq-accent, #6366f1)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '22px', fontWeight: '700', color: '#ffffff', boxShadow: '0 2px 8px rgba(99,102,241,0.25)' }}>
+              {info.name.charAt(0).toUpperCase()}
+            </div>
+          )}
+          <h1 style={{ fontSize: '18px', fontWeight: '700', color: 'var(--avq-fg, #111827)', margin: 0, letterSpacing: '-0.01em' }}>{info.name}</h1>
+        </div>
+
+        <CustomerPortal
+          venueSlug={props.venue}
+          timezone={info.timezone}
+          t={t}
+          onBack={() => {
+            showPortal.value = false
+            portalData.value = null
+          }}
+          onManageBooking={(cancelSecret) => {
+            showPortal.value = false
+            manageSecret.value = cancelSecret
+            step.value = MANAGE_STEP
+          }}
+        />
+        {/* Avoqado footer */}
+        <div style={{ marginTop: '32px', textAlign: 'center', paddingBottom: '4px' }}>
+          <a href="https://avoqado.io" target="_blank" rel="noopener noreferrer" class="avq-footer-link" style={{ fontSize: '12px', justifyContent: 'center' }}>
+            <AvoqadoLogo />
+            <span>{t('poweredBy')}</span>
+          </a>
+        </div>
+      </div>
+    )
+  }
+
   // Manage booking screen
   if (step.value === MANAGE_STEP) {
     return (
@@ -185,6 +258,18 @@ export function BookingFlow({ props }: BookingFlowProps) {
     || (step.value === config.timeStep && seatPickerActive)
 
   function handleBack() {
+    // If showing no-credits buy prompt, go back to form
+    if (showNoCreditsBuyPrompt) {
+      setShowNoCreditsBuyPrompt(false)
+      setPendingFormData(null)
+      return
+    }
+    // If showing credit selector, go back to form
+    if (showCreditSelector) {
+      setShowCreditSelector(false)
+      setPendingFormData(null)
+      return
+    }
     if (step.value === config.formStep) {
       // If product has layout, go back to seat picker
       if (selectedProduct.value?.layoutConfig && selectedSlot.value?.classSessionId) {
@@ -206,7 +291,36 @@ export function BookingFlow({ props }: BookingFlowProps) {
     } else if (step.value === config.dateStep && hasServiceStep.value) step.value = config.serviceStep
   }
 
-  async function handleFormSubmit(data: GuestFormData) {
+  // Handle buying a credit pack — show checkout form first
+  function handleBuyPack(packId: string) {
+    setCheckoutPackId(packId)
+    setCheckoutPhone('')
+    setCheckoutEmail('')
+  }
+
+  async function handleCheckoutSubmit() {
+    if (!checkoutPackId || !checkoutPhone.trim()) return
+    setBuyingPackId(checkoutPackId)
+    try {
+      const currentUrl = window.location.href
+      const result = await api.createPackCheckout(props.venue, checkoutPackId, {
+        phone: checkoutPhone.trim(),
+        email: checkoutEmail.trim() || undefined,
+        successUrl: currentUrl,
+        cancelUrl: currentUrl,
+      })
+      if (result.checkoutUrl) {
+        window.location.href = result.checkoutUrl
+      }
+    } catch (err: any) {
+      showToast(err.data?.message ?? t('errors.generic'), 'error')
+    } finally {
+      setBuyingPackId(null)
+    }
+  }
+
+  // Submit reservation (with optional credit)
+  async function submitReservation(data: GuestFormData, creditBalanceId?: string) {
     const slot = selectedSlot.value
     if (!slot) return
     isLoading.value = true
@@ -225,9 +339,12 @@ export function BookingFlow({ props }: BookingFlowProps) {
         classSessionId: slot.classSessionId || undefined,
         spotIds: spots.length > 0 ? spots : undefined,
         specialRequests: data.specialRequests || undefined,
+        creditItemBalanceId: creditBalanceId || undefined,
       })
       bookingResult.value = result
       step.value = config.confirmStep
+      setShowCreditSelector(false)
+      setPendingFormData(null)
       dispatchEvent('avoqado:confirmed', {
         confirmationCode: result.confirmationCode,
         startsAt: result.startsAt,
@@ -238,14 +355,66 @@ export function BookingFlow({ props }: BookingFlowProps) {
       if (err.status === 409) {
         showToast(t('errors.slotTaken'), 'error')
         selectedSlot.value = null
-        fetchSlots() // Refresh slots so user sees updated capacity
+        fetchSlots()
         step.value = config.timeStep
+        setShowCreditSelector(false)
+        setPendingFormData(null)
       } else {
         showToast(err.data?.message ?? t('errors.generic'), 'error')
       }
     } finally {
       isLoading.value = false
     }
+  }
+
+  async function handleFormSubmit(data: GuestFormData) {
+    // Check if customer has credits for the selected product
+    const productId = selectedProduct.value?.id
+    const requiresCredit = selectedProduct.value?.requireCreditForBooking === true
+
+    if (productId && (data.guestEmail || data.guestPhone)) {
+      try {
+        const credits = await api.getCustomerCredits(props.venue, {
+          email: data.guestEmail || undefined,
+          phone: data.guestPhone,
+        })
+        customerCredits.value = credits
+
+        // Check if any balances match the selected product
+        const hasMatchingCredits = credits.purchases.some(p =>
+          p.status === 'ACTIVE' &&
+          p.itemBalances.some(b => b.productId === productId && b.remainingQuantity > 0)
+        )
+
+        if (hasMatchingCredits) {
+          // Show credit selector (auto-use if required, or let user choose)
+          setPendingFormData(data)
+          setShowCreditSelector(true)
+          return
+        }
+
+        // No matching credits — block if required, show buy prompt
+        if (requiresCredit) {
+          setPendingFormData(data)
+          setShowNoCreditsBuyPrompt(true)
+          return
+        }
+      } catch {
+        // No credits found or error
+        if (requiresCredit) {
+          setPendingFormData(data)
+          setShowNoCreditsBuyPrompt(true)
+          return
+        }
+      }
+    } else if (requiresCredit) {
+      // Can't check credits without contact info
+      showToast(t('creditPacks.requiredNoCredits'), 'error')
+      return
+    }
+
+    // No credits available — submit directly
+    await submitReservation(data)
   }
 
   return (
@@ -279,6 +448,24 @@ export function BookingFlow({ props }: BookingFlowProps) {
         <h1 style={{ fontSize: '18px', fontWeight: '700', color: 'var(--avq-fg, #111827)', margin: 0, letterSpacing: '-0.01em' }}>
           {info.name}
         </h1>
+        {/* My Account link */}
+        <button
+          type="button"
+          onClick={() => { showPortal.value = true }}
+          style={{
+            display: 'inline-flex', alignItems: 'center', gap: '4px',
+            background: 'none', border: 'none', cursor: 'pointer',
+            fontSize: '13px', fontWeight: '500',
+            color: 'var(--avq-accent, #6366f1)',
+            padding: 0,
+          }}
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+            <circle cx="12" cy="7" r="4" />
+          </svg>
+          {t('portal.myAccount')}
+        </button>
       </div>
 
       {/* Step indicator */}
@@ -312,30 +499,50 @@ export function BookingFlow({ props }: BookingFlowProps) {
       {/* Steps */}
       <div class="avq-animate-in" key={step.value}>
         {step.value === config.serviceStep && hasServiceStep.value && (
-          <ServiceSelector
-            products={info.products}
-            selectedProductId={selectedProduct.value?.id ?? null}
-            onSelect={(product) => {
-              selectedProduct.value = product
-              step.value = config.dateStep
-            }}
-            t={t}
-          />
+          <div>
+            <ServiceSelector
+              products={info.products}
+              selectedProductId={selectedProduct.value?.id ?? null}
+              onSelect={(product) => {
+                selectedProduct.value = product
+                step.value = config.dateStep
+              }}
+              t={t}
+            />
+            {creditPacks.value.length > 0 && (
+              <CreditPackBanner
+                packs={creditPacks.value}
+                onBuy={handleBuyPack}
+                buyingPackId={buyingPackId}
+                t={t}
+              />
+            )}
+          </div>
         )}
 
         {step.value === config.dateStep && (
-          <DatePicker
-            selectedDate={selectedDate.value}
-            onSelect={(date) => {
-              selectedDate.value = date
-              selectedSlot.value = null
-              step.value = config.timeStep
-            }}
-            maxAdvanceDays={30}
-            timezone={info.timezone}
-            operatingHours={info.operatingHours}
-            t={t}
-          />
+          <div>
+            <DatePicker
+              selectedDate={selectedDate.value}
+              onSelect={(date) => {
+                selectedDate.value = date
+                selectedSlot.value = null
+                step.value = config.timeStep
+              }}
+              maxAdvanceDays={30}
+              timezone={info.timezone}
+              operatingHours={info.operatingHours}
+              t={t}
+            />
+            {!hasServiceStep.value && creditPacks.value.length > 0 && (
+              <CreditPackBanner
+                packs={creditPacks.value}
+                onBuy={handleBuyPack}
+                buyingPackId={buyingPackId}
+                t={t}
+              />
+            )}
+          </div>
         )}
 
         {step.value === config.timeStep && !seatPickerActive && (
@@ -379,7 +586,7 @@ export function BookingFlow({ props }: BookingFlowProps) {
           />
         )}
 
-        {step.value === config.formStep && (
+        {step.value === config.formStep && !showCreditSelector && !showNoCreditsBuyPrompt && (
           <GuestInfoForm
             venueInfo={info}
             selectedSlot={selectedSlot.value}
@@ -387,7 +594,75 @@ export function BookingFlow({ props }: BookingFlowProps) {
             onSubmit={handleFormSubmit}
             isSubmitting={isLoading.value}
             t={t}
+            loggedInCustomer={customerInfo.value}
           />
+        )}
+
+        {step.value === config.formStep && showCreditSelector && customerCredits.value && pendingFormData && (
+          <CreditSelector
+            credits={customerCredits.value}
+            productId={selectedProduct.value?.id || ''}
+            required={selectedProduct.value?.requireCreditForBooking === true}
+            onSelect={(balanceId) => {
+              selectedCreditBalance.value = { balanceId, productId: selectedProduct.value?.id || '' }
+              submitReservation(pendingFormData!, balanceId)
+            }}
+            onSkip={() => {
+              setShowCreditSelector(false)
+              submitReservation(pendingFormData!)
+            }}
+            t={t}
+          />
+        )}
+
+        {step.value === config.formStep && showNoCreditsBuyPrompt && (
+          <div class="avq-animate-in" style={{ padding: '4px 0' }}>
+            {/* Warning header */}
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: '8px',
+              padding: '12px 14px', borderRadius: '12px',
+              background: 'color-mix(in srgb, #f59e0b 8%, var(--avq-bg, #ffffff))',
+              border: '1px solid color-mix(in srgb, #f59e0b 20%, transparent)',
+              marginBottom: '16px',
+            }}>
+              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#d97706" stroke-width="2">
+                <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+                <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+              </svg>
+              <span style={{ fontSize: '14px', fontWeight: '500', color: '#92400e' }}>
+                {t('creditPacks.requiredNoCredits')}
+              </span>
+            </div>
+
+            {/* Credit packs to buy */}
+            {creditPacks.value.length > 0 && (
+              <CreditPackBanner
+                packs={creditPacks.value}
+                onBuy={handleBuyPack}
+                buyingPackId={buyingPackId}
+                t={t}
+              />
+            )}
+
+            {/* Go back button */}
+            <button
+              type="button"
+              onClick={() => {
+                setShowNoCreditsBuyPrompt(false)
+                setPendingFormData(null)
+              }}
+              style={{
+                width: '100%', padding: '12px', marginTop: '16px',
+                borderRadius: '12px', border: '1.5px solid var(--avq-border, #e8eaed)',
+                background: 'var(--avq-bg, #ffffff)',
+                fontSize: '13px', fontWeight: '500', color: 'var(--avq-muted-fg, #6b7280)',
+                cursor: 'pointer', transition: 'all 0.15s ease',
+                textAlign: 'center',
+              }}
+            >
+              {t('actions.goBack')}
+            </button>
+          </div>
         )}
 
         {step.value === config.confirmStep && bookingResult.value && !bookingResult.value.depositRequired && (
@@ -415,6 +690,82 @@ export function BookingFlow({ props }: BookingFlowProps) {
           />
         )}
       </div>
+
+      {/* Checkout form overlay */}
+      {checkoutPackId && (
+        <div style={{
+          position: 'fixed', inset: 0, zIndex: 100,
+          background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center',
+          padding: '16px',
+        }}>
+          <div style={{
+            background: 'var(--avq-bg, #ffffff)', borderRadius: '16px',
+            padding: '24px', width: '100%', maxWidth: '360px',
+            boxShadow: '0 8px 30px rgba(0,0,0,0.12)',
+          }}>
+            <h3 style={{ fontSize: '16px', fontWeight: '600', color: 'var(--avq-fg, #111827)', margin: '0 0 4px' }}>
+              {t('creditPacks.buy')}
+            </h3>
+            <p style={{ fontSize: '13px', color: 'var(--avq-muted-fg, #6b7280)', margin: '0 0 16px' }}>
+              {t('form.phone')}
+            </p>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              <input
+                type="tel"
+                placeholder={t('form.phonePlaceholder')}
+                value={checkoutPhone}
+                onInput={(e) => setCheckoutPhone((e.target as HTMLInputElement).value)}
+                style={{
+                  width: '100%', height: '44px', padding: '0 12px', borderRadius: '10px',
+                  border: '1.5px solid var(--avq-border, #e8eaed)', fontSize: '14px',
+                  background: 'var(--avq-bg, #ffffff)', color: 'var(--avq-fg, #111827)',
+                  outline: 'none', boxSizing: 'border-box',
+                }}
+              />
+              <input
+                type="email"
+                placeholder={t('form.emailPlaceholder')}
+                value={checkoutEmail}
+                onInput={(e) => setCheckoutEmail((e.target as HTMLInputElement).value)}
+                style={{
+                  width: '100%', height: '44px', padding: '0 12px', borderRadius: '10px',
+                  border: '1.5px solid var(--avq-border, #e8eaed)', fontSize: '14px',
+                  background: 'var(--avq-bg, #ffffff)', color: 'var(--avq-fg, #111827)',
+                  outline: 'none', boxSizing: 'border-box',
+                }}
+              />
+            </div>
+
+            <div style={{ display: 'flex', gap: '8px', marginTop: '16px' }}>
+              <button
+                type="button"
+                onClick={() => setCheckoutPackId(null)}
+                style={{
+                  flex: 1, height: '44px', borderRadius: '10px',
+                  border: '1.5px solid var(--avq-border, #e8eaed)', background: 'var(--avq-bg, #ffffff)',
+                  fontSize: '14px', fontWeight: '500', color: 'var(--avq-fg, #111827)', cursor: 'pointer',
+                }}
+              >
+                {t('actions.goBack')}
+              </button>
+              <button
+                type="button"
+                onClick={handleCheckoutSubmit}
+                disabled={!checkoutPhone.trim() || !!buyingPackId}
+                style={{
+                  flex: 1, height: '44px', borderRadius: '10px',
+                  border: 'none', background: 'var(--avq-accent, #6366f1)',
+                  fontSize: '14px', fontWeight: '600', color: '#ffffff', cursor: 'pointer',
+                  opacity: !checkoutPhone.trim() || buyingPackId ? 0.5 : 1,
+                }}
+              >
+                {buyingPackId ? '...' : t('creditPacks.buy')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Avoqado footer */}
       <div style={{ marginTop: '32px', textAlign: 'center', paddingBottom: '4px' }}>

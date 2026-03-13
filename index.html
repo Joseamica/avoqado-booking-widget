@@ -5,18 +5,61 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Avoqado Booking Widget — Dev</title>
     <style>
-      body { font-family: sans-serif; padding: 2rem; background: #f0f0f0; }
-      h1 { font-size: 1.5rem; margin-bottom: 1rem; color: #333; }
+      body { font-family: sans-serif; padding: 2rem; background: #f0f0f0; max-width: 800px; margin: 0 auto; }
+      h1 { font-size: 1.5rem; margin-bottom: 0.5rem; color: #333; }
+      h2 { font-size: 1.1rem; color: #666; margin: 2rem 0 0.75rem; padding-top: 1rem; border-top: 1px solid #ddd; }
+      .section { margin-bottom: 2rem; }
+      code { background: #fff; padding: 2px 6px; border-radius: 4px; font-size: 0.85em; border: 1px solid #ddd; }
     </style>
   </head>
   <body>
-    <h1>Avoqado Booking Widget — Dev Test</h1>
-    <avoqado-booking
-      venue="avoqado-full"
-      locale="es"
-      theme="light"
-      mode="inline"
-    ></avoqado-booking>
+    <h1>Avoqado Widget — Dev Test</h1>
+    <p>Testing all widget modes. Same <code>venue="avoqado-full"</code> across all.</p>
+
+    <!-- 1. Full all-in-one (existing) -->
+    <h2>1. &lt;avoqado-booking&gt; — Full widget</h2>
+    <div class="section">
+      <avoqado-booking
+        venue="avoqado-full"
+        locale="es"
+        theme="light"
+        mode="inline"
+      ></avoqado-booking>
+    </div>
+
+    <!-- 2. Book button (opens modal) -->
+    <h2>2. &lt;avoqado-book-button&gt; — Button + Modal</h2>
+    <div class="section">
+      <avoqado-book-button
+        venue="avoqado-full"
+        locale="es"
+        theme="light"
+        button-text="Reservar"
+      ></avoqado-book-button>
+    </div>
+
+    <!-- 3. Standalone portal -->
+    <h2>3. &lt;avoqado-portal&gt; — Customer account</h2>
+    <div class="section">
+      <avoqado-portal
+        venue="avoqado-full"
+        locale="es"
+        theme="light"
+      ></avoqado-portal>
+    </div>
+
+    <!-- 4. Auto-discovery via data attributes -->
+    <h2>4. Auto-discovery via <code>data-avoqado</code></h2>
+    <div class="section">
+      <div
+        data-avoqado="book-button"
+        data-venue="avoqado-full"
+        data-locale="es"
+        data-theme="light"
+        data-button-text="Reserva Automática"
+      ></div>
+    </div>
+
     <script type="module" src="/src/widget.ts"></script>
   </body>
 </html>

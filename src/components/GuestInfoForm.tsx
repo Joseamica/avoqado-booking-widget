@@ -1,5 +1,5 @@
 import { h } from 'preact'
-import { useState } from 'preact/hooks'
+import { useState, useEffect } from 'preact/hooks'
 import { z } from 'zod'
 import type { PublicVenueInfo, PublicSlot } from '../types'
 import type { TFunction } from '../i18n'
@@ -15,6 +15,13 @@ export interface GuestFormData {
   specialRequests?: string
 }
 
+export interface LoggedInCustomer {
+  firstName: string | null
+  lastName: string | null
+  email: string | null
+  phone: string | null
+}
+
 interface GuestInfoFormProps {
   venueInfo: PublicVenueInfo
   selectedSlot?: PublicSlot | null
@@ -22,6 +29,7 @@ interface GuestInfoFormProps {
   onSubmit: (data: GuestFormData) => void
   isSubmitting: boolean
   t: TFunction
+  loggedInCustomer?: LoggedInCustomer | null
 }
 
 function createSchema(requireEmail: boolean) {
@@ -36,13 +44,25 @@ function createSchema(requireEmail: boolean) {
   })
 }
 
-export function GuestInfoForm({ venueInfo, selectedSlot, selectedSpotCount, onSubmit, isSubmitting, t }: GuestInfoFormProps) {
+export function GuestInfoForm({ venueInfo, selectedSlot, selectedSpotCount, onSubmit, isSubmitting, t, loggedInCustomer }: GuestInfoFormProps) {
   const [phone, setPhone] = useState('')
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [partySize, setPartySize] = useState('2')
   const [requests, setRequests] = useState('')
   const [errors, setErrors] = useState<Record<string, string>>({})
+
+  // Pre-fill from logged-in customer
+  useEffect(() => {
+    if (loggedInCustomer) {
+      if (loggedInCustomer.phone && !phone) setPhone(loggedInCustomer.phone)
+      if (loggedInCustomer.firstName && !name) {
+        const fullName = [loggedInCustomer.firstName, loggedInCustomer.lastName].filter(Boolean).join(' ')
+        setName(fullName)
+      }
+      if (loggedInCustomer.email && !email) setEmail(loggedInCustomer.email)
+    }
+  }, [loggedInCustomer])
 
   function handleSubmit(e: Event) {
     e.preventDefault()
@@ -80,6 +100,8 @@ export function GuestInfoForm({ venueInfo, selectedSlot, selectedSpotCount, onSu
     onSubmit(result.data as GuestFormData)
   }
 
+  const isLoggedIn = !!loggedInCustomer && !!(loggedInCustomer.phone || loggedInCustomer.email)
+
   return (
     <form onSubmit={handleSubmit}>
       <h2 style={{ fontSize: '16px', fontWeight: '600', marginBottom: '20px', color: 'var(--avq-fg, #111827)' }}>
@@ -87,52 +109,88 @@ export function GuestInfoForm({ venueInfo, selectedSlot, selectedSpotCount, onSu
       </h2>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
+
+        {/* Logged-in customer banner */}
+        {isLoggedIn && (
+          <div style={{
+            padding: '12px 16px', borderRadius: '12px',
+            background: 'color-mix(in srgb, var(--avq-accent, #6366f1) 6%, var(--avq-bg, #fff))',
+            border: '1px solid color-mix(in srgb, var(--avq-accent, #6366f1) 15%, var(--avq-border, #e8eaed))',
+            display: 'flex', alignItems: 'center', gap: '10px',
+          }}>
+            <div style={{
+              width: '32px', height: '32px', borderRadius: '50%', flexShrink: 0,
+              background: 'var(--avq-accent, #6366f1)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontSize: '13px', fontWeight: '700', color: '#ffffff',
+            }}>
+              {(loggedInCustomer!.firstName ?? loggedInCustomer!.email ?? '?').charAt(0).toUpperCase()}
+            </div>
+            <div style={{ minWidth: 0 }}>
+              <p style={{ margin: 0, fontSize: '13px', fontWeight: '600', color: 'var(--avq-fg, #111827)' }}>
+                {t('form.bookingAs', { name: name || loggedInCustomer!.email || '' })}
+              </p>
+              {loggedInCustomer!.email && (
+                <p style={{ margin: 0, fontSize: '12px', color: 'var(--avq-muted-fg, #6b7280)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {loggedInCustomer!.email}
+                </p>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* Phone */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-          <label for="avq-phone" style={{ fontSize: '13px', fontWeight: '500', color: 'var(--avq-fg, #111827)' }}>
-            {t('form.phone')} *
-          </label>
-          <Input
-            id="avq-phone"
-            type="tel"
-            value={phone}
-            placeholder={t('form.phonePlaceholder')}
-            onInput={(e) => setPhone((e.target as HTMLInputElement).value)}
-            error={errors.guestPhone}
-          />
-          {errors.guestPhone && <p style={{ margin: 0, fontSize: '12px', color: '#ef4444' }}>{errors.guestPhone}</p>}
-        </div>
+        {!isLoggedIn || !loggedInCustomer?.phone ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            <label for="avq-phone" style={{ fontSize: '13px', fontWeight: '500', color: 'var(--avq-fg, #111827)' }}>
+              {t('form.phone')} *
+            </label>
+            <Input
+              id="avq-phone"
+              type="tel"
+              value={phone}
+              placeholder={t('form.phonePlaceholder')}
+              onInput={(e) => setPhone((e.target as HTMLInputElement).value)}
+              error={errors.guestPhone}
+            />
+            {errors.guestPhone && <p style={{ margin: 0, fontSize: '12px', color: '#ef4444' }}>{errors.guestPhone}</p>}
+          </div>
+        ) : null}
 
         {/* Name */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-          <label for="avq-name" style={{ fontSize: '13px', fontWeight: '500', color: 'var(--avq-fg, #111827)' }}>
-            {t('form.name')} *
-          </label>
-          <Input
-            id="avq-name"
-            value={name}
-            placeholder={t('form.namePlaceholder')}
-            onInput={(e) => setName((e.target as HTMLInputElement).value)}
-            error={errors.guestName}
-          />
-          {errors.guestName && <p style={{ margin: 0, fontSize: '12px', color: '#ef4444' }}>{errors.guestName}</p>}
-        </div>
+        {!isLoggedIn || !loggedInCustomer?.firstName ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            <label for="avq-name" style={{ fontSize: '13px', fontWeight: '500', color: 'var(--avq-fg, #111827)' }}>
+              {t('form.name')} *
+            </label>
+            <Input
+              id="avq-name"
+              value={name}
+              placeholder={t('form.namePlaceholder')}
+              onInput={(e) => setName((e.target as HTMLInputElement).value)}
+              error={errors.guestName}
+            />
+            {errors.guestName && <p style={{ margin: 0, fontSize: '12px', color: '#ef4444' }}>{errors.guestName}</p>}
+          </div>
+        ) : null}
 
         {/* Email */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-          <label for="avq-email" style={{ fontSize: '13px', fontWeight: '500', color: 'var(--avq-fg, #111827)' }}>
-            {venueInfo.publicBooking.requireEmail ? `${t('form.email').replace(' (optional)', '').replace(' (opcional)', '')} *` : t('form.email')}
-          </label>
-          <Input
-            id="avq-email"
-            type="email"
-            value={email}
-            placeholder={t('form.emailPlaceholder')}
-            onInput={(e) => setEmail((e.target as HTMLInputElement).value)}
-            error={errors.guestEmail}
-          />
-          {errors.guestEmail && <p style={{ margin: 0, fontSize: '12px', color: '#ef4444' }}>{errors.guestEmail}</p>}
-        </div>
+        {!isLoggedIn || !loggedInCustomer?.email ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            <label for="avq-email" style={{ fontSize: '13px', fontWeight: '500', color: 'var(--avq-fg, #111827)' }}>
+              {venueInfo.publicBooking.requireEmail ? `${t('form.email').replace(' (optional)', '').replace(' (opcional)', '')} *` : t('form.email')}
+            </label>
+            <Input
+              id="avq-email"
+              type="email"
+              value={email}
+              placeholder={t('form.emailPlaceholder')}
+              onInput={(e) => setEmail((e.target as HTMLInputElement).value)}
+              error={errors.guestEmail}
+            />
+            {errors.guestEmail && <p style={{ margin: 0, fontSize: '12px', color: '#ef4444' }}>{errors.guestEmail}</p>}
+          </div>
+        ) : null}
 
         {/* Party size — hidden when spots were pre-selected */}
         {selectedSpotCount && selectedSpotCount > 0 ? (

@@ -23,6 +23,7 @@ export interface Product {
   type?: 'APPOINTMENTS_SERVICE' | 'EVENT' | 'CLASS'
   maxParticipants?: number | null
   layoutConfig?: LayoutConfig | null
+  requireCreditForBooking?: boolean
 }
 
 export interface PublicVenueInfo {
@@ -86,6 +87,7 @@ export interface PublicCreateReservationRequest {
   classSessionId?: string
   spotIds?: string[]
   specialRequests?: string
+  creditItemBalanceId?: string
 }
 
 export interface PublicBookingResult {
@@ -96,6 +98,40 @@ export interface PublicBookingResult {
   status: string
   depositRequired: boolean
   depositAmount: number | null
+  creditRedeemed?: boolean
+}
+
+// Credit Pack types for public widget
+export interface CreditPackPublic {
+  id: string
+  name: string
+  description?: string
+  price: number
+  currency: string
+  validityDays?: number
+  items: {
+    id: string
+    productId: string
+    product: { id: string; name: string; type: string; price: number; imageUrl?: string; duration?: number }
+    quantity: number
+  }[]
+}
+
+export interface CustomerCreditBalance {
+  customer: { id: string; firstName?: string; lastName?: string; email?: string; phone?: string } | null
+  purchases: {
+    id: string
+    creditPack: { name: string }
+    expiresAt?: string
+    status: string
+    itemBalances: {
+      id: string
+      productId: string
+      product: { id: string; name: string; type: string; imageUrl?: string }
+      originalQuantity: number
+      remainingQuantity: number
+    }[]
+  }[]
 }
 
 export interface PublicReservationDetail {
@@ -123,4 +159,58 @@ export interface WidgetProps {
   serviceId?: string
   buttonText?: string
   hostElement: HTMLElement
+}
+
+// Customer Portal types
+export interface CustomerPortalData {
+  customer: {
+    id: string
+    firstName: string | null
+    lastName: string | null
+    email: string | null
+    phone: string | null
+    loyaltyPoints: number
+    totalVisits: number
+  } | null
+  credits: {
+    purchases: Array<{
+      id: string
+      creditPack: { name: string }
+      purchasedAt: string
+      expiresAt: string | null
+      status: string
+      amountPaid: number
+      itemBalances: Array<{
+        id: string
+        productId: string
+        product: { id: string; name: string; type: string; imageUrl: string | null }
+        originalQuantity: number
+        remainingQuantity: number
+      }>
+    }>
+  }
+  reservations: {
+    upcoming: Array<{
+      confirmationCode: string
+      cancelSecret: string
+      status: string
+      startsAt: string
+      endsAt: string
+      duration: number
+      partySize: number
+      guestName: string | null
+      product: { id: string; name: string; price: number | null } | null
+      spotIds?: string[]
+    }>
+    past: Array<{
+      confirmationCode: string
+      status: string
+      startsAt: string
+      endsAt: string
+      duration: number
+      partySize: number
+      guestName: string | null
+      product: { id: string; name: string; price: number | null } | null
+    }>
+  }
 }

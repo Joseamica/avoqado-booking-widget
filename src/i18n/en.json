@@ -11,7 +11,12 @@
     "title": "Select a service",
     "duration": "{{min}} min",
     "noProducts": "No services available",
-    "groupClass": "Group class"
+    "groupClass": "Group class",
+    "tabServices": "Services",
+    "tabClasses": "Classes",
+    "noClasses": "No classes available",
+    "classCapacity": "{{count}} spots",
+    "classCapacity_one": "{{count}} spot"
   },
   "date": {
     "title": "Select a date"
@@ -22,7 +27,11 @@
     "loading": "Loading available times...",
     "spotsLeft": "{{count}} spots left",
     "spotsLeft_one": "{{count}} spot left",
-    "full": "Full"
+    "full": "Full",
+    "morning": "Morning",
+    "afternoon": "Afternoon",
+    "evening": "Evening",
+    "waitlist": "Waitlist"
   },
   "form": {
     "title": "Your details",
@@ -36,7 +45,8 @@
     "specialRequests": "Special requests",
     "specialRequestsPlaceholder": "Allergies, birthday, accessibility needs...",
     "submit": "Confirm Reservation",
-    "submitting": "Booking..."
+    "submitting": "Booking...",
+    "bookingAs": "Booking as {{name}}"
   },
   "validation": {
     "phoneRequired": "Phone is required",
@@ -102,7 +112,7 @@
   "actions": {
     "goBack": "Back",
     "retry": "Try Again",
-    "open": "Book a Table"
+    "open": "Book Now"
   },
   "status": {
     "PENDING": "Pending",
@@ -112,5 +122,60 @@
     "CANCELLED": "Cancelled",
     "NO_SHOW": "No Show"
   },
-  "duration": "{{min}} min"
+  "duration": "{{min}} min",
+  "creditPacks": {
+    "title": "Credit Packs",
+    "buy": "Buy",
+    "includes": "Includes",
+    "validity": "Valid for {{days}} days",
+    "noExpiry": "No expiry",
+    "hasCredits": "You have credits available",
+    "useCredit": "Use Credit",
+    "remaining": "{{remaining}} of {{total}} remaining",
+    "creditUsed": "Credit used",
+    "noCreditNeeded": "No deposit required",
+    "skipCredit": "Don't use credit",
+    "requiredNoCredits": "This service requires credits to book. Purchase a credit pack first."
+  },
+  "portal": {
+    "title": "My Account",
+    "subtitle": "Check your credits and reservations",
+    "login": "Log In",
+    "register": "Create Account",
+    "email": "Email",
+    "password": "Password",
+    "passwordMinChars": "At least 6 characters",
+    "optional": "optional",
+    "loginButton": "Log In",
+    "registerButton": "Create Account",
+    "noAccount": "Don't have an account?",
+    "hasAccount": "Already have an account?",
+    "createAccount": "Create one",
+    "backToBooking": "Back to Booking",
+    "hello": "Hello",
+    "credits": "My Credits",
+    "noCredits": "You have no credits available",
+    "expires": "Expires {{date}}",
+    "upcoming": "Upcoming Reservations",
+    "noUpcoming": "No upcoming reservations",
+    "pastReservations": "Past Reservations",
+    "manage": "Manage",
+    "bookNow": "Make a Reservation",
+    "logout": "Log Out",
+    "myAccount": "My Account",
+    "editProfile": "Edit Profile",
+    "firstName": "First Name",
+    "lastName": "Last Name",
+    "phone": "Phone",
+    "save": "Save",
+    "cancel": "Cancel",
+    "profileUpdated": "Profile updated",
+    "availablePacks": "Credit Packs",
+    "noPacksAvailable": "No packs available",
+    "buyPack": "Buy",
+    "packIncludes": "Includes",
+    "packValidity": "Valid for {{days}} days",
+    "packNoExpiry": "No expiration",
+    "sessions": "sessions"
+  }
 }
