@@ -59,8 +59,10 @@ export function TimeSlotPicker({ slots, selectedSlot, onSelect, timezone, isLoad
 
   const slotsByPeriod = useMemo(() => {
     const groups: Record<TimePeriod, PublicSlot[]> = { morning: [], afternoon: [], evening: [] }
+    const now = Date.now()
     for (const slot of slots) {
       const date = new Date(slot.startsAt)
+      if (date.getTime() <= now) continue
       // Get hour in venue timezone
       const hourStr = date.toLocaleTimeString('en-US', {
         hour: 'numeric', hour12: false, timeZone: timezone,
@@ -80,7 +82,9 @@ export function TimeSlotPicker({ slots, selectedSlot, onSelect, timezone, isLoad
     )
   }
 
-  if (slots.length === 0) {
+  const hasAnySlot = slotsByPeriod.morning.length + slotsByPeriod.afternoon.length + slotsByPeriod.evening.length > 0
+
+  if (!hasAnySlot) {
     return (
       <div style={{ padding: '48px 0', textAlign: 'center' }}>
         <div style={{ width: '48px', height: '48px', borderRadius: '50%', background: 'var(--avq-muted, #f8f9fb)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 12px' }}>
