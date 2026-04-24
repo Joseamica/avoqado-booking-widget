@@ -1,16 +1,19 @@
 import { h } from 'preact'
 import { useState, useEffect } from 'preact/hooks'
-import type { PublicReservationDetail } from '../types'
+import type { PublicReservationDetail, PublicVenueInfo } from '../types'
 import type { TFunction } from '../i18n'
 import { Spinner } from './ui/Spinner'
 import { Button } from './ui/Button'
 import { Textarea } from './ui/Input'
 import * as api from '../api/booking'
+import { RescheduleFlow } from './RescheduleFlow'
 
 interface ManageBookingProps {
   venueSlug: string
   cancelSecret: string
   timezone: string
+  /** Venue info — needed by the reschedule mini-flow to drive DatePicker / SeatPicker. */
+  venueInfo: PublicVenueInfo
   t: TFunction
   onBack: () => void
 }
@@ -24,11 +27,12 @@ const statusConfig: Record<string, { bg: string; text: string }> = {
   NO_SHOW: { bg: '#ffedd5', text: '#9a3412' },
 }
 
-export function ManageBooking({ venueSlug, cancelSecret, timezone, t, onBack }: ManageBookingProps) {
+export function ManageBooking({ venueSlug, cancelSecret, timezone, venueInfo, t, onBack }: ManageBookingProps) {
   const [reservation, setReservation] = useState<PublicReservationDetail | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [showCancel, setShowCancel] = useState(false)
+  const [showReschedule, setShowReschedule] = useState(false)
   const [cancelReason, setCancelReason] = useState('')
   const [cancelling, setCancelling] = useState(false)
 
@@ -225,12 +229,57 @@ export function ManageBooking({ venueSlug, cancelSecret, timezone, t, onBack }: 
         </div>
       )}
 
+      {/* Reschedule inline mini-flow */}
+      {showReschedule && (
+        <div style={{
+          marginBottom: '16px', padding: '14px',
+          borderRadius: '14px', border: '1px solid var(--avq-border, #e8eaed)',
+          background: 'var(--avq-bg, #fff)',
+        }}>
+          <RescheduleFlow
+            venueSlug={venueSlug}
+            cancelSecret={cancelSecret}
+            reservation={reservation}
+            venueInfo={venueInfo}
+            t={t}
+            onSuccess={async () => {
+              setShowReschedule(false)
+              // Refresh reservation
+              try {
+                const updated = await api.getReservation(venueSlug, cancelSecret)
+                setReservation(updated)
+              } catch { /* */ }
+            }}
+            onCancel={() => setShowReschedule(false)}
+          />
+        </div>
+      )}
+
       {/* Actions */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-        {!isCancelled && reservation.status !== 'COMPLETED' && reservation.status !== 'NO_SHOW' && !showCancel && (
-          <Button variant="destructive" fullWidth onClick={() => setShowCancel(true)}>
-            {t('manage.cancelButton')}
-          </Button>
+        {!isCancelled && reservation.status !== 'COMPLETED' && reservation.status !== 'NO_SHOW' && !showCancel && !showReschedule && (
+          <>
+            {/* Reschedule — primary outline. Disabled when out of window. */}
+            {reservation.reschedule && (
+              <Button
+                variant="outline"
+                fullWidth
+                onClick={() => setShowReschedule(true)}
+                disabled={!reservation.reschedule.allowed}
+                title={!reservation.reschedule.allowed && reservation.reschedule.minHoursBeforeStart != null
+                  ? t('manage.rescheduleDisabledTooltip', {
+                      defaultValue: 'Solo puedes cambiar el horario hasta {{hours}}h antes del inicio.',
+                      hours: reservation.reschedule.minHoursBeforeStart,
+                    })
+                  : undefined}
+              >
+                {t('manage.rescheduleButton', { defaultValue: 'Cambiar horario' })}
+              </Button>
+            )}
+            <Button variant="destructive" fullWidth onClick={() => setShowCancel(true)}>
+              {t('manage.cancelButton')}
+            </Button>
+          </>
         )}
         <Button variant="outline" fullWidth onClick={onBack}>
           {t('manage.backToBooking')}

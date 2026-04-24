@@ -62,6 +62,17 @@ export function cancelReservation(slug: string, cancelSecret: string, reason?: s
   })
 }
 
+export function rescheduleReservation(
+  slug: string,
+  cancelSecret: string,
+  body: { classSessionId: string; spotIds?: string[] },
+): Promise<{ confirmationCode: string; status: string; startsAt: string; endsAt: string; partySize: number; spotIds: string[] }> {
+  return request(`${BASE}/venues/${slug}/reservations/${cancelSecret}/reschedule`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
+}
+
 // ==================== Credit Packs ====================
 
 export function getCreditPacks(slug: string, productId?: string): Promise<CreditPackPublic[]> {

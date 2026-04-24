@@ -159,6 +159,11 @@ export interface PublicReservationDetail {
     refundPercent: number
     policyLabel: string
   }
+  reschedule?: {
+    allowed: boolean
+    minHoursBeforeStart: number | null
+    productId: string | null
+  }
 }
 
 export interface WidgetProps {

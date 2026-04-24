@@ -81,7 +81,18 @@
     "backToBooking": "Hacer una Nueva Reservación",
     "refundPreview": "Si cancelas ahora, te devolvemos {{refunded}} de {{total}} créditos.",
     "noRefund": "Si cancelas ahora pierdes los {{count}} créditos de esta reserva.",
-    "refundedSuccess": "Te devolvimos {{count}} crédito(s) a tu cuenta."
+    "refundedSuccess": "Te devolvimos {{count}} crédito(s) a tu cuenta.",
+    "rescheduleButton": "Cambiar horario",
+    "rescheduleDisabledTooltip": "Solo puedes cambiar el horario hasta {{hours}}h antes del inicio."
+  },
+  "reschedule": {
+    "title": "Cambiar horario",
+    "context": "{{product}} · {{date}} {{time}}",
+    "stepDate": "1 · Fecha",
+    "stepTime": "2 · Hora",
+    "stepSeat": "3 · Lugar",
+    "applying": "Aplicando cambio…",
+    "success": "¡Listo! Tu reserva quedó en el nuevo horario."
   },
   "deposit": {
     "title": "Se Requiere Depósito",

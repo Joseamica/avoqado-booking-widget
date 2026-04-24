@@ -81,7 +81,18 @@
     "backToBooking": "Book a New Reservation",
     "refundPreview": "If you cancel now, we'll refund {{refunded}} of {{total}} credits.",
     "noRefund": "If you cancel now you lose the {{count}} credits from this booking.",
-    "refundedSuccess": "We refunded {{count}} credit(s) to your account."
+    "refundedSuccess": "We refunded {{count}} credit(s) to your account.",
+    "rescheduleButton": "Change time",
+    "rescheduleDisabledTooltip": "You can only change time up to {{hours}}h before the start."
+  },
+  "reschedule": {
+    "title": "Change time",
+    "context": "{{product}} · {{date}} {{time}}",
+    "stepDate": "1 · Date",
+    "stepTime": "2 · Time",
+    "stepSeat": "3 · Seat",
+    "applying": "Applying change…",
+    "success": "Done! Your reservation is at the new time."
   },
   "deposit": {
     "title": "Deposit Required",

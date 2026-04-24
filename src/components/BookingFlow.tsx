@@ -297,6 +297,7 @@ export function BookingFlow({ props }: BookingFlowProps) {
           venueSlug={props.venue}
           cancelSecret={manageSecret.value!}
           timezone={info.timezone}
+          venueInfo={info}
           t={t}
           onBack={() => resetBooking(info)}
         />
