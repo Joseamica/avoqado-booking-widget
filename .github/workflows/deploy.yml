@@ -1,0 +1,50 @@
+# Build the widget and deploy `dist/` to Cloudflare Pages on every push to main.
+#
+# Required secrets (set in GitHub → Settings → Secrets and variables → Actions):
+#   CLOUDFLARE_API_TOKEN  - token with "Cloudflare Pages: Edit" permission on the account
+#   CLOUDFLARE_ACCOUNT_ID - account ID from Cloudflare dashboard URL (or `npx wrangler whoami`)
+name: Deploy widget
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: # allow manual triggers from the GitHub UI
+
+# Only one deploy at a time; cancel any in-progress run when a new push lands.
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      deployments: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build widget
+        run: npm run build
+        env:
+          # Production CDN URL — overrides .env's local /api/v1/public proxy.
+          VITE_API_URL: https://api.avoqado.io/api/v1/public
+
+      - name: Deploy to Cloudflare Pages
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy dist --project-name=avoqado-booking-widget --branch=main --commit-dirty=true

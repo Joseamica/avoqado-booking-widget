@@ -12,3 +12,12 @@ npm-debug.log*
 .DS_Store
 .vscode/
 .idea/
+
+# Playwright / E2E test artifacts
+.playwright-mcp/
+e2e-scenario-*.png
+final-*.png
+audit-*.png
+page-*.png
+page-*.yml
+console-*.log
