@@ -191,6 +191,8 @@
     "noPacksAvailable": "No credit packs available right now. Contact the venue.",
     "buyPack": "Buy",
     "callVenue": "Call {{phone}}",
+    "whatsappVenue": "WhatsApp",
+    "whatsappMessage": "Hi, I'd like to buy credits to book classes.",
     "packIncludes": "Includes",
     "packValidity": "Valid for {{days}} days",
     "packNoExpiry": "No expiration",

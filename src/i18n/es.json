@@ -191,6 +191,8 @@
     "noPacksAvailable": "No hay paquetes a la venta por ahora. Contacta al negocio.",
     "buyPack": "Comprar",
     "callVenue": "Llamar al {{phone}}",
+    "whatsappVenue": "WhatsApp",
+    "whatsappMessage": "Hola, me gustaría comprar créditos para reservar clases.",
     "packIncludes": "Incluye",
     "packValidity": "Válido por {{days}} días",
     "packNoExpiry": "Sin expiración",
