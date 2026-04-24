@@ -3,11 +3,26 @@ export const SHARED_CSS = `
   :host { display: block; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
   .avq-root { box-sizing: border-box; }
   *, *::before, *::after { box-sizing: inherit; }
-  [data-avq-theme="light"] { --avq-bg: #ffffff; --avq-fg: #111827; --avq-muted: #f8f9fb; --avq-muted-hover: #eef0f4; --avq-muted-fg: #6b7280; --avq-border: #e8eaed; --avq-card-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.02); }
-  [data-avq-theme="dark"] { --avq-bg: #0f172a; --avq-fg: #f8fafc; --avq-muted: #1e293b; --avq-muted-hover: #334155; --avq-muted-fg: #94a3b8; --avq-border: #334155; --avq-card-shadow: 0 1px 3px rgba(0,0,0,0.3), 0 1px 2px rgba(0,0,0,0.2); }
-  [data-avq-theme="auto"] { --avq-bg: #ffffff; --avq-fg: #111827; --avq-muted: #f8f9fb; --avq-muted-hover: #eef0f4; --avq-muted-fg: #6b7280; --avq-border: #e8eaed; --avq-card-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.02); }
+  [data-avq-theme="light"] { --avq-bg: #ffffff; --avq-fg: #111827; --avq-muted: #f8f9fb; --avq-muted-hover: #eef0f4; --avq-muted-fg: #6b7280; --avq-border: #e8eaed; --avq-card-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.02);
+    --avq-success-bg: color-mix(in srgb, #16a34a 8%, var(--avq-bg)); --avq-success-border: color-mix(in srgb, #16a34a 22%, transparent); --avq-success-fg: #15803d; --avq-success-accent: #16a34a;
+    --avq-warning-bg: color-mix(in srgb, #f59e0b 9%, var(--avq-bg)); --avq-warning-border: color-mix(in srgb, #f59e0b 24%, transparent); --avq-warning-fg: #92400e; --avq-warning-accent: #d97706;
+    --avq-danger-bg: #fef2f2; --avq-danger-border: #fecaca; --avq-danger-fg: #991b1b; --avq-danger-accent: #b91c1c;
+    --avq-ease: cubic-bezier(0.25, 1, 0.5, 1); }
+  [data-avq-theme="dark"] { --avq-bg: #0f172a; --avq-fg: #f8fafc; --avq-muted: #1e293b; --avq-muted-hover: #334155; --avq-muted-fg: #94a3b8; --avq-border: #334155; --avq-card-shadow: 0 1px 3px rgba(0,0,0,0.3), 0 1px 2px rgba(0,0,0,0.2);
+    --avq-success-bg: color-mix(in srgb, #22c55e 14%, var(--avq-bg)); --avq-success-border: color-mix(in srgb, #22c55e 32%, transparent); --avq-success-fg: #86efac; --avq-success-accent: #22c55e;
+    --avq-warning-bg: color-mix(in srgb, #f59e0b 14%, var(--avq-bg)); --avq-warning-border: color-mix(in srgb, #f59e0b 32%, transparent); --avq-warning-fg: #fcd34d; --avq-warning-accent: #fbbf24;
+    --avq-danger-bg: color-mix(in srgb, #ef4444 14%, var(--avq-bg)); --avq-danger-border: color-mix(in srgb, #ef4444 32%, transparent); --avq-danger-fg: #fca5a5; --avq-danger-accent: #ef4444;
+    --avq-ease: cubic-bezier(0.25, 1, 0.5, 1); }
+  [data-avq-theme="auto"] { --avq-bg: #ffffff; --avq-fg: #111827; --avq-muted: #f8f9fb; --avq-muted-hover: #eef0f4; --avq-muted-fg: #6b7280; --avq-border: #e8eaed; --avq-card-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.02);
+    --avq-success-bg: color-mix(in srgb, #16a34a 8%, var(--avq-bg)); --avq-success-border: color-mix(in srgb, #16a34a 22%, transparent); --avq-success-fg: #15803d; --avq-success-accent: #16a34a;
+    --avq-warning-bg: color-mix(in srgb, #f59e0b 9%, var(--avq-bg)); --avq-warning-border: color-mix(in srgb, #f59e0b 24%, transparent); --avq-warning-fg: #92400e; --avq-warning-accent: #d97706;
+    --avq-danger-bg: #fef2f2; --avq-danger-border: #fecaca; --avq-danger-fg: #991b1b; --avq-danger-accent: #b91c1c;
+    --avq-ease: cubic-bezier(0.25, 1, 0.5, 1); }
   @media (prefers-color-scheme: dark) {
-    [data-avq-theme="auto"] { --avq-bg: #0f172a; --avq-fg: #f8fafc; --avq-muted: #1e293b; --avq-muted-hover: #334155; --avq-muted-fg: #94a3b8; --avq-border: #334155; --avq-card-shadow: 0 1px 3px rgba(0,0,0,0.3), 0 1px 2px rgba(0,0,0,0.2); }
+    [data-avq-theme="auto"] { --avq-bg: #0f172a; --avq-fg: #f8fafc; --avq-muted: #1e293b; --avq-muted-hover: #334155; --avq-muted-fg: #94a3b8; --avq-border: #334155; --avq-card-shadow: 0 1px 3px rgba(0,0,0,0.3), 0 1px 2px rgba(0,0,0,0.2);
+      --avq-success-bg: color-mix(in srgb, #22c55e 14%, var(--avq-bg)); --avq-success-border: color-mix(in srgb, #22c55e 32%, transparent); --avq-success-fg: #86efac; --avq-success-accent: #22c55e;
+      --avq-warning-bg: color-mix(in srgb, #f59e0b 14%, var(--avq-bg)); --avq-warning-border: color-mix(in srgb, #f59e0b 32%, transparent); --avq-warning-fg: #fcd34d; --avq-warning-accent: #fbbf24;
+      --avq-danger-bg: color-mix(in srgb, #ef4444 14%, var(--avq-bg)); --avq-danger-border: color-mix(in srgb, #ef4444 32%, transparent); --avq-danger-fg: #fca5a5; --avq-danger-accent: #ef4444; }
   }
   .avq-root { background: var(--avq-bg, #ffffff); color: var(--avq-fg, #111827); }
   .animate-spin { animation: spin 1s linear infinite; }
@@ -18,6 +33,19 @@ export const SHARED_CSS = `
   @keyframes avq-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.6; } }
   .avq-animate-in { animation: avq-fadeIn 0.35s ease-out; }
   .avq-animate-scale { animation: avq-scaleIn 0.3s ease-out; }
+  /* Respect users who prefer no/less motion (vestibular sensitivity, cognitive load).
+     We keep loading spinners (functional) but cancel decorative entrances and shorten
+     all transitions to a token (1ms) so they're effectively instant without breaking layout. */
+  @media (prefers-reduced-motion: reduce) {
+    .avq-animate-in, .avq-animate-scale { animation: none !important; }
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+    .animate-spin { animation: spin 1s linear infinite !important; } /* keep spinner — it's a functional indicator */
+  }
   .space-y-1 > * + * { margin-top: 0.25rem; }
   .space-y-1\\.5 > * + * { margin-top: 0.375rem; }
   .space-y-2 > * + * { margin-top: 0.5rem; }
