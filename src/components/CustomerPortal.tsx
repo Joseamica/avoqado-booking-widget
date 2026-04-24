@@ -11,6 +11,8 @@ import { portalData, portalLoading, customerToken, customerInfo, setCustomerSess
 interface CustomerPortalProps {
   venueSlug: string
   timezone: string
+  /** Venue phone — used in the empty state of "Buy credits" so customers can reach out. */
+  venuePhone?: string | null
   t: TFunction
   onBack: () => void
   onManageBooking: (cancelSecret: string) => void
@@ -30,7 +32,7 @@ const labelStyle: Record<string, string> = {
   color: 'var(--avq-fg, #111827)', marginBottom: '6px',
 }
 
-export function CustomerPortal({ venueSlug, timezone, t, onBack, onManageBooking }: CustomerPortalProps) {
+export function CustomerPortal({ venueSlug, timezone, venuePhone, t, onBack, onManageBooking }: CustomerPortalProps) {
   const [mode, setMode] = useState<'login' | 'register'>('login')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -491,41 +493,90 @@ export function CustomerPortal({ venueSlug, timezone, t, onBack, onManageBooking
         </div>
       )}
 
-      {/* Available Credit Packs for Purchase */}
-      {packs.length > 0 && (
-        <div style={{ marginBottom: '20px' }}>
-          <h3 style={{ fontSize: '14px', fontWeight: '600', color: 'var(--avq-fg, #111827)', margin: '0 0 10px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--avq-accent, #6366f1)" stroke-width="2">
-              <rect x="2" y="5" width="20" height="14" rx="2" />
-              <line x1="2" y1="10" x2="22" y2="10" />
-            </svg>
-            {t('portal.availablePacks')}
+      {/* Buy Credits — header always visible; empty state when no packs.
+          Cards no longer have outer border (they live inside a section already);
+          rows are separated by a hairline divider for cleaner visual rhythm. */}
+      {customer && (
+        <div style={{ marginBottom: '24px' }}>
+          <h3 style={{
+            fontSize: '11px', fontWeight: '600',
+            color: 'var(--avq-muted-fg, #6b7280)',
+            textTransform: 'uppercase', letterSpacing: '0.08em',
+            margin: '0 0 12px',
+          }}>
+            {t('portal.buyCredits')}
           </h3>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            {packs.map(pack => (
+          {packsLoading ? (
+            <div style={{ padding: '24px', textAlign: 'center' }}>
+              <Spinner size={18} />
+            </div>
+          ) : packs.length === 0 ? (
+            <div style={{
+              borderRadius: '12px', padding: '16px',
+              background: 'var(--avq-muted, #f8f9fb)',
+              textAlign: 'center',
+            }}>
+              <p style={{ fontSize: '13px', color: 'var(--avq-muted-fg, #6b7280)', margin: '0 0 10px' }}>
+                {t('portal.noPacksAvailable')}
+              </p>
+              {venuePhone && (
+                <a
+                  href={`tel:${venuePhone}`}
+                  style={{
+                    display: 'inline-flex', alignItems: 'center', gap: '6px',
+                    fontSize: '13px', fontWeight: '600',
+                    color: 'var(--avq-accent, #6366f1)',
+                    textDecoration: 'none',
+                  }}
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                    <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/>
+                  </svg>
+                  {t('portal.callVenue', { phone: venuePhone })}
+                </a>
+              )}
+            </div>
+          ) : (
+          <div style={{
+            display: 'flex', flexDirection: 'column',
+            border: '1px solid var(--avq-border, #e8eaed)',
+            borderRadius: '14px', overflow: 'hidden',
+          }}>
+            {packs.map((pack, idx) => (
               <div key={pack.id} style={{
-                borderRadius: '12px', padding: '14px',
-                border: '1px solid var(--avq-border, #e8eaed)',
+                padding: '16px',
+                borderTop: idx > 0 ? '1px solid var(--avq-border, #e8eaed)' : 'none',
               }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
-                  <div style={{ flex: 1 }}>
-                    <span style={{ fontSize: '14px', fontWeight: '600', color: 'var(--avq-fg, #111827)' }}>{pack.name}</span>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '10px', gap: '12px' }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: '15px', fontWeight: '600', color: 'var(--avq-fg, #111827)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{pack.name}</div>
                     {pack.description && (
-                      <p style={{ fontSize: '12px', color: 'var(--avq-muted-fg, #6b7280)', margin: '2px 0 0' }}>{pack.description}</p>
+                      <p style={{ fontSize: '12px', color: 'var(--avq-muted-fg, #6b7280)', margin: '3px 0 0' }}>{pack.description}</p>
                     )}
                   </div>
-                  <span style={{ fontSize: '16px', fontWeight: '700', color: 'var(--avq-accent, #6366f1)', whiteSpace: 'nowrap', marginLeft: '12px' }}>
-                    ${Number(pack.price).toFixed(2)} {pack.currency}
+                  <span style={{
+                    fontSize: '17px', fontWeight: '700',
+                    color: 'var(--avq-fg, #111827)',
+                    whiteSpace: 'nowrap', flexShrink: 0,
+                    fontVariantNumeric: 'tabular-nums',
+                  }}>
+                    ${Number(pack.price).toFixed(0)}
+                    <span style={{ fontSize: '11px', color: 'var(--avq-muted-fg, #6b7280)', fontWeight: '500', marginLeft: '4px' }}>{pack.currency}</span>
                   </span>
                 </div>
 
-                {/* Pack items */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginBottom: '10px' }}>
+                {/* Pack items as inline chips */}
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '14px' }}>
                   {pack.items.map(item => (
-                    <div key={item.id} style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', color: 'var(--avq-fg, #111827)' }}>
-                      <span style={{ color: 'var(--avq-accent, #6366f1)', fontWeight: '600' }}>{item.quantity}x</span>
+                    <span key={item.id} style={{
+                      display: 'inline-flex', alignItems: 'center', gap: '5px',
+                      padding: '3px 9px', borderRadius: '999px',
+                      background: 'var(--avq-muted, #f8f9fb)',
+                      fontSize: '12px', color: 'var(--avq-fg, #111827)',
+                    }}>
+                      <strong style={{ fontWeight: '700', color: 'var(--avq-accent, #6366f1)' }}>{item.quantity}×</strong>
                       <span>{item.product.name}</span>
-                    </div>
+                    </span>
                   ))}
                 </div>
 
@@ -542,11 +593,11 @@ export function CustomerPortal({ venueSlug, timezone, t, onBack, onManageBooking
                     disabled={!!checkoutLoading}
                     style={{
                       display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                      padding: '6px 16px', borderRadius: '8px', fontSize: '13px', fontWeight: '600',
+                      padding: '7px 18px', borderRadius: '999px', fontSize: '13px', fontWeight: '600',
                       background: 'var(--avq-accent, #6366f1)', color: '#fff',
                       border: 'none', cursor: checkoutLoading ? 'not-allowed' : 'pointer',
-                      opacity: checkoutLoading ? '0.6' : '1',
-                      transition: 'opacity 0.2s',
+                      opacity: checkoutLoading ? 0.6 : 1,
+                      transition: 'opacity 0.15s var(--avq-ease)',
                     }}
                   >
                     {checkoutLoading === pack.id ? <Spinner size={14} /> : t('portal.buyPack')}
@@ -555,15 +606,18 @@ export function CustomerPortal({ venueSlug, timezone, t, onBack, onManageBooking
               </div>
             ))}
           </div>
+          )}
         </div>
       )}
 
       {/* Upcoming */}
-      <div style={{ marginBottom: '20px' }}>
-        <h3 style={{ fontSize: '14px', fontWeight: '600', color: 'var(--avq-fg, #111827)', margin: '0 0 10px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--avq-accent, #6366f1)" stroke-width="2">
-            <rect x="3" y="4" width="18" height="18" rx="2" ry="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" />
-          </svg>
+      <div style={{ marginBottom: '24px' }}>
+        <h3 style={{
+          fontSize: '11px', fontWeight: '600',
+          color: 'var(--avq-muted-fg, #6b7280)',
+          textTransform: 'uppercase', letterSpacing: '0.08em',
+          margin: '0 0 12px',
+        }}>
           {t('portal.upcoming')}
         </h3>
         {hasUpcoming ? (
@@ -610,11 +664,14 @@ export function CustomerPortal({ venueSlug, timezone, t, onBack, onManageBooking
 
       {/* Past */}
       {hasPast && (
-        <details style={{ marginBottom: '20px' }}>
-          <summary style={{ fontSize: '14px', fontWeight: '600', color: 'var(--avq-fg, #111827)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '10px' }}>
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--avq-muted-fg, #6b7280)" stroke-width="2">
-              <polyline points="12 8 12 12 14 14" /><circle cx="12" cy="12" r="10" />
-            </svg>
+        <details style={{ marginBottom: '24px' }}>
+          <summary style={{
+            fontSize: '11px', fontWeight: '600',
+            color: 'var(--avq-muted-fg, #6b7280)',
+            textTransform: 'uppercase', letterSpacing: '0.08em',
+            cursor: 'pointer',
+            marginBottom: '12px',
+          }}>
             {t('portal.pastReservations')}
           </summary>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>

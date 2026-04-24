@@ -71,10 +71,17 @@ export function getCreditPacks(slug: string, productId?: string): Promise<Credit
   return request(`${BASE}/venues/${slug}/credit-packs${qs ? `?${qs}` : ''}`)
 }
 
-export function getCustomerCredits(slug: string, params: { email?: string; phone?: string }): Promise<CustomerCreditBalance> {
+export function getCustomerCredits(slug: string, params: {
+  email?: string
+  phone?: string
+  seats?: number
+  productId?: string
+}): Promise<CustomerCreditBalance> {
   const q = new URLSearchParams()
   if (params.email) q.append('email', params.email)
   if (params.phone) q.append('phone', params.phone)
+  if (params.seats != null) q.append('seats', String(params.seats))
+  if (params.productId) q.append('productId', params.productId)
   return request(`${BASE}/venues/${slug}/credit-packs/balance?${q}`)
 }
 

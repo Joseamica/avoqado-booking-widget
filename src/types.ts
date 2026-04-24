@@ -99,6 +99,7 @@ export interface PublicBookingResult {
   depositRequired: boolean
   depositAmount: number | null
   creditRedeemed?: boolean
+  creditsUsed?: number
 }
 
 // Credit Pack types for public widget
@@ -130,8 +131,10 @@ export interface CustomerCreditBalance {
       product: { id: string; name: string; type: string; imageUrl?: string }
       originalQuantity: number
       remainingQuantity: number
+      sufficient?: boolean
     }[]
   }[]
+  requestedSeats?: number | null
 }
 
 export interface PublicReservationDetail {
@@ -148,6 +151,14 @@ export interface PublicReservationDetail {
   specialRequests: string | null
   depositAmount: number | null
   depositStatus: string | null
+  cancellation?: {
+    allowed: boolean
+    minHoursBeforeStart: number | null
+    creditsUsed: number
+    creditsRefundable: number
+    refundPercent: number
+    policyLabel: string
+  }
 }
 
 export interface WidgetProps {

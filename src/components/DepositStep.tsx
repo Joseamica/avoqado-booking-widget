@@ -57,7 +57,7 @@ export function DepositStep({ booking, t, onContinue }: DepositStepProps) {
           transform: hov ? 'translateY(-1px)' : 'translateY(0)',
         }}
       >
-        Entendido
+        {t('deposit.acknowledge')}
       </button>
     </div>
   )

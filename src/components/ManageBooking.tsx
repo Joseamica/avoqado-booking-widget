@@ -117,6 +117,27 @@ export function ManageBooking({ venueSlug, cancelSecret, timezone, t, onBack }: 
         </p>
       </div>
 
+      {/* Refund result — visible after a CANCELLED transition that returned credits */}
+      {isCancelled && reservation.cancellation && reservation.cancellation.creditsRefundable > 0 && (
+        <div
+          role="status"
+          aria-live="polite"
+          style={{
+            marginBottom: '16px', padding: '12px 14px',
+            borderRadius: '12px',
+            background: 'var(--avq-success-bg)',
+            border: '1px solid var(--avq-success-border)',
+            color: 'var(--avq-success-fg)', fontSize: '13px', fontWeight: '500',
+            display: 'flex', alignItems: 'center', gap: '10px',
+          }}
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--avq-success-accent)" stroke-width="2" aria-hidden="true">
+            <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>
+          </svg>
+          {t('manage.refundedSuccess', { count: reservation.cancellation.creditsRefundable })}
+        </div>
+      )}
+
       {/* Details */}
       <div style={{
         borderRadius: '14px', border: '1px solid var(--avq-border, #e8eaed)',
@@ -158,14 +179,36 @@ export function ManageBooking({ venueSlug, cancelSecret, timezone, t, onBack }: 
       {/* Cancel dialog inline */}
       {showCancel && (
         <div style={{
-          borderRadius: '14px', border: '1.5px solid #fecaca',
-          background: '#fef2f2', padding: '16px',
+          borderRadius: '14px', border: '1.5px solid var(--avq-danger-border)',
+          background: 'var(--avq-danger-bg)', padding: '16px',
           marginBottom: '16px',
         }}>
-          <h3 style={{ margin: '0 0 6px', fontSize: '15px', fontWeight: '600', color: '#991b1b' }}>{t('manage.cancelTitle')}</h3>
-          <p style={{ margin: '0 0 12px', fontSize: '13px', color: '#b91c1c' }}>{t('manage.cancelDescription')}</p>
-          <div style={{ marginBottom: '12px' }}>
-            <label style={{ display: 'block', fontSize: '13px', fontWeight: '500', color: '#991b1b', marginBottom: '6px' }}>{t('manage.cancelReasonLabel')}</label>
+          <h3 style={{ margin: '0 0 4px', fontSize: '15px', fontWeight: '600', color: 'var(--avq-danger-fg)' }}>{t('manage.cancelTitle')}</h3>
+          <p style={{ margin: '0 0 14px', fontSize: '13px', color: 'var(--avq-danger-accent)', opacity: 0.9 }}>{t('manage.cancelDescription')}</p>
+
+          {/* Refund policy preview — only when this booking actually used credits */}
+          {reservation.cancellation && reservation.cancellation.creditsUsed > 0 && (
+            <div style={{
+              marginBottom: '14px', padding: '11px 13px',
+              borderRadius: '10px',
+              border: '1px solid var(--avq-warning-border)',
+              background: 'var(--avq-warning-bg)',
+              fontSize: '12px', color: 'var(--avq-warning-fg)',
+              lineHeight: '1.5',
+            }}>
+              {reservation.cancellation.creditsRefundable > 0 ? (
+                <span>{t('manage.refundPreview', {
+                  refunded: reservation.cancellation.creditsRefundable,
+                  total: reservation.cancellation.creditsUsed,
+                })}</span>
+              ) : (
+                <span>{t('manage.noRefund', { count: reservation.cancellation.creditsUsed })}</span>
+              )}
+            </div>
+          )}
+
+          <div style={{ marginBottom: '14px' }}>
+            <label style={{ display: 'block', fontSize: '13px', fontWeight: '500', color: 'var(--avq-danger-fg)', marginBottom: '6px' }}>{t('manage.cancelReasonLabel')}</label>
             <Textarea
               value={cancelReason}
               onInput={(e) => setCancelReason((e.target as HTMLTextAreaElement).value)}

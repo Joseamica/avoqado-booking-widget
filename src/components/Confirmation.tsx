@@ -78,19 +78,25 @@ export function Confirmation({ booking, venueInfo, onManageBooking, onNewBooking
 
       {/* Credit redeemed notice */}
       {booking.creditRedeemed && (
-        <div style={{
-          display: 'flex', alignItems: 'center', gap: '8px',
-          padding: '10px 14px', borderRadius: '10px',
-          background: 'color-mix(in srgb, #22c55e 8%, var(--avq-bg, #ffffff))',
-          border: '1px solid color-mix(in srgb, #22c55e 20%, transparent)',
-          marginBottom: '16px',
-        }}>
-          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#16a34a" stroke-width="2">
+        <div
+          role="status"
+          style={{
+            display: 'flex', alignItems: 'center', gap: '10px',
+            padding: '11px 14px', borderRadius: '12px',
+            background: 'var(--avq-success-bg)',
+            border: '1px solid var(--avq-success-border)',
+            marginBottom: '16px',
+          }}
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--avq-success-accent)" stroke-width="2" aria-hidden="true">
             <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
             <polyline points="22 4 12 14.01 9 11.01"/>
           </svg>
-          <span style={{ fontSize: '13px', fontWeight: '500', color: '#15803d' }}>
-            {t('creditPacks.creditUsed')} — {t('creditPacks.noCreditNeeded')}
+          <span style={{ fontSize: '13px', fontWeight: '500', color: 'var(--avq-success-fg)' }}>
+            {(booking.creditsUsed ?? 1) > 1
+              ? t('creditPacks.creditsUsed', { count: booking.creditsUsed })
+              : t('creditPacks.creditUsed')}
+            {' — '}{t('creditPacks.noCreditNeeded')}
           </span>
         </div>
       )}

@@ -23,6 +23,7 @@ import { ManageBooking } from './ManageBooking'
 import { Spinner } from './ui/Spinner'
 import { CreditPackBanner } from './CreditPackBanner'
 import { CreditSelector } from './CreditSelector'
+import { CheckoutModal } from './CheckoutModal'
 import { CustomerPortal } from './CustomerPortal'
 import type { GuestFormData } from './GuestInfoForm'
 
@@ -102,6 +103,66 @@ export function BookingFlow({ props }: BookingFlowProps) {
       })
     }
   }, [props.venue])
+
+  // Detect return from Stripe checkout via the avq_credits URL param. The webhook may
+  // race with the redirect, so poll a few times before giving up.
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const url = new URL(window.location.href)
+    const flag = url.searchParams.get('avq_credits')
+    if (!flag) return
+
+    // Strip the param from the URL so the effect doesn't re-fire on hot reloads / nav.
+    url.searchParams.delete('avq_credits')
+    const cleanUrl = url.toString()
+    window.history.replaceState({}, '', cleanUrl)
+
+    if (flag === 'cancel') {
+      showToast(t('creditPacks.checkoutCancelled'), 'error')
+      try { sessionStorage.removeItem('avq:pendingCheckout') } catch { /* */ }
+      return
+    }
+
+    if (flag !== 'success') return
+
+    let stash: { phone?: string; email?: string; venue?: string } = {}
+    try {
+      const raw = sessionStorage.getItem('avq:pendingCheckout')
+      if (raw) stash = JSON.parse(raw)
+      sessionStorage.removeItem('avq:pendingCheckout')
+    } catch { /* */ }
+
+    if (!stash.phone && !stash.email) {
+      showToast(t('creditPacks.purchaseSuccess'), 'success')
+      return
+    }
+
+    // Poll the balance endpoint up to 5 times (every 1.5s) waiting for the webhook to fulfill.
+    let attempts = 0
+    const maxAttempts = 5
+    const baselineCount = (customerCredits.value?.purchases?.length ?? 0)
+    const tick = async () => {
+      attempts++
+      try {
+        const fresh = await api.getCustomerCredits(props.venue, {
+          email: stash.email,
+          phone: stash.phone,
+        })
+        const newCount = fresh.purchases.length
+        if (newCount > baselineCount || attempts >= maxAttempts) {
+          customerCredits.value = fresh
+          if (newCount > baselineCount) {
+            showToast(t('creditPacks.purchaseSuccess'), 'success')
+          }
+          return
+        }
+      } catch { /* keep polling */ }
+      setTimeout(tick, 1500)
+    }
+    tick()
+    // Intentional: only run on mount with the URL flag.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // Fetch available slots for a date
   function fetchSlots() {
@@ -205,6 +266,7 @@ export function BookingFlow({ props }: BookingFlowProps) {
         <CustomerPortal
           venueSlug={props.venue}
           timezone={info.timezone}
+          venuePhone={info.phone}
           t={t}
           onBack={() => {
             showPortal.value = false
@@ -302,12 +364,26 @@ export function BookingFlow({ props }: BookingFlowProps) {
     if (!checkoutPackId || !checkoutPhone.trim()) return
     setBuyingPackId(checkoutPackId)
     try {
-      const currentUrl = window.location.href
+      const phone = checkoutPhone.trim()
+      const email = checkoutEmail.trim() || undefined
+
+      // Stash the contact info so we can re-fetch the balance when Stripe redirects back.
+      try {
+        sessionStorage.setItem('avq:pendingCheckout', JSON.stringify({ phone, email, venue: props.venue }))
+      } catch { /* sessionStorage may be blocked in 3rd-party iframes — non-fatal */ }
+
+      // Build success URL with a flag so we know we came back from a successful checkout.
+      const url = new URL(window.location.href)
+      url.searchParams.set('avq_credits', 'success')
+      const successUrl = url.toString()
+      url.searchParams.set('avq_credits', 'cancel')
+      const cancelUrl = url.toString()
+
       const result = await api.createPackCheckout(props.venue, checkoutPackId, {
-        phone: checkoutPhone.trim(),
-        email: checkoutEmail.trim() || undefined,
-        successUrl: currentUrl,
-        cancelUrl: currentUrl,
+        phone,
+        email,
+        successUrl,
+        cancelUrl,
       })
       if (result.checkoutUrl) {
         window.location.href = result.checkoutUrl
@@ -367,33 +443,48 @@ export function BookingFlow({ props }: BookingFlowProps) {
     }
   }
 
+  /** Number of credits this booking will consume (1 per seat, fallback partySize, default 1). */
+  function bookingSeatCount(data: GuestFormData): number {
+    const spots = selectedSpotIds.value
+    if (spots.length > 0) return spots.length
+    if (data.partySize && data.partySize > 0) return data.partySize
+    return 1
+  }
+
   async function handleFormSubmit(data: GuestFormData) {
     // Check if customer has credits for the selected product
     const productId = selectedProduct.value?.id
     const requiresCredit = selectedProduct.value?.requireCreditForBooking === true
+    const seats = bookingSeatCount(data)
 
     if (productId && (data.guestEmail || data.guestPhone)) {
       try {
         const credits = await api.getCustomerCredits(props.venue, {
           email: data.guestEmail || undefined,
           phone: data.guestPhone,
+          seats,
+          productId,
         })
         customerCredits.value = credits
 
-        // Check if any balances match the selected product
-        const hasMatchingCredits = credits.purchases.some(p =>
-          p.status === 'ACTIVE' &&
-          p.itemBalances.some(b => b.productId === productId && b.remainingQuantity > 0)
-        )
+        // Any matching balance with the right product?
+        const matching = credits.purchases
+          .filter(p => p.status === 'ACTIVE')
+          .flatMap(p => p.itemBalances)
+          .filter(b => b.productId === productId && b.remainingQuantity > 0)
 
-        if (hasMatchingCredits) {
-          // Show credit selector (auto-use if required, or let user choose)
+        const hasAnyCredits = matching.length > 0
+        const hasSufficientCredits = matching.some(b => b.remainingQuantity >= seats)
+
+        if (hasAnyCredits) {
+          // Has credits (sufficient OR insufficient) — show selector with seats so user
+          // sees "you'll use N" and "buy more" CTA when they don't have enough.
           setPendingFormData(data)
           setShowCreditSelector(true)
           return
         }
 
-        // No matching credits — block if required, show buy prompt
+        // No matching credits at all — block if required, show buy prompt
         if (requiresCredit) {
           setPendingFormData(data)
           setShowNoCreditsBuyPrompt(true)
@@ -602,6 +693,7 @@ export function BookingFlow({ props }: BookingFlowProps) {
           <CreditSelector
             credits={customerCredits.value}
             productId={selectedProduct.value?.id || ''}
+            seats={bookingSeatCount(pendingFormData)}
             required={selectedProduct.value?.requireCreditForBooking === true}
             onSelect={(balanceId) => {
               selectedCreditBalance.value = { balanceId, productId: selectedProduct.value?.id || '' }
@@ -611,6 +703,11 @@ export function BookingFlow({ props }: BookingFlowProps) {
               setShowCreditSelector(false)
               submitReservation(pendingFormData!)
             }}
+            onBuyMore={() => {
+              // Switch from credit selector to the buy-pack prompt
+              setShowCreditSelector(false)
+              setShowNoCreditsBuyPrompt(true)
+            }}
             t={t}
           />
         )}
@@ -618,18 +715,22 @@ export function BookingFlow({ props }: BookingFlowProps) {
         {step.value === config.formStep && showNoCreditsBuyPrompt && (
           <div class="avq-animate-in" style={{ padding: '4px 0' }}>
             {/* Warning header */}
-            <div style={{
-              display: 'flex', alignItems: 'center', gap: '8px',
-              padding: '12px 14px', borderRadius: '12px',
-              background: 'color-mix(in srgb, #f59e0b 8%, var(--avq-bg, #ffffff))',
-              border: '1px solid color-mix(in srgb, #f59e0b 20%, transparent)',
-              marginBottom: '16px',
-            }}>
-              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#d97706" stroke-width="2">
+            <div
+              role="status"
+              aria-live="polite"
+              style={{
+                display: 'flex', alignItems: 'center', gap: '10px',
+                padding: '12px 14px', borderRadius: '12px',
+                background: 'var(--avq-warning-bg)',
+                border: '1px solid var(--avq-warning-border)',
+                marginBottom: '20px',
+              }}
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--avq-warning-accent)" stroke-width="2" aria-hidden="true" style={{ flexShrink: 0 }}>
                 <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
                 <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
               </svg>
-              <span style={{ fontSize: '14px', fontWeight: '500', color: '#92400e' }}>
+              <span style={{ fontSize: '14px', fontWeight: '500', color: 'var(--avq-warning-fg)' }}>
                 {t('creditPacks.requiredNoCredits')}
               </span>
             </div>
@@ -652,11 +753,12 @@ export function BookingFlow({ props }: BookingFlowProps) {
                 setPendingFormData(null)
               }}
               style={{
-                width: '100%', padding: '12px', marginTop: '16px',
-                borderRadius: '12px', border: '1.5px solid var(--avq-border, #e8eaed)',
-                background: 'var(--avq-bg, #ffffff)',
+                width: '100%', padding: '11px', marginTop: '14px',
+                borderRadius: '12px', border: '1px solid transparent',
+                background: 'transparent',
                 fontSize: '13px', fontWeight: '500', color: 'var(--avq-muted-fg, #6b7280)',
-                cursor: 'pointer', transition: 'all 0.15s ease',
+                cursor: 'pointer',
+                transition: 'background 0.15s var(--avq-ease), color 0.15s var(--avq-ease)',
                 textAlign: 'center',
               }}
             >
@@ -691,80 +793,18 @@ export function BookingFlow({ props }: BookingFlowProps) {
         )}
       </div>
 
-      {/* Checkout form overlay */}
+      {/* Checkout form overlay — accessible modal */}
       {checkoutPackId && (
-        <div style={{
-          position: 'fixed', inset: 0, zIndex: 100,
-          background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center',
-          padding: '16px',
-        }}>
-          <div style={{
-            background: 'var(--avq-bg, #ffffff)', borderRadius: '16px',
-            padding: '24px', width: '100%', maxWidth: '360px',
-            boxShadow: '0 8px 30px rgba(0,0,0,0.12)',
-          }}>
-            <h3 style={{ fontSize: '16px', fontWeight: '600', color: 'var(--avq-fg, #111827)', margin: '0 0 4px' }}>
-              {t('creditPacks.buy')}
-            </h3>
-            <p style={{ fontSize: '13px', color: 'var(--avq-muted-fg, #6b7280)', margin: '0 0 16px' }}>
-              {t('form.phone')}
-            </p>
-
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-              <input
-                type="tel"
-                placeholder={t('form.phonePlaceholder')}
-                value={checkoutPhone}
-                onInput={(e) => setCheckoutPhone((e.target as HTMLInputElement).value)}
-                style={{
-                  width: '100%', height: '44px', padding: '0 12px', borderRadius: '10px',
-                  border: '1.5px solid var(--avq-border, #e8eaed)', fontSize: '14px',
-                  background: 'var(--avq-bg, #ffffff)', color: 'var(--avq-fg, #111827)',
-                  outline: 'none', boxSizing: 'border-box',
-                }}
-              />
-              <input
-                type="email"
-                placeholder={t('form.emailPlaceholder')}
-                value={checkoutEmail}
-                onInput={(e) => setCheckoutEmail((e.target as HTMLInputElement).value)}
-                style={{
-                  width: '100%', height: '44px', padding: '0 12px', borderRadius: '10px',
-                  border: '1.5px solid var(--avq-border, #e8eaed)', fontSize: '14px',
-                  background: 'var(--avq-bg, #ffffff)', color: 'var(--avq-fg, #111827)',
-                  outline: 'none', boxSizing: 'border-box',
-                }}
-              />
-            </div>
-
-            <div style={{ display: 'flex', gap: '8px', marginTop: '16px' }}>
-              <button
-                type="button"
-                onClick={() => setCheckoutPackId(null)}
-                style={{
-                  flex: 1, height: '44px', borderRadius: '10px',
-                  border: '1.5px solid var(--avq-border, #e8eaed)', background: 'var(--avq-bg, #ffffff)',
-                  fontSize: '14px', fontWeight: '500', color: 'var(--avq-fg, #111827)', cursor: 'pointer',
-                }}
-              >
-                {t('actions.goBack')}
-              </button>
-              <button
-                type="button"
-                onClick={handleCheckoutSubmit}
-                disabled={!checkoutPhone.trim() || !!buyingPackId}
-                style={{
-                  flex: 1, height: '44px', borderRadius: '10px',
-                  border: 'none', background: 'var(--avq-accent, #6366f1)',
-                  fontSize: '14px', fontWeight: '600', color: '#ffffff', cursor: 'pointer',
-                  opacity: !checkoutPhone.trim() || buyingPackId ? 0.5 : 1,
-                }}
-              >
-                {buyingPackId ? '...' : t('creditPacks.buy')}
-              </button>
-            </div>
-          </div>
-        </div>
+        <CheckoutModal
+          phone={checkoutPhone}
+          email={checkoutEmail}
+          onPhoneChange={setCheckoutPhone}
+          onEmailChange={setCheckoutEmail}
+          onClose={() => setCheckoutPackId(null)}
+          onSubmit={handleCheckoutSubmit}
+          submitting={!!buyingPackId}
+          t={t}
+        />
       )}
 
       {/* Avoqado footer */}

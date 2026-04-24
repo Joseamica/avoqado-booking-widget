@@ -78,12 +78,16 @@
     "table": "Mesa",
     "staff": "Asignado a",
     "specialRequests": "Peticiones Especiales",
-    "backToBooking": "Hacer una Nueva Reservación"
+    "backToBooking": "Hacer una Nueva Reservación",
+    "refundPreview": "Si cancelas ahora, te devolvemos {{refunded}} de {{total}} créditos.",
+    "noRefund": "Si cancelas ahora pierdes los {{count}} créditos de esta reserva.",
+    "refundedSuccess": "Te devolvimos {{count}} crédito(s) a tu cuenta."
   },
   "deposit": {
     "title": "Se Requiere Depósito",
     "description": "Se requiere un depósito para confirmar esta reservación.",
-    "atVenueNote": "El pago se realizará en el establecimiento."
+    "atVenueNote": "El pago se realizará en el establecimiento.",
+    "acknowledge": "Entendido"
   },
   "seats": {
     "title": "Elige tu lugar",
@@ -126,16 +130,28 @@
   "creditPacks": {
     "title": "Paquetes de Créditos",
     "buy": "Comprar",
+    "buyMore": "Comprar más créditos",
     "includes": "Incluye",
     "validity": "Válido por {{days}} días",
     "noExpiry": "Sin expiración",
-    "hasCredits": "Tienes créditos disponibles",
-    "useCredit": "Usar Crédito",
-    "remaining": "{{remaining}} de {{total}} restantes",
+    "hasCredits": "Tienes créditos disponibles para esta clase",
+    "willUseN": "Vas a usar {{count}} créditos en esta reserva",
+    "useCredit": "Usar crédito",
+    "useN": "Usar {{count}} créditos",
+    "remaining": "Te quedan {{remaining}} de {{total}}",
+    "afterUse": "te quedarían {{remaining}}",
+    "notEnough": "Insuficientes",
+    "insufficient": "Necesitas {{needed}} créditos y solo tienes {{available}}. Compra más para continuar.",
     "creditUsed": "Crédito utilizado",
-    "noCreditNeeded": "No se requiere depósito",
-    "skipCredit": "No usar crédito",
-    "requiredNoCredits": "Este servicio requiere créditos para reservar. Compra un paquete de créditos primero."
+    "creditsUsed": "{{count}} créditos utilizados",
+    "noCreditNeeded": "Sin depósito adicional",
+    "skipCredit": "No usar crédito esta vez",
+    "requiredNoCredits": "Esta clase se paga con créditos. Compra un paquete para reservar.",
+    "purchaseSuccess": "¡Listo! Tus créditos ya están en tu cuenta.",
+    "checkoutCancelled": "Cancelaste la compra",
+    "checkoutTitle": "Antes de pagar",
+    "checkoutSubtitle": "Necesitamos tu teléfono para asociar los créditos a tu cuenta. Te llevaremos al pago seguro de Stripe.",
+    "continueToPayment": "Ir al pago"
   },
   "portal": {
     "title": "Mi Cuenta",
@@ -171,8 +187,10 @@
     "cancel": "Cancelar",
     "profileUpdated": "Perfil actualizado",
     "availablePacks": "Paquetes de Créditos",
-    "noPacksAvailable": "No hay paquetes disponibles",
+    "buyCredits": "Comprar créditos",
+    "noPacksAvailable": "No hay paquetes a la venta por ahora. Contacta al negocio.",
     "buyPack": "Comprar",
+    "callVenue": "Llamar al {{phone}}",
     "packIncludes": "Incluye",
     "packValidity": "Válido por {{days}} días",
     "packNoExpiry": "Sin expiración",
