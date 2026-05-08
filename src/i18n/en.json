@@ -192,7 +192,12 @@
     "spotsLeftBadge": "{{count}} spots left",
     "spotsLeftBadge_one": "{{count}} spot left",
     "withInstructor": "with {{name}}",
-    "noInstructor": "No instructor assigned"
+    "noInstructor": "No instructor assigned",
+    "viewList": "List",
+    "viewCalendar": "Calendar",
+    "filterClasses": "All classes",
+    "filterInstructors": "All instructors",
+    "filterRooms": "All rooms"
   },
   "creditPacks": {
     "title": "Credit Packs",

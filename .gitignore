@@ -21,3 +21,4 @@ audit-*.png
 page-*.png
 page-*.yml
 console-*.log
+.gstack/

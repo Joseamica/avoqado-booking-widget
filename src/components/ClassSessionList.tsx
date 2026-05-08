@@ -5,6 +5,21 @@ import type { TFunction } from '../i18n'
 import * as api from '../api/booking'
 import { Spinner } from './ui/Spinner'
 import { CapacityBadge } from './CapacityBadge'
+import { CalendarView } from './CalendarView'
+
+const VIEW_STORAGE_KEY = 'avq_classes_view'
+type ClassesView = 'list' | 'calendar'
+
+function getStoredView(): ClassesView {
+  if (typeof window === 'undefined') return 'list'
+  try {
+    const v = localStorage.getItem(VIEW_STORAGE_KEY)
+    return v === 'calendar' ? 'calendar' : 'list'
+  } catch { return 'list' }
+}
+function setStoredView(v: ClassesView) {
+  try { localStorage.setItem(VIEW_STORAGE_KEY, v) } catch { /* */ }
+}
 
 interface ClassSessionListProps {
   /** Venue slug — required to fetch the range. */
@@ -85,6 +100,8 @@ export function ClassSessionList({ venueSlug, timezone, onSelect, onExit, t }: C
   const [error, setError] = useState<string | null>(null)
   const [windowDays, setWindowDays] = useState(INITIAL_DAYS)
   const [refetchKey, setRefetchKey] = useState(0)
+  const [view, setView] = useState<ClassesView>(getStoredView)
+  function pickView(v: ClassesView) { setView(v); setStoredView(v) }
 
   // Compute the date range based on the window. Today's date in the venue tz.
   const { dateFrom, dateTo, atMaxWindow } = useMemo(() => {
@@ -216,17 +233,58 @@ export function ClassSessionList({ venueSlug, timezone, onSelect, onExit, t }: C
 
   return (
     <div class="avq-animate-in">
-      {/* Section title */}
-      <div style={{ marginBottom: '20px' }}>
-        <h2 style={{ fontSize: '17px', fontWeight: '600', color: 'var(--avq-fg, #111827)', margin: '0 0 4px' }}>
-          {t('classList.title')}
-        </h2>
-        <p style={{ fontSize: '13px', color: 'var(--avq-muted-fg, #6b7280)', margin: 0 }}>
-          {t('classList.subtitle')}
-        </p>
+      {/* Section header — title + display toggle (List / Calendar) */}
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '12px', marginBottom: '14px', flexWrap: 'wrap' }}>
+        <div>
+          <h2 style={{ fontSize: '17px', fontWeight: '600', color: 'var(--avq-fg, #111827)', margin: '0 0 4px' }}>
+            {t('classList.title')}
+          </h2>
+          <p style={{ fontSize: '13px', color: 'var(--avq-muted-fg, #6b7280)', margin: 0 }}>
+            {t('classList.subtitle')}
+          </p>
+        </div>
+        <div style={{
+          display: 'inline-flex', padding: '3px',
+          background: 'var(--avq-muted, #f3f4f6)',
+          border: '1px solid var(--avq-border, #e8eaed)',
+          borderRadius: '999px',
+        }}>
+          <ToggleBtn active={view === 'list'} onClick={() => pickView('list')} label={t('classList.viewList')}>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+          </ToggleBtn>
+          <ToggleBtn active={view === 'calendar'} onClick={() => pickView('calendar')} label={t('classList.viewCalendar')}>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+          </ToggleBtn>
+        </div>
       </div>
 
-      {/* Date-grouped list */}
+      {/* Filter chips — UI-only for now, filtering logic in a future round */}
+      <div style={{ margin: '0 -16px 18px', overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+        <div style={{ display: 'flex', gap: '8px', padding: '0 16px 4px' }}>
+          {[t('classList.filterClasses'), t('classList.filterInstructors'), t('classList.filterRooms')].map(label => (
+            <span
+              key={label}
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: '6px',
+                padding: '7px 12px', borderRadius: '999px',
+                background: 'var(--avq-bg, #ffffff)',
+                border: '1px solid var(--avq-border, #e8eaed)',
+                fontSize: '12px', fontWeight: '500',
+                color: 'var(--avq-fg, #111827)',
+                whiteSpace: 'nowrap', flexShrink: 0,
+              }}
+            >
+              {label}
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="6 9 12 15 18 9"/></svg>
+            </span>
+          ))}
+        </div>
+      </div>
+
+      {view === 'calendar' ? (
+        <CalendarView slots={slots} timezone={timezone} onSelect={onSelect} nowMs={nowMs} t={t} />
+      ) : (
+      /* Date-grouped list */
       <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
         {groupedByDate.map(([dateKey, daySlots]) => (
           <div key={dateKey}>
@@ -324,9 +382,10 @@ export function ClassSessionList({ venueSlug, timezone, onSelect, onExit, t }: C
           </div>
         ))}
       </div>
+      )}
 
-      {/* Load more — only when not already at the server cap */}
-      {!atMaxWindow && (
+      {/* Load more — only when not already at the server cap, only on list view */}
+      {view === 'list' && !atMaxWindow && (
         <button
           type="button"
           onClick={() => setWindowDays(w => Math.min(w + PAGE_DAYS, MAX_DAYS))}
@@ -350,5 +409,42 @@ export function ClassSessionList({ venueSlug, timezone, onSelect, onExit, t }: C
         </button>
       )}
     </div>
+  )
+}
+
+function ToggleBtn({
+  active,
+  onClick,
+  label,
+  children,
+}: {
+  active: boolean
+  onClick: () => void
+  label: string
+  children: any
+}) {
+  return (
+    <button
+      type="button"
+      role="tab"
+      aria-selected={active}
+      onClick={onClick}
+      style={{
+        border: 0,
+        background: active ? 'var(--avq-fg, #111827)' : 'transparent',
+        color: active ? '#ffffff' : 'var(--avq-muted-fg, #6b7280)',
+        padding: '6px 12px',
+        fontSize: '12px',
+        fontWeight: '600',
+        cursor: 'pointer',
+        borderRadius: '999px',
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: '5px',
+      }}
+    >
+      {children}
+      {label}
+    </button>
   )
 }
