@@ -98,13 +98,35 @@
     @media (prefers-reduced-motion: reduce) {
       .loading::before { animation: none; }
     }
+    /* Skip-to-content link for keyboard users — visually hidden until focused */
+    .skip-link {
+      position: absolute;
+      top: 8px;
+      left: 8px;
+      background: var(--fg);
+      color: var(--bg-elev);
+      padding: 8px 14px;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 600;
+      text-decoration: none;
+      transform: translateY(-200%);
+      transition: transform 0.15s ease;
+      z-index: 100;
+    }
+    .skip-link:focus {
+      transform: translateY(0);
+      outline: 2px solid var(--fg-muted);
+      outline-offset: 2px;
+    }
   </style>
 </head>
 <body>
+  <a class="skip-link" href="#mount">Saltar al contenido</a>
   <div class="shell">
-    <div id="mount">
+    <main id="mount" tabindex="-1">
       <div class="loading">Cargando…</div>
-    </div>
+    </main>
     <div class="footer">
       <span>Reservas con</span>
       <a href="https://avoqado.io" target="_blank" rel="noopener">Avoqado</a>

@@ -194,7 +194,22 @@ export function ClassSessionList({ venueSlug, timezone, onSelect, onExit, t }: C
             <line x1="3" y1="10" x2="21" y2="10" />
           </svg>
         </div>
-        <p style={{ fontSize: '14px', color: 'var(--avq-muted-fg, #6b7280)' }}>{t('classList.empty')}</p>
+        <p style={{ fontSize: '14px', color: 'var(--avq-muted-fg, #6b7280)', margin: '0 0 16px' }}>
+          {t('classList.empty')}
+        </p>
+        {onExit && (
+          <button
+            type="button"
+            onClick={onExit}
+            style={{
+              fontSize: '13px', color: 'var(--avq-accent, #6366f1)', fontWeight: '500',
+              background: 'none', border: 'none', cursor: 'pointer',
+              textDecoration: 'underline', textUnderlineOffset: '2px',
+            }}
+          >
+            {t('actions.goBack')}
+          </button>
+        )}
       </div>
     )
   }
