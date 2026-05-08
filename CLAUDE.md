@@ -92,6 +92,36 @@ Production URL: `https://cdn.avoqado.io/widget.js`
 
 Cloudflare WAF has a custom skip rule for `/widget.js` to bypass Bot Fight Mode (SBFM). If the file returns 403 with `cf-mitigated: challenge`, the WAF rule may need to be re-applied via the Cloudflare API.
 
+## Hosted booking site — `book.avoqado.io`
+
+`book.avoqado.io` serves the widget as a customer-facing booking page. The host
+HTML is `public/index.html`, which reads the venue slug + optional flow segment
+from the URL and mounts `<avoqado-booking>` accordingly:
+
+| URL | Behavior |
+|-----|----------|
+| `book.avoqado.io/<slug>`               | Unified landing — two-CTA picker (Citas / Clases) + Comprar paquetes tab |
+| `book.avoqado.io/<slug>/appointments`  | Appointments-only wizard |
+| `book.avoqado.io/<slug>/classes`       | Date-first list of class sessions (Square pattern) |
+
+`public/_redirects` (`/* /index.html 200`) makes Cloudflare Pages serve
+`index.html` for any path so the slug routing works without a server.
+
+### Cloudflare Pages — custom domain mapping
+
+`book.avoqado.io` is a **custom domain on the `avoqado-booking-widget` Pages
+project**, NOT on the dashboard project. If the domain ever shows the dashboard
+SPA's 404 page, the mapping has been moved or never set up. To restore:
+
+1. Cloudflare → Workers & Pages → open project `avoqado-booking-widget`
+2. **Custom domains** → **Set up a custom domain** → enter `book.avoqado.io`
+3. If another project already owns the domain, remove it there first (Custom
+   domains → ⋮ → Remove)
+4. DNS propagates in 1–2 minutes
+
+Auto-deploy is wired via `.github/workflows/*.yml` — every push to `main`
+runs `pages deploy dist --project-name=avoqado-booking-widget --branch=main`.
+
 ## Testing
 
 Manual test without WordPress:
