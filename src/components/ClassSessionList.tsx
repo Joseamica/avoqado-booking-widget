@@ -6,6 +6,7 @@ import * as api from '../api/booking'
 import { Spinner } from './ui/Spinner'
 import { CapacityBadge } from './CapacityBadge'
 import { CalendarView } from './CalendarView'
+import { InstructorAvatar } from './InstructorAvatar'
 
 const VIEW_STORAGE_KEY = 'avq_classes_view'
 type ClassesView = 'list' | 'calendar'
@@ -420,10 +421,13 @@ export function ClassSessionList({ venueSlug, timezone, onSelect, onExit, t }: C
                       <div style={{ fontSize: '14px', fontWeight: '600', color: 'var(--avq-fg, #111827)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                         {slot.productName}
                       </div>
-                      <div style={{ fontSize: '12px', color: 'var(--avq-muted-fg, #6b7280)', marginTop: '2px' }}>
-                        {instructorName
-                          ? t('classList.withInstructor', { name: instructorName })
-                          : t('classList.noInstructor')}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '4px' }}>
+                        <InstructorAvatar instructor={slot.instructor} size={20} />
+                        <span style={{ fontSize: '12px', color: 'var(--avq-muted-fg, #6b7280)' }}>
+                          {instructorName
+                            ? t('classList.withInstructor', { name: instructorName })
+                            : t('classList.noInstructor')}
+                        </span>
                       </div>
                     </div>
 

@@ -2,6 +2,7 @@ import { h } from 'preact'
 import { useMemo, useState } from 'preact/hooks'
 import type { PublicClassSessionSlot } from '../types'
 import type { TFunction } from '../i18n'
+import { InstructorAvatar } from './InstructorAvatar'
 
 interface CalendarViewProps {
   /** Same slots the ClassSessionList consumes — already sorted by startsAt server-side. */
@@ -322,9 +323,14 @@ function SessionBlock({
       <div style={{ fontSize: '12px', fontWeight: '600', color: 'var(--avq-fg, #111827)', marginTop: '3px', lineHeight: 1.25 }}>
         {slot.productName}
       </div>
-      <div style={{ fontSize: '10px', color: 'var(--avq-muted-fg, #6b7280)', marginTop: '4px' }}>
-        {slot.instructor ? `${slot.instructor.firstName} ${slot.instructor.lastName}`.trim() : ''}
-      </div>
+      {slot.instructor && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: '5px', marginTop: '4px', fontSize: '10px', color: 'var(--avq-muted-fg, #6b7280)' }}>
+          <InstructorAvatar instructor={slot.instructor} size={16} />
+          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {`${slot.instructor.firstName} ${slot.instructor.lastName}`.trim()}
+          </span>
+        </div>
+      )}
       <span style={{
         display: 'inline-block', marginTop: '6px',
         padding: '2px 7px', borderRadius: '999px',
@@ -379,8 +385,11 @@ function SessionRow({
         <div style={{ fontSize: '14px', fontWeight: '600', color: 'var(--avq-fg, #111827)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {slot.productName}
         </div>
-        <div style={{ fontSize: '11px', color: 'var(--avq-muted-fg, #6b7280)', marginTop: '2px' }}>
-          {slot.instructor ? `${slot.instructor.firstName} ${slot.instructor.lastName}`.trim() : t('classList.noInstructor')}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '5px', marginTop: '3px', fontSize: '11px', color: 'var(--avq-muted-fg, #6b7280)' }}>
+          <InstructorAvatar instructor={slot.instructor} size={18} />
+          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {slot.instructor ? `${slot.instructor.firstName} ${slot.instructor.lastName}`.trim() : t('classList.noInstructor')}
+          </span>
         </div>
       </div>
       <span style={{

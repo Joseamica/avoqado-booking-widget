@@ -103,7 +103,12 @@ export interface PublicSlot {
   enrolled?: number
   remaining?: number
   takenSpotIds?: string[]
-  instructor?: { firstName: string; lastName: string } | null
+  instructor?: {
+    firstName: string
+    lastName: string
+    /** Phase 9: instructor avatar. Null when not uploaded — caller renders initials. */
+    photoUrl?: string | null
+  } | null
 }
 
 export interface PublicAvailabilityResponse {
