@@ -31,6 +31,10 @@ class AvoqadoBookingWidget extends HTMLElement {
 
   open() { this.dispatchEvent(new CustomEvent('_avq_open', { bubbles: false })) }
   close() { this.dispatchEvent(new CustomEvent('_avq_close', { bubbles: false })) }
+  /** Open the customer portal (sign in / sign up / account). Used by the
+   *  hosted page top-nav "Mi Cuenta" link so the host doesn't need to reach
+   *  into the widget's internal state. */
+  showAccount() { this.dispatchEvent(new CustomEvent('_avq_show_account', { bubbles: false })) }
 
   private getProps(): WidgetProps {
     const common = readCommonAttrs(this)

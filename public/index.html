@@ -16,6 +16,8 @@
       --fg: #0f0f10;
       --fg-muted: #6b7280;
       --border: rgba(15, 15, 16, 0.08);
+      --accent: #6366F1;
+      --accent-fg: #ffffff;
       --shadow: 0 1px 2px rgba(15,15,16,.04), 0 8px 32px rgba(15,15,16,.06);
       --max: 560px;
     }
@@ -29,6 +31,7 @@
         --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 32px rgba(0,0,0,.4);
       }
     }
+    *,*::before,*::after { box-sizing: border-box; }
     html, body {
       margin: 0;
       padding: 0;
@@ -38,10 +41,166 @@
       -webkit-font-smoothing: antialiased;
       -moz-osx-font-smoothing: grayscale;
       min-height: 100vh;
+      padding-bottom: env(safe-area-inset-bottom);
     }
-    body {
+
+    /* TOP NAV — only visible when widget is hosted on book.avoqado.io */
+    .topnav {
+      position: sticky;
+      top: 0;
+      z-index: 50;
+      background: var(--bg-elev);
+      border-bottom: 1px solid var(--border);
+      padding: 12px clamp(16px, 4vw, 32px);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .topnav-brand {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 16px;
+      font-weight: 700;
+      letter-spacing: -0.3px;
+      color: var(--fg);
+      text-decoration: none;
+    }
+    .topnav-logo {
+      width: 28px;
+      height: 28px;
+      border-radius: 8px;
+      background: linear-gradient(135deg, var(--accent), #4F46E5);
+      color: white;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+      font-size: 14px;
+    }
+    .topnav-links {
+      display: flex;
+      align-items: center;
+      gap: 22px;
+      font-size: 13px;
+    }
+    .topnav-links a {
+      color: var(--fg);
+      text-decoration: none;
+      font-weight: 500;
+      padding: 6px 0;
+      border-bottom: 2px solid transparent;
+    }
+    .topnav-links a:hover { color: var(--fg); border-bottom-color: var(--border); }
+    .topnav-links a.is-active {
+      color: var(--accent);
+      font-weight: 600;
+      border-bottom-color: var(--accent);
+    }
+    .topnav-cta {
+      padding: 8px 14px;
+      background: var(--accent);
+      color: var(--accent-fg);
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 600;
+      border: 0;
+      cursor: pointer;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .topnav-cta:hover { filter: brightness(1.08); }
+    .topnav-hamburger {
+      display: none;
+      width: 40px;
+      height: 40px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: var(--bg-elev);
+      cursor: pointer;
+      align-items: center;
+      justify-content: center;
+      color: var(--fg);
+    }
+    .topnav-hamburger svg { width: 18px; height: 18px; }
+    @media (max-width: 768px) {
+      .topnav-links, .topnav > .topnav-cta { display: none; }
+      .topnav-hamburger { display: inline-flex; }
+    }
+
+    /* MOBILE DRAWER */
+    .drawer {
+      position: fixed;
+      inset: 0;
+      background: rgba(15,15,16,0.45);
+      z-index: 200;
+      display: none;
+      animation: fade-in .15s ease both;
+    }
+    .drawer.open { display: block; }
+    @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+    .drawer-panel {
+      position: absolute;
+      top: 0;
+      right: 0;
+      width: min(85vw, 320px);
+      height: 100%;
+      background: var(--bg-elev);
+      padding: 20px 18px calc(20px + env(safe-area-inset-bottom));
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      box-shadow: -4px 0 24px rgba(0,0,0,0.16);
+      transform: translateX(0);
+      animation: slide-in .2s ease both;
+    }
+    @keyframes slide-in { from { transform: translateX(100%); } to { transform: translateX(0); } }
+    .drawer-close {
+      align-self: flex-end;
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      border: 1px solid var(--border);
+      background: var(--bg-elev);
+      color: var(--fg);
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 8px;
+    }
+    .drawer-close svg { width: 16px; height: 16px; }
+    .drawer-link {
+      padding: 14px 12px;
+      font-size: 15px;
+      font-weight: 500;
+      color: var(--fg);
+      text-decoration: none;
+      border-bottom: 1px solid var(--border);
+      cursor: pointer;
+      background: transparent;
+      border-left: 0;
+      border-right: 0;
+      border-top: 0;
+      text-align: left;
+    }
+    .drawer-link.is-active { color: var(--accent); font-weight: 700; }
+    .drawer-link.is-cta {
+      background: var(--accent);
+      color: var(--accent-fg);
+      border-radius: 10px;
+      text-align: center;
+      margin-top: 14px;
+      border: 0;
+      font-weight: 600;
+    }
+
+    /* CONTENT */
+    .page {
       padding: clamp(16px, 4vw, 32px) clamp(12px, 3vw, 24px);
-      box-sizing: border-box;
     }
     .shell {
       max-width: var(--max);
@@ -62,11 +221,7 @@
       font-size: 12px;
       color: var(--fg-muted);
     }
-    .footer a {
-      color: inherit;
-      text-decoration: none;
-      font-weight: 500;
-    }
+    .footer a { color: inherit; text-decoration: none; font-weight: 500; }
     .footer a:hover { color: var(--fg); }
     avoqado-booking { display: block; width: 100%; }
     .loading, .empty {
@@ -75,12 +230,7 @@
       color: var(--fg-muted);
       font-size: 14px;
     }
-    .empty .empty-title {
-      color: var(--fg);
-      font-size: 16px;
-      font-weight: 600;
-      margin: 0 0 8px;
-    }
+    .empty .empty-title { color: var(--fg); font-size: 16px; font-weight: 600; margin: 0 0 8px; }
     .empty a { color: var(--fg); text-decoration: none; font-weight: 500; }
     .loading::before {
       content: '';
@@ -97,8 +247,10 @@
     @keyframes spin { to { transform: rotate(360deg); } }
     @media (prefers-reduced-motion: reduce) {
       .loading::before { animation: none; }
+      .drawer { animation: none; }
+      .drawer-panel { animation: none; }
     }
-    /* Skip-to-content link for keyboard users — visually hidden until focused */
+    /* Skip-to-content */
     .skip-link {
       position: absolute;
       top: 8px;
@@ -112,7 +264,7 @@
       text-decoration: none;
       transform: translateY(-200%);
       transition: transform 0.15s ease;
-      z-index: 100;
+      z-index: 999;
     }
     .skip-link:focus {
       transform: translateY(0);
@@ -123,33 +275,63 @@
 </head>
 <body>
   <a class="skip-link" href="#mount">Saltar al contenido</a>
-  <div class="shell">
-    <main id="mount" tabindex="-1">
-      <div class="loading">Cargando…</div>
-    </main>
-    <div class="footer">
-      <span>Reservas con</span>
-      <a href="https://avoqado.io" target="_blank" rel="noopener">Avoqado</a>
+
+  <!-- Top nav. Built dynamically by the script below so the venue name
+       (parsed from the URL) and the active link both reflect current state. -->
+  <header class="topnav" id="topnav" hidden>
+    <a class="topnav-brand" id="nav-brand" href="/">
+      <span class="topnav-logo" id="nav-logo">·</span>
+      <span id="nav-venue-name">Reservas</span>
+    </a>
+    <nav class="topnav-links" id="nav-links" aria-label="Secciones del sitio">
+      <a href="" data-route="appointments">Citas</a>
+      <a href="" data-route="classes">Clases</a>
+      <a href="" data-route="packs">Comprar paquetes</a>
+    </nav>
+    <button class="topnav-cta" id="nav-account" type="button">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+      Mi Cuenta
+    </button>
+    <button class="topnav-hamburger" id="nav-hamburger" type="button" aria-label="Abrir menú">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+    </button>
+  </header>
+
+  <div class="drawer" id="drawer" role="dialog" aria-modal="true" aria-label="Menú">
+    <div class="drawer-panel">
+      <button class="drawer-close" id="drawer-close" type="button" aria-label="Cerrar menú">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+      <a class="drawer-link" href="" data-route="appointments">Citas</a>
+      <a class="drawer-link" href="" data-route="classes">Clases</a>
+      <a class="drawer-link" href="" data-route="packs">Comprar paquetes</a>
+      <button class="drawer-link is-cta" id="drawer-account" type="button">Mi Cuenta</button>
+    </div>
+  </div>
+
+  <div class="page">
+    <div class="shell">
+      <main id="mount" tabindex="-1">
+        <div class="loading">Cargando…</div>
+      </main>
+      <div class="footer">
+        <span>Reservas con</span>
+        <a href="https://avoqado.io" target="_blank" rel="noopener">Avoqado</a>
+      </div>
     </div>
   </div>
 
   <script>
     (function () {
       // Parse path: /<venueSlug>[/appointments|/classes]
-      // Examples:
-      //   book.avoqado.io/mindform                  → slug=mindform, flowType=
-      //   book.avoqado.io/mindform/appointments     → slug=mindform, flowType=appointments
-      //   book.avoqado.io/mindform/classes          → slug=mindform, flowType=classes
-      //   book.avoqado.io/mindform/manage/abc       → reserved for future "manage booking" flow
       var rawPath = window.location.pathname.replace(/^\/+|\/+$/g, '')
       var parts = rawPath.split('/').filter(Boolean)
       var slug = parts[0] || ''
       var flowType = parts[1] || ''
 
-      // No slug → friendly fallback (rather than blank loading state).
       if (!slug) {
-        var mount = document.getElementById('mount')
-        mount.innerHTML =
+        var mountEmpty = document.getElementById('mount')
+        mountEmpty.innerHTML =
           '<div class="empty">' +
             '<p class="empty-title">Venue no especificado</p>' +
             '<p>Pide al negocio el enlace correcto, o vuelve a <a href="https://avoqado.io">avoqado.io</a></p>' +
@@ -157,26 +339,86 @@
         return
       }
 
+      // ----- TOP NAV setup --------------------------------------------------
+      // We only render the top nav for the hosted page (book.avoqado.io). The
+      // widget can also be embedded as a Web Component on third-party sites;
+      // those embeds shouldn't get an Avoqado-branded chrome above them.
+      var nav = document.getElementById('topnav')
+      var navVenue = document.getElementById('nav-venue-name')
+      var navLogo = document.getElementById('nav-logo')
+      var navBrand = document.getElementById('nav-brand')
+      var displayName = slug.charAt(0).toUpperCase() + slug.slice(1).replace(/[-_]/g, ' ')
+      navVenue.textContent = displayName
+      navLogo.textContent = displayName.charAt(0).toUpperCase()
+      navBrand.href = '/' + slug
+
+      function buildHref(route) {
+        if (route === 'appointments') return '/' + slug + '/appointments'
+        if (route === 'classes') return '/' + slug + '/classes'
+        if (route === 'packs') return '/' + slug + '#packs'
+        return '/' + slug
+      }
+      function activeRoute() {
+        if (flowType === 'appointments') return 'appointments'
+        if (flowType === 'classes') return 'classes'
+        if (window.location.hash === '#packs') return 'packs'
+        return null // landing
+      }
+      var activeNow = activeRoute()
+      function applyActive(scope) {
+        scope.querySelectorAll('a[data-route]').forEach(function (a) {
+          var route = a.getAttribute('data-route')
+          a.href = buildHref(route)
+          a.classList.toggle('is-active', route === activeNow)
+        })
+      }
+      applyActive(nav)
+      applyActive(document.getElementById('drawer'))
+      nav.hidden = false
+
+      // Drawer behavior (mobile)
+      var drawer = document.getElementById('drawer')
+      function openDrawer() { drawer.classList.add('open') }
+      function closeDrawer() { drawer.classList.remove('open') }
+      document.getElementById('nav-hamburger').addEventListener('click', openDrawer)
+      document.getElementById('drawer-close').addEventListener('click', closeDrawer)
+      drawer.addEventListener('click', function (e) {
+        if (e.target === drawer) closeDrawer()
+      })
+      document.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape' && drawer.classList.contains('open')) closeDrawer()
+      })
+
+      // ----- Widget mount ---------------------------------------------------
       var el = document.createElement('avoqado-booking')
       el.setAttribute('venue', slug)
       el.setAttribute('mode', 'inline')
 
-      // Pass per-type flow attribute when present so the widget renders the
-      // narrowed UI (appointments wizard or classes date-first list).
       if (flowType === 'appointments' || flowType === 'classes') {
         el.setAttribute('flow-type', flowType)
       }
 
-      // Per-request overrides via query string (locale, theme, accent-color)
       var params = new URLSearchParams(window.location.search)
-      var overrideAttrs = ['locale', 'theme', 'accent-color']
-      overrideAttrs.forEach(function (attr) {
+      ;['locale', 'theme', 'accent-color'].forEach(function (attr) {
         var val = params.get(attr)
         if (val) el.setAttribute(attr, val)
       })
 
+      // Wire "Mi Cuenta" buttons → widget.showAccount()
+      function callShowAccount() {
+        if (typeof el.showAccount === 'function') {
+          el.showAccount()
+        } else {
+          // Older widget bundles without showAccount(): fallback to event dispatch
+          el.dispatchEvent(new CustomEvent('_avq_show_account', { bubbles: false }))
+        }
+        closeDrawer()
+      }
+      document.getElementById('nav-account').addEventListener('click', callShowAccount)
+      document.getElementById('drawer-account').addEventListener('click', callShowAccount)
+
+      // Mount widget into the shell
       var mountEl = document.getElementById('mount')
-      // Replace loading once the widget signals ready, else after a short timeout.
       var swapped = false
       var swap = function () {
         if (swapped) return
@@ -185,7 +427,6 @@
         mountEl.appendChild(el)
       }
       el.addEventListener('avoqado:ready', swap, { once: true })
-      // Append immediately so older bundles that don't dispatch the event still render.
       mountEl.appendChild(el)
       setTimeout(function () {
         var loading = mountEl.querySelector('.loading')

@@ -84,8 +84,26 @@ export function BookingFlow({ props }: BookingFlowProps) {
   // they just bought (and can use them on the next booking).
   const [landingInitialTab, setLandingInitialTab] = useState<'book' | 'packs'>(() => {
     if (typeof window === 'undefined') return 'book'
-    return new URL(window.location.href).searchParams.get('avq_credits') === 'success' ? 'packs' : 'book'
+    const url = new URL(window.location.href)
+    // 'packs' surfaces when the customer just bought (avq_credits=success) OR when
+    // the hosted-page top-nav "Comprar paquetes" link points to /<slug>#packs.
+    if (url.searchParams.get('avq_credits') === 'success') return 'packs'
+    if (window.location.hash === '#packs') return 'packs'
+    return 'book'
   })
+
+  // Listen for the custom `_avq_show_account` event the host page top-nav fires
+  // when the customer clicks "Mi Cuenta". The host calls widgetEl.showAccount()
+  // → the widget element fires this event → we open the portal. Decoupled from
+  // window.location so embedded widgets aren't affected.
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const host = props.hostElement
+    if (!host) return
+    const onShowAccount = () => { showPortal.value = true }
+    host.addEventListener('_avq_show_account', onShowAccount)
+    return () => host.removeEventListener('_avq_show_account', onShowAccount)
+  }, [props.hostElement])
 
   // Customer-facing TZ — initialized from the stored preference. The TimezoneModal
   // (rendered below) updates this signal when the customer picks one. Used by
