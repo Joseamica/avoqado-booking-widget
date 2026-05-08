@@ -27,6 +27,7 @@ import { CreditSelector } from './CreditSelector'
 import { CheckoutModal } from './CheckoutModal'
 import { CustomerPortal } from './CustomerPortal'
 import { ClassSessionList } from './ClassSessionList'
+import { ClassDetailView } from './ClassDetailView'
 import { UnifiedLanding } from './UnifiedLanding'
 import { PaymentSelector } from './PaymentSelector'
 import { TimezoneModal, getStoredTzPreference } from './TimezoneModal'
@@ -66,6 +67,11 @@ export function BookingFlow({ props }: BookingFlowProps) {
   const [slots, setSlots] = useState<PublicSlot[]>([])
   const [slotsLoading, setSlotsLoading] = useState(false)
   const [seatPickerActive, setSeatPickerActive] = useState(false)
+  // Phase 10: intermediate "class detail" step in the /classes flow.
+  // When true, ClassDetailView is rendered above the seat/form step. Going
+  // back from detail returns to the listing; "Reservar" continues to seat
+  // picker (if layoutConfig) or the form step.
+  const [classDetailActive, setClassDetailActive] = useState(false)
   const [buyingPackId, setBuyingPackId] = useState<string | null>(null)
   const [checkoutPackId, setCheckoutPackId] = useState<string | null>(null)
   const [checkoutPhone, setCheckoutPhone] = useState('')
@@ -413,10 +419,13 @@ export function BookingFlow({ props }: BookingFlowProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [step.value, customerInfo.value?.id, showCreditSelector, showNoCreditsBuyPrompt, showPaymentSelector])
 
-  const showBack = !showLanding && (
+  // The global back button is suppressed inside the ClassDetailView (which has
+  // its own Atrás link) and on the listing itself. It still fires for the
+  // appointments wizard's middle steps and the class flow's seat picker / form.
+  const showBack = !showLanding && !classDetailActive && (
     (step.value > (hasServiceStep.value ? config.serviceStep : config.dateStep) && step.value < config.confirmStep)
     || (step.value === config.timeStep && seatPickerActive)
-  )
+  ) && !(flowType.value === 'classes' && step.value === config.dateStep)
 
   function handleBack() {
     // If showing no-credits buy prompt, go back to form
@@ -775,23 +784,48 @@ export function BookingFlow({ props }: BookingFlowProps) {
         {/* Class flow: date-first listing replaces service/date/time steps.
             On desktop (>=880px) we render a 2-col layout with the venue summary
             + pack CTA on the right; mobile collapses to single column. */}
-        {!showLanding && flowType.value === 'classes' && step.value < config.formStep && !seatPickerActive && (
+        {/* Class detail intermediate screen — shown after a slot is picked
+            from the listing, before the seat picker / form. Lets the customer
+            see capacity, instructor, description, and confirm with a clear
+            Reservar CTA. */}
+        {!showLanding && flowType.value === 'classes' && step.value < config.formStep && !seatPickerActive && classDetailActive && selectedSlot.value && (
+          <ClassDetailView
+            slot={selectedSlot.value as PublicClassSessionSlot}
+            product={selectedProduct.value}
+            timezone={resolveDisplayTz(info.timezone)}
+            onBook={() => {
+              setClassDetailActive(false)
+              if (selectedProduct.value?.layoutConfig) {
+                setSeatPickerActive(true)
+                step.value = config.timeStep
+              } else {
+                step.value = config.formStep
+              }
+            }}
+            onBack={() => {
+              setClassDetailActive(false)
+              selectedSlot.value = null
+              selectedProduct.value = null
+            }}
+            t={t}
+          />
+        )}
+
+        {!showLanding && flowType.value === 'classes' && step.value < config.formStep && !seatPickerActive && !classDetailActive && (
           <div class="avq-classes-layout">
             <div class="avq-classes-main">
               <ClassSessionList
                 venueSlug={props.venue}
                 timezone={resolveDisplayTz(info.timezone)}
                 onSelect={(slot: PublicClassSessionSlot) => {
+                  // Phase 10: route the tap into the intermediate detail view
+                  // instead of jumping straight to seat/form. Detail's "Reservar"
+                  // button picks up from here.
                   const product = info.products.find(p => p.id === slot.productId) ?? null
                   selectedProduct.value = product
                   selectedSlot.value = slot
                   selectedSpotIds.value = []
-                  if (product?.layoutConfig) {
-                    setSeatPickerActive(true)
-                    step.value = config.timeStep
-                  } else {
-                    step.value = config.formStep
-                  }
+                  setClassDetailActive(true)
                 }}
                 onExit={() => {
                   flowType.value = 'unified'

@@ -180,6 +180,24 @@
     "buyButton": "Comprar",
     "processing": "Procesando…"
   },
+  "classDetail": {
+    "fecha": "Fecha",
+    "hora": "Horario",
+    "cupo": "Cupo",
+    "salon": "Salón",
+    "peopleMax": "personas máx",
+    "enrolled": "inscritas",
+    "about": "Acerca de esta clase",
+    "aboutInstructor": "Tu instructor",
+    "free": "Gratis",
+    "orOneCredit": "o 1 crédito",
+    "orNCredits": "o {{count}} créditos",
+    "payAtBooking": "Pago al reservar · cancelación gratis hasta 12h antes",
+    "payAtVenue": "Pago al llegar al establecimiento",
+    "payOptional": "Puedes pagar ahora o al llegar",
+    "bookCta": "Reservar lugar",
+    "bookWithCredit": "Reservar con créditos"
+  },
   "classList": {
     "title": "Próximas clases",
     "subtitle": "Selecciona una clase para reservar",
