@@ -24,6 +24,9 @@
     /* Wider shell when the customer is on /classes — the calendar week-grid
        needs ~7 × 130px columns + padding to breathe. */
     body.flow-classes .shell { max-width: 1100px; }
+    /* /appointments runs the wizard linear-style but still benefits from a
+       sidebar with venue info on desktop, so widen the shell modestly. */
+    body.flow-appointments .shell { max-width: 960px; }
     @media (prefers-color-scheme: dark) {
       :root {
         --bg: #0f0f10;

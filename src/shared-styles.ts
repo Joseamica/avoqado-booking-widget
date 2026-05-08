@@ -81,6 +81,8 @@ export const SHARED_CSS = `
   .max-w-lg { max-width: 32rem; }
   /* Wide container for /classes view — desktop calendar grid + sidebar need room. */
   .avq-wide { max-width: 1100px; }
+  /* Mid-width container for /appointments — wizard column + venue sidebar. */
+  .avq-mid { max-width: 880px; }
   .mx-auto { margin-left: auto; margin-right: auto; }
   .mb-2 { margin-bottom: 0.5rem; }
   .mb-3 { margin-bottom: 0.75rem; }

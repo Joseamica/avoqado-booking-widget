@@ -5,19 +5,23 @@ import { Toast } from './components/ui/Toast'
 
 export default function App(props: WidgetProps) {
   // The default container max-width keeps the booking flow narrow + focused.
-  // When the customer enters via /classes, we widen it so the optional desktop
-  // sidebar + week-grid Calendar view have room. The host page (book.avoqado.io)
-  // also widens its outer .shell when body.flow-classes is set; the two work
-  // together so the layout stays consistent across the embedded widget and the
-  // hosted page.
-  const wide = props.flowType === 'classes'
+  // /classes widens to 1100px (calendar grid + sidebar). /appointments widens
+  // modestly to ~880px so the wizard step content + venue sidebar both have
+  // room on desktop. The host page (book.avoqado.io) widens its outer .shell
+  // accordingly via body.flow-classes / body.flow-appointments.
+  const widthClass =
+    props.flowType === 'classes'
+      ? 'avq-wide'
+      : props.flowType === 'appointments'
+        ? 'avq-mid'
+        : 'max-w-lg'
   return (
     <div
       data-avq-theme={props.theme}
       style={props.accentColor ? `--avq-accent:${props.accentColor}` : undefined}
       class="avq-root"
     >
-      <div class={'mx-auto px-4 py-6 ' + (wide ? 'avq-wide' : 'max-w-lg')}>
+      <div class={'mx-auto px-4 py-6 ' + widthClass}>
         <BookingFlow props={props} />
       </div>
       <Toast />

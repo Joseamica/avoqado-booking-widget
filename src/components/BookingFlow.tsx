@@ -865,24 +865,50 @@ export function BookingFlow({ props }: BookingFlowProps) {
         )}
 
         {!showLanding && flowType.value !== 'classes' && step.value === config.serviceStep && hasServiceStep.value && (
-          <div>
-            <ServiceSelector
-              products={visibleProducts.value}
-              selectedProductId={selectedProduct.value?.id ?? null}
-              onSelect={(product) => {
-                selectedProduct.value = product
-                step.value = config.dateStep
-              }}
-              t={t}
-            />
-            {creditPacks.value.length > 0 && (
-              <CreditPackBanner
-                packs={creditPacks.value}
-                onBuy={handleBuyPack}
-                buyingPackId={buyingPackId}
+          <div class="avq-appts-layout">
+            <div class="avq-appts-main">
+              <ServiceSelector
+                products={visibleProducts.value}
+                selectedProductId={selectedProduct.value?.id ?? null}
+                onSelect={(product) => {
+                  selectedProduct.value = product
+                  step.value = config.dateStep
+                }}
                 t={t}
               />
+              {creditPacks.value.length > 0 && (
+                <CreditPackBanner
+                  packs={creditPacks.value}
+                  onBuy={handleBuyPack}
+                  buyingPackId={buyingPackId}
+                  t={t}
+                />
+              )}
+            </div>
+            {flowType.value === 'appointments' && (
+              <aside class="avq-appts-sidebar">
+                <VenueSidebarCard
+                  info={info}
+                  creditPacks={creditPacks.value}
+                  onBuyPack={handleBuyPack}
+                  customerInfo={customerInfo.value}
+                  t={t}
+                />
+              </aside>
             )}
+            <style>{`
+              .avq-appts-layout { display: grid; grid-template-columns: 1fr; gap: 0; }
+              .avq-appts-main { min-width: 0; }
+              .avq-appts-sidebar { display: none; }
+              @media (min-width: 880px) {
+                .avq-appts-layout {
+                  grid-template-columns: minmax(0, 1fr) 240px;
+                  gap: 24px;
+                  align-items: start;
+                }
+                .avq-appts-sidebar { display: block; position: sticky; top: 24px; }
+              }
+            `}</style>
           </div>
         )}
 
