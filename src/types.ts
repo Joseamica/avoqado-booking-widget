@@ -25,6 +25,8 @@ export type UpfrontPolicy = 'required' | 'at_venue' | 'optional'
 export interface Product {
   id: string
   name: string
+  description?: string | null
+  imageUrl?: string | null
   price: number | null
   duration: number | null
   eventCapacity: number | null
@@ -46,6 +48,12 @@ export interface PublicVenueInfo {
   name: string
   slug: string
   logo: string | null
+  /** Phase 7: wide cover photo shown on the public booking landing hero. */
+  heroImageUrl?: string | null
+  /** Phase 7: HEX (or any CSS color) the venue admin set as their brand
+   *  accent. Widget uses this as --avq-accent unless overridden by the
+   *  `accent-color` HTML attribute on the host element. */
+  primaryColor?: string | null
   type: string
   address: string | null
   phone: string | null
@@ -111,6 +119,8 @@ export interface PublicAvailabilityResponse {
 export interface PublicClassSessionSlot extends PublicSlot {
   productId: string
   productName: string
+  /** Phase 7: thumbnail for the class card. Null when the venue hasn't uploaded one. */
+  productImageUrl?: string | null
 }
 
 export interface PublicClassSessionRangeResponse {

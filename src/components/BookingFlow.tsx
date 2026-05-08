@@ -640,8 +640,17 @@ export function BookingFlow({ props }: BookingFlowProps) {
     await submitReservation(data)
   }
 
+  // Apply venue brand color as --avq-accent unless the host element supplied an
+  // explicit `accent-color` attribute (which already set it on .avq-root). The
+  // venue's color wins over the default but loses to an explicit override —
+  // gives the widget a personalized feel without taking control away from
+  // embedders who pass their own accent.
+  const accentOverride = !props.accentColor && info.primaryColor
+    ? { ['--avq-accent' as any]: info.primaryColor }
+    : undefined
+
   return (
-    <div>
+    <div style={accentOverride}>
       {/* Venue header */}
       <div style={{
         display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px',
@@ -738,6 +747,8 @@ export function BookingFlow({ props }: BookingFlowProps) {
             creditPacks={creditPacks.value}
             buyingPackId={buyingPackId}
             initialTab={landingInitialTab}
+            heroImageUrl={info.heroImageUrl ?? null}
+            venueName={info.name}
             onBuyPack={handleBuyPack}
             onPickAppointments={() => {
               flowType.value = 'appointments'

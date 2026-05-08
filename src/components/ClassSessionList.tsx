@@ -401,6 +401,20 @@ export function ClassSessionList({ venueSlug, timezone, onSelect, onExit, t }: C
                       </div>
                     </div>
 
+                    {/* Phase 7: product thumbnail when the venue uploaded one */}
+                    {slot.productImageUrl && (
+                      <img
+                        src={slot.productImageUrl}
+                        alt=""
+                        style={{
+                          width: '44px', height: '44px', borderRadius: '8px', flexShrink: 0,
+                          objectFit: 'cover',
+                          background: 'var(--avq-muted, #f8f9fb)',
+                        }}
+                        onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none' }}
+                      />
+                    )}
+
                     {/* Class info */}
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontSize: '14px', fontWeight: '600', color: 'var(--avq-fg, #111827)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>

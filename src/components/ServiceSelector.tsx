@@ -148,24 +148,42 @@ function ClassCard({ product, isSelected, onSelect, t }: {
       <div style={{ flex: 1, padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
         {/* Top row: name + badge */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
-            {/* Group icon */}
-            <div style={{
-              width: '32px', height: '32px', borderRadius: '10px', flexShrink: 0,
-              background: 'color-mix(in srgb, var(--avq-accent, #6366f1) 10%, transparent)',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-            }}>
-              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--avq-accent, #6366f1)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
-                <circle cx="9" cy="7" r="4" />
-                <path d="M22 21v-2a4 4 0 0 0-3-3.87" />
-                <path d="M16 3.13a4 4 0 0 1 0 7.75" />
-              </svg>
-            </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0 }}>
+            {/* Phase 7: product image when available, falls back to the group icon. */}
+            {product.imageUrl ? (
+              <img
+                src={product.imageUrl}
+                alt=""
+                style={{
+                  width: '40px', height: '40px', borderRadius: '10px', flexShrink: 0,
+                  objectFit: 'cover',
+                  background: 'var(--avq-muted, #f8f9fb)',
+                }}
+                onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none' }}
+              />
+            ) : (
+              <div style={{
+                width: '40px', height: '40px', borderRadius: '10px', flexShrink: 0,
+                background: 'color-mix(in srgb, var(--avq-accent, #6366f1) 10%, transparent)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+              }}>
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--avq-accent, #6366f1)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+                  <circle cx="9" cy="7" r="4" />
+                  <path d="M22 21v-2a4 4 0 0 0-3-3.87" />
+                  <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+                </svg>
+              </div>
+            )}
             <div style={{ minWidth: 0 }}>
               <p style={{ margin: 0, fontSize: '15px', fontWeight: '600', color: 'var(--avq-fg, #111827)', letterSpacing: '-0.01em' }}>
                 {product.name}
               </p>
+              {product.description && (
+                <p style={{ margin: '2px 0 0', fontSize: '12px', color: 'var(--avq-muted-fg, #6b7280)', lineHeight: 1.35, overflow: 'hidden', textOverflow: 'ellipsis', display: '-webkit-box', WebkitLineClamp: 1, WebkitBoxOrient: 'vertical' }}>
+                  {product.description}
+                </p>
+              )}
             </div>
           </div>
           <RadioDot isSelected={isSelected} />

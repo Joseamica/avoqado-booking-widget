@@ -21,6 +21,11 @@ interface UnifiedLandingProps {
    *  just returned from a successful Stripe checkout so they immediately see
    *  the credits they just bought. */
   initialTab?: Tab
+  /** Phase 7: hero photo URL — when present, renders a full-bleed banner
+   *  above the title. Falls back to a subtle gradient when null. */
+  heroImageUrl?: string | null
+  /** Phase 7: venue display name shown over the hero (or in the title). */
+  venueName?: string
   t: TFunction
 }
 
@@ -43,6 +48,8 @@ export function UnifiedLanding({
   onBuyPack,
   buyingPackId,
   initialTab,
+  heroImageUrl,
+  venueName,
   t,
 }: UnifiedLandingProps) {
   const [tab, setTab] = useState<Tab>(initialTab ?? 'book')
@@ -52,6 +59,43 @@ export function UnifiedLanding({
 
   return (
     <div class="avq-animate-in" style={{ padding: '4px 0 16px' }}>
+      {/* Phase 7: hero banner above the picker. Only renders when the venue
+          uploaded a photo — without a photo we keep the existing tighter
+          layout to avoid an empty placeholder eating screen real estate. */}
+      {heroImageUrl && (
+        <div
+          style={{
+            position: 'relative',
+            width: '100%',
+            aspectRatio: '16/9',
+            maxHeight: '280px',
+            borderRadius: '14px',
+            overflow: 'hidden',
+            marginBottom: '20px',
+            backgroundImage: `linear-gradient(180deg, rgba(0,0,0,0) 50%, rgba(0,0,0,0.6) 100%), url('${heroImageUrl}')`,
+            backgroundSize: 'cover',
+            backgroundPosition: 'center',
+          }}
+        >
+          {venueName && (
+            <div style={{
+              position: 'absolute',
+              left: '20px',
+              right: '20px',
+              bottom: '16px',
+              color: '#ffffff',
+              fontSize: '24px',
+              fontWeight: '700',
+              letterSpacing: '-0.5px',
+              lineHeight: '1.1',
+              textShadow: '0 1px 8px rgba(0,0,0,0.4)',
+            }}>
+              {venueName}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Tab switcher — only shown when packs exist; otherwise the CTAs alone are clearer */}
       {hasPacks && (
         <div
