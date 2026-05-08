@@ -79,6 +79,8 @@ export const SHARED_CSS = `
   .h-1\\.5 { height: 0.375rem; }
   .min-w-\\[72px\\] { min-width: 72px; }
   .max-w-lg { max-width: 32rem; }
+  /* Wide container for /classes view — desktop calendar grid + sidebar need room. */
+  .avq-wide { max-width: 1100px; }
   .mx-auto { margin-left: auto; margin-right: auto; }
   .mb-2 { margin-bottom: 0.5rem; }
   .mb-3 { margin-bottom: 0.75rem; }

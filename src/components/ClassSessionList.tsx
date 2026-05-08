@@ -103,6 +103,11 @@ export function ClassSessionList({ venueSlug, timezone, onSelect, onExit, t }: C
   const [view, setView] = useState<ClassesView>(getStoredView)
   function pickView(v: ClassesView) { setView(v); setStoredView(v) }
 
+  // Filter state — per-chip dropdown selection. Empty = "all".
+  const [classFilter, setClassFilter] = useState<string>('')
+  const [instructorFilter, setInstructorFilter] = useState<string>('')
+  const [openChip, setOpenChip] = useState<null | 'class' | 'instructor' | 'rooms'>(null)
+
   // Compute the date range based on the window. Today's date in the venue tz.
   const { dateFrom, dateTo, atMaxWindow } = useMemo(() => {
     const todayVenue = new Date().toLocaleDateString('en-CA', { timeZone: timezone })
@@ -136,18 +141,42 @@ export function ClassSessionList({ venueSlug, timezone, onSelect, onExit, t }: C
     return () => { cancelled = true }
   }, [venueSlug, dateFrom, dateTo, refetchKey])
 
-  // Group slots by venue-local date. Server already sorts by startsAt, so the
-  // groups + each group's items are pre-ordered. Map preserves insertion order.
+  // Available filter options — derived from the slots themselves so the
+  // dropdowns only show what actually exists this week.
+  const classOptions = useMemo(() => {
+    return Array.from(new Set(slots.map(s => s.productName).filter((v): v is string => Boolean(v)))).sort()
+  }, [slots])
+  const instructorOptions = useMemo(() => {
+    const names = slots
+      .map(s => s.instructor ? `${s.instructor.firstName} ${s.instructor.lastName}`.trim() : null)
+      .filter((v): v is string => Boolean(v))
+    return Array.from(new Set(names)).sort()
+  }, [slots])
+
+  // Apply filters to the slot list before grouping. Empty filter = no constraint.
+  const filteredSlots = useMemo(() => {
+    return slots.filter(s => {
+      if (classFilter && s.productName !== classFilter) return false
+      if (instructorFilter) {
+        const name = s.instructor ? `${s.instructor.firstName} ${s.instructor.lastName}`.trim() : ''
+        if (name !== instructorFilter) return false
+      }
+      return true
+    })
+  }, [slots, classFilter, instructorFilter])
+
+  // Group filtered slots by venue-local date. Server already sorts by startsAt,
+  // so the groups + each group's items are pre-ordered.
   const groupedByDate = useMemo(() => {
     const map = new Map<string, PublicClassSessionSlot[]>()
-    for (const slot of slots) {
+    for (const slot of filteredSlots) {
       const dateKey = isoToVenueDate(slot.startsAt, timezone)
       const bucket = map.get(dateKey)
       if (bucket) bucket.push(slot)
       else map.set(dateKey, [slot])
     }
     return Array.from(map.entries())
-  }, [slots, timezone])
+  }, [filteredSlots, timezone])
 
   const nowMs = Date.now()
   const locale: 'en' | 'es' = (t('classList.today') === 'Today' ? 'en' : 'es')
@@ -258,31 +287,49 @@ export function ClassSessionList({ venueSlug, timezone, onSelect, onExit, t }: C
         </div>
       </div>
 
-      {/* Filter chips — UI-only for now, filtering logic in a future round */}
-      <div style={{ margin: '0 -16px 18px', overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+      {/* Filter chips with dropdowns */}
+      <div style={{ margin: '0 -16px 18px', overflowX: 'auto', WebkitOverflowScrolling: 'touch', position: 'relative' }}>
         <div style={{ display: 'flex', gap: '8px', padding: '0 16px 4px' }}>
-          {[t('classList.filterClasses'), t('classList.filterInstructors'), t('classList.filterRooms')].map(label => (
-            <span
-              key={label}
-              style={{
-                display: 'inline-flex', alignItems: 'center', gap: '6px',
-                padding: '7px 12px', borderRadius: '999px',
-                background: 'var(--avq-bg, #ffffff)',
-                border: '1px solid var(--avq-border, #e8eaed)',
-                fontSize: '12px', fontWeight: '500',
-                color: 'var(--avq-fg, #111827)',
-                whiteSpace: 'nowrap', flexShrink: 0,
-              }}
-            >
-              {label}
-              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="6 9 12 15 18 9"/></svg>
-            </span>
-          ))}
+          <FilterChip
+            label={classFilter || t('classList.filterClasses')}
+            active={Boolean(classFilter)}
+            open={openChip === 'class'}
+            onToggle={() => setOpenChip(openChip === 'class' ? null : 'class')}
+            options={classOptions}
+            allLabel={t('classList.filterClasses')}
+            onPick={(v) => { setClassFilter(v); setOpenChip(null) }}
+          />
+          <FilterChip
+            label={instructorFilter || t('classList.filterInstructors')}
+            active={Boolean(instructorFilter)}
+            open={openChip === 'instructor'}
+            onToggle={() => setOpenChip(openChip === 'instructor' ? null : 'instructor')}
+            options={instructorOptions}
+            allLabel={t('classList.filterInstructors')}
+            onPick={(v) => { setInstructorFilter(v); setOpenChip(null) }}
+          />
+          {/* Rooms filter stays placeholder until Venue.rooms is in the schema */}
+          <span
+            style={{
+              display: 'inline-flex', alignItems: 'center', gap: '6px',
+              padding: '7px 12px', borderRadius: '999px',
+              background: 'var(--avq-bg, #ffffff)',
+              border: '1px solid var(--avq-border, #e8eaed)',
+              fontSize: '12px', fontWeight: '500',
+              color: 'var(--avq-muted-fg, #9ca3af)',
+              whiteSpace: 'nowrap', flexShrink: 0,
+              cursor: 'not-allowed',
+            }}
+            title="Próximamente"
+          >
+            {t('classList.filterRooms')}
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="6 9 12 15 18 9"/></svg>
+          </span>
         </div>
       </div>
 
       {view === 'calendar' ? (
-        <CalendarView slots={slots} timezone={timezone} onSelect={onSelect} nowMs={nowMs} t={t} />
+        <CalendarView slots={filteredSlots} timezone={timezone} onSelect={onSelect} nowMs={nowMs} t={t} />
       ) : (
       /* Date-grouped list */
       <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
@@ -409,6 +456,104 @@ export function ClassSessionList({ venueSlug, timezone, onSelect, onExit, t }: C
         </button>
       )}
     </div>
+  )
+}
+
+function FilterChip({
+  label,
+  active,
+  open,
+  onToggle,
+  options,
+  allLabel,
+  onPick,
+}: {
+  label: string
+  active: boolean
+  open: boolean
+  onToggle: () => void
+  options: string[]
+  allLabel: string
+  onPick: (value: string) => void
+}) {
+  return (
+    <span style={{ position: 'relative', flexShrink: 0 }}>
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={open}
+        style={{
+          display: 'inline-flex', alignItems: 'center', gap: '6px',
+          padding: '7px 12px', borderRadius: '999px',
+          background: active ? 'var(--avq-fg, #111827)' : 'var(--avq-bg, #ffffff)',
+          border: '1px solid ' + (active ? 'var(--avq-fg, #111827)' : 'var(--avq-border, #e8eaed)'),
+          fontSize: '12px', fontWeight: active ? '600' : '500',
+          color: active ? '#ffffff' : 'var(--avq-fg, #111827)',
+          whiteSpace: 'nowrap', cursor: 'pointer',
+        }}
+      >
+        {label}
+        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ transform: open ? 'rotate(180deg)' : 'none', transition: 'transform .15s' }}>
+          <polyline points="6 9 12 15 18 9" />
+        </svg>
+      </button>
+      {open && (
+        <div
+          role="listbox"
+          style={{
+            position: 'absolute',
+            top: 'calc(100% + 6px)',
+            left: 0,
+            minWidth: '200px',
+            maxHeight: '280px',
+            overflowY: 'auto',
+            background: 'var(--avq-bg, #ffffff)',
+            border: '1px solid var(--avq-border, #e8eaed)',
+            borderRadius: '12px',
+            boxShadow: '0 8px 24px rgba(15,15,16,0.12)',
+            padding: '6px',
+            zIndex: 10,
+          }}
+        >
+          <DropdownItem label={allLabel} active={!active} onClick={() => onPick('')} />
+          {options.map(o => (
+            <DropdownItem key={o} label={o} active={false} onClick={() => onPick(o)} />
+          ))}
+          {options.length === 0 && (
+            <div style={{ padding: '10px 12px', fontSize: '12px', color: 'var(--avq-muted-fg, #9ca3af)' }}>—</div>
+          )}
+        </div>
+      )}
+    </span>
+  )
+}
+
+function DropdownItem({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      role="option"
+      aria-selected={active}
+      onClick={onClick}
+      style={{
+        width: '100%',
+        textAlign: 'left',
+        padding: '8px 10px',
+        background: active ? 'var(--avq-muted, #f8f9fb)' : 'transparent',
+        border: 0,
+        borderRadius: '8px',
+        fontSize: '13px',
+        fontWeight: active ? '600' : '500',
+        color: 'var(--avq-fg, #111827)',
+        cursor: 'pointer',
+      }}
+      onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = 'var(--avq-muted, #f8f9fb)' }}
+      onMouseLeave={e => {
+        (e.currentTarget as HTMLButtonElement).style.background = active ? 'var(--avq-muted, #f8f9fb)' : 'transparent'
+      }}
+    >
+      {label}
+    </button>
   )
 }
 

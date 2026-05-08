@@ -30,6 +30,7 @@ import { ClassSessionList } from './ClassSessionList'
 import { UnifiedLanding } from './UnifiedLanding'
 import { PaymentSelector } from './PaymentSelector'
 import { TimezoneModal, getStoredTzPreference } from './TimezoneModal'
+import { VenueSidebarCard } from './VenueSidebarCard'
 import type { GuestFormData } from './GuestInfoForm'
 
 interface BookingFlowProps {
@@ -760,41 +761,62 @@ export function BookingFlow({ props }: BookingFlowProps) {
           />
         )}
 
-        {/* Class flow: date-first listing replaces service/date/time steps. */}
+        {/* Class flow: date-first listing replaces service/date/time steps.
+            On desktop (>=880px) we render a 2-col layout with the venue summary
+            + pack CTA on the right; mobile collapses to single column. */}
         {!showLanding && flowType.value === 'classes' && step.value < config.formStep && !seatPickerActive && (
-          <ClassSessionList
-            venueSlug={props.venue}
-            timezone={resolveDisplayTz(info.timezone)}
-            onSelect={(slot: PublicClassSessionSlot) => {
-              // Resolve the underlying CLASS product from the slot so all
-              // downstream logic (capacity guards, layout-aware seat picker,
-              // credit redemption, deposit calc) keeps working off
-              // selectedProduct.
-              const product = info.products.find(p => p.id === slot.productId) ?? null
-              selectedProduct.value = product
-              selectedSlot.value = slot
-              selectedSpotIds.value = []
-              if (product?.layoutConfig) {
-                // Enter the seat picker overlay before the form step.
-                setSeatPickerActive(true)
-                step.value = config.timeStep
-              } else {
-                step.value = config.formStep
+          <div class="avq-classes-layout">
+            <div class="avq-classes-main">
+              <ClassSessionList
+                venueSlug={props.venue}
+                timezone={resolveDisplayTz(info.timezone)}
+                onSelect={(slot: PublicClassSessionSlot) => {
+                  const product = info.products.find(p => p.id === slot.productId) ?? null
+                  selectedProduct.value = product
+                  selectedSlot.value = slot
+                  selectedSpotIds.value = []
+                  if (product?.layoutConfig) {
+                    setSeatPickerActive(true)
+                    step.value = config.timeStep
+                  } else {
+                    step.value = config.formStep
+                  }
+                }}
+                onExit={() => {
+                  flowType.value = 'unified'
+                  if (typeof window !== 'undefined' && window.history?.replaceState) {
+                    const path = window.location.pathname.replace(/\/classes\/?$/, '/')
+                    window.history.replaceState({}, '', path + window.location.search)
+                  }
+                  resetBooking()
+                }}
+                t={t}
+              />
+            </div>
+            <aside class="avq-classes-sidebar">
+              <VenueSidebarCard
+                info={info}
+                creditPacks={creditPacks.value}
+                onBuyPack={handleBuyPack}
+                customerInfo={customerInfo.value}
+                t={t}
+              />
+            </aside>
+            <style>{`
+              .avq-classes-layout { display: grid; grid-template-columns: 1fr; gap: 0; }
+              .avq-classes-main { min-width: 0; }
+              .avq-classes-main > * { min-width: 0; }
+              .avq-classes-sidebar { display: none; }
+              @media (min-width: 960px) {
+                .avq-classes-layout {
+                  grid-template-columns: minmax(0, 1fr) 260px;
+                  gap: 24px;
+                  align-items: start;
+                }
+                .avq-classes-sidebar { display: block; position: sticky; top: 24px; }
               }
-            }}
-            onExit={() => {
-              // Escape hatch when /classes errors out (e.g. server doesn't yet
-              // support range mode). Drop back to the unified landing and
-              // rewrite the URL so a refresh doesn't relock the user.
-              flowType.value = 'unified'
-              if (typeof window !== 'undefined' && window.history?.replaceState) {
-                const path = window.location.pathname.replace(/\/classes\/?$/, '/')
-                window.history.replaceState({}, '', path + window.location.search)
-              }
-              resetBooking()
-            }}
-            t={t}
-          />
+            `}</style>
+          </div>
         )}
 
         {!showLanding && flowType.value !== 'classes' && step.value === config.serviceStep && hasServiceStep.value && (
