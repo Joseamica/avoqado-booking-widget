@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>Reservar | Avoqado</title>
+  <meta name="theme-color" content="#0f0f10">
+  <meta name="color-scheme" content="light dark">
+  <meta name="referrer" content="strict-origin-when-cross-origin">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%93%85%3C/text%3E%3C/svg%3E">
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg: #f7f7f8;
+      --bg-elev: #ffffff;
+      --fg: #0f0f10;
+      --fg-muted: #6b7280;
+      --border: rgba(15, 15, 16, 0.08);
+      --shadow: 0 1px 2px rgba(15,15,16,.04), 0 8px 32px rgba(15,15,16,.06);
+      --max: 560px;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #0f0f10;
+        --bg-elev: #161618;
+        --fg: #f4f4f5;
+        --fg-muted: #9ca3af;
+        --border: rgba(255, 255, 255, 0.08);
+        --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 32px rgba(0,0,0,.4);
+      }
+    }
+    html, body {
+      margin: 0;
+      padding: 0;
+      background: var(--bg);
+      color: var(--fg);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Inter", system-ui, sans-serif;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+      min-height: 100vh;
+    }
+    body {
+      padding: clamp(16px, 4vw, 32px) clamp(12px, 3vw, 24px);
+      box-sizing: border-box;
+    }
+    .shell {
+      max-width: var(--max);
+      margin: 0 auto;
+      background: var(--bg-elev);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+    .footer {
+      padding: 16px 24px;
+      border-top: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      font-size: 12px;
+      color: var(--fg-muted);
+    }
+    .footer a {
+      color: inherit;
+      text-decoration: none;
+      font-weight: 500;
+    }
+    .footer a:hover { color: var(--fg); }
+    avoqado-booking { display: block; width: 100%; }
+    .loading, .empty {
+      padding: 80px 24px;
+      text-align: center;
+      color: var(--fg-muted);
+      font-size: 14px;
+    }
+    .empty .empty-title {
+      color: var(--fg);
+      font-size: 16px;
+      font-weight: 600;
+      margin: 0 0 8px;
+    }
+    .empty a { color: var(--fg); text-decoration: none; font-weight: 500; }
+    .loading::before {
+      content: '';
+      display: inline-block;
+      width: 18px;
+      height: 18px;
+      border: 2px solid var(--border);
+      border-top-color: var(--fg);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      vertical-align: middle;
+      margin-right: 10px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    @media (prefers-reduced-motion: reduce) {
+      .loading::before { animation: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <div id="mount">
+      <div class="loading">Cargando…</div>
+    </div>
+    <div class="footer">
+      <span>Reservas con</span>
+      <a href="https://avoqado.io" target="_blank" rel="noopener">Avoqado</a>
+    </div>
+  </div>
+
+  <script>
+    (function () {
+      // Parse path: /<venueSlug>[/appointments|/classes]
+      // Examples:
+      //   book.avoqado.io/mindform                  → slug=mindform, flowType=
+      //   book.avoqado.io/mindform/appointments     → slug=mindform, flowType=appointments
+      //   book.avoqado.io/mindform/classes          → slug=mindform, flowType=classes
+      //   book.avoqado.io/mindform/manage/abc       → reserved for future "manage booking" flow
+      var rawPath = window.location.pathname.replace(/^\/+|\/+$/g, '')
+      var parts = rawPath.split('/').filter(Boolean)
+      var slug = parts[0] || ''
+      var flowType = parts[1] || ''
+
+      // No slug → friendly fallback (rather than blank loading state).
+      if (!slug) {
+        var mount = document.getElementById('mount')
+        mount.innerHTML =
+          '<div class="empty">' +
+            '<p class="empty-title">Venue no especificado</p>' +
+            '<p>Pide al negocio el enlace correcto, o vuelve a <a href="https://avoqado.io">avoqado.io</a></p>' +
+          '</div>'
+        return
+      }
+
+      var el = document.createElement('avoqado-booking')
+      el.setAttribute('venue', slug)
+      el.setAttribute('mode', 'inline')
+
+      // Pass per-type flow attribute when present so the widget renders the
+      // narrowed UI (appointments wizard or classes date-first list).
+      if (flowType === 'appointments' || flowType === 'classes') {
+        el.setAttribute('flow-type', flowType)
+      }
+
+      // Per-request overrides via query string (locale, theme, accent-color)
+      var params = new URLSearchParams(window.location.search)
+      var overrideAttrs = ['locale', 'theme', 'accent-color']
+      overrideAttrs.forEach(function (attr) {
+        var val = params.get(attr)
+        if (val) el.setAttribute(attr, val)
+      })
+
+      var mountEl = document.getElementById('mount')
+      // Replace loading once the widget signals ready, else after a short timeout.
+      var swapped = false
+      var swap = function () {
+        if (swapped) return
+        swapped = true
+        mountEl.innerHTML = ''
+        mountEl.appendChild(el)
+      }
+      el.addEventListener('avoqado:ready', swap, { once: true })
+      // Append immediately so older bundles that don't dispatch the event still render.
+      mountEl.appendChild(el)
+      setTimeout(function () {
+        var loading = mountEl.querySelector('.loading')
+        if (loading && loading.parentNode === mountEl) loading.remove()
+      }, 600)
+    })()
+  </script>
+  <!-- Same-origin widget bundle. Built by `npm run build` to dist/widget.js. -->
+  <script src="/widget.js" defer></script>
+</body>
+</html>

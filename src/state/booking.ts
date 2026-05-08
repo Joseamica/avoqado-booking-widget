@@ -1,8 +1,13 @@
 import { signal, computed } from '@preact/signals'
-import type { PublicVenueInfo, Product, PublicSlot, PublicBookingResult, CreditPackPublic, CustomerCreditBalance, CustomerPortalData } from '../types'
+import type { PublicVenueInfo, Product, PublicSlot, PublicBookingResult, CreditPackPublic, CustomerCreditBalance, CustomerPortalData, FlowType } from '../types'
 
 // Step: 0=loading, 1=service, 2=date, 3=time, 4=form, 5=confirmed, 6=manage
 export const step = signal(0)
+
+// Active flow variant. Set by BookingFlow's mount effect from props.flowType
+// (which the host derives from the URL path segment). Default 'unified' keeps
+// backwards compatibility for embeds that don't pass the attribute.
+export const flowType = signal<FlowType>('unified')
 
 export const venueInfo = signal<PublicVenueInfo | null>(null)
 export const selectedProduct = signal<Product | null>(null)
@@ -71,7 +76,27 @@ export function clearCustomerSession() {
   localStorage.removeItem(STORAGE_CUSTOMER)
 }
 
-export const hasServiceStep = computed(() => (venueInfo.value?.products.length ?? 0) > 1)
+/**
+ * Products that surface in the active flow.
+ * - 'appointments':  APPOINTMENTS_SERVICE / SERVICE / EVENT — anything not class-based
+ * - 'classes': CLASS only
+ * - 'unified': everything (legacy behavior)
+ *
+ * Type fallbacks: products without a `type` field are treated as services
+ * (existing behavior — many older venues don't tag types).
+ */
+export const visibleProducts = computed<Product[]>(() => {
+  const all = venueInfo.value?.products ?? []
+  const flow = flowType.value
+  if (flow === 'unified') return all
+  if (flow === 'classes') {
+    return all.filter(p => p.type === 'CLASS')
+  }
+  // 'appointments' — exclude classes; include unspecified types as services
+  return all.filter(p => p.type !== 'CLASS')
+})
+
+export const hasServiceStep = computed(() => visibleProducts.value.length > 1)
 
 export function getStepConfig(hasService: boolean) {
   if (hasService) {
@@ -81,7 +106,15 @@ export function getStepConfig(hasService: boolean) {
 }
 
 export function resetBooking(venueData: PublicVenueInfo) {
-  const config = getStepConfig((venueData.products.length) > 1)
+  // Recompute visible products with the active flowType so single-product venues
+  // skip the service step in flow-filtered scenarios too.
+  const all = venueData.products
+  const visible = flowType.value === 'unified'
+    ? all
+    : flowType.value === 'classes'
+      ? all.filter(p => p.type === 'CLASS')
+      : all.filter(p => p.type !== 'CLASS')
+  const config = getStepConfig(visible.length > 1)
   selectedSlot.value = null
   selectedSpotIds.value = []
   bookingResult.value = null
@@ -91,8 +124,15 @@ export function resetBooking(venueData: PublicVenueInfo) {
   selectedCreditBalance.value = null
   // Keep portalData & customerToken — they're session-level, not booking-level
   showPortal.value = false
-  if (venueData.products.length <= 1) {
-    selectedProduct.value = venueData.products[0] ?? null
+  // Class flow always lands on the date-first listing regardless of how many
+  // CLASS products the venue has — picking a session sets selectedProduct from
+  // the slot's productId. We use dateStep as the sentinel for "show the list"
+  // since it's the step the listing logically replaces.
+  if (flowType.value === 'classes') {
+    selectedProduct.value = null
+    step.value = config.dateStep
+  } else if (visible.length <= 1) {
+    selectedProduct.value = visible[0] ?? null
     step.value = config.dateStep
   } else {
     selectedProduct.value = null

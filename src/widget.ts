@@ -12,7 +12,7 @@ class AvoqadoBookingWidget extends HTMLElement {
   private _container: HTMLDivElement | null = null
 
   static get observedAttributes() {
-    return ['venue', 'locale', 'theme', 'accent-color', 'mode', 'service-id', 'button-text']
+    return ['venue', 'locale', 'theme', 'accent-color', 'mode', 'service-id', 'button-text', 'flow-type']
   }
 
   connectedCallback() {
@@ -34,11 +34,17 @@ class AvoqadoBookingWidget extends HTMLElement {
 
   private getProps(): WidgetProps {
     const common = readCommonAttrs(this)
+    // Whitelist accepted flow types — anything else (including missing attr or
+    // typos) collapses to 'unified' so unknown values can never break rendering.
+    const rawFlowType = this.getAttribute('flow-type')
+    const flowType: WidgetProps['flowType'] =
+      rawFlowType === 'appointments' || rawFlowType === 'classes' ? rawFlowType : 'unified'
     return {
       ...common,
       mode: (this.getAttribute('mode') ?? 'inline') as 'inline' | 'button' | 'popup',
       serviceId: this.getAttribute('service-id') ?? undefined,
       buttonText: this.getAttribute('button-text') ?? undefined,
+      flowType,
       hostElement: this,
     }
   }
@@ -148,6 +154,7 @@ function transferAttrs(source: HTMLElement, target: HTMLElement) {
     'data-mode': 'mode',
     'data-service-id': 'service-id',
     'data-button-text': 'button-text',
+    'data-flow-type': 'flow-type',
   }
   for (const [dataAttr, widgetAttr] of Object.entries(attrMap)) {
     const val = source.getAttribute(dataAttr)

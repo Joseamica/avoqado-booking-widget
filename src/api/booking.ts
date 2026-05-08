@@ -1,6 +1,7 @@
 import type {
   PublicVenueInfo,
   PublicAvailabilityResponse,
+  PublicClassSessionRangeResponse,
   PublicCreateReservationRequest,
   PublicBookingResult,
   PublicReservationDetail,
@@ -39,10 +40,34 @@ export function getAvailability(slug: string, params: {
   duration?: number
   partySize?: number
   productId?: string
+  /**
+   * Optional flow filter. Server narrows the candidate products it considers
+   * when computing slots. Useful when the customer is on /clases (only show
+   * class sessions) vs /citas (only show appointments). Omit for the legacy
+   * unified behavior.
+   */
+  type?: 'class' | 'appointment'
 }): Promise<PublicAvailabilityResponse> {
   const q = new URLSearchParams({ date: params.date })
   if (params.duration) q.append('duration', String(params.duration))
   if (params.partySize) q.append('partySize', String(params.partySize))
+  if (params.productId) q.append('productId', params.productId)
+  if (params.type) q.append('type', params.type)
+  return request(`${BASE}/venues/${slug}/availability?${q}`)
+}
+
+/**
+ * Range-mode availability used by the date-first class-sessions listing.
+ * Returns sessions across all CLASS products of the venue between dateFrom and
+ * dateTo (server caps the window at +60 days). Designed for `/clases` host page.
+ */
+export function getClassSessionsRange(slug: string, params: {
+  dateFrom: string  // YYYY-MM-DD
+  dateTo?: string   // YYYY-MM-DD; defaults server-side to dateFrom + 30d
+  productId?: string  // optional scope to one CLASS product
+}): Promise<PublicClassSessionRangeResponse> {
+  const q = new URLSearchParams({ dateFrom: params.dateFrom, type: 'class' })
+  if (params.dateTo) q.append('dateTo', params.dateTo)
   if (params.productId) q.append('productId', params.productId)
   return request(`${BASE}/venues/${slug}/availability?${q}`)
 }

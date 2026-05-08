@@ -1,0 +1,14 @@
+# Cloudflare Pages routing for the booking host (book.avoqado.io).
+#
+# Static files (widget.js, book.html, embed.html, _headers) are served as-is
+# because file matching wins over rewrite rules. Any other path falls through
+# to index.html, which reads the venue slug + optional flow type from
+# window.location.pathname.
+#
+# Examples that resolve to index.html (status 200, URL bar stays clean):
+#   /mindform                  → renders booking widget for venue=mindform
+#   /mindform/appointments     → same, with flow-type=appointments
+#   /mindform/classes          → same, with flow-type=classes
+#   /                          → empty-slug fallback (handled in index.html)
+
+/*  /index.html  200

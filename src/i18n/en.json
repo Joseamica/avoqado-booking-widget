@@ -94,6 +94,17 @@
     "applying": "Applying change…",
     "success": "Done! Your reservation is at the new time."
   },
+  "account": {
+    "requireTitle": "Sign in to book",
+    "requireDescription": "{{venue}} requires an account to book online. Sign in or create one to continue.",
+    "signInButton": "Sign in / create account"
+  },
+  "timezone": {
+    "title": "Which timezone should we show?",
+    "description": "Your device is in {{browserTz}} and {{venue}} operates in {{venueTz}}. Pick how you'd like to see times.",
+    "useBrowser": "Use my timezone",
+    "useVenue": "Use venue timezone"
+  },
   "deposit": {
     "title": "Deposit Required",
     "description": "A deposit is required to confirm this reservation.",
@@ -138,6 +149,51 @@
     "NO_SHOW": "No Show"
   },
   "duration": "{{min}} min",
+  "payment": {
+    "title": "How would you like to pay?",
+    "payNow": "Pay {{amount}} now",
+    "payNowHint": "Your spot is reserved once payment confirms",
+    "payAtVenue": "Pay {{amount}} at venue",
+    "payAtVenueHint": "We confirm your booking now; you pay on arrival",
+    "payOptionalHint": "Pay now or at the venue",
+    "useOneCredit": "Use 1 credit ({{pack}})",
+    "useNCredits": "Use {{count}} credits ({{pack}})",
+    "creditsRemaining": "{{remaining}} of {{total}} left after this",
+    "creditsInsufficient": "Not enough credits",
+    "creditsInsufficientHint": "Need {{needed}}, only {{available}} available. Buy more.",
+    "buyPack": "Buy a credit pack",
+    "buyPackHint": "Book with credits instead of paying each class"
+  },
+  "landing": {
+    "title": "What would you like to book?",
+    "subtitle": "Pick the type of booking",
+    "appointmentsTitle": "Appointments",
+    "appointmentsSubtitle": "One-on-one services on flexible time slots",
+    "classesTitle": "Classes",
+    "classesSubtitle": "Pre-scheduled group sessions",
+    "tabBook": "Book",
+    "tabPacks": "Buy packs",
+    "packsTitle": "Credit packs",
+    "packsSubtitle": "Buy credits to book multiple classes",
+    "packSummary": "{{count}} sessions included",
+    "validity": "Valid for {{days}} days",
+    "buyButton": "Buy",
+    "processing": "Processing…"
+  },
+  "classList": {
+    "title": "Upcoming classes",
+    "subtitle": "Pick a class to book",
+    "today": "Today",
+    "tomorrow": "Tomorrow",
+    "loading": "Loading classes…",
+    "empty": "No classes scheduled in the next days",
+    "loadMore": "Load more classes",
+    "fullClass": "Full",
+    "spotsLeftBadge": "{{count}} spots left",
+    "spotsLeftBadge_one": "{{count}} spot left",
+    "withInstructor": "with {{name}}",
+    "noInstructor": "No instructor assigned"
+  },
   "creditPacks": {
     "title": "Credit Packs",
     "buy": "Buy",

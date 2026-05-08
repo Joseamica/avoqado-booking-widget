@@ -94,6 +94,17 @@
     "applying": "Aplicando cambio…",
     "success": "¡Listo! Tu reserva quedó en el nuevo horario."
   },
+  "account": {
+    "requireTitle": "Inicia sesión para reservar",
+    "requireDescription": "{{venue}} requiere una cuenta para reservar en línea. Inicia sesión o crea una cuenta para continuar.",
+    "signInButton": "Iniciar sesión / crear cuenta"
+  },
+  "timezone": {
+    "title": "¿En qué zona horaria mostrar los horarios?",
+    "description": "Tu dispositivo está en {{browserTz}} y {{venue}} opera en {{venueTz}}. Elige cómo quieres ver los horarios.",
+    "useBrowser": "Usar mi zona horaria",
+    "useVenue": "Usar zona del establecimiento"
+  },
   "deposit": {
     "title": "Se Requiere Depósito",
     "description": "Se requiere un depósito para confirmar esta reservación.",
@@ -138,6 +149,51 @@
     "NO_SHOW": "No Show"
   },
   "duration": "{{min}} min",
+  "payment": {
+    "title": "¿Cómo quieres pagar?",
+    "payNow": "Pagar {{amount}} con tarjeta",
+    "payNowHint": "Tu lugar se reserva al confirmar el pago",
+    "payAtVenue": "Pagar {{amount}} al llegar",
+    "payAtVenueHint": "Confirmamos tu reservación ahora; pagas en el establecimiento",
+    "payOptionalHint": "Puedes pagar ahora o al llegar",
+    "useOneCredit": "Usar 1 crédito ({{pack}})",
+    "useNCredits": "Usar {{count}} créditos ({{pack}})",
+    "creditsRemaining": "Te quedarán {{remaining}} de {{total}}",
+    "creditsInsufficient": "No te alcanza con tus créditos",
+    "creditsInsufficientHint": "Necesitas {{needed}} y solo tienes {{available}}. Compra más.",
+    "buyPack": "Comprar un paquete de créditos",
+    "buyPackHint": "Reservas con créditos en lugar de pagar cada clase"
+  },
+  "landing": {
+    "title": "¿Qué quieres reservar?",
+    "subtitle": "Selecciona el tipo de reserva",
+    "appointmentsTitle": "Citas",
+    "appointmentsSubtitle": "Servicios uno a uno con horario flexible",
+    "classesTitle": "Clases",
+    "classesSubtitle": "Sesiones grupales programadas",
+    "tabBook": "Reservar",
+    "tabPacks": "Comprar paquetes",
+    "packsTitle": "Paquetes de créditos",
+    "packsSubtitle": "Compra créditos para reservar varias clases",
+    "packSummary": "{{count}} sesiones incluidas",
+    "validity": "Válido por {{days}} días",
+    "buyButton": "Comprar",
+    "processing": "Procesando…"
+  },
+  "classList": {
+    "title": "Próximas clases",
+    "subtitle": "Selecciona una clase para reservar",
+    "today": "Hoy",
+    "tomorrow": "Mañana",
+    "loading": "Cargando clases…",
+    "empty": "No hay clases programadas en los próximos días",
+    "loadMore": "Cargar más clases",
+    "fullClass": "Lleno",
+    "spotsLeftBadge": "{{count}} disponibles",
+    "spotsLeftBadge_one": "{{count}} disponible",
+    "withInstructor": "con {{name}}",
+    "noInstructor": "Sin instructor asignado"
+  },
   "creditPacks": {
     "title": "Paquetes de Créditos",
     "buy": "Comprar",

@@ -1,6 +1,6 @@
 import { h } from 'preact'
 import { useEffect, useState } from 'preact/hooks'
-import type { WidgetProps } from '../types'
+import type { WidgetProps, PublicClassSessionSlot } from '../types'
 import type { PublicSlot } from '../types'
 import { createT } from '../i18n'
 import * as api from '../api/booking'
@@ -10,6 +10,7 @@ import {
   hasServiceStep, getStepConfig, resetBooking, showToast,
   creditPacks, customerCredits, selectedCreditBalance, creditPacksLoading,
   showPortal, portalData, customerToken, customerInfo, setCustomerSession, clearCustomerSession,
+  flowType, visibleProducts,
 } from '../state/booking'
 import { StepIndicator } from './StepIndicator'
 import { ServiceSelector } from './ServiceSelector'
@@ -25,6 +26,10 @@ import { CreditPackBanner } from './CreditPackBanner'
 import { CreditSelector } from './CreditSelector'
 import { CheckoutModal } from './CheckoutModal'
 import { CustomerPortal } from './CustomerPortal'
+import { ClassSessionList } from './ClassSessionList'
+import { UnifiedLanding } from './UnifiedLanding'
+import { PaymentSelector } from './PaymentSelector'
+import { TimezoneModal, getStoredTzPreference } from './TimezoneModal'
 import type { GuestFormData } from './GuestInfoForm'
 
 interface BookingFlowProps {
@@ -67,6 +72,38 @@ export function BookingFlow({ props }: BookingFlowProps) {
   const [pendingFormData, setPendingFormData] = useState<GuestFormData | null>(null)
   const [showCreditSelector, setShowCreditSelector] = useState(false)
   const [showNoCreditsBuyPrompt, setShowNoCreditsBuyPrompt] = useState(false)
+  const [showPaymentSelector, setShowPaymentSelector] = useState(false)
+
+  // The unified landing (Square-style two-CTA picker) shows whenever the
+  // customer enters via /<slug> with no flow segment. Picking a CTA flips
+  // flowType in-memory + rewrites the URL so a refresh keeps the choice.
+  const [showLanding, setShowLanding] = useState(props.flowType === undefined || props.flowType === 'unified')
+
+  // When the customer returns from a successful Stripe checkout we open the
+  // landing on the 'Comprar paquetes' tab so they immediately see the credits
+  // they just bought (and can use them on the next booking).
+  const [landingInitialTab, setLandingInitialTab] = useState<'book' | 'packs'>(() => {
+    if (typeof window === 'undefined') return 'book'
+    return new URL(window.location.href).searchParams.get('avq_credits') === 'success' ? 'packs' : 'book'
+  })
+
+  // Customer-facing TZ — initialized from the stored preference. The TimezoneModal
+  // (rendered below) updates this signal when the customer picks one. Used by
+  // ClassSessionList and the date pickers to compute today/tomorrow/HH:MM in the
+  // expected zone. Defaults to 'venue' when the customer hasn't picked yet.
+  const [tzPreference, setTzPreference] = useState<'browser' | 'venue'>(getStoredTzPreference)
+
+  function resolveDisplayTz(venueTz: string): string {
+    if (tzPreference !== 'browser' || typeof window === 'undefined') return venueTz
+    try { return Intl.DateTimeFormat().resolvedOptions().timeZone || venueTz } catch { return venueTz }
+  }
+
+  // Sync flowType signal with prop. Must run BEFORE the venue load effect so
+  // resetBooking() picks up the right product filter.
+  useEffect(() => {
+    flowType.value = props.flowType ?? 'unified'
+    setShowLanding(props.flowType === undefined || props.flowType === 'unified')
+  }, [props.flowType])
 
   // Load venue info on mount
   useEffect(() => {
@@ -170,10 +207,17 @@ export function BookingFlow({ props }: BookingFlowProps) {
     const info = venueInfo.value
     if (!date || !info) return
     setSlotsLoading(true)
+    // Map UI flow type → server type filter. 'unified' sends no filter, so
+    // server returns the full result as before. The mapping is intentionally
+    // explicit so future flow types (e.g. 'eventos') can extend it cleanly.
+    const flow = flowType.value
+    const typeFilter: 'class' | 'appointment' | undefined =
+      flow === 'classes' ? 'class' : flow === 'appointments' ? 'appointment' : undefined
     api.getAvailability(props.venue, {
       date,
       productId: selectedProduct.value?.id,
       duration: selectedProduct.value?.duration ?? undefined,
+      type: typeFilter,
     })
       .then(res => setSlots(res.slots))
       .catch(() => setSlots([]))
@@ -317,8 +361,43 @@ export function BookingFlow({ props }: BookingFlowProps) {
     ? [t('steps.service'), t('steps.date'), t('steps.time'), t('steps.info'), t('steps.confirmation')]
     : [t('steps.date'), t('steps.time'), t('steps.info'), t('steps.confirmation')]
 
-  const showBack = (step.value > (hasServiceStep.value ? config.serviceStep : config.dateStep) && step.value < config.confirmStep)
+  // Auto-skip the GuestInfoForm when the logged-in customer already has every
+  // field the venue needs. We submit on their behalf with the saved data, so
+  // the experience matches "Reservar" buttons on signed-in dashboards (Square,
+  // Mindbody) where the form never re-appears once the account is known.
+  useEffect(() => {
+    if (step.value !== config.formStep) return
+    if (showCreditSelector || showNoCreditsBuyPrompt || showPaymentSelector) return
+    const c = customerInfo.value
+    if (!c) return
+    const hasName = Boolean(c.firstName)
+    const hasPhone = Boolean(c.phone)
+    const hasEmail = Boolean(c.email)
+    const venueRequiresEmail = info.publicBooking.requireEmail
+    const venueRequiresPhone = info.publicBooking.requirePhone !== false
+    const allRequiredCovered =
+      hasName && (!venueRequiresPhone || hasPhone) && (!venueRequiresEmail || hasEmail)
+    if (!allRequiredCovered) return
+    // Auto-submit using the saved customer data; downstream logic (PaymentSelector,
+    // credit redemption, deposit) still gets a chance to interrupt before the
+    // reservation actually creates.
+    const fullName = [c.firstName, c.lastName].filter(Boolean).join(' ') || c.firstName || ''
+    handleFormSubmit({
+      guestName: fullName,
+      guestPhone: c.phone ?? '',
+      guestEmail: c.email ?? undefined,
+      partySize: Math.max(selectedSpotIds.value.length, 1),
+      specialRequests: undefined,
+    } as GuestFormData)
+    // Eslint exhaustive-deps would want handleFormSubmit + info, but those
+    // are stable for the lifetime of a non-changing booking session.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step.value, customerInfo.value?.id, showCreditSelector, showNoCreditsBuyPrompt, showPaymentSelector])
+
+  const showBack = !showLanding && (
+    (step.value > (hasServiceStep.value ? config.serviceStep : config.dateStep) && step.value < config.confirmStep)
     || (step.value === config.timeStep && seatPickerActive)
+  )
 
   function handleBack() {
     // If showing no-credits buy prompt, go back to form
@@ -332,6 +411,31 @@ export function BookingFlow({ props }: BookingFlowProps) {
       setShowCreditSelector(false)
       setPendingFormData(null)
       return
+    }
+    // If showing payment selector (Phase 3 hybrid path), go back to form
+    if (showPaymentSelector) {
+      setShowPaymentSelector(false)
+      setPendingFormData(null)
+      return
+    }
+    // Class flow has a flat listing — back from form goes back to the list,
+    // not to the date picker (which doesn't exist in this flow).
+    if (flowType.value === 'classes') {
+      if (step.value === config.formStep) {
+        selectedSlot.value = null
+        selectedSpotIds.value = []
+        selectedProduct.value = null
+        step.value = config.dateStep // re-renders ClassSessionList
+        return
+      }
+      if (step.value === config.timeStep && seatPickerActive) {
+        setSeatPickerActive(false)
+        selectedSlot.value = null
+        selectedSpotIds.value = []
+        selectedProduct.value = null
+        step.value = config.dateStep
+        return
+      }
     }
     if (step.value === config.formStep) {
       // If product has layout, go back to seat picker
@@ -456,6 +560,8 @@ export function BookingFlow({ props }: BookingFlowProps) {
     // Check if customer has credits for the selected product
     const productId = selectedProduct.value?.id
     const requiresCredit = selectedProduct.value?.requireCreditForBooking === true
+    const cashPrice = selectedProduct.value?.price ?? 0
+    const upfrontPolicy = selectedProduct.value?.upfrontPolicy
     const seats = bookingSeatCount(data)
 
     if (productId && (data.guestEmail || data.guestPhone)) {
@@ -475,13 +581,19 @@ export function BookingFlow({ props }: BookingFlowProps) {
           .filter(b => b.productId === productId && b.remainingQuantity > 0)
 
         const hasAnyCredits = matching.length > 0
-        const hasSufficientCredits = matching.some(b => b.remainingQuantity >= seats)
 
         if (hasAnyCredits) {
-          // Has credits (sufficient OR insufficient) — show selector with seats so user
-          // sees "you'll use N" and "buy more" CTA when they don't have enough.
+          // Phase 3 hybrid path: when product accepts BOTH cash and credits AND
+          // customer has matching credits, show the policy-aware PaymentSelector
+          // so they can choose explicitly. Otherwise fall back to the legacy
+          // CreditSelector (which is purpose-built for credit-required products).
+          const isHybrid = !requiresCredit && cashPrice > 0 && !!upfrontPolicy
           setPendingFormData(data)
-          setShowCreditSelector(true)
+          if (isHybrid) {
+            setShowPaymentSelector(true)
+          } else {
+            setShowCreditSelector(true)
+          }
           return
         }
 
@@ -560,8 +672,18 @@ export function BookingFlow({ props }: BookingFlowProps) {
         </button>
       </div>
 
-      {/* Step indicator */}
-      {step.value < config.confirmStep && (
+      {/* Timezone modal — shown only when browser TZ differs from venue TZ and
+          the customer hasn't picked a preference yet. Persists choice in localStorage. */}
+      <TimezoneModal
+        venueTz={info.timezone}
+        venueName={info.name}
+        onChoose={setTzPreference}
+        t={t}
+      />
+
+      {/* Step indicator — hidden for the class flow (the list IS the selector)
+          and for the unified landing (no concept of "steps" yet). */}
+      {step.value < config.confirmStep && flowType.value !== 'classes' && !showLanding && (
         <StepIndicator
           currentStep={step.value}
           totalSteps={config.totalSteps}
@@ -589,11 +711,78 @@ export function BookingFlow({ props }: BookingFlowProps) {
       )}
 
       {/* Steps */}
-      <div class="avq-animate-in" key={step.value}>
-        {step.value === config.serviceStep && hasServiceStep.value && (
+      <div class="avq-animate-in" key={`${step.value}-${showLanding}`}>
+        {/* Unified landing: two-CTA picker shown only when entering via /<slug>. */}
+        {showLanding && flowType.value === 'unified' && (
+          <UnifiedLanding
+            products={info.products}
+            creditPacks={creditPacks.value}
+            buyingPackId={buyingPackId}
+            initialTab={landingInitialTab}
+            onBuyPack={handleBuyPack}
+            onPickAppointments={() => {
+              flowType.value = 'appointments'
+              setShowLanding(false)
+              if (typeof window !== 'undefined' && window.history?.pushState) {
+                const base = window.location.pathname.replace(/\/+$/, '')
+                window.history.pushState({}, '', `${base}/appointments${window.location.search}`)
+              }
+              resetBooking(info)
+            }}
+            onPickClasses={() => {
+              flowType.value = 'classes'
+              setShowLanding(false)
+              if (typeof window !== 'undefined' && window.history?.pushState) {
+                const base = window.location.pathname.replace(/\/+$/, '')
+                window.history.pushState({}, '', `${base}/classes${window.location.search}`)
+              }
+              resetBooking(info)
+            }}
+            t={t}
+          />
+        )}
+
+        {/* Class flow: date-first listing replaces service/date/time steps. */}
+        {!showLanding && flowType.value === 'classes' && step.value < config.formStep && !seatPickerActive && (
+          <ClassSessionList
+            venueSlug={props.venue}
+            timezone={resolveDisplayTz(info.timezone)}
+            onSelect={(slot: PublicClassSessionSlot) => {
+              // Resolve the underlying CLASS product from the slot so all
+              // downstream logic (capacity guards, layout-aware seat picker,
+              // credit redemption, deposit calc) keeps working off
+              // selectedProduct.
+              const product = info.products.find(p => p.id === slot.productId) ?? null
+              selectedProduct.value = product
+              selectedSlot.value = slot
+              selectedSpotIds.value = []
+              if (product?.layoutConfig) {
+                // Enter the seat picker overlay before the form step.
+                setSeatPickerActive(true)
+                step.value = config.timeStep
+              } else {
+                step.value = config.formStep
+              }
+            }}
+            onExit={() => {
+              // Escape hatch when /classes errors out (e.g. server doesn't yet
+              // support range mode). Drop back to the unified landing and
+              // rewrite the URL so a refresh doesn't relock the user.
+              flowType.value = 'unified'
+              if (typeof window !== 'undefined' && window.history?.replaceState) {
+                const path = window.location.pathname.replace(/\/classes\/?$/, '/')
+                window.history.replaceState({}, '', path + window.location.search)
+              }
+              resetBooking()
+            }}
+            t={t}
+          />
+        )}
+
+        {!showLanding && flowType.value !== 'classes' && step.value === config.serviceStep && hasServiceStep.value && (
           <div>
             <ServiceSelector
-              products={info.products}
+              products={visibleProducts.value}
               selectedProductId={selectedProduct.value?.id ?? null}
               onSelect={(product) => {
                 selectedProduct.value = product
@@ -612,7 +801,7 @@ export function BookingFlow({ props }: BookingFlowProps) {
           </div>
         )}
 
-        {step.value === config.dateStep && (
+        {!showLanding && flowType.value !== 'classes' && step.value === config.dateStep && (
           <div>
             <DatePicker
               selectedDate={selectedDate.value}
@@ -637,7 +826,7 @@ export function BookingFlow({ props }: BookingFlowProps) {
           </div>
         )}
 
-        {step.value === config.timeStep && !seatPickerActive && (
+        {!showLanding && flowType.value !== 'classes' && step.value === config.timeStep && !seatPickerActive && (
           <TimeSlotPicker
             slots={slots}
             selectedSlot={selectedSlot.value}
@@ -678,15 +867,74 @@ export function BookingFlow({ props }: BookingFlowProps) {
           />
         )}
 
-        {step.value === config.formStep && !showCreditSelector && !showNoCreditsBuyPrompt && (
-          <GuestInfoForm
-            venueInfo={info}
-            selectedSlot={selectedSlot.value}
-            selectedSpotCount={selectedSpotIds.value.length}
-            onSubmit={handleFormSubmit}
-            isSubmitting={isLoading.value}
+        {step.value === config.formStep && !showCreditSelector && !showNoCreditsBuyPrompt && !showPaymentSelector && (
+          info.publicBooking.requireAccount && !customerInfo.value ? (
+            <div class="avq-animate-in" style={{ padding: '32px 16px', textAlign: 'center' }}>
+              <div style={{
+                width: '56px', height: '56px', borderRadius: '50%',
+                background: 'color-mix(in srgb, var(--avq-accent, #6366f1) 12%, var(--avq-bg, #fff))',
+                color: 'var(--avq-accent, #6366f1)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                margin: '0 auto 16px',
+              }}>
+                <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+                  <circle cx="9" cy="7" r="4" />
+                  <line x1="19" y1="8" x2="19" y2="14" />
+                  <line x1="22" y1="11" x2="16" y2="11" />
+                </svg>
+              </div>
+              <h3 style={{ fontSize: '16px', fontWeight: '600', color: 'var(--avq-fg, #111827)', margin: '0 0 6px' }}>
+                {t('account.requireTitle')}
+              </h3>
+              <p style={{ fontSize: '14px', color: 'var(--avq-muted-fg, #6b7280)', margin: '0 0 18px', lineHeight: '1.5' }}>
+                {t('account.requireDescription', { venue: info.name })}
+              </p>
+              <button
+                type="button"
+                onClick={() => { showPortal.value = true }}
+                style={{
+                  padding: '11px 22px', borderRadius: '10px', border: 'none',
+                  background: 'var(--avq-accent, #6366f1)', color: '#ffffff',
+                  fontSize: '14px', fontWeight: '600', cursor: 'pointer',
+                }}
+              >
+                {t('account.signInButton')}
+              </button>
+            </div>
+          ) : (
+            <GuestInfoForm
+              venueInfo={info}
+              selectedSlot={selectedSlot.value}
+              selectedSpotCount={selectedSpotIds.value.length}
+              onSubmit={handleFormSubmit}
+              isSubmitting={isLoading.value}
+              t={t}
+              loggedInCustomer={customerInfo.value}
+            />
+          )
+        )}
+
+        {step.value === config.formStep && showPaymentSelector && pendingFormData && selectedProduct.value && (
+          <PaymentSelector
+            product={selectedProduct.value}
+            seats={bookingSeatCount(pendingFormData)}
+            credits={customerCredits.value}
+            upfrontPolicy={selectedProduct.value.upfrontPolicy ?? 'at_venue'}
+            onSelectCredits={(balanceId) => {
+              selectedCreditBalance.value = { balanceId, productId: selectedProduct.value?.id || '' }
+              setShowPaymentSelector(false)
+              submitReservation(pendingFormData!, balanceId)
+            }}
+            onSelectCash={() => {
+              setShowPaymentSelector(false)
+              submitReservation(pendingFormData!)
+            }}
+            onBuyPack={() => {
+              setShowPaymentSelector(false)
+              setShowNoCreditsBuyPrompt(true)
+            }}
             t={t}
-            loggedInCustomer={customerInfo.value}
           />
         )}
 

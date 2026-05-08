@@ -14,6 +14,14 @@ export interface LayoutConfig {
   spots: LayoutSpot[]
 }
 
+/**
+ * Resolved payment-method policy per product. Server merges
+ * Product.upfrontPolicy override with ReservationSettings type defaults
+ * before sending — see resolveUpfrontPolicy() server-side. The widget never
+ * receives 'inherit'; it's always one of the three concrete values.
+ */
+export type UpfrontPolicy = 'required' | 'at_venue' | 'optional'
+
 export interface Product {
   id: string
   name: string
@@ -24,6 +32,14 @@ export interface Product {
   maxParticipants?: number | null
   layoutConfig?: LayoutConfig | null
   requireCreditForBooking?: boolean
+  /**
+   * Credits consumed per seat when redeeming a credit pack. null = legacy
+   * default of 1 credit per seat. >0 = explicit (e.g. premium classes that
+   * cost 2 credits). 0 = product never consumes credits.
+   */
+  creditCost?: number | null
+  /** Resolved by the server — never 'inherit'. */
+  upfrontPolicy?: UpfrontPolicy
 }
 
 export interface PublicVenueInfo {
@@ -39,8 +55,20 @@ export interface PublicVenueInfo {
     enabled: boolean
     requirePhone: boolean
     requireEmail: boolean
+    /** When true, the customer must log in or register before they can book.
+     *  Surface a "log in to continue" gate before the form/landing CTAs. */
+    requireAccount?: boolean
   }
   operatingHours?: OperatingHours
+  /**
+   * Type-aware upfront defaults the venue admin configured. Widget uses these
+   * for messaging when a product itself has no override. (Resolved policy
+   * already lives on each Product.upfrontPolicy.)
+   */
+  payments?: {
+    appointmentUpfrontDefault: UpfrontPolicy
+    classUpfrontDefault: UpfrontPolicy
+  }
 }
 
 export interface OperatingHours {
@@ -73,6 +101,22 @@ export interface PublicSlot {
 export interface PublicAvailabilityResponse {
   date: string
   slots: PublicSlot[]
+}
+
+/**
+ * Slot with extra fields populated by the range-mode availability endpoint.
+ * `productId` + `productName` let the date-first listing UI label each card
+ * without a separate product lookup.
+ */
+export interface PublicClassSessionSlot extends PublicSlot {
+  productId: string
+  productName: string
+}
+
+export interface PublicClassSessionRangeResponse {
+  dateFrom: string
+  dateTo: string
+  slots: PublicClassSessionSlot[]
 }
 
 export interface PublicCreateReservationRequest {
@@ -166,6 +210,18 @@ export interface PublicReservationDetail {
   }
 }
 
+/**
+ * Booking flow variant. Controls which products surface and how the flow is laid out.
+ * - 'unified' (default): landing with two CTAs (appointments + classes).
+ * - 'appointments': appointment-style flow. Filters products to APPOINTMENTS_SERVICE / SERVICE.
+ * - 'classes':      class-style flow. Filters products to CLASS, surfaces a date-first listing
+ *                   of pre-scheduled sessions (Square Classes pattern).
+ *
+ * Set via the `flow-type` HTML attribute on the host element OR derived from the URL path
+ * segment by the index.html host page (`book.avoqado.io/<slug>/appointments`).
+ */
+export type FlowType = 'unified' | 'appointments' | 'classes'
+
 export interface WidgetProps {
   venue: string
   locale: 'en' | 'es'
@@ -174,6 +230,7 @@ export interface WidgetProps {
   mode: 'inline' | 'button' | 'popup'
   serviceId?: string
   buttonText?: string
+  flowType?: FlowType
   hostElement: HTMLElement
 }
 
