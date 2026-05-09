@@ -12,7 +12,7 @@ class AvoqadoBookingWidget extends HTMLElement {
   private _container: HTMLDivElement | null = null
 
   static get observedAttributes() {
-    return ['venue', 'locale', 'theme', 'accent-color', 'mode', 'service-id', 'button-text', 'flow-type']
+    return ['venue', 'locale', 'theme', 'accent-color', 'mode', 'service-id', 'button-text', 'flow-type', 'hide-venue-header']
   }
 
   connectedCallback() {
@@ -49,6 +49,7 @@ class AvoqadoBookingWidget extends HTMLElement {
       serviceId: this.getAttribute('service-id') ?? undefined,
       buttonText: this.getAttribute('button-text') ?? undefined,
       flowType,
+      hideVenueHeader: this.getAttribute('hide-venue-header') === 'true',
       hostElement: this,
     }
   }

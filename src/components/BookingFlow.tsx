@@ -660,7 +660,9 @@ export function BookingFlow({ props }: BookingFlowProps) {
 
   return (
     <div style={accentOverride}>
-      {/* Venue header */}
+      {/* Venue header — suppressed when the host page already shows the brand
+          (e.g. book.avoqado.io's topnav). External embeds keep it. */}
+      {!props.hideVenueHeader && (
       <div style={{
         display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px',
         marginBottom: '28px', paddingTop: '4px',
@@ -708,6 +710,7 @@ export function BookingFlow({ props }: BookingFlowProps) {
           {t('portal.myAccount')}
         </button>
       </div>
+      )}
 
       {/* Timezone modal — shown only when browser TZ differs from venue TZ and
           the customer hasn't picked a preference yet. Persists choice in localStorage. */}
@@ -817,6 +820,19 @@ export function BookingFlow({ props }: BookingFlowProps) {
               <ClassSessionList
                 venueSlug={props.venue}
                 timezone={resolveDisplayTz(info.timezone)}
+                venuePhone={info.phone ?? null}
+                onBuyPack={creditPacks.value.length > 0 ? () => {
+                  // No classes scheduled, but customer can pre-buy a pack so
+                  // they're ready when sessions appear. Routes to the unified
+                  // landing's packs tab.
+                  flowType.value = 'unified'
+                  setLandingInitialTab('packs')
+                  setShowLanding(true)
+                  if (typeof window !== 'undefined' && window.history?.replaceState) {
+                    const path = window.location.pathname.replace(/\/classes\/?$/, '/')
+                    window.history.replaceState({}, '', path + window.location.search)
+                  }
+                } : undefined}
                 onSelect={(slot: PublicClassSessionSlot) => {
                   // Phase 10: route the tap into the intermediate detail view
                   // instead of jumping straight to seat/form. Detail's "Reservar"
@@ -833,7 +849,7 @@ export function BookingFlow({ props }: BookingFlowProps) {
                     const path = window.location.pathname.replace(/\/classes\/?$/, '/')
                     window.history.replaceState({}, '', path + window.location.search)
                   }
-                  resetBooking()
+                  resetBooking(info)
                 }}
                 t={t}
               />

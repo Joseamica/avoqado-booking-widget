@@ -246,6 +246,10 @@ export interface WidgetProps {
   serviceId?: string
   buttonText?: string
   flowType?: FlowType
+  /** Suppress the inline venue header (logo + name + Mi Cuenta button)
+   *  rendered inside BookingFlow. Set when the host page (e.g. book.avoqado.io)
+   *  already shows the brand in its own topnav, avoiding double-display. */
+  hideVenueHeader?: boolean
   hostElement: HTMLElement
 }
 

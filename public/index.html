@@ -208,18 +208,15 @@
     .page {
       padding: clamp(16px, 4vw, 32px) clamp(12px, 3vw, 24px);
     }
+    /* Free-flowing layout — no card/box around content. Inner sections
+       (sidebar, session blocks, etc.) own their own surfaces. Mirrors
+       Square / Mindbody where the page bg = section bg, no nested chrome. */
     .shell {
       max-width: var(--max);
       margin: 0 auto;
-      background: var(--bg-elev);
-      border: 1px solid var(--border);
-      border-radius: 16px;
-      box-shadow: var(--shadow);
-      overflow: hidden;
     }
     .footer {
-      padding: 16px 24px;
-      border-top: 1px solid var(--border);
+      padding: 32px 24px 24px;
       display: flex;
       align-items: center;
       justify-content: center;
@@ -403,6 +400,10 @@
       var el = document.createElement('avoqado-booking')
       el.setAttribute('venue', slug)
       el.setAttribute('mode', 'inline')
+      // The hosted page already shows the venue brand in the topnav, so
+      // suppress the widget's inline venue header to avoid duplication.
+      // External embeds (without our topnav) keep their own header.
+      el.setAttribute('hide-venue-header', 'true')
 
       if (flowType === 'appointments' || flowType === 'classes') {
         el.setAttribute('flow-type', flowType)

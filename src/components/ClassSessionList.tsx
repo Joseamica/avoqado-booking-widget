@@ -31,6 +31,10 @@ interface ClassSessionListProps {
   onSelect: (slot: PublicClassSessionSlot) => void
   /** Called when the customer wants to leave the class listing (e.g. on error). */
   onExit?: () => void
+  /** Optional venue phone — surfaced as "Contactar al estudio" in the empty state. */
+  venuePhone?: string | null
+  /** Optional handler — when provided, the empty state shows a "Comprar paquete" CTA. */
+  onBuyPack?: () => void
   t: TFunction
 }
 
@@ -95,7 +99,7 @@ function isoToVenueDate(iso: string, timezone: string): string {
  * Mirrors the Square Classes booking page — sticky day headers, capacity badges,
  * tap-to-book directly into the form step. Used when flowType=clases.
  */
-export function ClassSessionList({ venueSlug, timezone, onSelect, onExit, t }: ClassSessionListProps) {
+export function ClassSessionList({ venueSlug, timezone, onSelect, onExit, venuePhone, onBuyPack, t }: ClassSessionListProps) {
   const [slots, setSlots] = useState<PublicClassSessionSlot[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -227,36 +231,72 @@ export function ClassSessionList({ venueSlug, timezone, onSelect, onExit, t }: C
 
   if (slots.length === 0) {
     return (
-      <div class="avq-animate-in" style={{ padding: '48px 24px', textAlign: 'center' }}>
+      <div class="avq-animate-in" style={{ padding: '64px 24px', textAlign: 'center', maxWidth: '420px', margin: '0 auto' }}>
         <div style={{
-          width: '48px', height: '48px', borderRadius: '50%',
+          width: '64px', height: '64px', borderRadius: '50%',
           background: 'var(--avq-muted, #f8f9fb)',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
-          margin: '0 auto 16px',
+          margin: '0 auto 20px',
         }}>
-          <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--avq-muted-fg, #6b7280)" stroke-width="2">
+          <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--avq-muted-fg, #6b7280)" stroke-width="1.8">
             <rect x="3" y="4" width="18" height="18" rx="2" />
             <line x1="16" y1="2" x2="16" y2="6" />
             <line x1="8" y1="2" x2="8" y2="6" />
             <line x1="3" y1="10" x2="21" y2="10" />
           </svg>
         </div>
-        <p style={{ fontSize: '14px', color: 'var(--avq-muted-fg, #6b7280)', margin: '0 0 16px' }}>
-          {t('classList.empty')}
+        <h2 style={{ fontSize: '17px', fontWeight: '600', color: 'var(--avq-fg, #111827)', margin: '0 0 8px', letterSpacing: '-0.01em' }}>
+          {t('classList.emptyTitle')}
+        </h2>
+        <p style={{ fontSize: '14px', lineHeight: '1.5', color: 'var(--avq-muted-fg, #6b7280)', margin: '0 0 24px' }}>
+          {t('classList.emptySubtitle')}
         </p>
-        {onExit && (
-          <button
-            type="button"
-            onClick={onExit}
-            style={{
-              fontSize: '13px', color: 'var(--avq-accent, #6366f1)', fontWeight: '500',
-              background: 'none', border: 'none', cursor: 'pointer',
-              textDecoration: 'underline', textUnderlineOffset: '2px',
-            }}
-          >
-            {t('actions.goBack')}
-          </button>
-        )}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', alignItems: 'stretch' }}>
+          {onBuyPack && (
+            <button
+              type="button"
+              onClick={onBuyPack}
+              style={{
+                padding: '12px 20px', borderRadius: '10px',
+                background: 'var(--avq-accent, #6366f1)',
+                color: '#ffffff', border: 'none', cursor: 'pointer',
+                fontSize: '14px', fontWeight: '600',
+              }}
+            >
+              {t('classList.emptyBuyPack')}
+            </button>
+          )}
+          {venuePhone && (
+            <a
+              href={`tel:${venuePhone}`}
+              style={{
+                display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
+                padding: '12px 20px', borderRadius: '10px',
+                background: 'transparent',
+                color: 'var(--avq-fg, #111827)',
+                border: '1px solid var(--avq-border, #e8eaed)',
+                fontSize: '14px', fontWeight: '500', textDecoration: 'none',
+              }}
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
+              {t('classList.emptyContact')}
+            </a>
+          )}
+          {onExit && (
+            <button
+              type="button"
+              onClick={onExit}
+              style={{
+                marginTop: '4px',
+                fontSize: '13px', color: 'var(--avq-muted-fg, #6b7280)', fontWeight: '500',
+                background: 'none', border: 'none', cursor: 'pointer',
+                padding: '8px',
+              }}
+            >
+              {t('actions.goBack')}
+            </button>
+          )}
+        </div>
       </div>
     )
   }
