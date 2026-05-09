@@ -3,6 +3,20 @@ import { useMemo, useState } from 'preact/hooks'
 import type { Product } from '../types'
 import type { TFunction } from '../i18n'
 
+/** Format a price as MXN with thousand separators ("$6,962" not "$6962").
+ *  Drops cents to keep service-list rows scannable. */
+function formatPriceMXN(amount: number): string {
+  try {
+    return new Intl.NumberFormat('es-MX', {
+      style: 'currency',
+      currency: 'MXN',
+      maximumFractionDigits: 0,
+    }).format(amount)
+  } catch {
+    return `$${Math.round(amount).toLocaleString('es-MX')}`
+  }
+}
+
 interface ServiceSelectorProps {
   products: Product[]
   selectedProductId: string | null
@@ -95,7 +109,7 @@ function ServiceCard({ product, isSelected, onSelect, t }: {
       <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexShrink: 0, marginLeft: '12px' }}>
         {product.price != null && (
           <span style={{ fontSize: '16px', fontWeight: '600', color: 'var(--avq-fg, #111827)' }}>
-            ${Number(product.price).toFixed(0)}
+            {formatPriceMXN(Number(product.price))}
           </span>
         )}
         <RadioDot isSelected={isSelected} />
@@ -217,7 +231,7 @@ function ClassCard({ product, isSelected, onSelect, t }: {
               fontSize: '14px', fontWeight: '700', color: 'var(--avq-fg, #111827)',
               marginLeft: 'auto',
             }}>
-              ${Number(product.price).toFixed(0)}
+              {formatPriceMXN(Number(product.price))}
             </span>
           )}
         </div>

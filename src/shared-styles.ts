@@ -24,7 +24,10 @@ export const SHARED_CSS = `
       --avq-warning-bg: color-mix(in srgb, #f59e0b 14%, var(--avq-bg)); --avq-warning-border: color-mix(in srgb, #f59e0b 32%, transparent); --avq-warning-fg: #fcd34d; --avq-warning-accent: #fbbf24;
       --avq-danger-bg: color-mix(in srgb, #ef4444 14%, var(--avq-bg)); --avq-danger-border: color-mix(in srgb, #ef4444 32%, transparent); --avq-danger-fg: #fca5a5; --avq-danger-accent: #ef4444; }
   }
-  .avq-root { background: var(--avq-bg, #ffffff); color: var(--avq-fg, #111827); }
+  /* Inherit page bg instead of painting our own — keeps the widget flush
+     with the host (book.avoqado.io) so it doesn't look like a floating panel.
+     External embeds that want their own bg can wrap the element with one. */
+  .avq-root { background: transparent; color: var(--avq-fg, #111827); }
   .animate-spin { animation: spin 1s linear infinite; }
   @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
   @keyframes avq-fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
