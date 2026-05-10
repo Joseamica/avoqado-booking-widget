@@ -1,5 +1,5 @@
 import { h } from 'preact'
-import { useState, useEffect } from 'preact/hooks'
+import { useState, useEffect, useRef } from 'preact/hooks'
 import { z } from 'zod'
 import type { PublicVenueInfo, PublicSlot } from '../types'
 import type { TFunction } from '../i18n'
@@ -30,6 +30,14 @@ interface GuestInfoFormProps {
   isSubmitting: boolean
   t: TFunction
   loggedInCustomer?: LoggedInCustomer | null
+  /** When true, the inline "Confirmar Reservación" button is suppressed.
+   *  Use with `registerSubmit` so the parent (Square /appointments sidebar)
+   *  can drive submission from outside the form. */
+  hideSubmitButton?: boolean
+  /** Receives a stable submit fn the parent can call to validate + submit
+   *  the form without rendering the button inside it. The fn always sees
+   *  the latest field state thanks to a ref pointer kept in sync each render. */
+  registerSubmit?: (fn: (() => void) | null) => void
 }
 
 function createSchema(requireEmail: boolean) {
@@ -44,13 +52,18 @@ function createSchema(requireEmail: boolean) {
   })
 }
 
-export function GuestInfoForm({ venueInfo, selectedSlot, selectedSpotCount, onSubmit, isSubmitting, t, loggedInCustomer }: GuestInfoFormProps) {
+export function GuestInfoForm({ venueInfo, selectedSlot, selectedSpotCount, onSubmit, isSubmitting, t, loggedInCustomer, hideSubmitButton, registerSubmit }: GuestInfoFormProps) {
   const [phone, setPhone] = useState('')
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [partySize, setPartySize] = useState('2')
   const [requests, setRequests] = useState('')
   const [errors, setErrors] = useState<Record<string, string>>({})
+
+  // Stable submit fn the parent (sidebar Reserva-cita button) can call. We
+  // keep the latest handleSubmit in a ref so the exposed function always
+  // closes over fresh state, but the function identity itself is stable.
+  const submitRef = useRef<(() => void) | null>(null)
 
   // Pre-fill from logged-in customer
   useEffect(() => {
@@ -99,6 +112,19 @@ export function GuestInfoForm({ venueInfo, selectedSlot, selectedSpotCount, onSu
     setErrors({})
     onSubmit(result.data as GuestFormData)
   }
+
+  // Refresh the ref every render so the registered submit always sees the
+  // latest field state. registerSubmit is called once on mount with a stable
+  // wrapper, and again with null on unmount so the parent can clear.
+  submitRef.current = () => {
+    handleSubmit({ preventDefault: () => {} } as Event)
+  }
+  useEffect(() => {
+    if (!registerSubmit) return
+    registerSubmit(() => submitRef.current?.())
+    return () => registerSubmit(null)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const isLoggedIn = !!loggedInCustomer && !!(loggedInCustomer.phone || loggedInCustomer.email)
 
@@ -236,11 +262,13 @@ export function GuestInfoForm({ venueInfo, selectedSlot, selectedSpotCount, onSu
           />
         </div>
 
-        <Button type="submit" fullWidth disabled={isSubmitting}>
-          {isSubmitting ? (
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}><Spinner size={16} />{t('form.submitting')}</span>
-          ) : t('form.submit')}
-        </Button>
+        {!hideSubmitButton && (
+          <Button type="submit" fullWidth disabled={isSubmitting}>
+            {isSubmitting ? (
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}><Spinner size={16} />{t('form.submitting')}</span>
+            ) : t('form.submit')}
+          </Button>
+        )}
       </div>
     </form>
   )

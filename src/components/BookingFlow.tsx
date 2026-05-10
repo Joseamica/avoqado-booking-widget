@@ -159,6 +159,11 @@ export function BookingFlow({ props }: BookingFlowProps) {
   // of the list. mode='add' for products not yet picked, 'edit' for ones already
   // in selectedProducts (sidebar pencil click).
   const [detailViewProduct, setDetailViewProduct] = useState<{ product: Product; mode: 'add' | 'edit' } | null>(null)
+  // Form-submit fn lifted out of GuestInfoForm so the sidebar's "Reserva cita"
+  // button can drive submission on the Square /appointments payment step.
+  // Null when no form is currently mounted; set when GuestInfoForm registers
+  // itself; cleared again on unmount.
+  const [formSubmitFn, setFormSubmitFn] = useState<(() => void) | null>(null)
 
   // The unified landing (Square-style two-CTA picker) shows whenever the
   // customer enters via /<slug> with no flow segment. Picking a CTA flips
@@ -564,8 +569,11 @@ export function BookingFlow({ props }: BookingFlowProps) {
   // field the venue needs. We submit on their behalf with the saved data, so
   // the experience matches "Reservar" buttons on signed-in dashboards (Square,
   // Mindbody) where the form never re-appears once the account is known.
+  // EXCEPT on the Square /appointments wizard — there the customer expects
+  // a review screen with "Reserva cita" before the booking actually creates.
   useEffect(() => {
     if (step.value !== config.formStep) return
+    if (flowType.value === 'appointments') return
     if (showCreditSelector || showNoCreditsBuyPrompt || showPaymentSelector) return
     const c = customerInfo.value
     if (!c) return
@@ -1342,6 +1350,11 @@ export function BookingFlow({ props }: BookingFlowProps) {
                     isSubmitting={isLoading.value}
                     t={t}
                     loggedInCustomer={customerInfo.value}
+                    /* On the Square /appointments wizard the submit lives in
+                     * the sticky sidebar as "Reserva cita" — hide the inline
+                     * one and expose the form's submit fn to the parent. */
+                    hideSubmitButton={flowType.value === 'appointments'}
+                    registerSubmit={flowType.value === 'appointments' ? setFormSubmitFn : undefined}
                   />
                 )
               )}
@@ -1478,11 +1491,12 @@ export function BookingFlow({ props }: BookingFlowProps) {
                   dueToday={0}
                   dueAtVenue={subtotal ?? 0}
                   totalsNote={variableNote}
-                  /* No onNext prop: the form below the sidebar owns its own
-                   * "Confirmar Reservación" submit button. Rendering a second
-                   * CTA in the sidebar (Square's "Reserva cita") needs form
-                   * state lifted out of GuestInfoForm — tracked as Phase 5
-                   * follow-up. For now the sidebar is read-only on this step. */
+                  /* "Reserva cita" lives in the sidebar — the form's inline
+                   * submit is hidden via hideSubmitButton and exposes itself
+                   * via registerSubmit so the sidebar can drive submission. */
+                  onNext={formSubmitFn ?? undefined}
+                  nextLabel={t('summary.reserveAppointment')}
+                  nextDisabled={isLoading.value || !formSubmitFn}
                   t={t}
                 />
               </aside>
