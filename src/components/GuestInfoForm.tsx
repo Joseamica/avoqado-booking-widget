@@ -40,9 +40,11 @@ interface GuestInfoFormProps {
   registerSubmit?: (fn: (() => void) | null) => void
 }
 
-function createSchema(requireEmail: boolean) {
+function createSchema(requireEmail: boolean, requirePhone: boolean) {
   return z.object({
-    guestPhone: z.string().min(1),
+    guestPhone: requirePhone
+      ? z.string().min(1)
+      : z.string().optional().or(z.literal('')),
     guestName: z.string().min(1),
     guestEmail: requireEmail
       ? z.string().min(1).email()
@@ -79,7 +81,10 @@ export function GuestInfoForm({ venueInfo, selectedSlot, selectedSpotCount, onSu
 
   function handleSubmit(e: Event) {
     e.preventDefault()
-    const schema = createSchema(venueInfo.publicBooking.requireEmail)
+    const schema = createSchema(
+      venueInfo.publicBooking.requireEmail,
+      venueInfo.publicBooking.requirePhone,
+    )
     const result = schema.safeParse({
       guestPhone: phone,
       guestName: name,
@@ -169,7 +174,7 @@ export function GuestInfoForm({ venueInfo, selectedSlot, selectedSpotCount, onSu
         {!isLoggedIn || !loggedInCustomer?.phone ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
             <label for="avq-phone" style={{ fontSize: '13px', fontWeight: '500', color: 'var(--avq-fg, #111827)' }}>
-              {t('form.phone')} *
+              {t('form.phone')}{venueInfo.publicBooking.requirePhone ? ' *' : ''}
             </label>
             <Input
               id="avq-phone"

@@ -13,6 +13,7 @@ import {
   flowType, visibleProducts,
   selectedProducts, totalDuration, totalPrice,
   addSelectedProduct, removeSelectedProduct,
+  slotHoldToken, slotHoldExpiresAt,
 } from '../state/booking'
 import { StepIndicator } from './StepIndicator'
 import { ServiceSelector } from './ServiceSelector'
@@ -428,6 +429,54 @@ export function BookingFlow({ props }: BookingFlowProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [step.value, customerInfo.value?.id, selectedProduct.value?.id, props.flowType, props.venue])
 
+  // Slot hold: when the Square /appointments wizard reaches the payment step
+  // with a slot picked, ask the server to hold that window for 10 min and
+  // hydrate slotHoldExpiresAt + slotHoldToken so the PaymentStepHeader
+  // countdown reflects the real backend TTL. If the endpoint isn't deployed
+  // yet (404) the existing visual-only fallback inside the header keeps the
+  // UX intact — backend optionality on purpose.
+  useEffect(() => {
+    if (props.flowType !== 'appointments') return
+    if (step.value !== config.formStep) return
+    const slot = selectedSlot.value
+    if (!slot) return
+    // Only create one hold per slot — react re-renders shouldn't fire dupes.
+    if (slotHoldToken.value) return
+    const products = selectedProducts.value.length > 0
+      ? selectedProducts.value
+      : (selectedProduct.value ? [selectedProduct.value] : [])
+    api.createHold(props.venue, {
+      startsAt: slot.startsAt,
+      endsAt: slot.endsAt,
+      productIds: products.map(p => p.id),
+      classSessionId: slot.classSessionId ?? undefined,
+      partySize: Math.max(selectedSpotIds.value.length, 1),
+    })
+      .then(res => {
+        slotHoldToken.value = res.holdId
+        slotHoldExpiresAt.value = new Date(res.expiresAt).getTime()
+      })
+      .catch(() => {
+        // Backend not deployed yet, or the slot was already taken. Either way
+        // PaymentStepHeader will fall back to a visual-only 10-min counter.
+      })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step.value, selectedSlot.value?.startsAt, props.flowType, props.venue])
+
+  // Release the hold when the customer navigates away from the form step
+  // (back button to time picker, full reset, etc). The cancel endpoint is
+  // idempotent — failures are silent.
+  useEffect(() => {
+    if (props.flowType !== 'appointments') return
+    if (step.value === config.formStep) return
+    const token = slotHoldToken.value
+    if (!token) return
+    api.cancelHold(props.venue, token).catch(() => { /* silent */ })
+    slotHoldToken.value = null
+    slotHoldExpiresAt.value = null
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step.value, props.flowType, props.venue])
+
   // Fetch available slots for a date
   function fetchSlots() {
     const date = selectedDate.value
@@ -756,20 +805,31 @@ export function BookingFlow({ props }: BookingFlowProps) {
         u.searchParams.set('avq_payment', 'cancelled')
         return u.toString()
       })()
+      // Multi-service appointments: send the full ordered productIds[] when
+      // the customer picked more than one service. The server sums durations
+      // and uses productIds[0] as the lead product for legacy joins.
+      const multiProductIds = selectedProducts.value.length > 1
+        ? selectedProducts.value.map(p => p.id)
+        : undefined
+      const summedDuration = selectedProducts.value.length > 1
+        ? selectedProducts.value.reduce((acc, p) => acc + (p.duration ?? 0), 0)
+        : (selectedProduct.value?.duration
+            ?? Math.round((new Date(slot.endsAt).getTime() - new Date(slot.startsAt).getTime()) / 60000))
       const result = await api.createReservation(props.venue, {
         startsAt: slot.startsAt,
         endsAt: slot.endsAt,
-        duration: selectedProduct.value?.duration
-          ?? Math.round((new Date(slot.endsAt).getTime() - new Date(slot.startsAt).getTime()) / 60000),
+        duration: summedDuration,
         guestName: data.guestName,
         guestPhone: data.guestPhone,
         guestEmail: data.guestEmail || undefined,
         partySize: spots.length > 0 ? spots.length : (data.partySize || undefined),
         productId: selectedProduct.value?.id,
+        productIds: multiProductIds,
         classSessionId: slot.classSessionId || undefined,
         spotIds: spots.length > 0 ? spots : undefined,
         specialRequests: data.specialRequests || undefined,
         creditItemBalanceId: creditBalanceId || undefined,
+        holdId: slotHoldToken.value ?? undefined,
         successUrl,
         cancelUrl,
       })

@@ -147,10 +147,16 @@ export interface PublicCreateReservationRequest {
   guestEmail?: string
   partySize?: number
   productId?: string
+  /** Multi-service appointments (Square pattern). When present and non-empty,
+   *  the server sums durations + sets productId = productIds[0] for back-compat. */
+  productIds?: string[]
   classSessionId?: string
   spotIds?: string[]
   specialRequests?: string
   creditItemBalanceId?: string
+  /** Slot-hold token from POST /reservations/hold. When present, the server
+   *  validates the hold + deletes it transactionally on success. */
+  holdId?: string
   /** Where Stripe should send the customer back after a successful upfront payment. */
   successUrl?: string
   /** Where Stripe should send the customer back if they cancel/expire the checkout. */

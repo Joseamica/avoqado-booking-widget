@@ -76,6 +76,39 @@ export function createReservation(slug: string, data: PublicCreateReservationReq
   return request(`${BASE}/venues/${slug}/reservations`, { method: 'POST', body: JSON.stringify(data) })
 }
 
+// ==================== Slot Hold (Square countdown UX) ====================
+
+export interface CreateHoldRequest {
+  startsAt: string  // ISO 8601
+  endsAt: string    // ISO 8601
+  productIds?: string[]
+  classSessionId?: string
+  partySize?: number
+  fingerprint?: string
+}
+
+export interface CreateHoldResponse {
+  holdId: string
+  expiresAt: string  // ISO 8601 — widget reads this to drive the countdown
+  ttlSeconds: number
+}
+
+/** Creates a SlotHold and returns its id + expiry. The widget plumbs the
+ *  holdId onto its createReservation call so the server can consume it
+ *  transactionally on success. Falls back gracefully (no hold) if this 404s. */
+export function createHold(slug: string, data: CreateHoldRequest): Promise<CreateHoldResponse> {
+  return request(`${BASE}/venues/${slug}/reservations/hold`, {
+    method: 'POST',
+    body: JSON.stringify(data),
+  })
+}
+
+/** Releases a hold the customer no longer needs (e.g. went back to pick a
+ *  different slot). Idempotent — missing hold returns 204. */
+export function cancelHold(slug: string, holdId: string): Promise<void> {
+  return request(`${BASE}/venues/${slug}/reservations/hold/${holdId}`, { method: 'DELETE' })
+}
+
 export function getReservation(slug: string, cancelSecret: string): Promise<PublicReservationDetail> {
   return request(`${BASE}/venues/${slug}/reservations/${cancelSecret}`)
 }
