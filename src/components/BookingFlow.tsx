@@ -38,6 +38,7 @@ import { AppointmentSummarySidebar } from './AppointmentSummarySidebar'
 import { ServiceDetailView } from './ServiceDetailView'
 import { DateTimePickerSquare } from './DateTimePickerSquare'
 import { PaymentStepHeader } from './PaymentStepHeader'
+import { PaymentChoiceInline, type InlineChoice } from './PaymentChoiceInline'
 import { AppointmentConfirmation } from './AppointmentConfirmation'
 import type { GuestFormData } from './GuestInfoForm'
 import type { Product } from '../types'
@@ -164,6 +165,10 @@ export function BookingFlow({ props }: BookingFlowProps) {
   // Null when no form is currently mounted; set when GuestInfoForm registers
   // itself; cleared again on unmount.
   const [formSubmitFn, setFormSubmitFn] = useState<(() => void) | null>(null)
+  // Inline payment choice for /appointments (PaymentChoiceInline). When set,
+  // handleFormSubmit short-circuits its own credit-check API call and submits
+  // straight to /reservations with the chosen balance (or no balance for cash).
+  const [inlinePayment, setInlinePayment] = useState<InlineChoice>(null)
 
   // The unified landing (Square-style two-CTA picker) shows whenever the
   // customer enters via /<slug> with no flow segment. Picking a CTA flips
@@ -817,6 +822,19 @@ export function BookingFlow({ props }: BookingFlowProps) {
   }
 
   async function handleFormSubmit(data: GuestFormData) {
+    // Square /appointments inline picker short-circuit: if the customer
+    // already chose how they want to pay on the form screen, skip the
+    // credit-check round trip and submit directly. Cash for "Pagar al
+    // llegar" → no balance ID; credits → pass the chosen balance through.
+    if (inlinePayment) {
+      if (inlinePayment.kind === 'credits') {
+        await submitReservation(data, inlinePayment.creditBalanceId)
+      } else {
+        await submitReservation(data)
+      }
+      return
+    }
+
     // Check if customer has credits for the selected product
     const productId = selectedProduct.value?.id
     const requiresCredit = selectedProduct.value?.requireCreditForBooking === true
@@ -1365,65 +1383,18 @@ export function BookingFlow({ props }: BookingFlowProps) {
                   </div>
                 ) : (
                   <>
-                    {flowType.value === 'appointments' && (() => {
-                      /* Discoverability banner: surfaces matching credits BEFORE
-                       * the customer submits so they know they can pay with
-                       * credits without having to click Reserva cita first.
-                       * The actual picker (PaymentSelector / CreditSelector)
-                       * still drives the choice on submit — same flow as
-                       * non-appointments paths. */
-                      const product = selectedProduct.value
-                      const credits = customerCredits.value
-                      if (!product || !credits) return null
-                      const seats = Math.max(selectedSpotIds.value.length, 1)
-                      const totalNeeded = seats * (product.creditCost ?? 1)
-                      const matchingBalance = credits.purchases
-                        .filter(p => p.status === 'ACTIVE')
-                        .flatMap(p => p.itemBalances.map(b => ({
-                          ...b, packName: p.creditPack.name,
-                        })))
-                        .filter(b => b.productId === product.id && b.remainingQuantity > 0)
-                        .sort((a, b) => b.remainingQuantity - a.remainingQuantity)[0]
-                      if (!matchingBalance) return null
-                      const hasEnough = matchingBalance.remainingQuantity >= totalNeeded
-                      const isCreditOnly = product.requireCreditForBooking === true
-                      const isHybrid = !isCreditOnly && (product.price ?? 0) > 0
-                      const txt = props.locale === 'en'
-                        ? hasEnough
-                          ? `You have ${matchingBalance.remainingQuantity} credits in "${matchingBalance.packName}". ${isHybrid ? 'Pick "Pay with credits" or "Pay at venue" when you book.' : 'They will be applied to this reservation.'}`
-                          : `Your "${matchingBalance.packName}" balance has ${matchingBalance.remainingQuantity} credits — ${totalNeeded} needed. You can buy more before booking.`
-                        : hasEnough
-                          ? `Tienes ${matchingBalance.remainingQuantity} créditos del paquete "${matchingBalance.packName}". ${isHybrid ? 'Al reservar puedes elegir entre pagar con créditos o al llegar.' : 'Se aplicarán a esta reserva.'}`
-                          : `Tu paquete "${matchingBalance.packName}" tiene ${matchingBalance.remainingQuantity} créditos disponibles — necesitas ${totalNeeded}. Puedes comprar más antes de reservar.`
-                      return (
-                        <div
-                          role="status"
-                          aria-live="polite"
-                          style={{
-                            display: 'flex', alignItems: 'flex-start', gap: '10px',
-                            padding: '12px 14px', borderRadius: '12px',
-                            background: 'color-mix(in srgb, var(--avq-accent, #2563eb) 8%, var(--avq-bg, #fff))',
-                            border: '1px solid color-mix(in srgb, var(--avq-accent, #2563eb) 22%, transparent)',
-                            marginBottom: '20px',
-                          }}
-                        >
-                          <span style={{
-                            width: '32px', height: '32px', borderRadius: '50%',
-                            background: 'var(--avq-accent, #2563eb)',
-                            color: '#ffffff',
-                            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                            flexShrink: 0,
-                          }}>
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                              <rect x="2" y="6" width="20" height="14" rx="2"/><line x1="2" y1="11" x2="22" y2="11"/>
-                            </svg>
-                          </span>
-                          <div style={{ fontSize: '13px', color: 'var(--avq-fg, #111827)', lineHeight: 1.5 }}>
-                            {txt}
-                          </div>
-                        </div>
-                      )
-                    })()}
+                    {flowType.value === 'appointments' && selectedProduct.value && (
+                      <PaymentChoiceInline
+                        product={selectedProduct.value}
+                        seats={Math.max(selectedSpotIds.value.length, 1)}
+                        credits={customerCredits.value}
+                        upfrontPolicy={selectedProduct.value.upfrontPolicy ?? 'at_venue'}
+                        selected={inlinePayment}
+                        onChange={setInlinePayment}
+                        locale={props.locale}
+                        t={t}
+                      />
+                    )}
 
                     <GuestInfoForm
                       venueInfo={info}
@@ -1558,6 +1529,24 @@ export function BookingFlow({ props }: BookingFlowProps) {
                 : 'Esta cita incluye un servicio con un precio variable. El precio se determinará en la cita y no se incluye en el total.')
             : undefined
 
+          // Whether PaymentChoiceInline will render: matches the component's
+          // internal visibility logic so the sidebar can disable Reserva cita
+          // until the customer commits a choice.
+          const paymentPickerVisible = (() => {
+            const product = selectedProduct.value
+            if (!product) return false
+            const acceptsCash = (product.price ?? 0) > 0 && product.requireCreditForBooking !== true
+            if (!acceptsCash) return false
+            const credits = customerCredits.value
+            if (!credits) return false
+            const seats = Math.max(selectedSpotIds.value.length, 1)
+            const totalNeeded = seats * (product.creditCost ?? 1)
+            return credits.purchases
+              .filter(p => p.status === 'ACTIVE')
+              .flatMap(p => p.itemBalances)
+              .some(b => b.productId === product.id && b.remainingQuantity >= totalNeeded)
+          })()
+
           return (
             <div class="avq-appts-layout">
               <div class="avq-appts-main">
@@ -1572,15 +1561,17 @@ export function BookingFlow({ props }: BookingFlowProps) {
                   showTotals
                   subtotal={subtotal ?? 0}
                   taxes={0}
-                  dueToday={0}
-                  dueAtVenue={subtotal ?? 0}
+                  dueToday={inlinePayment?.kind === 'credits' ? 0 : (subtotal ?? 0)}
+                  dueAtVenue={inlinePayment?.kind === 'credits' ? 0 : (subtotal ?? 0)}
                   totalsNote={variableNote}
                   /* "Reserva cita" lives in the sidebar — the form's inline
                    * submit is hidden via hideSubmitButton and exposes itself
-                   * via registerSubmit so the sidebar can drive submission. */
+                   * via registerSubmit so the sidebar can drive submission.
+                   * If the inline payment picker is visible, the customer
+                   * must commit a choice before the button enables. */
                   onNext={formSubmitFn ?? undefined}
                   nextLabel={t('summary.reserveAppointment')}
-                  nextDisabled={isLoading.value || !formSubmitFn}
+                  nextDisabled={isLoading.value || !formSubmitFn || (paymentPickerVisible && !inlinePayment)}
                   t={t}
                 />
               </aside>
