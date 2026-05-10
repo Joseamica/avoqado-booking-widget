@@ -635,7 +635,7 @@ function ToggleBtn({
       style={{
         border: 0,
         background: active ? 'var(--avq-fg, #111827)' : 'transparent',
-        color: active ? '#ffffff' : 'var(--avq-muted-fg, #6b7280)',
+        color: active ? 'var(--avq-bg, #ffffff)' : 'var(--avq-muted-fg, #6b7280)',
         padding: '6px 12px',
         fontSize: '12px',
         fontWeight: '600',

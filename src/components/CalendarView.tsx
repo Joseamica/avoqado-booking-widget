@@ -320,11 +320,11 @@ function SessionBlock({
       <div style={{ fontSize: '11px', fontWeight: '700', color: styles.time, fontVariantNumeric: 'tabular-nums' }}>
         {formatTimeOfDay(slot.startsAt, timezone, locale)}
       </div>
-      <div style={{ fontSize: '12px', fontWeight: '600', color: 'var(--avq-fg, #111827)', marginTop: '3px', lineHeight: 1.25 }}>
+      <div style={{ fontSize: '12px', fontWeight: '600', color: '#111827', marginTop: '3px', lineHeight: 1.25 }}>
         {slot.productName}
       </div>
       {slot.instructor && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: '5px', marginTop: '4px', fontSize: '10px', color: 'var(--avq-muted-fg, #6b7280)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '5px', marginTop: '4px', fontSize: '10px', color: '#6b7280' }}>
           <InstructorAvatar instructor={slot.instructor} size={16} />
           <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {`${slot.instructor.firstName} ${slot.instructor.lastName}`.trim()}
