@@ -18,6 +18,26 @@
     "classCapacity": "{{count}} lugares",
     "classCapacity_one": "{{count}} lugar"
   },
+  "summary": {
+    "title": "Resumen de la cita",
+    "empty": "Todavía no se han añadido servicios",
+    "servicesCount": "{{count}} servicios",
+    "servicesCount_one": "{{count}} servicio",
+    "variablePrice": "Variable",
+    "next": "Siguiente",
+    "edit": "Editar servicio",
+    "subtotal": "Subtotal",
+    "taxes": "Impuestos",
+    "total": "Total",
+    "dueToday": "A pagar hoy",
+    "dueAtVenue": "A pagar en la cita"
+  },
+  "serviceDetail": {
+    "breadcrumb": "Todos los servicios",
+    "add": "Añadir",
+    "remove": "Eliminar",
+    "update": "Actualizar"
+  },
   "date": {
     "title": "Selecciona una fecha"
   },

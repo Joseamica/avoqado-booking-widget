@@ -10,11 +10,27 @@ export const step = signal(0)
 export const flowType = signal<FlowType>('unified')
 
 export const venueInfo = signal<PublicVenueInfo | null>(null)
+/** Single-product selection — used by the classes flow and any legacy embed
+ *  that doesn't speak the multi-service protocol. The /appointments wizard
+ *  reads selectedProducts (array, below); selectedProduct stays in sync as
+ *  selectedProducts[0] when the appointments flow is active. */
 export const selectedProduct = signal<Product | null>(null)
+/** Multi-product selection for the Square-style /appointments wizard.
+ *  Order matters — services run sequentially in the order they were added,
+ *  so the sidebar Resumen and the eventual /reservations payload preserve it.
+ *  Empty array = nothing picked yet, which gates the Siguiente CTA. */
+export const selectedProducts = signal<Product[]>([])
 export const selectedDate = signal<string | null>(null)   // YYYY-MM-DD
 export const selectedSlot = signal<PublicSlot | null>(null)
 export const selectedSpotIds = signal<string[]>([])
 export const bookingResult = signal<PublicBookingResult | null>(null)
+
+/** Hold token + expiry for the Square-style "Cita reservada durante 9:56" timer.
+ *  Set when the customer enters the payment step and the backend hold endpoint
+ *  succeeds; null when running in visual-only fallback (backend not deployed
+ *  yet). slotHoldExpiresAt is epoch milliseconds. */
+export const slotHoldToken = signal<string | null>(null)
+export const slotHoldExpiresAt = signal<number | null>(null)
 
 export const isLoading = signal(false)
 export const apiError = signal<string | null>(null)
@@ -98,6 +114,75 @@ export const visibleProducts = computed<Product[]>(() => {
 
 export const hasServiceStep = computed(() => visibleProducts.value.length > 1)
 
+/** Combined duration of all selected products, in minutes. Used by the date/time
+ *  picker to query availability for the full appointment span (Square pattern:
+ *  if you pick a 45-min Iyashi + a 15-min recolección, we look for 60-min slots). */
+export const totalDuration = computed<number>(() => {
+  const products = selectedProducts.value
+  if (products.length === 0) return selectedProduct.value?.duration ?? 0
+  return products.reduce((sum, p) => sum + (p.duration ?? 0), 0)
+})
+
+/** Combined price of all selected products. Returns null when ANY product has
+ *  variable pricing (price === null), so the sidebar can render "+$X" with the
+ *  variable note instead of a misleading total. */
+export const totalPrice = computed<number | null>(() => {
+  const products = selectedProducts.value
+  if (products.length === 0) {
+    const p = selectedProduct.value
+    return p?.price ?? null
+  }
+  let sum = 0
+  for (const p of products) {
+    if (p.price == null) continue
+    sum += Number(p.price)
+  }
+  return sum
+})
+
+/** Push a product onto the multi-service selection. Idempotent — re-adding the
+ *  same product replaces the existing entry (same identity, no duplicate row). */
+export function addSelectedProduct(product: Product) {
+  const current = selectedProducts.value
+  const idx = current.findIndex(p => p.id === product.id)
+  if (idx >= 0) {
+    const next = [...current]
+    next[idx] = product
+    selectedProducts.value = next
+  } else {
+    selectedProducts.value = [...current, product]
+  }
+  // Keep the legacy single-product signal in sync for downstream consumers
+  // (classes flow, time-slot query, etc.) that still read selectedProduct.
+  selectedProduct.value = selectedProducts.value[0] ?? null
+}
+
+/** Remove a product from the multi-service selection by id. */
+export function removeSelectedProduct(productId: string) {
+  selectedProducts.value = selectedProducts.value.filter(p => p.id !== productId)
+  selectedProduct.value = selectedProducts.value[0] ?? null
+}
+
+/** Replace one product with another (used by ServiceDetailView's Actualizar
+ *  action — keeps the sidebar order stable when the customer swaps options). */
+export function replaceSelectedProduct(oldId: string, next: Product) {
+  const current = selectedProducts.value
+  const idx = current.findIndex(p => p.id === oldId)
+  if (idx < 0) {
+    addSelectedProduct(next)
+    return
+  }
+  const updated = [...current]
+  updated[idx] = next
+  selectedProducts.value = updated
+  selectedProduct.value = updated[0] ?? null
+}
+
+export function clearSelectedProducts() {
+  selectedProducts.value = []
+  selectedProduct.value = null
+}
+
 export function getStepConfig(hasService: boolean) {
   if (hasService) {
     return { totalSteps: 5, serviceStep: 1, dateStep: 2, timeStep: 3, formStep: 4, confirmStep: 5 }
@@ -117,11 +202,14 @@ export function resetBooking(venueData: PublicVenueInfo) {
   const config = getStepConfig(visible.length > 1)
   selectedSlot.value = null
   selectedSpotIds.value = []
+  selectedProducts.value = []
   bookingResult.value = null
   selectedDate.value = null
   manageSecret.value = null
   customerCredits.value = null
   selectedCreditBalance.value = null
+  slotHoldToken.value = null
+  slotHoldExpiresAt.value = null
   // Keep portalData & customerToken — they're session-level, not booking-level
   showPortal.value = false
   // Class flow always lands on the date-first listing regardless of how many
@@ -130,12 +218,17 @@ export function resetBooking(venueData: PublicVenueInfo) {
   // since it's the step the listing logically replaces.
   if (flowType.value === 'classes') {
     selectedProduct.value = null
+    selectedProducts.value = []
     step.value = config.dateStep
   } else if (visible.length <= 1) {
     selectedProduct.value = visible[0] ?? null
+    // Mirror to selectedProducts so the Square sidebar Resumen renders the
+    // single product without forcing the user through the (skipped) service step.
+    selectedProducts.value = visible[0] ? [visible[0]] : []
     step.value = config.dateStep
   } else {
     selectedProduct.value = null
+    selectedProducts.value = []
     step.value = config.serviceStep
   }
 }

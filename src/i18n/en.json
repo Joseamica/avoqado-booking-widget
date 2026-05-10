@@ -18,6 +18,26 @@
     "classCapacity": "{{count}} spots",
     "classCapacity_one": "{{count}} spot"
   },
+  "summary": {
+    "title": "Appointment summary",
+    "empty": "No services added yet",
+    "servicesCount": "{{count}} services",
+    "servicesCount_one": "{{count}} service",
+    "variablePrice": "Variable",
+    "next": "Next",
+    "edit": "Edit service",
+    "subtotal": "Subtotal",
+    "taxes": "Taxes",
+    "total": "Total",
+    "dueToday": "Due today",
+    "dueAtVenue": "Due at venue"
+  },
+  "serviceDetail": {
+    "breadcrumb": "All services",
+    "add": "Add",
+    "remove": "Remove",
+    "update": "Update"
+  },
   "date": {
     "title": "Select a date"
   },

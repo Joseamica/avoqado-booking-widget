@@ -24,9 +24,9 @@
     /* Wider shell when the customer is on /classes — the calendar week-grid
        needs ~7 × 130px columns + padding to breathe. */
     body.flow-classes .shell { max-width: 1100px; }
-    /* /appointments runs the wizard linear-style but still benefits from a
-       sidebar with venue info on desktop, so widen the shell modestly. */
-    body.flow-appointments .shell { max-width: 960px; }
+    /* /appointments runs the wizard with a sticky Resumen sidebar on desktop;
+       it needs more horizontal real estate than the rest of the hosted site. */
+    body.flow-appointments .shell { max-width: 1180px; }
     @media (prefers-color-scheme: dark) {
       :root {
         --bg: #0f0f10;
@@ -36,6 +36,20 @@
         --border: rgba(255, 255, 255, 0.08);
         --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 32px rgba(0,0,0,.4);
       }
+    }
+    /* Square-style appointments wizard forces light theme regardless of system
+       preference. The pattern depends on a clean white surface for the sidebar
+       Resumen + day-grid contrast; honoring dark mode would require recalibrating
+       every shadow and border weight in the wizard. */
+    body.flow-appointments {
+      color-scheme: light !important;
+      --bg: #ffffff;
+      --bg-elev: #ffffff;
+      --fg: #0f0f10;
+      --fg-muted: #6b7280;
+      --border: rgba(15, 15, 16, 0.08);
+      --shadow: 0 1px 2px rgba(15,15,16,.04), 0 8px 32px rgba(15,15,16,.06);
+      background: #ffffff;
     }
     *,*::before,*::after { box-sizing: border-box; }
     html, body {
@@ -85,6 +99,11 @@
       font-weight: 700;
       font-size: 14px;
     }
+    /* On /appointments we drop the avocado-purple chip and show only the venue
+       name (Square pattern). Cleaner, lets the venue brand carry the screen. */
+    body.flow-appointments .topnav-logo { display: none; }
+    body.flow-appointments .topnav-brand { font-size: 17px; letter-spacing: -0.4px; }
+
     .topnav-links {
       display: flex;
       align-items: center;
@@ -136,6 +155,12 @@
       .topnav-links, .topnav > .topnav-cta { display: none; }
       .topnav-hamburger { display: inline-flex; }
     }
+    /* Square pattern: appointments wizard hides desktop nav links + Mi Cuenta
+       and exposes the hamburger across all viewports. The drawer carries
+       account, navigation, and venue info (see .drawer-appointments below). */
+    body.flow-appointments .topnav-links,
+    body.flow-appointments .topnav > .topnav-cta { display: none !important; }
+    body.flow-appointments .topnav-hamburger { display: inline-flex !important; }
 
     /* MOBILE DRAWER */
     .drawer {
@@ -152,7 +177,7 @@
       position: absolute;
       top: 0;
       right: 0;
-      width: min(85vw, 320px);
+      width: min(85vw, 360px);
       height: 100%;
       background: var(--bg-elev);
       padding: 20px 18px calc(20px + env(safe-area-inset-bottom));
@@ -162,6 +187,7 @@
       box-shadow: -4px 0 24px rgba(0,0,0,0.16);
       transform: translateX(0);
       animation: slide-in .2s ease both;
+      overflow-y: auto;
     }
     @keyframes slide-in { from { transform: translateX(100%); } to { transform: translateX(0); } }
     .drawer-close {
@@ -177,6 +203,7 @@
       align-items: center;
       justify-content: center;
       margin-bottom: 8px;
+      flex-shrink: 0;
     }
     .drawer-close svg { width: 16px; height: 16px; }
     .drawer-link {
@@ -204,6 +231,56 @@
       font-weight: 600;
     }
 
+    /* DRAWER MODES — default for landing/classes/packs, appointments-specific
+       for the wizard. The body class flips which group is visible. */
+    .drawer-default { display: flex; flex-direction: column; gap: 4px; }
+    .drawer-appointments { display: none; flex-direction: column; gap: 0; flex: 1; }
+    body.flow-appointments .drawer-default { display: none; }
+    body.flow-appointments .drawer-appointments { display: flex; }
+
+    .drawer-venue-name {
+      font-size: 22px; font-weight: 700;
+      letter-spacing: -0.4px;
+      color: var(--fg);
+      margin: 4px 0 18px;
+    }
+    .drawer-row {
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 12px; padding: 16px 0;
+      border-bottom: 1px solid var(--border);
+      width: 100%; text-align: left;
+      background: transparent; border-left: 0; border-right: 0; border-top: 0;
+      font-family: inherit; cursor: default;
+    }
+    .drawer-row.is-button { cursor: pointer; }
+    .drawer-row.is-button:hover .drawer-row-icon { background: #e5e7eb; }
+    .drawer-row-content { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
+    .drawer-row-label { font-size: 14px; font-weight: 600; color: var(--fg); }
+    .drawer-row-value { font-size: 13px; color: var(--fg-muted); line-height: 1.4; }
+    .drawer-row-icon {
+      width: 36px; height: 36px; border-radius: 50%;
+      background: #f3f4f6; color: var(--fg);
+      display: inline-flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
+      transition: background 0.15s ease;
+      border: 0; padding: 0;
+    }
+    .drawer-row-icon svg { width: 16px; height: 16px; }
+    .drawer-signin-cta {
+      margin-top: auto;
+      padding: 16px;
+      background: #2563eb;
+      color: #ffffff;
+      border: 0;
+      border-radius: 12px;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      width: 100%;
+      font-family: inherit;
+    }
+    .drawer-signin-cta:hover { background: #1d4ed8; }
+
     /* CONTENT */
     .page {
       padding: clamp(16px, 4vw, 32px) clamp(12px, 3vw, 24px);
@@ -226,6 +303,9 @@
     }
     .footer a { color: inherit; text-decoration: none; font-weight: 500; }
     .footer a:hover { color: var(--fg); }
+    /* /appointments uses a smaller, Square-style footer ("Con la tecnología…"). */
+    body.flow-appointments .footer { font-size: 11px; padding: 24px 16px 24px; gap: 4px; }
+
     avoqado-booking { display: block; width: 100%; }
     .loading, .empty {
       padding: 80px 24px;
@@ -252,6 +332,7 @@
       .loading::before { animation: none; }
       .drawer { animation: none; }
       .drawer-panel { animation: none; }
+      .textus-modal { animation: none; }
     }
     /* Skip-to-content */
     .skip-link {
@@ -274,6 +355,128 @@
       outline: 2px solid var(--fg-muted);
       outline-offset: 2px;
     }
+
+    /* TEXT US — floating button + modal. Only visible on /appointments.
+       The form is intentionally a UI stub — submission is wired to a TODO
+       handler for future SMS/contact integration. See script below. */
+    .textus-fab {
+      position: fixed;
+      right: clamp(16px, 3vw, 24px);
+      bottom: clamp(16px, 3vw, 24px);
+      display: none;
+      align-items: center;
+      gap: 8px;
+      padding: 12px 18px;
+      background: var(--bg-elev);
+      border: 1px solid var(--border);
+      border-radius: 32px;
+      box-shadow: 0 6px 20px rgba(15,15,16,0.12);
+      color: var(--fg);
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      z-index: 60;
+      font-family: inherit;
+    }
+    body.flow-appointments .textus-fab { display: inline-flex; }
+    .textus-fab:hover { box-shadow: 0 10px 28px rgba(15,15,16,0.18); transform: translateY(-1px); }
+    .textus-fab svg { width: 18px; height: 18px; }
+
+    .textus-modal-overlay {
+      position: fixed; inset: 0;
+      background: rgba(15,15,16,0.45);
+      z-index: 250;
+      display: none;
+      align-items: flex-end;
+      justify-content: center;
+      animation: fade-in .15s ease both;
+    }
+    .textus-modal-overlay.open { display: flex; }
+    @media (min-width: 640px) {
+      .textus-modal-overlay { align-items: center; }
+    }
+    .textus-modal {
+      width: min(100%, 420px);
+      background: var(--bg-elev);
+      border-radius: 18px 18px 0 0;
+      padding: 20px 20px calc(20px + env(safe-area-inset-bottom));
+      box-shadow: 0 -8px 32px rgba(15,15,16,0.16);
+      display: flex; flex-direction: column; gap: 14px;
+      animation: slide-up .25s ease both;
+      max-height: 92vh;
+      overflow-y: auto;
+    }
+    @media (min-width: 640px) {
+      .textus-modal { border-radius: 18px; animation: none; max-height: 88vh; }
+    }
+    @keyframes slide-up { from { transform: translateY(100%); } to { transform: translateY(0); } }
+    .textus-close {
+      align-self: flex-start;
+      width: 34px; height: 34px;
+      border-radius: 50%;
+      border: 1px solid var(--border);
+      background: transparent;
+      color: var(--fg);
+      cursor: pointer;
+      display: inline-flex; align-items: center; justify-content: center;
+    }
+    .textus-close svg { width: 14px; height: 14px; }
+    .textus-icon-wrap {
+      width: 56px; height: 56px;
+      border-radius: 50%;
+      background: #f3f4f6;
+      display: inline-flex; align-items: center; justify-content: center;
+      margin: 0 auto;
+    }
+    .textus-icon-wrap svg { width: 24px; height: 24px; color: var(--fg); }
+    .textus-title {
+      font-size: 18px; font-weight: 700;
+      margin: 0; text-align: center;
+      color: var(--fg);
+    }
+    .textus-subtitle {
+      font-size: 13px; color: var(--fg-muted);
+      margin: 0; text-align: center;
+    }
+    .textus-input {
+      width: 100%;
+      padding: 14px 16px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      font-size: 14px;
+      font-family: inherit;
+      background: var(--bg-elev);
+      color: var(--fg);
+      outline: none;
+    }
+    .textus-input:focus {
+      border-color: var(--fg);
+      box-shadow: 0 0 0 3px rgba(15,15,16,0.06);
+    }
+    textarea.textus-input { min-height: 90px; resize: vertical; }
+    .textus-legal {
+      font-size: 11px; color: var(--fg-muted);
+      line-height: 1.5; text-align: center;
+      margin: 2px 0 0;
+    }
+    .textus-submit {
+      padding: 14px;
+      background: #d1d5db;
+      color: #6b7280;
+      border: 0;
+      border-radius: 12px;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: not-allowed;
+      font-family: inherit;
+      transition: background 0.15s ease;
+    }
+    .textus-submit.is-active {
+      background: #2563eb;
+      color: #ffffff;
+      cursor: pointer;
+    }
+    .textus-submit.is-active:hover { background: #1d4ed8; }
   </style>
 </head>
 <body>
@@ -305,10 +508,87 @@
       <button class="drawer-close" id="drawer-close" type="button" aria-label="Cerrar menú">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
       </button>
-      <a class="drawer-link" href="" data-route="appointments">Citas</a>
-      <a class="drawer-link" href="" data-route="classes">Clases</a>
-      <a class="drawer-link" href="" data-route="packs">Comprar paquetes</a>
-      <button class="drawer-link is-cta" id="drawer-account" type="button">Mi Cuenta</button>
+
+      <!-- Default drawer (landing, classes, packs) — site navigation. -->
+      <div class="drawer-default">
+        <a class="drawer-link" href="" data-route="appointments">Citas</a>
+        <a class="drawer-link" href="" data-route="classes">Clases</a>
+        <a class="drawer-link" href="" data-route="packs">Comprar paquetes</a>
+        <button class="drawer-link is-cta" id="drawer-account" type="button">Mi Cuenta</button>
+      </div>
+
+      <!-- Appointments drawer — Square-style venue info + Iniciar sesión.
+           Populated by JS from the avoqado:venue-loaded event the widget fires
+           after fetching venue data. Static defaults render before the event
+           arrives so the drawer never appears empty. -->
+      <div class="drawer-appointments">
+        <h2 class="drawer-venue-name" id="drawer-venue-name">Venue</h2>
+
+        <div class="drawer-row">
+          <div class="drawer-row-content">
+            <span class="drawer-row-label">Punto de venta</span>
+            <span class="drawer-row-value" id="drawer-pos">Nos pondremos en contacto contigo.</span>
+          </div>
+        </div>
+
+        <a class="drawer-row is-button" id="drawer-phone-row" href="tel:" hidden>
+          <div class="drawer-row-content">
+            <span class="drawer-row-label">Teléfono</span>
+            <span class="drawer-row-value" id="drawer-phone">—</span>
+          </div>
+          <span class="drawer-row-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
+          </span>
+        </a>
+
+        <div class="drawer-row" id="drawer-hours-row" hidden>
+          <div class="drawer-row-content">
+            <span class="drawer-row-label">Horario</span>
+            <span class="drawer-row-value" id="drawer-hours">—</span>
+          </div>
+        </div>
+
+        <button class="drawer-row is-button" id="drawer-textus-row" type="button">
+          <div class="drawer-row-content">
+            <span class="drawer-row-label">Envíanos un SMS</span>
+            <span class="drawer-row-value">Te responderemos lo antes posible</span>
+          </div>
+          <span class="drawer-row-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+          </span>
+        </button>
+
+        <button class="drawer-signin-cta" id="drawer-signin-appointments" type="button">Iniciar sesión</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Text us floating button — visible only on /appointments via CSS.
+       TODO: wire form submission to real SMS/contact-message backend.
+       For now the form validates input and triggers a confirmation toast,
+       but never actually sends anything. -->
+  <button class="textus-fab" id="textus-fab" type="button" aria-label="Envíanos un mensaje">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+    <span>Text us</span>
+  </button>
+
+  <div class="textus-modal-overlay" id="textus-modal-overlay" role="dialog" aria-modal="true" aria-labelledby="textus-title">
+    <div class="textus-modal">
+      <button class="textus-close" id="textus-close" type="button" aria-label="Cerrar">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+      <div class="textus-icon-wrap" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21l1.65-3.8a9 9 0 1 1 3.4 2.9L3 21"/><line x1="9" y1="10" x2="15" y2="10"/><line x1="9" y1="14" x2="13" y2="14"/></svg>
+      </div>
+      <h3 class="textus-title" id="textus-title">Envíanos un mensaje</h3>
+      <p class="textus-subtitle" id="textus-subtitle">Te responderemos lo antes posible</p>
+      <input class="textus-input" type="text" id="textus-name" placeholder="Nombre" autocomplete="name">
+      <input class="textus-input" type="tel" id="textus-phone" placeholder="Número de teléfono" autocomplete="tel">
+      <textarea class="textus-input" id="textus-message" placeholder="Mensaje"></textarea>
+      <p class="textus-legal">
+        Al enviar este mensaje aceptas recibir respuestas por SMS de este negocio. Pueden aplicar tarifas estándar.
+      </p>
+      <button class="textus-submit" id="textus-submit" type="button" disabled>Enviar mensaje</button>
     </div>
   </div>
 
@@ -317,7 +597,7 @@
       <main id="mount" tabindex="-1">
         <div class="loading">Cargando…</div>
       </main>
-      <div class="footer">
+      <div class="footer" id="footer">
         <span>Reservas con</span>
         <a href="https://avoqado.io" target="_blank" rel="noopener">Avoqado</a>
       </div>
@@ -358,6 +638,11 @@
       navVenue.textContent = displayName
       navLogo.textContent = displayName.charAt(0).toUpperCase()
       navBrand.href = '/' + slug
+      // Pre-populate the appointments drawer venue name with the slug-derived
+      // display name. The avoqado:venue-loaded handler upgrades it to the real
+      // name once the API responds.
+      var drawerVenueName = document.getElementById('drawer-venue-name')
+      if (drawerVenueName) drawerVenueName.textContent = displayName
 
       function buildHref(route) {
         if (route === 'appointments') return '/' + slug + '/appointments'
@@ -383,7 +668,7 @@
       applyActive(document.getElementById('drawer'))
       nav.hidden = false
 
-      // Drawer behavior (mobile)
+      // Drawer behavior (mobile + appointments-mode-everywhere)
       var drawer = document.getElementById('drawer')
       function openDrawer() { drawer.classList.add('open') }
       function closeDrawer() { drawer.classList.remove('open') }
@@ -393,8 +678,62 @@
         if (e.target === drawer) closeDrawer()
       })
       document.addEventListener('keydown', function (e) {
-        if (e.key === 'Escape' && drawer.classList.contains('open')) closeDrawer()
+        if (e.key === 'Escape') {
+          if (drawer.classList.contains('open')) closeDrawer()
+          if (textusOverlay.classList.contains('open')) closeTextus()
+        }
       })
+
+      // ----- Text us modal --------------------------------------------------
+      // The submit handler is a UI stub. Real SMS/contact integration goes in
+      // a follow-up — wire it to a backend endpoint (POST /venues/:slug/contact
+      // or a Twilio relay) and replace the alert below.
+      var textusFab = document.getElementById('textus-fab')
+      var textusOverlay = document.getElementById('textus-modal-overlay')
+      var textusClose = document.getElementById('textus-close')
+      var textusName = document.getElementById('textus-name')
+      var textusPhone = document.getElementById('textus-phone')
+      var textusMessage = document.getElementById('textus-message')
+      var textusSubmit = document.getElementById('textus-submit')
+
+      function openTextus() {
+        textusOverlay.classList.add('open')
+        if (drawer.classList.contains('open')) closeDrawer()
+        setTimeout(function () { textusName.focus() }, 50)
+      }
+      function closeTextus() { textusOverlay.classList.remove('open') }
+      function textusValid() {
+        return textusName.value.trim().length > 0 &&
+               textusPhone.value.trim().length > 0 &&
+               textusMessage.value.trim().length > 0
+      }
+      function syncTextusSubmit() {
+        textusSubmit.classList.toggle('is-active', textusValid())
+        textusSubmit.disabled = !textusValid()
+      }
+      textusFab.addEventListener('click', openTextus)
+      textusClose.addEventListener('click', closeTextus)
+      textusOverlay.addEventListener('click', function (e) {
+        if (e.target === textusOverlay) closeTextus()
+      })
+      ;[textusName, textusPhone, textusMessage].forEach(function (input) {
+        input.addEventListener('input', syncTextusSubmit)
+      })
+      textusSubmit.addEventListener('click', function () {
+        if (!textusValid()) return
+        // TODO(jose): wire this to the real venue contact endpoint when it lands.
+        // Until then we acknowledge optimistically so the UX feels live during QA.
+        alert('Mensaje enviado. (UI stub — falta integración real con SMS).')
+        textusName.value = ''
+        textusPhone.value = ''
+        textusMessage.value = ''
+        syncTextusSubmit()
+        closeTextus()
+      })
+
+      // Bottom-of-drawer "Envíanos un SMS" row also opens the modal.
+      var drawerTextus = document.getElementById('drawer-textus-row')
+      if (drawerTextus) drawerTextus.addEventListener('click', openTextus)
 
       // ----- Widget mount ---------------------------------------------------
       var el = document.createElement('avoqado-booking')
@@ -404,18 +743,28 @@
       // suppress the widget's inline venue header to avoid duplication.
       // External embeds (without our topnav) keep their own header.
       el.setAttribute('hide-venue-header', 'true')
+      // Square-style /appointments forces light theme regardless of system
+      // preference; everything else honors auto. We set this BEFORE attaching
+      // the element so the first paint is already light.
+      if (flowType === 'appointments') {
+        el.setAttribute('theme', 'light')
+      }
 
       if (flowType === 'appointments' || flowType === 'classes') {
         el.setAttribute('flow-type', flowType)
       }
 
       var params = new URLSearchParams(window.location.search)
-      ;['locale', 'theme', 'accent-color'].forEach(function (attr) {
+      ;['locale', 'accent-color'].forEach(function (attr) {
         var val = params.get(attr)
         if (val) el.setAttribute(attr, val)
       })
+      // theme query param overrides the appointments-light default if explicitly
+      // set by the embedder (rare but supported).
+      var themeOverride = params.get('theme')
+      if (themeOverride) el.setAttribute('theme', themeOverride)
 
-      // Wire "Mi Cuenta" buttons → widget.showAccount()
+      // Wire "Mi Cuenta" / "Iniciar sesión" buttons → widget.showAccount()
       function callShowAccount() {
         if (typeof el.showAccount === 'function') {
           el.showAccount()
@@ -427,6 +776,44 @@
       }
       document.getElementById('nav-account').addEventListener('click', callShowAccount)
       document.getElementById('drawer-account').addEventListener('click', callShowAccount)
+      var drawerSigninAppts = document.getElementById('drawer-signin-appointments')
+      if (drawerSigninAppts) drawerSigninAppts.addEventListener('click', callShowAccount)
+
+      // ----- Drawer venue-info hydration (appointments mode only) -----------
+      // The widget fetches venue info, then dispatches avoqado:venue-loaded on
+      // its host element with { name, address, phone, hours }. We read it here
+      // and populate the drawer rows. If the event never fires (offline, error),
+      // the drawer still renders with the slug-derived name + static defaults.
+      el.addEventListener('avoqado:venue-loaded', function (e) {
+        var info = e && e.detail && e.detail.venue
+        if (!info) return
+        if (drawerVenueName && info.name) drawerVenueName.textContent = info.name
+
+        // Apply the venue brand color to the host page chrome (topnav "Mi
+        // Cuenta" CTA, active tab underline, drawer links). Only honor it
+        // when the URL didn't already pin an accent-color override and the
+        // venue value looks like a CSS color — defensive against bad data.
+        var urlAccent = params.get('accent-color')
+        var brand = info.primaryColor
+        if (!urlAccent && typeof brand === 'string' && /^(#|rgb|hsl|oklch|color\()/i.test(brand.trim())) {
+          document.documentElement.style.setProperty('--accent', brand.trim())
+        }
+
+        var phoneRow = document.getElementById('drawer-phone-row')
+        var phoneVal = document.getElementById('drawer-phone')
+        if (info.phone && phoneRow && phoneVal) {
+          phoneVal.textContent = info.phone
+          phoneRow.href = 'tel:' + info.phone.replace(/[^+0-9]/g, '')
+          phoneRow.hidden = false
+        }
+
+        var hoursRow = document.getElementById('drawer-hours-row')
+        var hoursVal = document.getElementById('drawer-hours')
+        if (info.hoursLabel && hoursRow && hoursVal) {
+          hoursVal.textContent = info.hoursLabel
+          hoursRow.hidden = false
+        }
+      })
 
       // Mount widget into the shell
       var mountEl = document.getElementById('mount')
@@ -443,6 +830,15 @@
         var loading = mountEl.querySelector('.loading')
         if (loading && loading.parentNode === mountEl) loading.remove()
       }, 600)
+
+      // /appointments swaps the footer text to Square's "Con la tecnología…"
+      // pattern. Done here (not CSS) so the link target stays the same.
+      if (flowType === 'appointments') {
+        var footer = document.getElementById('footer')
+        if (footer) {
+          footer.innerHTML = '<span>Con la tecnología de</span> <a href="https://avoqado.io" target="_blank" rel="noopener">Avoqado</a>'
+        }
+      }
     })()
   </script>
   <!-- Same-origin widget bundle. Built by `npm run build` to dist/widget.js. -->

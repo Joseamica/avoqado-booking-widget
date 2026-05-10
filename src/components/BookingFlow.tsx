@@ -1,6 +1,6 @@
 import { h } from 'preact'
 import { useEffect, useState } from 'preact/hooks'
-import type { WidgetProps, PublicClassSessionSlot } from '../types'
+import type { WidgetProps, PublicClassSessionSlot, OperatingHours } from '../types'
 import type { PublicSlot } from '../types'
 import { createT } from '../i18n'
 import * as api from '../api/booking'
@@ -11,6 +11,8 @@ import {
   creditPacks, customerCredits, selectedCreditBalance, creditPacksLoading,
   showPortal, portalData, customerToken, customerInfo, setCustomerSession, clearCustomerSession,
   flowType, visibleProducts,
+  selectedProducts, totalDuration, totalPrice,
+  addSelectedProduct, removeSelectedProduct,
 } from '../state/booking'
 import { StepIndicator } from './StepIndicator'
 import { ServiceSelector } from './ServiceSelector'
@@ -32,7 +34,13 @@ import { UnifiedLanding } from './UnifiedLanding'
 import { PaymentSelector } from './PaymentSelector'
 import { TimezoneModal, getStoredTzPreference } from './TimezoneModal'
 import { VenueSidebarCard } from './VenueSidebarCard'
+import { AppointmentSummarySidebar } from './AppointmentSummarySidebar'
+import { ServiceDetailView } from './ServiceDetailView'
+import { DateTimePickerSquare } from './DateTimePickerSquare'
+import { PaymentStepHeader } from './PaymentStepHeader'
+import { AppointmentConfirmation } from './AppointmentConfirmation'
 import type { GuestFormData } from './GuestInfoForm'
+import type { Product } from '../types'
 
 interface BookingFlowProps {
   props: WidgetProps
@@ -62,6 +70,72 @@ function AvoqadoLogo() {
   )
 }
 
+/** Build a Square-style "Abierto · Cierra a las 21:00" / "Cerrado · Abre el lunes a las 9:00"
+ *  status string from the venue's weekly schedule. Returns null when no hours
+ *  are configured so the host page can hide the row entirely. */
+function formatHoursLabel(
+  hours: OperatingHours | undefined,
+  timezone: string,
+  locale: string | undefined,
+): string | null {
+  if (!hours) return null
+  const dayKeys: Array<keyof OperatingHours> = [
+    'sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday',
+  ]
+  const lang = locale === 'en' ? 'en' : 'es'
+  const tx = lang === 'en'
+    ? { open: 'Open', closed: 'Closed', closesAt: 'Closes at', opensAt: 'Opens at' }
+    : { open: 'Abierto', closed: 'Cerrado', closesAt: 'Cierra a las', opensAt: 'Abre a las' }
+  const dayNames: Record<keyof OperatingHours, string> = lang === 'en'
+    ? { sunday: 'Sunday', monday: 'Monday', tuesday: 'Tuesday', wednesday: 'Wednesday', thursday: 'Thursday', friday: 'Friday', saturday: 'Saturday' }
+    : { sunday: 'domingo', monday: 'lunes', tuesday: 'martes', wednesday: 'miércoles', thursday: 'jueves', friday: 'viernes', saturday: 'sábado' }
+
+  let nowMins = 0
+  let todayIdx = 0
+  try {
+    const fmt = new Intl.DateTimeFormat('en-US', {
+      timeZone: timezone, hour12: false, weekday: 'short', hour: '2-digit', minute: '2-digit',
+    })
+    const parts = fmt.formatToParts(new Date())
+    const weekdayShort = (parts.find(p => p.type === 'weekday')?.value || 'Sun').toLowerCase().slice(0, 3)
+    const hh = parseInt(parts.find(p => p.type === 'hour')?.value ?? '0', 10)
+    const mm = parseInt(parts.find(p => p.type === 'minute')?.value ?? '0', 10)
+    nowMins = hh * 60 + mm
+    const shortMap: Record<string, number> = { sun: 0, mon: 1, tue: 2, wed: 3, thu: 4, fri: 5, sat: 6 }
+    todayIdx = shortMap[weekdayShort] ?? 0
+  } catch { /* fall through with defaults */ }
+
+  function rangeMinutes(r: { open: string; close: string }) {
+    const [oh, om] = r.open.split(':').map(n => parseInt(n, 10))
+    const [ch, cm] = r.close.split(':').map(n => parseInt(n, 10))
+    return { openMins: oh * 60 + (om || 0), closeMins: ch * 60 + (cm || 0), open: r.open, close: r.close }
+  }
+
+  const todayKey = dayKeys[todayIdx]
+  const today = hours[todayKey]
+  if (today?.enabled && today.ranges?.length) {
+    const ranges = today.ranges.map(rangeMinutes).sort((a, b) => a.openMins - b.openMins)
+    const inRange = ranges.find(r => nowMins >= r.openMins && nowMins < r.closeMins)
+    if (inRange) return `${tx.open} · ${tx.closesAt} ${inRange.close}`
+    const nextToday = ranges.find(r => nowMins < r.openMins)
+    if (nextToday) return `${tx.closed} · ${tx.opensAt} ${nextToday.open}`
+  }
+
+  for (let offset = 1; offset <= 7; offset++) {
+    const nextKey = dayKeys[(todayIdx + offset) % 7]
+    const next = hours[nextKey]
+    if (next?.enabled && next.ranges?.length) {
+      const firstOpen = next.ranges.map(rangeMinutes).sort((a, b) => a.openMins - b.openMins)[0]
+      const dayLabel = dayNames[nextKey]
+      return lang === 'en'
+        ? `${tx.closed} · Opens ${dayLabel} at ${firstOpen.open}`
+        : `${tx.closed} · Abre el ${dayLabel} a las ${firstOpen.open}`
+    }
+  }
+
+  return tx.closed
+}
+
 export function BookingFlow({ props }: BookingFlowProps) {
   const t = createT(props.locale)
   const [slots, setSlots] = useState<PublicSlot[]>([])
@@ -80,6 +154,11 @@ export function BookingFlow({ props }: BookingFlowProps) {
   const [showCreditSelector, setShowCreditSelector] = useState(false)
   const [showNoCreditsBuyPrompt, setShowNoCreditsBuyPrompt] = useState(false)
   const [showPaymentSelector, setShowPaymentSelector] = useState(false)
+  // Square-style /appointments wizard: ServiceDetailView intermediate page.
+  // When non-null, the service-step main column renders the detail view instead
+  // of the list. mode='add' for products not yet picked, 'edit' for ones already
+  // in selectedProducts (sidebar pencil click).
+  const [detailViewProduct, setDetailViewProduct] = useState<{ product: Product; mode: 'add' | 'edit' } | null>(null)
 
   // The unified landing (Square-style two-CTA picker) shows whenever the
   // customer enters via /<slug> with no flow segment. Picking a CTA flips
@@ -139,6 +218,30 @@ export function BookingFlow({ props }: BookingFlowProps) {
       .then(info => {
         venueInfo.value = info
         resetBooking(info)
+        // Notify the hosted page (book.avoqado.io) so it can populate the
+        // appointments drawer with venue contact info. Plain hosts that don't
+        // listen ignore it harmlessly.
+        props.hostElement.dispatchEvent(new CustomEvent('avoqado:venue-loaded', {
+          bubbles: true, composed: true,
+          detail: {
+            venue: {
+              name: info.name,
+              address: info.address ?? null,
+              phone: info.phone ?? null,
+              timezone: info.timezone,
+              hoursLabel: formatHoursLabel(info.operatingHours, info.timezone, props.locale),
+              // Brand fields — bridged out so the hosted page shell
+              // (book.avoqado.io/<slug>) can paint its own topnav (Mi Cuenta
+              // CTA, active tab underline) in the venue's brand color and
+              // surface the wide/small logos. Internal widget chrome already
+              // reads these off venueInfo via the accentOverride below.
+              primaryColor: info.primaryColor ?? null,
+              logo: info.logo ?? null,
+              logoFull: info.logoFull ?? null,
+              heroImageUrl: info.heroImageUrl ?? null,
+            },
+          },
+        }))
         // Load credit packs in background
         api.getCreditPacks(props.venue).then(packs => {
           creditPacks.value = packs
@@ -749,9 +852,11 @@ export function BookingFlow({ props }: BookingFlowProps) {
         t={t}
       />
 
-      {/* Step indicator — hidden for the class flow (the list IS the selector)
-          and for the unified landing (no concept of "steps" yet). */}
-      {step.value < config.confirmStep && flowType.value !== 'classes' && !showLanding && (
+      {/* Step indicator — hidden for:
+          - the class flow (the list IS the selector)
+          - the unified landing (no concept of "steps" yet)
+          - the Square-style /appointments wizard (sidebar Resumen handles wayfinding) */}
+      {step.value < config.confirmStep && flowType.value !== 'classes' && flowType.value !== 'appointments' && !showLanding && (
         <StepIndicator
           currentStep={step.value}
           totalSteps={config.totalSteps}
@@ -908,19 +1013,37 @@ export function BookingFlow({ props }: BookingFlowProps) {
           </div>
         )}
 
-        {!showLanding && flowType.value !== 'classes' && step.value === config.serviceStep && hasServiceStep.value && (
+        {!showLanding && flowType.value === 'appointments' && step.value === config.serviceStep && hasServiceStep.value && (
           <div class="avq-appts-layout">
             <div class="avq-appts-main">
-              <ServiceSelector
-                products={visibleProducts.value}
-                selectedProductId={selectedProduct.value?.id ?? null}
-                onSelect={(product) => {
-                  selectedProduct.value = product
-                  step.value = config.dateStep
-                }}
-                t={t}
-              />
-              {creditPacks.value.length > 0 && (
+              {detailViewProduct ? (
+                <ServiceDetailView
+                  product={detailViewProduct.product}
+                  mode={detailViewProduct.mode}
+                  onAdd={() => {
+                    addSelectedProduct(detailViewProduct.product)
+                    setDetailViewProduct(null)
+                  }}
+                  onUpdate={() => setDetailViewProduct(null)}
+                  onRemove={() => {
+                    removeSelectedProduct(detailViewProduct.product.id)
+                    setDetailViewProduct(null)
+                  }}
+                  onBack={() => setDetailViewProduct(null)}
+                  t={t}
+                />
+              ) : (
+                <ServiceSelector
+                  products={visibleProducts.value}
+                  selectedProductIds={selectedProducts.value.map(p => p.id)}
+                  onOpenDetail={(product) => {
+                    const isAdded = selectedProducts.value.some(p => p.id === product.id)
+                    setDetailViewProduct({ product, mode: isAdded ? 'edit' : 'add' })
+                  }}
+                  t={t}
+                />
+              )}
+              {creditPacks.value.length > 0 && !detailViewProduct && (
                 <CreditPackBanner
                   packs={creditPacks.value}
                   onBuy={handleBuyPack}
@@ -929,25 +1052,32 @@ export function BookingFlow({ props }: BookingFlowProps) {
                 />
               )}
             </div>
-            {flowType.value === 'appointments' && (
-              <aside class="avq-appts-sidebar">
-                <VenueSidebarCard
-                  info={info}
-                  creditPacks={creditPacks.value}
-                  onBuyPack={handleBuyPack}
-                  customerInfo={customerInfo.value}
-                  t={t}
-                />
-              </aside>
-            )}
+            <aside class="avq-appts-sidebar">
+              <AppointmentSummarySidebar
+                products={selectedProducts.value}
+                totalPrice={totalPrice.value}
+                totalDuration={totalDuration.value}
+                onEditProduct={(product) => setDetailViewProduct({ product, mode: 'edit' })}
+                onNext={() => {
+                  // Keep the legacy single-product signal in sync so downstream
+                  // (date/time/form steps still on Phase-pre-multi code) reads
+                  // the lead service. Phase 4+ migrate them to selectedProducts.
+                  selectedProduct.value = selectedProducts.value[0] ?? null
+                  setDetailViewProduct(null)
+                  step.value = config.dateStep
+                }}
+                nextDisabled={selectedProducts.value.length === 0}
+                t={t}
+              />
+            </aside>
             <style>{`
               .avq-appts-layout { display: grid; grid-template-columns: 1fr; gap: 0; }
               .avq-appts-main { min-width: 0; }
               .avq-appts-sidebar { display: none; }
               @media (min-width: 880px) {
                 .avq-appts-layout {
-                  grid-template-columns: minmax(0, 1fr) 240px;
-                  gap: 24px;
+                  grid-template-columns: minmax(0, 1fr) 320px;
+                  gap: 32px;
                   align-items: start;
                 }
                 .avq-appts-sidebar { display: block; position: sticky; top: 24px; }
@@ -956,7 +1086,68 @@ export function BookingFlow({ props }: BookingFlowProps) {
           </div>
         )}
 
-        {!showLanding && flowType.value !== 'classes' && step.value === config.dateStep && (
+        {/* /appointments — Square-style merged date+time picker with sidebar */}
+        {!showLanding && flowType.value === 'appointments' && (step.value === config.dateStep || step.value === config.timeStep) && !seatPickerActive && (
+          <div class="avq-appts-layout">
+            <div class="avq-appts-main">
+              <DateTimePickerSquare
+                selectedDate={selectedDate.value}
+                onSelectDate={(date) => {
+                  selectedDate.value = date
+                  selectedSlot.value = null
+                  step.value = config.timeStep
+                }}
+                selectedSlot={selectedSlot.value}
+                onSelectSlot={(slot) => {
+                  selectedSlot.value = slot
+                  selectedSpotIds.value = []
+                  if (selectedProduct.value?.layoutConfig && slot.classSessionId) {
+                    setSeatPickerActive(true)
+                  } else {
+                    step.value = config.formStep
+                  }
+                }}
+                slots={slots}
+                slotsLoading={slotsLoading}
+                timezone={info.timezone}
+                operatingHours={info.operatingHours}
+                onJoinWaitlist={() => showToast(t('summary.title') /* placeholder */, 'success')}
+                locale={props.locale}
+                t={t}
+              />
+            </div>
+            <aside class="avq-appts-sidebar">
+              <AppointmentSummarySidebar
+                products={selectedProducts.value}
+                totalPrice={totalPrice.value}
+                totalDuration={totalDuration.value}
+                onEditProduct={(product) => {
+                  setDetailViewProduct({ product, mode: 'edit' })
+                  step.value = config.serviceStep
+                }}
+                t={t}
+              />
+            </aside>
+            <style>{`
+              .avq-appts-layout { display: grid; grid-template-columns: 1fr; gap: 0; }
+              .avq-appts-main { min-width: 0; }
+              .avq-appts-sidebar { display: none; }
+              @media (min-width: 880px) {
+                .avq-appts-layout {
+                  grid-template-columns: minmax(0, 1fr) 320px;
+                  gap: 32px;
+                  align-items: start;
+                }
+                .avq-appts-sidebar { display: block; position: sticky; top: 24px; }
+              }
+            `}</style>
+          </div>
+        )}
+
+        {/* Legacy date/time blocks — preserved for any flow that isn't
+            /appointments and isn't /classes (effectively unused since the
+            unified flow lands on UnifiedLanding). Kept as a safety net. */}
+        {!showLanding && flowType.value !== 'classes' && flowType.value !== 'appointments' && step.value === config.dateStep && (
           <div>
             <DatePicker
               selectedDate={selectedDate.value}
@@ -981,14 +1172,13 @@ export function BookingFlow({ props }: BookingFlowProps) {
           </div>
         )}
 
-        {!showLanding && flowType.value !== 'classes' && step.value === config.timeStep && !seatPickerActive && (
+        {!showLanding && flowType.value !== 'classes' && flowType.value !== 'appointments' && step.value === config.timeStep && !seatPickerActive && (
           <TimeSlotPicker
             slots={slots}
             selectedSlot={selectedSlot.value}
             onSelect={(slot) => {
               selectedSlot.value = slot
               selectedSpotIds.value = []
-              // If CLASS with layout, show seat picker
               if (selectedProduct.value?.layoutConfig && slot.classSessionId) {
                 setSeatPickerActive(true)
               } else {
@@ -1022,156 +1212,246 @@ export function BookingFlow({ props }: BookingFlowProps) {
           />
         )}
 
-        {step.value === config.formStep && !showCreditSelector && !showNoCreditsBuyPrompt && !showPaymentSelector && (
-          info.publicBooking.requireAccount && !customerInfo.value ? (
-            <div class="avq-animate-in" style={{ padding: '32px 16px', textAlign: 'center' }}>
-              <div style={{
-                width: '56px', height: '56px', borderRadius: '50%',
-                background: 'color-mix(in srgb, var(--avq-accent, #6366f1) 12%, var(--avq-bg, #fff))',
-                color: 'var(--avq-accent, #6366f1)',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                margin: '0 auto 16px',
-              }}>
-                <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
-                  <circle cx="9" cy="7" r="4" />
-                  <line x1="19" y1="8" x2="19" y2="14" />
-                  <line x1="22" y1="11" x2="16" y2="11" />
-                </svg>
-              </div>
-              <h3 style={{ fontSize: '16px', fontWeight: '600', color: 'var(--avq-fg, #111827)', margin: '0 0 6px' }}>
-                {t('account.requireTitle')}
-              </h3>
-              <p style={{ fontSize: '14px', color: 'var(--avq-muted-fg, #6b7280)', margin: '0 0 18px', lineHeight: '1.5' }}>
-                {t('account.requireDescription', { venue: info.name })}
-              </p>
-              <button
-                type="button"
-                onClick={() => { showPortal.value = true }}
-                style={{
-                  padding: '11px 22px', borderRadius: '10px', border: 'none',
-                  background: 'var(--avq-accent, #6366f1)', color: '#ffffff',
-                  fontSize: '14px', fontWeight: '600', cursor: 'pointer',
-                }}
-              >
-                {t('account.signInButton')}
-              </button>
-            </div>
-          ) : (
-            <GuestInfoForm
-              venueInfo={info}
-              selectedSlot={selectedSlot.value}
-              selectedSpotCount={selectedSpotIds.value.length}
-              onSubmit={handleFormSubmit}
-              isSubmitting={isLoading.value}
-              t={t}
-              loggedInCustomer={customerInfo.value}
-            />
+        {step.value === config.formStep && (() => {
+          /* Render the four mutually-exclusive form sub-states once, then wrap
+             them in the Square 2-col layout when /appointments. Non-appointments
+             paths inline the same body without the chrome. The sub-state
+             branching matches the legacy semantics exactly. */
+          const formStepBody = (
+            <>
+              {!showCreditSelector && !showNoCreditsBuyPrompt && !showPaymentSelector && (
+                info.publicBooking.requireAccount && !customerInfo.value ? (
+                  <div class="avq-animate-in" style={{ padding: '32px 16px', textAlign: 'center' }}>
+                    <div style={{
+                      width: '56px', height: '56px', borderRadius: '50%',
+                      background: 'color-mix(in srgb, var(--avq-accent, #6366f1) 12%, var(--avq-bg, #fff))',
+                      color: 'var(--avq-accent, #6366f1)',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      margin: '0 auto 16px',
+                    }}>
+                      <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+                        <circle cx="9" cy="7" r="4" />
+                        <line x1="19" y1="8" x2="19" y2="14" />
+                        <line x1="22" y1="11" x2="16" y2="11" />
+                      </svg>
+                    </div>
+                    <h3 style={{ fontSize: '16px', fontWeight: '600', color: 'var(--avq-fg, #111827)', margin: '0 0 6px' }}>
+                      {t('account.requireTitle')}
+                    </h3>
+                    <p style={{ fontSize: '14px', color: 'var(--avq-muted-fg, #6b7280)', margin: '0 0 18px', lineHeight: '1.5' }}>
+                      {t('account.requireDescription', { venue: info.name })}
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => { showPortal.value = true }}
+                      style={{
+                        padding: '11px 22px', borderRadius: '10px', border: 'none',
+                        background: 'var(--avq-accent, #6366f1)', color: '#ffffff',
+                        fontSize: '14px', fontWeight: '600', cursor: 'pointer',
+                      }}
+                    >
+                      {t('account.signInButton')}
+                    </button>
+                  </div>
+                ) : (
+                  <GuestInfoForm
+                    venueInfo={info}
+                    selectedSlot={selectedSlot.value}
+                    selectedSpotCount={selectedSpotIds.value.length}
+                    onSubmit={handleFormSubmit}
+                    isSubmitting={isLoading.value}
+                    t={t}
+                    loggedInCustomer={customerInfo.value}
+                  />
+                )
+              )}
+
+              {showPaymentSelector && pendingFormData && selectedProduct.value && (
+                <PaymentSelector
+                  product={selectedProduct.value}
+                  seats={bookingSeatCount(pendingFormData)}
+                  credits={customerCredits.value}
+                  upfrontPolicy={selectedProduct.value.upfrontPolicy ?? 'at_venue'}
+                  onSelectCredits={(balanceId) => {
+                    selectedCreditBalance.value = { balanceId, productId: selectedProduct.value?.id || '' }
+                    setShowPaymentSelector(false)
+                    submitReservation(pendingFormData!, balanceId)
+                  }}
+                  onSelectCash={() => {
+                    setShowPaymentSelector(false)
+                    submitReservation(pendingFormData!)
+                  }}
+                  onBuyPack={() => {
+                    setShowPaymentSelector(false)
+                    setShowNoCreditsBuyPrompt(true)
+                  }}
+                  t={t}
+                />
+              )}
+
+              {showCreditSelector && customerCredits.value && pendingFormData && (
+                <CreditSelector
+                  credits={customerCredits.value}
+                  productId={selectedProduct.value?.id || ''}
+                  seats={bookingSeatCount(pendingFormData)}
+                  required={selectedProduct.value?.requireCreditForBooking === true}
+                  onSelect={(balanceId) => {
+                    selectedCreditBalance.value = { balanceId, productId: selectedProduct.value?.id || '' }
+                    submitReservation(pendingFormData!, balanceId)
+                  }}
+                  onSkip={() => {
+                    setShowCreditSelector(false)
+                    submitReservation(pendingFormData!)
+                  }}
+                  onBuyMore={() => {
+                    setShowCreditSelector(false)
+                    setShowNoCreditsBuyPrompt(true)
+                  }}
+                  t={t}
+                />
+              )}
+
+              {showNoCreditsBuyPrompt && (
+                <div class="avq-animate-in" style={{ padding: '4px 0' }}>
+                  <div
+                    role="status"
+                    aria-live="polite"
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: '10px',
+                      padding: '12px 14px', borderRadius: '12px',
+                      background: 'var(--avq-warning-bg)',
+                      border: '1px solid var(--avq-warning-border)',
+                      marginBottom: '20px',
+                    }}
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--avq-warning-accent)" stroke-width="2" aria-hidden="true" style={{ flexShrink: 0 }}>
+                      <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+                      <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+                    </svg>
+                    <span style={{ fontSize: '14px', fontWeight: '500', color: 'var(--avq-warning-fg)' }}>
+                      {t('creditPacks.requiredNoCredits')}
+                    </span>
+                  </div>
+
+                  {creditPacks.value.length > 0 && (
+                    <CreditPackBanner
+                      packs={creditPacks.value}
+                      onBuy={handleBuyPack}
+                      buyingPackId={buyingPackId}
+                      t={t}
+                    />
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowNoCreditsBuyPrompt(false)
+                      setPendingFormData(null)
+                    }}
+                    style={{
+                      width: '100%', padding: '11px', marginTop: '14px',
+                      borderRadius: '12px', border: '1px solid transparent',
+                      background: 'transparent',
+                      fontSize: '13px', fontWeight: '500', color: 'var(--avq-muted-fg, #6b7280)',
+                      cursor: 'pointer',
+                      transition: 'background 0.15s var(--avq-ease), color 0.15s var(--avq-ease)',
+                      textAlign: 'center',
+                    }}
+                  >
+                    {t('actions.goBack')}
+                  </button>
+                </div>
+              )}
+            </>
           )
-        )}
 
-        {step.value === config.formStep && showPaymentSelector && pendingFormData && selectedProduct.value && (
-          <PaymentSelector
-            product={selectedProduct.value}
-            seats={bookingSeatCount(pendingFormData)}
-            credits={customerCredits.value}
-            upfrontPolicy={selectedProduct.value.upfrontPolicy ?? 'at_venue'}
-            onSelectCredits={(balanceId) => {
-              selectedCreditBalance.value = { balanceId, productId: selectedProduct.value?.id || '' }
-              setShowPaymentSelector(false)
-              submitReservation(pendingFormData!, balanceId)
-            }}
-            onSelectCash={() => {
-              setShowPaymentSelector(false)
-              submitReservation(pendingFormData!)
-            }}
-            onBuyPack={() => {
-              setShowPaymentSelector(false)
-              setShowNoCreditsBuyPrompt(true)
-            }}
-            t={t}
-          />
-        )}
+          if (flowType.value !== 'appointments') {
+            return formStepBody
+          }
 
-        {step.value === config.formStep && showCreditSelector && customerCredits.value && pendingFormData && (
-          <CreditSelector
-            credits={customerCredits.value}
-            productId={selectedProduct.value?.id || ''}
-            seats={bookingSeatCount(pendingFormData)}
-            required={selectedProduct.value?.requireCreditForBooking === true}
-            onSelect={(balanceId) => {
-              selectedCreditBalance.value = { balanceId, productId: selectedProduct.value?.id || '' }
-              submitReservation(pendingFormData!, balanceId)
-            }}
-            onSkip={() => {
-              setShowCreditSelector(false)
-              submitReservation(pendingFormData!)
-            }}
-            onBuyMore={() => {
-              // Switch from credit selector to the buy-pack prompt
-              setShowCreditSelector(false)
-              setShowNoCreditsBuyPrompt(true)
-            }}
-            t={t}
-          />
-        )}
+          // Square /appointments: header + 2-col layout with Resumen sidebar.
+          // The slot-hold countdown is visual-only for now — wire to the real
+          // backend hold endpoint (POST /reservations/hold) once it ships and
+          // hydrate slotHoldExpiresAt in state.
+          const subtotal = totalPrice.value
+          const hasVariable = selectedProducts.value.some(p => p.price == null)
+          const variableNote = hasVariable
+            ? (props.locale === 'en'
+                ? 'This appointment includes a service with variable pricing. The amount will be set at the venue and is not included in the total.'
+                : 'Esta cita incluye un servicio con un precio variable. El precio se determinará en la cita y no se incluye en el total.')
+            : undefined
 
-        {step.value === config.formStep && showNoCreditsBuyPrompt && (
-          <div class="avq-animate-in" style={{ padding: '4px 0' }}>
-            {/* Warning header */}
-            <div
-              role="status"
-              aria-live="polite"
-              style={{
-                display: 'flex', alignItems: 'center', gap: '10px',
-                padding: '12px 14px', borderRadius: '12px',
-                background: 'var(--avq-warning-bg)',
-                border: '1px solid var(--avq-warning-border)',
-                marginBottom: '20px',
-              }}
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--avq-warning-accent)" stroke-width="2" aria-hidden="true" style={{ flexShrink: 0 }}>
-                <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
-                <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
-              </svg>
-              <span style={{ fontSize: '14px', fontWeight: '500', color: 'var(--avq-warning-fg)' }}>
-                {t('creditPacks.requiredNoCredits')}
-              </span>
+          return (
+            <div class="avq-appts-layout">
+              <div class="avq-appts-main">
+                <PaymentStepHeader locale={props.locale} />
+                {formStepBody}
+              </div>
+              <aside class="avq-appts-sidebar">
+                <AppointmentSummarySidebar
+                  products={selectedProducts.value}
+                  totalPrice={totalPrice.value}
+                  totalDuration={totalDuration.value}
+                  showTotals
+                  subtotal={subtotal ?? 0}
+                  taxes={0}
+                  dueToday={0}
+                  dueAtVenue={subtotal ?? 0}
+                  totalsNote={variableNote}
+                  onNext={() => {
+                    /* Reserva cita: trigger the form's submit. The form lives
+                     * inside a child component that owns state, so we surface
+                     * the submit via a global form reference (see formStepBody
+                     * above) — for the minimal Phase 5 ship the form keeps its
+                     * own internal submit at the bottom and the sidebar button
+                     * is hidden by passing onNext={undefined}. TODO: lift form
+                     * state to enable sidebar-driven submit per Square layout. */
+                  }}
+                  // Hide sidebar Reserva cita until form-state lift lands.
+                  // Form submit currently lives inside GuestInfoForm.
+                  // eslint-disable-next-line react/no-children-prop
+                  // (the AppointmentSummarySidebar component handles undefined onNext gracefully)
+                  t={t}
+                />
+              </aside>
+              <style>{`
+                .avq-appts-layout { display: grid; grid-template-columns: 1fr; gap: 0; }
+                .avq-appts-main { min-width: 0; }
+                .avq-appts-sidebar { display: none; }
+                @media (min-width: 880px) {
+                  .avq-appts-layout {
+                    grid-template-columns: minmax(0, 1fr) 340px;
+                    gap: 32px;
+                    align-items: start;
+                  }
+                  .avq-appts-sidebar { display: block; position: sticky; top: 24px; }
+                }
+              `}</style>
             </div>
+          )
+        })()}
 
-            {/* Credit packs to buy */}
-            {creditPacks.value.length > 0 && (
-              <CreditPackBanner
-                packs={creditPacks.value}
-                onBuy={handleBuyPack}
-                buyingPackId={buyingPackId}
-                t={t}
-              />
-            )}
-
-            {/* Go back button */}
-            <button
-              type="button"
-              onClick={() => {
-                setShowNoCreditsBuyPrompt(false)
-                setPendingFormData(null)
-              }}
-              style={{
-                width: '100%', padding: '11px', marginTop: '14px',
-                borderRadius: '12px', border: '1px solid transparent',
-                background: 'transparent',
-                fontSize: '13px', fontWeight: '500', color: 'var(--avq-muted-fg, #6b7280)',
-                cursor: 'pointer',
-                transition: 'background 0.15s var(--avq-ease), color 0.15s var(--avq-ease)',
-                textAlign: 'center',
-              }}
-            >
-              {t('actions.goBack')}
-            </button>
-          </div>
+        {step.value === config.confirmStep && bookingResult.value && !bookingResult.value.depositRequired && flowType.value === 'appointments' && (
+          <AppointmentConfirmation
+            booking={bookingResult.value}
+            venueInfo={info}
+            selectedProducts={selectedProducts.value.length > 0 ? selectedProducts.value : (selectedProduct.value ? [selectedProduct.value] : [])}
+            onReschedule={() => {
+              manageSecret.value = bookingResult.value!.cancelSecret
+              step.value = MANAGE_STEP
+            }}
+            onCancel={() => {
+              manageSecret.value = bookingResult.value!.cancelSecret
+              step.value = MANAGE_STEP
+            }}
+            onBookAgain={() => resetBooking(info)}
+            locale={props.locale}
+            t={t}
+          />
         )}
 
-        {step.value === config.confirmStep && bookingResult.value && !bookingResult.value.depositRequired && (
+        {step.value === config.confirmStep && bookingResult.value && !bookingResult.value.depositRequired && flowType.value !== 'appointments' && (
           <Confirmation
             booking={bookingResult.value}
             venueInfo={info}
