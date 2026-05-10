@@ -401,6 +401,28 @@ export function BookingFlow({ props }: BookingFlowProps) {
     }
   }, [detailViewProduct, props.flowType])
 
+  // Eager-load customer credits when the Square /appointments wizard reaches
+  // the payment step with a logged-in customer. Surfaces the credit balance
+  // to the customer BEFORE they submit so the "donde está para pagar con
+  // créditos" question doesn't have to be answered post-submit. The existing
+  // handleFormSubmit flow still consumes customerCredits.value to drive the
+  // credit/payment selectors after the customer clicks Reserva cita.
+  useEffect(() => {
+    if (props.flowType !== 'appointments') return
+    if (step.value !== config.formStep) return
+    const customer = customerInfo.value
+    const product = selectedProduct.value
+    if (!customer || !product) return
+    const phone = customer.phone ?? undefined
+    const email = customer.email ?? undefined
+    if (!phone && !email) return
+    const seats = Math.max(selectedSpotIds.value.length, 1)
+    api.getCustomerCredits(props.venue, { phone, email, seats, productId: product.id })
+      .then(credits => { customerCredits.value = credits })
+      .catch(() => { /* silent — banner just won't render */ })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step.value, customerInfo.value?.id, selectedProduct.value?.id, props.flowType, props.venue])
+
   // Fetch available slots for a date
   function fetchSlots() {
     const date = selectedDate.value
@@ -1342,20 +1364,82 @@ export function BookingFlow({ props }: BookingFlowProps) {
                     </button>
                   </div>
                 ) : (
-                  <GuestInfoForm
-                    venueInfo={info}
-                    selectedSlot={selectedSlot.value}
-                    selectedSpotCount={selectedSpotIds.value.length}
-                    onSubmit={handleFormSubmit}
-                    isSubmitting={isLoading.value}
-                    t={t}
-                    loggedInCustomer={customerInfo.value}
-                    /* On the Square /appointments wizard the submit lives in
-                     * the sticky sidebar as "Reserva cita" — hide the inline
-                     * one and expose the form's submit fn to the parent. */
-                    hideSubmitButton={flowType.value === 'appointments'}
-                    registerSubmit={flowType.value === 'appointments' ? setFormSubmitFn : undefined}
-                  />
+                  <>
+                    {flowType.value === 'appointments' && (() => {
+                      /* Discoverability banner: surfaces matching credits BEFORE
+                       * the customer submits so they know they can pay with
+                       * credits without having to click Reserva cita first.
+                       * The actual picker (PaymentSelector / CreditSelector)
+                       * still drives the choice on submit — same flow as
+                       * non-appointments paths. */
+                      const product = selectedProduct.value
+                      const credits = customerCredits.value
+                      if (!product || !credits) return null
+                      const seats = Math.max(selectedSpotIds.value.length, 1)
+                      const totalNeeded = seats * (product.creditCost ?? 1)
+                      const matchingBalance = credits.purchases
+                        .filter(p => p.status === 'ACTIVE')
+                        .flatMap(p => p.itemBalances.map(b => ({
+                          ...b, packName: p.creditPack.name,
+                        })))
+                        .filter(b => b.productId === product.id && b.remainingQuantity > 0)
+                        .sort((a, b) => b.remainingQuantity - a.remainingQuantity)[0]
+                      if (!matchingBalance) return null
+                      const hasEnough = matchingBalance.remainingQuantity >= totalNeeded
+                      const isCreditOnly = product.requireCreditForBooking === true
+                      const isHybrid = !isCreditOnly && (product.price ?? 0) > 0
+                      const txt = props.locale === 'en'
+                        ? hasEnough
+                          ? `You have ${matchingBalance.remainingQuantity} credits in "${matchingBalance.packName}". ${isHybrid ? 'Pick "Pay with credits" or "Pay at venue" when you book.' : 'They will be applied to this reservation.'}`
+                          : `Your "${matchingBalance.packName}" balance has ${matchingBalance.remainingQuantity} credits — ${totalNeeded} needed. You can buy more before booking.`
+                        : hasEnough
+                          ? `Tienes ${matchingBalance.remainingQuantity} créditos del paquete "${matchingBalance.packName}". ${isHybrid ? 'Al reservar puedes elegir entre pagar con créditos o al llegar.' : 'Se aplicarán a esta reserva.'}`
+                          : `Tu paquete "${matchingBalance.packName}" tiene ${matchingBalance.remainingQuantity} créditos disponibles — necesitas ${totalNeeded}. Puedes comprar más antes de reservar.`
+                      return (
+                        <div
+                          role="status"
+                          aria-live="polite"
+                          style={{
+                            display: 'flex', alignItems: 'flex-start', gap: '10px',
+                            padding: '12px 14px', borderRadius: '12px',
+                            background: 'color-mix(in srgb, var(--avq-accent, #2563eb) 8%, var(--avq-bg, #fff))',
+                            border: '1px solid color-mix(in srgb, var(--avq-accent, #2563eb) 22%, transparent)',
+                            marginBottom: '20px',
+                          }}
+                        >
+                          <span style={{
+                            width: '32px', height: '32px', borderRadius: '50%',
+                            background: 'var(--avq-accent, #2563eb)',
+                            color: '#ffffff',
+                            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                            flexShrink: 0,
+                          }}>
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                              <rect x="2" y="6" width="20" height="14" rx="2"/><line x1="2" y1="11" x2="22" y2="11"/>
+                            </svg>
+                          </span>
+                          <div style={{ fontSize: '13px', color: 'var(--avq-fg, #111827)', lineHeight: 1.5 }}>
+                            {txt}
+                          </div>
+                        </div>
+                      )
+                    })()}
+
+                    <GuestInfoForm
+                      venueInfo={info}
+                      selectedSlot={selectedSlot.value}
+                      selectedSpotCount={selectedSpotIds.value.length}
+                      onSubmit={handleFormSubmit}
+                      isSubmitting={isLoading.value}
+                      t={t}
+                      loggedInCustomer={customerInfo.value}
+                      /* On the Square /appointments wizard the submit lives in
+                       * the sticky sidebar as "Reserva cita" — hide the inline
+                       * one and expose the form's submit fn to the parent. */
+                      hideSubmitButton={flowType.value === 'appointments'}
+                      registerSubmit={flowType.value === 'appointments' ? setFormSubmitFn : undefined}
+                    />
+                  </>
                 )
               )}
 
