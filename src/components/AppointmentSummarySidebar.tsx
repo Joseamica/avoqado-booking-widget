@@ -202,7 +202,7 @@ export function AppointmentSummarySidebar({
           disabled={nextDisabled}
           style={{
             padding: '14px',
-            background: nextDisabled ? '#d1d5db' : '#2563eb',
+            background: nextDisabled ? '#d1d5db' : 'var(--avq-accent, #2563eb)',
             color: nextDisabled ? '#6b7280' : '#ffffff',
             border: 0, borderRadius: '12px',
             fontSize: '15px', fontWeight: '600',

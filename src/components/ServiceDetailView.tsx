@@ -110,7 +110,7 @@ export function ServiceDetailView({
           style={{
             width: '100%',
             padding: '16px',
-            background: '#2563eb', color: '#ffffff',
+            background: 'var(--avq-accent, #2563eb)', color: '#ffffff',
             border: 0, borderRadius: '12px',
             fontSize: '15px', fontWeight: '600',
             cursor: 'pointer',
@@ -129,7 +129,7 @@ export function ServiceDetailView({
             style={{
               flex: 1, minWidth: '140px',
               padding: '16px',
-              background: '#f3f4f6', color: '#2563eb',
+              background: '#f3f4f6', color: 'var(--avq-accent, #2563eb)',
               border: 0, borderRadius: '12px',
               fontSize: '15px', fontWeight: '600',
               cursor: 'pointer',
@@ -144,7 +144,7 @@ export function ServiceDetailView({
             style={{
               flex: 1, minWidth: '140px',
               padding: '16px',
-              background: '#2563eb', color: '#ffffff',
+              background: 'var(--avq-accent, #2563eb)', color: '#ffffff',
               border: 0, borderRadius: '12px',
               fontSize: '15px', fontWeight: '600',
               cursor: 'pointer',

@@ -287,7 +287,7 @@ export function DateTimePickerSquare({
         }}>
           {locale === 'en' ? 'Times shown in timezone:' : 'Las horas corresponden a la siguiente zona horaria:'}
           {' '}
-          <span style={{ color: '#2563eb', fontWeight: '500' }}>{tzLabel}.</span>
+          <span style={{ color: 'var(--avq-accent, #2563eb)', fontWeight: '500' }}>{tzLabel}.</span>
         </p>
       </div>
 
@@ -375,7 +375,7 @@ function NoAvailabilityBlock({
           style={{
             width: '100%', maxWidth: '560px',
             padding: '14px',
-            background: '#2563eb', color: '#ffffff',
+            background: 'var(--avq-accent, #2563eb)', color: '#ffffff',
             border: 0, borderRadius: '12px',
             fontSize: '15px', fontWeight: '600',
             cursor: 'pointer',
@@ -401,7 +401,7 @@ function NoAvailabilityBlock({
             style={{
               width: '100%', maxWidth: '560px',
               padding: '14px',
-              background: '#f3f4f6', color: '#2563eb',
+              background: '#f3f4f6', color: 'var(--avq-accent, #2563eb)',
               border: 0, borderRadius: '12px',
               fontSize: '15px', fontWeight: '600',
               cursor: 'pointer',
@@ -516,7 +516,7 @@ function PeriodGroups({
             style={{
               width: '100%', maxWidth: '560px',
               padding: '14px',
-              background: '#f3f4f6', color: '#2563eb',
+              background: '#f3f4f6', color: 'var(--avq-accent, #2563eb)',
               border: 0, borderRadius: '12px',
               fontSize: '15px', fontWeight: '600',
               cursor: 'pointer',

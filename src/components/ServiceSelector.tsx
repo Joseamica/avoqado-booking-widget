@@ -139,8 +139,8 @@ function ServiceRow({
             fontSize: '11px', fontWeight: '600',
             padding: '3px 8px',
             borderRadius: '999px',
-            background: '#dbeafe',
-            color: '#1d4ed8',
+            background: 'color-mix(in srgb, var(--avq-accent, #2563eb) 14%, var(--avq-bg, #ffffff))',
+            color: 'var(--avq-accent, #2563eb)',
             letterSpacing: '0.2px',
           }}>
             Añadido

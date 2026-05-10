@@ -159,9 +159,9 @@ export function AppointmentConfirmation({
               <div style={{
                 position: 'relative',
                 width: '32px', height: '32px', borderRadius: '50%',
-                background: '#dbeafe',
+                background: 'color-mix(in srgb, var(--avq-accent, #2563eb) 14%, var(--avq-bg, #ffffff))',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
-                flexShrink: 0, color: '#2563eb',
+                flexShrink: 0, color: 'var(--avq-accent, #2563eb)',
               }}>
                 <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
@@ -197,7 +197,7 @@ export function AppointmentConfirmation({
             onClick={() => downloadIcs(booking, venueInfo.name)}
             style={{
               width: '100%', padding: '14px',
-              background: '#2563eb', color: '#ffffff',
+              background: 'var(--avq-accent, #2563eb)', color: '#ffffff',
               border: 0, borderRadius: '12px',
               fontSize: '15px', fontWeight: '600',
               cursor: 'pointer',
@@ -293,7 +293,7 @@ export function AppointmentConfirmation({
             href="#"
             onClick={e => e.preventDefault()}
             style={{
-              fontSize: '14px', color: '#2563eb', fontWeight: '500',
+              fontSize: '14px', color: 'var(--avq-accent, #2563eb)', fontWeight: '500',
               textDecoration: 'none',
             }}
           >

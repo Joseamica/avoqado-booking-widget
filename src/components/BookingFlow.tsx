@@ -1478,19 +1478,11 @@ export function BookingFlow({ props }: BookingFlowProps) {
                   dueToday={0}
                   dueAtVenue={subtotal ?? 0}
                   totalsNote={variableNote}
-                  onNext={() => {
-                    /* Reserva cita: trigger the form's submit. The form lives
-                     * inside a child component that owns state, so we surface
-                     * the submit via a global form reference (see formStepBody
-                     * above) — for the minimal Phase 5 ship the form keeps its
-                     * own internal submit at the bottom and the sidebar button
-                     * is hidden by passing onNext={undefined}. TODO: lift form
-                     * state to enable sidebar-driven submit per Square layout. */
-                  }}
-                  // Hide sidebar Reserva cita until form-state lift lands.
-                  // Form submit currently lives inside GuestInfoForm.
-                  // eslint-disable-next-line react/no-children-prop
-                  // (the AppointmentSummarySidebar component handles undefined onNext gracefully)
+                  /* No onNext prop: the form below the sidebar owns its own
+                   * "Confirmar Reservación" submit button. Rendering a second
+                   * CTA in the sidebar (Square's "Reserva cita") needs form
+                   * state lifted out of GuestInfoForm — tracked as Phase 5
+                   * follow-up. For now the sidebar is read-only on this step. */
                   t={t}
                 />
               </aside>
