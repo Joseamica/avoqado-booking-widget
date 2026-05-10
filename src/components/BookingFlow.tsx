@@ -329,6 +329,73 @@ export function BookingFlow({ props }: BookingFlowProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  // ----- Service-detail URL routing (Square-style deep link) ----------------
+  // Hosted page can deep-link directly to a service's detail screen via
+  //   /<slug>/appointments/services/<productId>
+  // Two effects keep state and the address bar in sync:
+  //   1) URL → state: on venueInfo load + on browser back/forward (popstate),
+  //      parse the path; if it points at a real product, open the detail view.
+  //   2) State → URL: when the customer enters/exits the detail view through
+  //      the in-app UI, push a new history entry so the back button works.
+  // We only manage the URL when the host's path actually starts with
+  //   /<slug>/appointments  — third-party embeds keep their host's URL intact.
+  function appointmentsBasePath(): string | null {
+    if (typeof window === 'undefined') return null
+    const path = window.location.pathname.replace(/\/+$/, '')
+    const match = path.match(/^(\/[^/]+\/appointments)(?:\/.*)?$/)
+    return match ? match[1] : null
+  }
+
+  useEffect(() => {
+    if (props.flowType !== 'appointments') return
+    if (typeof window === 'undefined') return
+
+    function reconcileFromUrl() {
+      const info = venueInfo.value
+      if (!info) return
+      const base = appointmentsBasePath()
+      if (!base) return
+      const trail = window.location.pathname.slice(base.length).replace(/\/+$/, '')
+      const detailMatch = trail.match(/^\/services\/(.+)$/)
+
+      if (!detailMatch) {
+        setDetailViewProduct(null)
+        return
+      }
+
+      const productId = decodeURIComponent(detailMatch[1])
+      const product = info.products.find(p => p.id === productId && p.type !== 'CLASS')
+      if (!product) {
+        // Stale or invalid product id — drop the deep link and show the list.
+        window.history.replaceState({}, '', base + window.location.search + window.location.hash)
+        setDetailViewProduct(null)
+        return
+      }
+      const isAdded = selectedProducts.value.some(p => p.id === productId)
+      setDetailViewProduct({ product, mode: isAdded ? 'edit' : 'add' })
+    }
+
+    reconcileFromUrl()
+    window.addEventListener('popstate', reconcileFromUrl)
+    return () => window.removeEventListener('popstate', reconcileFromUrl)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [venueInfo.value, props.flowType])
+
+  useEffect(() => {
+    if (props.flowType !== 'appointments') return
+    if (typeof window === 'undefined') return
+    const base = appointmentsBasePath()
+    if (!base) return
+
+    const target = detailViewProduct
+      ? `${base}/services/${encodeURIComponent(detailViewProduct.product.id)}`
+      : base
+
+    if (window.location.pathname.replace(/\/+$/, '') !== target) {
+      window.history.pushState({}, '', target + window.location.search + window.location.hash)
+    }
+  }, [detailViewProduct, props.flowType])
+
   // Fetch available slots for a date
   function fetchSlots() {
     const date = selectedDate.value
