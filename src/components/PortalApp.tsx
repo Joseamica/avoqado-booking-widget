@@ -34,9 +34,15 @@ export function PortalApp({ venue, locale, theme, accentColor }: PortalAppProps)
 
   const info = venueInfo.value
 
+  // Resolve the effective accent: explicit prop wins, otherwise fall back to
+  // the venue's brand color (Phase 7). Same pattern as BookingFlow. Result is
+  // an inline style string the root element consumes via --avq-accent.
+  const effectiveAccent = accentColor ?? info?.primaryColor ?? null
+  const rootStyle = effectiveAccent ? `--avq-accent:${effectiveAccent}` : undefined
+
   if (isLoading.value || !info) {
     return (
-      <div data-avq-theme={theme} style={accentColor ? `--avq-accent:${accentColor}` : undefined} class="avq-root">
+      <div data-avq-theme={theme} style={rootStyle} class="avq-root">
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '32px 0' }}>
           <Spinner size={24} />
         </div>
@@ -45,7 +51,7 @@ export function PortalApp({ venue, locale, theme, accentColor }: PortalAppProps)
   }
 
   return (
-    <div data-avq-theme={theme} style={accentColor ? `--avq-accent:${accentColor}` : undefined} class="avq-root">
+    <div data-avq-theme={theme} style={rootStyle} class="avq-root">
       <div class="mx-auto max-w-lg px-4 py-6">
         <CustomerPortal
           venueSlug={venue}

@@ -48,6 +48,10 @@ export interface PublicVenueInfo {
   name: string
   slug: string
   logo: string | null
+  /** Wide/horizontal wordmark logo used on marketing surfaces (booking page
+   *  hero, future emails). Separate from `logo` which is the small/square
+   *  variant used on receipts and avatars. */
+  logoFull?: string | null
   /** Phase 7: wide cover photo shown on the public booking landing hero. */
   heroImageUrl?: string | null
   /** Phase 7: HEX (or any CSS color) the venue admin set as their brand
