@@ -450,13 +450,16 @@ export function BookingFlow({ props }: BookingFlowProps) {
             step.value = MANAGE_STEP
           }}
         />
-        {/* Avoqado footer */}
-        <div style={{ marginTop: '32px', textAlign: 'center', paddingBottom: '4px' }}>
-          <a href="https://avoqado.io" target="_blank" rel="noopener noreferrer" class="avq-footer-link" style={{ fontSize: '12px', justifyContent: 'center' }}>
-            <AvoqadoLogo />
-            <span>{t('poweredBy')}</span>
-          </a>
-        </div>
+        {/* Avoqado footer — suppressed when the host page renders its own
+            (book.avoqado.io sets hide-venue-header=true and owns the chrome). */}
+        {!props.hideVenueHeader && (
+          <div style={{ marginTop: '32px', textAlign: 'center', paddingBottom: '4px' }}>
+            <a href="https://avoqado.io" target="_blank" rel="noopener noreferrer" class="avq-footer-link" style={{ fontSize: '12px', justifyContent: 'center' }}>
+              <AvoqadoLogo />
+              <span>{t('poweredBy')}</span>
+            </a>
+          </div>
+        )}
       </div>
     )
   }
@@ -473,13 +476,14 @@ export function BookingFlow({ props }: BookingFlowProps) {
           t={t}
           onBack={() => resetBooking(info)}
         />
-        {/* Avoqado footer */}
-        <div style={{ marginTop: '32px', textAlign: 'center', paddingBottom: '4px' }}>
-          <a href="https://avoqado.io" target="_blank" rel="noopener noreferrer" class="avq-footer-link" style={{ fontSize: '12px', justifyContent: 'center' }}>
-            <AvoqadoLogo />
-            <span>{t('poweredBy')}</span>
-          </a>
-        </div>
+        {!props.hideVenueHeader && (
+          <div style={{ marginTop: '32px', textAlign: 'center', paddingBottom: '4px' }}>
+            <a href="https://avoqado.io" target="_blank" rel="noopener noreferrer" class="avq-footer-link" style={{ fontSize: '12px', justifyContent: 'center' }}>
+              <AvoqadoLogo />
+              <span>{t('poweredBy')}</span>
+            </a>
+          </div>
+        )}
       </div>
     )
   }
@@ -1491,13 +1495,15 @@ export function BookingFlow({ props }: BookingFlowProps) {
         />
       )}
 
-      {/* Avoqado footer */}
-      <div style={{ marginTop: '32px', textAlign: 'center', paddingBottom: '4px' }}>
-        <a href="https://avoqado.io" target="_blank" rel="noopener noreferrer" class="avq-footer-link" style={{ fontSize: '12px', justifyContent: 'center' }}>
-          <AvoqadoLogo />
-          <span>{t('poweredBy')}</span>
-        </a>
-      </div>
+      {/* Avoqado footer — suppressed when the host page owns the chrome. */}
+      {!props.hideVenueHeader && (
+        <div style={{ marginTop: '32px', textAlign: 'center', paddingBottom: '4px' }}>
+          <a href="https://avoqado.io" target="_blank" rel="noopener noreferrer" class="avq-footer-link" style={{ fontSize: '12px', justifyContent: 'center' }}>
+            <AvoqadoLogo />
+            <span>{t('poweredBy')}</span>
+          </a>
+        </div>
+      )}
     </div>
   )
 }

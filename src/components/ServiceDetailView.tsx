@@ -89,25 +89,27 @@ export function ServiceDetailView({
         )}
       </p>
 
-      {/* Description (optional) */}
-      {product.description && (
+      {/* Description (optional) — skipped when it duplicates the name, which
+          some venue datasets do (the API returns name === description). */}
+      {product.description &&
+       product.description.trim().toLowerCase() !== product.name.trim().toLowerCase() && (
         <p style={{
           margin: '0 0 24px', fontSize: '14px',
           color: 'var(--avq-fg, #111827)', lineHeight: 1.55,
-          maxWidth: '640px',
         }}>
           {product.description}
         </p>
       )}
 
-      {/* Actions */}
+      {/* Actions — full-width within the main column (the sidebar already
+          carves out its own space; we don't need a second cap). */}
       {mode === 'add' ? (
         <button
           type="button"
           onClick={onAdd}
           style={{
-            width: '100%', maxWidth: '640px',
-            padding: '14px',
+            width: '100%',
+            padding: '16px',
             background: '#2563eb', color: '#ffffff',
             border: 0, borderRadius: '12px',
             fontSize: '15px', fontWeight: '600',
@@ -119,15 +121,14 @@ export function ServiceDetailView({
         </button>
       ) : (
         <div style={{
-          display: 'flex', gap: '10px', maxWidth: '640px',
-          flexWrap: 'wrap',
+          display: 'flex', gap: '10px', flexWrap: 'wrap',
         }}>
           <button
             type="button"
             onClick={onRemove}
             style={{
               flex: 1, minWidth: '140px',
-              padding: '14px',
+              padding: '16px',
               background: '#f3f4f6', color: '#2563eb',
               border: 0, borderRadius: '12px',
               fontSize: '15px', fontWeight: '600',
@@ -142,7 +143,7 @@ export function ServiceDetailView({
             onClick={onUpdate}
             style={{
               flex: 1, minWidth: '140px',
-              padding: '14px',
+              padding: '16px',
               background: '#2563eb', color: '#ffffff',
               border: 0, borderRadius: '12px',
               fontSize: '15px', fontWeight: '600',
