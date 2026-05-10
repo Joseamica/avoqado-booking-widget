@@ -101,6 +101,32 @@ export function Confirmation({ booking, venueInfo, onManageBooking, onNewBooking
         </div>
       )}
 
+      {/* Owes-at-venue notice (policy=required but venue lacks Stripe yet) */}
+      {booking.owesAtVenue && booking.depositAmount != null && (
+        <div
+          role="status"
+          style={{
+            display: 'flex', alignItems: 'flex-start', gap: '10px',
+            padding: '12px 14px', borderRadius: '12px',
+            background: 'var(--avq-warning-bg)',
+            border: '1px solid var(--avq-warning-border)',
+            marginBottom: '16px',
+          }}
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--avq-warning-accent)" stroke-width="2" aria-hidden="true" style={{ flexShrink: 0, marginTop: '1px' }}>
+            <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+          </svg>
+          <div style={{ fontSize: '13px', color: 'var(--avq-warning-fg)' }}>
+            <div style={{ fontWeight: '600', marginBottom: '2px' }}>
+              Pagás al llegar al estudio
+            </div>
+            <div style={{ opacity: 0.9 }}>
+              Total: ${Number(booking.depositAmount).toLocaleString('es-MX')}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Confirmation code */}
       <div style={{
         borderRadius: '14px', padding: '18px',

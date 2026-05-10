@@ -147,6 +147,10 @@ export interface PublicCreateReservationRequest {
   spotIds?: string[]
   specialRequests?: string
   creditItemBalanceId?: string
+  /** Where Stripe should send the customer back after a successful upfront payment. */
+  successUrl?: string
+  /** Where Stripe should send the customer back if they cancel/expire the checkout. */
+  cancelUrl?: string
 }
 
 export interface PublicBookingResult {
@@ -159,6 +163,19 @@ export interface PublicBookingResult {
   depositAmount: number | null
   creditRedeemed?: boolean
   creditsUsed?: number
+  /**
+   * Set when the venue's policy requires upfront payment for the class. The
+   * widget MUST redirect the browser here so the customer can pay; the
+   * reservation lives in PENDING + depositStatus PENDING until the Stripe
+   * webhook flips it to CONFIRMED.
+   */
+  checkoutUrl?: string | null
+  /**
+   * True when the venue's policy was 'required' but Stripe is not configured.
+   * The reservation IS CONFIRMED (spot is held), but `depositAmount` reflects
+   * what the customer owes when they arrive. Show a "pay at venue" banner.
+   */
+  owesAtVenue?: boolean
 }
 
 // Credit Pack types for public widget

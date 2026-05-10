@@ -535,6 +535,18 @@ export function BookingFlow({ props }: BookingFlowProps) {
     isLoading.value = true
     try {
       const spots = selectedSpotIds.value
+      // If the venue requires upfront payment, the server will return checkoutUrl
+      // and we'll redirect to Stripe. Tell Stripe where to send the customer back.
+      const successUrl = (() => {
+        const u = new URL(window.location.href)
+        u.searchParams.set('avq_payment', 'success')
+        return u.toString()
+      })()
+      const cancelUrl = (() => {
+        const u = new URL(window.location.href)
+        u.searchParams.set('avq_payment', 'cancelled')
+        return u.toString()
+      })()
       const result = await api.createReservation(props.venue, {
         startsAt: slot.startsAt,
         endsAt: slot.endsAt,
@@ -549,7 +561,23 @@ export function BookingFlow({ props }: BookingFlowProps) {
         spotIds: spots.length > 0 ? spots : undefined,
         specialRequests: data.specialRequests || undefined,
         creditItemBalanceId: creditBalanceId || undefined,
+        successUrl,
+        cancelUrl,
       })
+      // Upfront-payment-required path: server pre-created the reservation in PENDING
+      // and minted a Stripe Checkout session. Hand off to Stripe; the webhook will
+      // flip the reservation to CONFIRMED on payment success.
+      if (result.checkoutUrl) {
+        try {
+          sessionStorage.setItem('avq:pendingReservation', JSON.stringify({
+            venue: props.venue,
+            cancelSecret: result.cancelSecret,
+            confirmationCode: result.confirmationCode,
+          }))
+        } catch { /* sessionStorage may be blocked in 3rd-party iframes — non-fatal */ }
+        window.location.href = result.checkoutUrl
+        return
+      }
       bookingResult.value = result
       step.value = config.confirmStep
       setShowCreditSelector(false)
