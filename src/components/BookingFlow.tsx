@@ -423,11 +423,17 @@ export function BookingFlow({ props }: BookingFlowProps) {
     const email = customer.email ?? undefined
     if (!phone && !email) return
     const seats = Math.max(selectedSpotIds.value.length, 1)
-    api.getCustomerCredits(props.venue, { phone, email, seats, productId: product.id })
+    // Multi-service: pass every selected productId so the server returns
+    // balances for any of them. PaymentChoiceInline then verifies coverage
+    // for ALL services before enabling "Pay with credits".
+    const productIds = selectedProducts.value.length > 0
+      ? selectedProducts.value.map(p => p.id)
+      : [product.id]
+    api.getCustomerCredits(props.venue, { phone, email, seats, productIds })
       .then(credits => { customerCredits.value = credits })
-      .catch(() => { /* silent — banner just won't render */ })
+      .catch(() => { /* silent — picker just won't render */ })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [step.value, customerInfo.value?.id, selectedProduct.value?.id, props.flowType, props.venue])
+  }, [step.value, customerInfo.value?.id, selectedProduct.value?.id, selectedProducts.value.length, props.flowType, props.venue])
 
   // Slot hold: when the Square /appointments wizard reaches the payment step
   // with a slot picked, ask the server to hold that window for 10 min and
@@ -786,13 +792,20 @@ export function BookingFlow({ props }: BookingFlowProps) {
     }
   }
 
-  // Submit reservation (with optional credit)
-  async function submitReservation(data: GuestFormData, creditBalanceId?: string) {
+  // Submit reservation. `creditPayload` accepts either a single balance ID
+  // (legacy single-service path) or a list (Square multi-service redemption,
+  // where each selected service consumes its own balance).
+  async function submitReservation(
+    data: GuestFormData,
+    creditPayload?: string | string[],
+  ) {
     const slot = selectedSlot.value
     if (!slot) return
     isLoading.value = true
     try {
       const spots = selectedSpotIds.value
+      const creditBalanceId = typeof creditPayload === 'string' ? creditPayload : undefined
+      const creditBalanceIds = Array.isArray(creditPayload) && creditPayload.length > 0 ? creditPayload : undefined
       // If the venue requires upfront payment, the server will return checkoutUrl
       // and we'll redirect to Stripe. Tell Stripe where to send the customer back.
       const successUrl = (() => {
@@ -829,6 +842,7 @@ export function BookingFlow({ props }: BookingFlowProps) {
         spotIds: spots.length > 0 ? spots : undefined,
         specialRequests: data.specialRequests || undefined,
         creditItemBalanceId: creditBalanceId || undefined,
+        creditItemBalanceIds: creditBalanceIds,
         holdId: slotHoldToken.value ?? undefined,
         successUrl,
         cancelUrl,
@@ -888,7 +902,15 @@ export function BookingFlow({ props }: BookingFlowProps) {
     // llegar" → no balance ID; credits → pass the chosen balance through.
     if (inlinePayment) {
       if (inlinePayment.kind === 'credits') {
-        await submitReservation(data, inlinePayment.creditBalanceId)
+        // Multi-service: send all per-product balance IDs so the server can
+        // redeem from each in one transaction. Single-service keeps the
+        // legacy single-balance shape for back-compat with class redemption.
+        const balanceIds = Object.values(inlinePayment.balanceIdsByProduct)
+        if (balanceIds.length > 1) {
+          await submitReservation(data, balanceIds)
+        } else {
+          await submitReservation(data, inlinePayment.creditBalanceId)
+        }
       } else {
         await submitReservation(data)
       }
@@ -1445,7 +1467,7 @@ export function BookingFlow({ props }: BookingFlowProps) {
                   <>
                     {flowType.value === 'appointments' && selectedProduct.value && (
                       <PaymentChoiceInline
-                        product={selectedProduct.value}
+                        products={selectedProducts.value.length > 0 ? selectedProducts.value : [selectedProduct.value]}
                         seats={Math.max(selectedSpotIds.value.length, 1)}
                         credits={customerCredits.value}
                         upfrontPolicy={selectedProduct.value.upfrontPolicy ?? 'at_venue'}
@@ -1590,21 +1612,27 @@ export function BookingFlow({ props }: BookingFlowProps) {
             : undefined
 
           // Whether PaymentChoiceInline will render: matches the component's
-          // internal visibility logic so the sidebar can disable Reserva cita
-          // until the customer commits a choice.
+          // internal multi-product viability check exactly so the sidebar can
+          // gate Reserva cita until the customer commits a choice.
           const paymentPickerVisible = (() => {
-            const product = selectedProduct.value
-            if (!product) return false
-            const acceptsCash = (product.price ?? 0) > 0 && product.requireCreditForBooking !== true
+            const products = selectedProducts.value.length > 0
+              ? selectedProducts.value
+              : (selectedProduct.value ? [selectedProduct.value] : [])
+            if (products.length === 0) return false
+            // Cash viable: every product accepts cash (no credit-only).
+            const acceptsCash = products.every(p => (p.price ?? 0) > 0 && p.requireCreditForBooking !== true)
             if (!acceptsCash) return false
+            // Credits viable: every product has a covering balance.
             const credits = customerCredits.value
             if (!credits) return false
             const seats = Math.max(selectedSpotIds.value.length, 1)
-            const totalNeeded = seats * (product.creditCost ?? 1)
-            return credits.purchases
+            const allBalances = credits.purchases
               .filter(p => p.status === 'ACTIVE')
               .flatMap(p => p.itemBalances)
-              .some(b => b.productId === product.id && b.remainingQuantity >= totalNeeded)
+            return products.every(p => {
+              const required = seats * (p.creditCost ?? 1)
+              return allBalances.some(b => b.productId === p.id && b.remainingQuantity >= required)
+            })
           })()
 
           return (

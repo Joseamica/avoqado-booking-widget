@@ -154,6 +154,10 @@ export interface PublicCreateReservationRequest {
   spotIds?: string[]
   specialRequests?: string
   creditItemBalanceId?: string
+  /** Multi-service /appointments: one balance ID per selected service. Server
+   *  iterates and redeems credits from each in a single transaction. When
+   *  both fields are sent, this array wins. */
+  creditItemBalanceIds?: string[]
   /** Slot-hold token from POST /reservations/hold. When present, the server
    *  validates the hold + deletes it transactionally on success. */
   holdId?: string

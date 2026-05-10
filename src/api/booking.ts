@@ -145,12 +145,20 @@ export function getCustomerCredits(slug: string, params: {
   phone?: string
   seats?: number
   productId?: string
+  /** Multi-service /appointments: pass every selected productId so the server
+   *  returns balances for any of them in a single round trip. Wins over
+   *  `productId` when both are present. */
+  productIds?: string[]
 }): Promise<CustomerCreditBalance> {
   const q = new URLSearchParams()
   if (params.email) q.append('email', params.email)
   if (params.phone) q.append('phone', params.phone)
   if (params.seats != null) q.append('seats', String(params.seats))
-  if (params.productId) q.append('productId', params.productId)
+  if (params.productIds && params.productIds.length > 0) {
+    q.append('productIds', params.productIds.join(','))
+  } else if (params.productId) {
+    q.append('productId', params.productId)
+  }
   return request(`${BASE}/venues/${slug}/credit-packs/balance?${q}`)
 }
 

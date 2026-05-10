@@ -2,15 +2,24 @@ import { h } from 'preact'
 import type { CustomerCreditBalance, Product, UpfrontPolicy } from '../types'
 import type { TFunction } from '../i18n'
 
+/** What the customer picked. The widget reads this on submit:
+ *  - 'credits' + balanceIds[]: every service maps to a balance, redeem from each
+ *  - 'cash': skip credit-check API + submit normally
+ *  - null: customer hasn't picked yet (Reserva cita stays disabled) */
 export type InlineChoice =
-  | { kind: 'credits'; creditBalanceId: string; packName: string }
+  | { kind: 'credits'; creditBalanceId: string; packName: string; balanceIdsByProduct: Record<string, string> }
   | { kind: 'cash' }
   | null
 
 interface PaymentChoiceInlineProps {
-  product: Product
+  /** Every service the customer added. PaymentChoiceInline ONLY enables the
+   *  credits option when EVERY product in this list has a covering balance. */
+  products: Product[]
+  /** Number of seats / credits per service. partySize rolled up. */
   seats: number
+  /** Customer credit balances, fetched eagerly with productIds=all-products. */
   credits: CustomerCreditBalance | null
+  /** Lead product's policy — drives the cash label (now / at venue). */
   upfrontPolicy: UpfrontPolicy
   selected: InlineChoice
   onChange: (choice: InlineChoice) => void
@@ -28,17 +37,67 @@ function formatPriceMXN(amount: number): string {
   }
 }
 
+interface MatchingBalance {
+  id: string
+  packName: string
+  remainingQuantity: number
+  productId: string
+  required: number
+}
+
 /**
- * Square-style inline payment chooser. Only renders when the product accepts
- * BOTH credits and cash (the customer genuinely has a choice). Credit-only or
- * cash-only products fall through and use the existing post-submit flow.
- *
- * Stores choice in parent state via onChange; the parent's submit handler
- * (Reserva cita button) reads it and short-circuits the post-submit credit
- * check API round trip.
+ * For each product in `products`, find the BEST matching balance (most credits
+ * remaining, sufficient quantity). Returns null when ANY product lacks coverage
+ * — the credits option is only viable when every service is covered.
  */
+function pickBalancesForAllProducts(
+  products: Product[],
+  credits: CustomerCreditBalance | null,
+  seats: number,
+): { balances: MatchingBalance[]; totalCreditsRequired: number } | null {
+  if (!credits || products.length === 0) return null
+
+  const allBalances = credits.purchases
+    .filter(p => p.status === 'ACTIVE')
+    .flatMap(p =>
+      p.itemBalances.map(b => ({
+        id: b.id,
+        productId: b.productId,
+        remainingQuantity: b.remainingQuantity,
+        packName: p.creditPack.name,
+      })),
+    )
+
+  const picked: MatchingBalance[] = []
+  let totalRequired = 0
+
+  for (const product of products) {
+    const required = seats * (product.creditCost ?? 1)
+    totalRequired += required
+
+    // Best matching balance for this product = highest remaining that covers
+    // the requirement. Picking the most-stocked balance leaves smaller
+    // balances available for other bookings.
+    const candidate = allBalances
+      .filter(b => b.productId === product.id && b.remainingQuantity >= required)
+      .sort((a, b) => b.remainingQuantity - a.remainingQuantity)[0]
+
+    if (!candidate) return null
+
+    picked.push({
+      id: candidate.id,
+      packName: candidate.packName,
+      remainingQuantity: candidate.remainingQuantity,
+      productId: candidate.productId,
+      required,
+    })
+  }
+
+  return { balances: picked, totalCreditsRequired: totalRequired }
+}
+
 export function PaymentChoiceInline({
-  product,
+  products,
   seats,
   credits,
   upfrontPolicy,
@@ -47,29 +106,65 @@ export function PaymentChoiceInline({
   locale,
   t,
 }: PaymentChoiceInlineProps) {
-  const creditCost = product.creditCost == null ? 1 : product.creditCost
-  const cashPrice = product.price ?? 0
-  const totalNeeded = seats * creditCost
+  // Cash viability — every selected product must accept cash. A single
+  // credit-only product disables the cash option.
+  const acceptsCash = products.length > 0 && products.every(p => (p.price ?? 0) > 0 && p.requireCreditForBooking !== true)
 
-  const matchingBalance = credits?.purchases
-    ?.filter(p => p.status === 'ACTIVE')
-    ?.flatMap(p => p.itemBalances.map(b => ({ ...b, packName: p.creditPack.name })))
-    ?.filter(b => b.productId === product.id && b.remainingQuantity >= totalNeeded)
-    ?.sort((a, b) => b.remainingQuantity - a.remainingQuantity)[0] ?? null
+  // Credits viability — pickBalancesForAllProducts returns null unless every
+  // product has a covering balance.
+  const coverage = pickBalancesForAllProducts(products, credits, seats)
+  const acceptsCredits = coverage !== null
 
-  const acceptsCredits = !!matchingBalance
-  const acceptsCash = cashPrice > 0 && product.requireCreditForBooking !== true
-
-  // Don't render at all if the customer doesn't actually have a choice.
+  // Don't render unless there's a real choice. Single-only fall-throughs
+  // (cash-only or credit-only) keep going through the post-submit selectors.
   if (!acceptsCredits || !acceptsCash) return null
 
-  const tx = locale === 'en'
-    ? { title: 'How do you want to pay?', credits: 'Pay with credits', cash: upfrontPolicy === 'required' ? 'Pay now' : 'Pay at the appointment', creditsHint: (n: number, p: string) => `Use ${n} credit${n === 1 ? '' : 's'} from "${p}"`, cashHint: (price: string) => upfrontPolicy === 'required' ? `Charge ${price} now to your card` : `Pay ${price} when you arrive` }
-    : { title: '¿Cómo quieres pagar?', credits: 'Pagar con créditos', cash: upfrontPolicy === 'required' ? 'Pagar ahora' : 'Pagar al llegar', creditsHint: (n: number, p: string) => `Usa ${n} crédito${n === 1 ? '' : 's'} de "${p}"`, cashHint: (price: string) => upfrontPolicy === 'required' ? `Cobramos ${price} ahora a tu tarjeta` : `Pagas ${price} en la cita` }
+  const cashTotal = products.reduce((acc, p) => acc + (p.price ?? 0), 0) * seats
 
-  const cashAmount = formatPriceMXN(cashPrice * seats)
+  // The picker stores the LEAD balance id in creditBalanceId for back-compat
+  // with the legacy single-balance redemption path; the full per-product map
+  // lives in balanceIdsByProduct so the widget can send creditItemBalanceIds[]
+  // when multiple products redeem.
+  const leadBalance = coverage!.balances[0]
+  const balanceIdsByProduct: Record<string, string> = {}
+  const uniquePackNames = new Set<string>()
+  for (const b of coverage!.balances) {
+    balanceIdsByProduct[b.productId] = b.id
+    uniquePackNames.add(b.packName)
+  }
+
+  const tx = locale === 'en'
+    ? {
+      title: 'How do you want to pay?',
+      credits: 'Pay with credits',
+      cash: upfrontPolicy === 'required' ? 'Pay now' : 'Pay at the appointment',
+      creditsHintSingle: (n: number, p: string) => `Use ${n} credit${n === 1 ? '' : 's'} from "${p}"`,
+      creditsHintMulti: (n: number, p: string) => `Use ${n} credits across ${products.length} services from "${p}"`,
+      creditsHintMixed: (n: number, services: number) => `Use ${n} credits across ${services} services`,
+      cashHint: (price: string) => upfrontPolicy === 'required' ? `Charge ${price} now to your card` : `Pay ${price} when you arrive`,
+    }
+    : {
+      title: '¿Cómo quieres pagar?',
+      credits: 'Pagar con créditos',
+      cash: upfrontPolicy === 'required' ? 'Pagar ahora' : 'Pagar al llegar',
+      creditsHintSingle: (n: number, p: string) => `Usa ${n} crédito${n === 1 ? '' : 's'} de "${p}"`,
+      creditsHintMulti: (n: number, p: string) => `Usa ${n} créditos en ${products.length} servicios de "${p}"`,
+      creditsHintMixed: (n: number, services: number) => `Usa ${n} créditos en ${services} servicios`,
+      cashHint: (price: string) => upfrontPolicy === 'required' ? `Cobramos ${price} ahora a tu tarjeta` : `Pagas ${price} en la cita`,
+    }
+
   const isCreditsSelected = selected?.kind === 'credits'
   const isCashSelected = selected?.kind === 'cash'
+
+  // Render the right credit hint:
+  //  - 1 service          → "Use N credits from X"
+  //  - N services, 1 pack → "Use N credits across X services from Y"
+  //  - N services, N packs → "Use N credits across X services"
+  const creditsHint = products.length === 1
+    ? tx.creditsHintSingle(coverage!.totalCreditsRequired, leadBalance.packName)
+    : uniquePackNames.size === 1
+      ? tx.creditsHintMulti(coverage!.totalCreditsRequired, leadBalance.packName)
+      : tx.creditsHintMixed(coverage!.totalCreditsRequired, products.length)
 
   return (
     <div style={{ marginBottom: '20px' }}>
@@ -83,17 +178,22 @@ export function PaymentChoiceInline({
       <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
         <Option
           selected={isCreditsSelected}
-          onClick={() => onChange({ kind: 'credits', creditBalanceId: matchingBalance!.id, packName: matchingBalance!.packName })}
+          onClick={() => onChange({
+            kind: 'credits',
+            creditBalanceId: leadBalance.id,
+            packName: leadBalance.packName,
+            balanceIdsByProduct,
+          })}
           icon="💳"
           title={tx.credits}
-          hint={tx.creditsHint(totalNeeded, matchingBalance!.packName)}
+          hint={creditsHint}
         />
         <Option
           selected={isCashSelected}
           onClick={() => onChange({ kind: 'cash' })}
           icon="🏦"
           title={tx.cash}
-          hint={tx.cashHint(cashAmount)}
+          hint={tx.cashHint(formatPriceMXN(cashTotal))}
         />
       </div>
     </div>
