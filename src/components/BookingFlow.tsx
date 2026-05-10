@@ -1017,37 +1017,45 @@ export function BookingFlow({ props }: BookingFlowProps) {
           </div>
         )}
 
-        {!showLanding && flowType.value === 'appointments' && step.value === config.serviceStep && hasServiceStep.value && (
+        {/* /appointments service step — detail view branch.
+            When a service is being added/edited, the screen goes full-width
+            centered (Square pattern). The sidebar Resumen does NOT render
+            here; it returns once the customer confirms via Añadir/Actualizar
+            and falls back to the list. */}
+        {!showLanding && flowType.value === 'appointments' && step.value === config.serviceStep && hasServiceStep.value && detailViewProduct && (
+          <div style={{ maxWidth: '720px', margin: '0 auto', padding: '0 4px' }}>
+            <ServiceDetailView
+              product={detailViewProduct.product}
+              mode={detailViewProduct.mode}
+              onAdd={() => {
+                addSelectedProduct(detailViewProduct.product)
+                setDetailViewProduct(null)
+              }}
+              onUpdate={() => setDetailViewProduct(null)}
+              onRemove={() => {
+                removeSelectedProduct(detailViewProduct.product.id)
+                setDetailViewProduct(null)
+              }}
+              onBack={() => setDetailViewProduct(null)}
+              t={t}
+            />
+          </div>
+        )}
+
+        {/* /appointments service step — list branch (2-col with sidebar). */}
+        {!showLanding && flowType.value === 'appointments' && step.value === config.serviceStep && hasServiceStep.value && !detailViewProduct && (
           <div class="avq-appts-layout">
             <div class="avq-appts-main">
-              {detailViewProduct ? (
-                <ServiceDetailView
-                  product={detailViewProduct.product}
-                  mode={detailViewProduct.mode}
-                  onAdd={() => {
-                    addSelectedProduct(detailViewProduct.product)
-                    setDetailViewProduct(null)
-                  }}
-                  onUpdate={() => setDetailViewProduct(null)}
-                  onRemove={() => {
-                    removeSelectedProduct(detailViewProduct.product.id)
-                    setDetailViewProduct(null)
-                  }}
-                  onBack={() => setDetailViewProduct(null)}
-                  t={t}
-                />
-              ) : (
-                <ServiceSelector
-                  products={visibleProducts.value}
-                  selectedProductIds={selectedProducts.value.map(p => p.id)}
-                  onOpenDetail={(product) => {
-                    const isAdded = selectedProducts.value.some(p => p.id === product.id)
-                    setDetailViewProduct({ product, mode: isAdded ? 'edit' : 'add' })
-                  }}
-                  t={t}
-                />
-              )}
-              {creditPacks.value.length > 0 && !detailViewProduct && (
+              <ServiceSelector
+                products={visibleProducts.value}
+                selectedProductIds={selectedProducts.value.map(p => p.id)}
+                onOpenDetail={(product) => {
+                  const isAdded = selectedProducts.value.some(p => p.id === product.id)
+                  setDetailViewProduct({ product, mode: isAdded ? 'edit' : 'add' })
+                }}
+                t={t}
+              />
+              {creditPacks.value.length > 0 && (
                 <CreditPackBanner
                   packs={creditPacks.value}
                   onBuy={handleBuyPack}
