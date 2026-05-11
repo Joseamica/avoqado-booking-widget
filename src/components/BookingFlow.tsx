@@ -977,7 +977,7 @@ export function BookingFlow({ props }: BookingFlowProps) {
         holdId: slotHoldToken.value ?? undefined,
         successUrl,
         cancelUrl,
-      })
+      }, customerToken.value ?? undefined /* Bearer token stamps customerId server-side */)
       // Upfront-payment-required path: server pre-created the reservation in PENDING
       // and minted a Stripe Checkout session. Hand off to Stripe; the webhook will
       // flip the reservation to CONFIRMED on payment success.

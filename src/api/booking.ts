@@ -72,8 +72,19 @@ export function getClassSessionsRange(slug: string, params: {
   return request(`${BASE}/venues/${slug}/availability?${q}`)
 }
 
-export function createReservation(slug: string, data: PublicCreateReservationRequest): Promise<PublicBookingResult> {
-  return request(`${BASE}/venues/${slug}/reservations`, { method: 'POST', body: JSON.stringify(data) })
+export function createReservation(
+  slug: string,
+  data: PublicCreateReservationRequest,
+  /** Optional Bearer JWT. When passed, the server stamps customerId on the
+   *  reservation so the booking shows up in the customer's portal history.
+   *  Anonymous reservations omit this and the row stays guest-only. */
+  token?: string,
+): Promise<PublicBookingResult> {
+  return request(`${BASE}/venues/${slug}/reservations`, {
+    method: 'POST',
+    body: JSON.stringify(data),
+    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+  })
 }
 
 // ==================== Slot Hold (Square countdown UX) ====================
