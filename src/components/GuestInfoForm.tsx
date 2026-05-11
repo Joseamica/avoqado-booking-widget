@@ -58,7 +58,13 @@ export function GuestInfoForm({ venueInfo, selectedSlot, selectedSpotCount, onSu
   const [phone, setPhone] = useState('')
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
-  const [partySize, setPartySize] = useState('2')
+  // Default 1, NOT 2. The previous default came from restaurant reservation
+  // patterns where party size is the norm. For appointments services
+  // (Iyashi, manicure, etc.) booking is 1:1 — defaulting to 2 caused
+  // logged-in customers paying with credits to silently redeem TWO credits
+  // per single-service appointment. Caught in QA: Carla redeemed 2 credits
+  // from her Iyashi pack for one session.
+  const [partySize, setPartySize] = useState('1')
   const [requests, setRequests] = useState('')
   const [errors, setErrors] = useState<Record<string, string>>({})
 

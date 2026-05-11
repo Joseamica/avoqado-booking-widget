@@ -13,6 +13,15 @@ export default defineConfig({
       },
     },
   },
+  preview: {
+    port: 5175,
+    proxy: {
+      '/api': {
+        target: 'http://localhost:3000',
+        changeOrigin: true,
+      },
+    },
+  },
   build: {
     lib: {
       entry: 'src/widget.ts',
