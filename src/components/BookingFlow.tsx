@@ -1,5 +1,5 @@
 import { h } from 'preact'
-import { useEffect, useState } from 'preact/hooks'
+import { useEffect, useRef, useState } from 'preact/hooks'
 import type { WidgetProps, PublicClassSessionSlot, OperatingHours } from '../types'
 import type { PublicSlot } from '../types'
 import { createT } from '../i18n'
@@ -398,9 +398,18 @@ export function BookingFlow({ props }: BookingFlowProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [venueInfo.value, props.flowType])
 
+  // Skip the FIRST run of the state→URL effect: on mount detailViewProduct
+  // is null, but the URL may already point at a detail (deep link or refresh).
+  // If we push on mount we wipe the deep link before the reconcile effect can
+  // hydrate state from venueInfo. After mount we trust state to drive URL.
+  const didSyncUrl = useRef(false)
   useEffect(() => {
     if (props.flowType !== 'appointments') return
     if (typeof window === 'undefined') return
+    if (!didSyncUrl.current) {
+      didSyncUrl.current = true
+      return
+    }
     const base = appointmentsBasePath()
     if (!base) return
 
