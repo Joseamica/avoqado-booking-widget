@@ -816,6 +816,40 @@
       var drawerSigninAppts = document.getElementById('drawer-signin-appointments')
       if (drawerSigninAppts) drawerSigninAppts.addEventListener('click', callShowAccount)
 
+      // Auth-aware label for the drawer CTA. When the widget has a stored
+      // customer session, the button reads "Mi cuenta · {firstName}" instead
+      // of "Iniciar sesión". State source-of-truth is the widget's
+      // localStorage (avq_customer_token / avq_customer_info); live updates
+      // arrive via the avoqado:auth-changed event the widget fires on mount
+      // and whenever the customer logs in or out in this tab. Cross-tab
+      // changes propagate via the native `storage` event.
+      function readStoredCustomer() {
+        try {
+          var token = localStorage.getItem('avq_customer_token')
+          if (!token) return null
+          var raw = localStorage.getItem('avq_customer_info')
+          return raw ? JSON.parse(raw) : {}
+        } catch (_) { return null }
+      }
+      function applyAuthLabel(customer) {
+        if (!drawerSigninAppts) return
+        if (customer) {
+          var name = customer.firstName && String(customer.firstName).trim()
+          drawerSigninAppts.textContent = name ? 'Mi cuenta · ' + name : 'Mi cuenta'
+        } else {
+          drawerSigninAppts.textContent = 'Iniciar sesión'
+        }
+      }
+      applyAuthLabel(readStoredCustomer())
+      el.addEventListener('avoqado:auth-changed', function (e) {
+        applyAuthLabel(e && e.detail ? e.detail.customer : null)
+      })
+      window.addEventListener('storage', function (e) {
+        if (e.key === 'avq_customer_token' || e.key === 'avq_customer_info') {
+          applyAuthLabel(readStoredCustomer())
+        }
+      })
+
       // "Comprar créditos" button — only visible on /appointments AND after the
       // widget reports the venue actually has packs available. The widget's
       // showCreditPacks() opens a modal listing every pack with its own buy

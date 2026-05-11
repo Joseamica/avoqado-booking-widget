@@ -287,6 +287,21 @@ export function BookingFlow({ props }: BookingFlowProps) {
       .finally(() => { isLoading.value = false })
   }, [props.venue])
 
+  // Notify the hosted page (book.avoqado.io) whenever auth state changes so it
+  // can swap the drawer "Iniciar sesión" CTA for a logged-in profile label.
+  // Fires on mount with the hydrated session (or null), and again on login/logout.
+  useEffect(() => {
+    const c = customerInfo.value
+    props.hostElement.dispatchEvent(new CustomEvent('avoqado:auth-changed', {
+      bubbles: true, composed: true,
+      detail: {
+        customer: c ? {
+          id: c.id, firstName: c.firstName, lastName: c.lastName, email: c.email, phone: c.phone,
+        } : null,
+      },
+    }))
+  }, [customerInfo.value?.id ?? null])
+
   // Load full portal data in background if customer is logged in
   useEffect(() => {
     if (customerToken.value && !portalData.value) {
