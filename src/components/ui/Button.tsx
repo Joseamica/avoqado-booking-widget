@@ -10,9 +10,13 @@ interface ButtonProps {
   disabled?: boolean
   class?: string
   fullWidth?: boolean
+  /** Native `title` attribute on the underlying `<button>` — shown as a
+   *  hover tooltip. ManageBooking uses this to surface WHY a button is
+   *  disabled (e.g. "Solo puedes cancelar hasta 12h antes del inicio"). */
+  title?: string
 }
 
-export function Button({ children, onClick, type = 'button', variant = 'primary', disabled, class: cls, fullWidth }: ButtonProps) {
+export function Button({ children, onClick, type = 'button', variant = 'primary', disabled, class: cls, fullWidth, title }: ButtonProps) {
   const [hov, setHov] = useState(false)
 
   const base: Record<string, string> = {
@@ -75,6 +79,7 @@ export function Button({ children, onClick, type = 'button', variant = 'primary'
       type={type}
       onClick={onClick}
       disabled={disabled}
+      title={title}
       onMouseEnter={() => setHov(true)}
       onMouseLeave={() => setHov(false)}
       style={{ ...base, ...variantStyle } as any}
