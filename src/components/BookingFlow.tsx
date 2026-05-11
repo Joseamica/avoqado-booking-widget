@@ -1493,9 +1493,19 @@ export function BookingFlow({ props }: BookingFlowProps) {
                       loggedInCustomer={customerInfo.value}
                       /* On the Square /appointments wizard the submit lives in
                        * the sticky sidebar as "Reserva cita" — hide the inline
-                       * one and expose the form's submit fn to the parent. */
+                       * one and expose the form's submit fn to the parent.
+                       *
+                       * useState's setter interprets a bare-function arg as an
+                       * UPDATER (calls it with prevState and stores the
+                       * return). To store a function AS state we wrap one
+                       * layer deeper so the setter sees a value-producing
+                       * updater that returns the fn we actually want kept.
+                       * Without this wrap, formSubmitFn ends up `undefined`
+                       * and the sidebar's "Reserva cita" never enables. */
                       hideSubmitButton={flowType.value === 'appointments'}
-                      registerSubmit={flowType.value === 'appointments' ? setFormSubmitFn : undefined}
+                      registerSubmit={flowType.value === 'appointments'
+                        ? (fn) => setFormSubmitFn(() => fn)
+                        : undefined}
                     />
                   </>
                 )
