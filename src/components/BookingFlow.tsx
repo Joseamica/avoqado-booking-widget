@@ -1790,8 +1790,21 @@ export function BookingFlow({ props }: BookingFlowProps) {
                   showTotals
                   subtotal={subtotal ?? 0}
                   taxes={0}
-                  dueToday={inlinePayment?.kind === 'credits' ? 0 : (subtotal ?? 0)}
-                  dueAtVenue={inlinePayment?.kind === 'credits' ? 0 : (subtotal ?? 0)}
+                  /* Split the total into "due today" vs "due at venue" based
+                   * on the lead product's upfrontPolicy + the inline payment
+                   * choice. Credits cover everything → both rows zero. Cash
+                   * with policy=required → charge now. Cash with policy=at_venue
+                   * (the Mindform default) → pay on arrival. */
+                  dueToday={(() => {
+                    if (inlinePayment?.kind === 'credits') return 0
+                    if (selectedProduct.value?.upfrontPolicy === 'required') return subtotal ?? 0
+                    return 0
+                  })()}
+                  dueAtVenue={(() => {
+                    if (inlinePayment?.kind === 'credits') return 0
+                    if (selectedProduct.value?.upfrontPolicy === 'required') return 0
+                    return subtotal ?? 0
+                  })()}
                   totalsNote={variableNote}
                   /* "Reserva cita" lives in the sidebar — the form's inline
                    * submit is hidden via hideSubmitButton and exposes itself
