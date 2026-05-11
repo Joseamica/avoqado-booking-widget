@@ -498,6 +498,99 @@ export function BookingFlow({ props }: BookingFlowProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [step.value, props.flowType, props.venue])
 
+  // Visibility-based freshness refresh. Square's pattern: when the customer
+  // returns to a tab that has been hidden long enough that the catalog could
+  // plausibly have shifted under them (price change, product deleted, hours
+  // updated, credits redeemed elsewhere), re-fetch venueInfo + customerCredits
+  // and warn the customer if anything material changed. Threshold = 5 min,
+  // same as Square's stale-tab heuristic.
+  const lastHiddenAtRef = useRef<number | null>(null)
+  useEffect(() => {
+    if (typeof document === 'undefined') return
+
+    async function refreshStaleVenue() {
+      try {
+        const fresh = await api.getVenueInfo(props.venue)
+        const prev = venueInfo.value
+        if (!prev) return
+        // Compare only the fields that matter for the customer's in-flight
+        // booking — id, name, price, duration. Image / description churn is
+        // fine to swallow silently.
+        const sig = (p: typeof prev.products[number]) => `${p.id}|${p.name}|${p.price}|${p.duration}`
+        const prevSig = prev.products.map(sig).join('\n')
+        const freshSig = fresh.products.map(sig).join('\n')
+        const productsChanged = prevSig !== freshSig
+        const hoursChanged = JSON.stringify(prev.operatingHours) !== JSON.stringify(fresh.operatingHours)
+        if (!productsChanged && !hoursChanged) return
+
+        venueInfo.value = fresh
+
+        // Drop any selected services that are no longer in the catalog. If
+        // EVERY selected service vanished, route the customer back to the
+        // service step so they can rebuild their cart from scratch.
+        const freshIds = new Set(fresh.products.map(p => p.id))
+        const stillValid = selectedProducts.value.filter(p => freshIds.has(p.id))
+        if (stillValid.length !== selectedProducts.value.length) {
+          selectedProducts.value = stillValid
+          selectedProduct.value = stillValid[0] ?? null
+          if (stillValid.length === 0 && step.value > config.serviceStep) {
+            step.value = config.serviceStep
+          }
+          showToast(
+            props.locale === 'en'
+              ? 'Some services were updated. Please review your appointment.'
+              : 'Algunos servicios cambiaron. Revisa tu cita.',
+            'error',
+          )
+        } else if (productsChanged || hoursChanged) {
+          showToast(
+            props.locale === 'en' ? 'The catalog was updated.' : 'El catálogo se actualizó.',
+            'success',
+          )
+        }
+
+        // Refresh the customer's credit balance too — they may have redeemed
+        // credits in another tab while this one was hidden.
+        const customer = customerInfo.value
+        const product = selectedProduct.value
+        if (customer && (customer.phone || customer.email) && product) {
+          const seats = Math.max(selectedSpotIds.value.length, 1)
+          const productIds = selectedProducts.value.length > 0
+            ? selectedProducts.value.map(p => p.id)
+            : [product.id]
+          api.getCustomerCredits(props.venue, {
+            email: customer.email ?? undefined,
+            phone: customer.phone ?? undefined,
+            seats,
+            productIds,
+          })
+            .then(c => { customerCredits.value = c })
+            .catch(() => { /* silent — picker just won't update */ })
+        }
+      } catch {
+        /* network blip — leave the customer with what they had */
+      }
+    }
+
+    function onVisibilityChange() {
+      if (document.visibilityState === 'hidden') {
+        lastHiddenAtRef.current = Date.now()
+        return
+      }
+      if (document.visibilityState !== 'visible') return
+      const hiddenAt = lastHiddenAtRef.current
+      lastHiddenAtRef.current = null
+      if (!hiddenAt) return
+      const hiddenFor = Date.now() - hiddenAt
+      if (hiddenFor < 5 * 60 * 1000) return // <5 min — don't bother
+      refreshStaleVenue()
+    }
+
+    document.addEventListener('visibilitychange', onVisibilityChange)
+    return () => document.removeEventListener('visibilitychange', onVisibilityChange)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [props.venue, props.locale])
+
   // Fetch available slots for a date
   function fetchSlots() {
     const date = selectedDate.value
