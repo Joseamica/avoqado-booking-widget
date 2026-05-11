@@ -970,10 +970,22 @@ export function BookingFlow({ props }: BookingFlowProps) {
       const multiProductIds = selectedProducts.value.length > 1
         ? selectedProducts.value.map(p => p.id)
         : undefined
-      const summedDuration = selectedProducts.value.length > 1
-        ? selectedProducts.value.reduce((acc, p) => acc + (p.duration ?? 0), 0)
-        : (selectedProduct.value?.duration
-            ?? Math.round((new Date(slot.endsAt).getTime() - new Date(slot.startsAt).getTime()) / 60000))
+      // Authoritative fallback: the slot window the customer picked. Used when
+      // any selected product is missing duration (legacy data — admin created
+      // an APPOINTMENTS_SERVICE before the dashboard form required it). The
+      // slot window already came from /availability which used the venue's
+      // defaultDurationMin, so this is the same number the server already
+      // committed to when it offered the slot.
+      const slotWindowMinutes = Math.round(
+        (new Date(slot.endsAt).getTime() - new Date(slot.startsAt).getTime()) / 60000,
+      )
+      let summedDuration: number
+      if (selectedProducts.value.length > 1) {
+        const sum = selectedProducts.value.reduce((acc, p) => acc + (p.duration ?? 0), 0)
+        summedDuration = sum > 0 ? sum : slotWindowMinutes
+      } else {
+        summedDuration = selectedProduct.value?.duration ?? slotWindowMinutes
+      }
       const result = await api.createReservation(props.venue, {
         startsAt: slot.startsAt,
         endsAt: slot.endsAt,
