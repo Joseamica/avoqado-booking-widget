@@ -620,10 +620,17 @@ export function BookingFlow({ props }: BookingFlowProps) {
     const flow = flowType.value
     const typeFilter: 'class' | 'appointment' | undefined =
       flow === 'classes' ? 'class' : flow === 'appointments' ? 'appointment' : undefined
+    // Multi-service: ask the backend for slots wide enough to fit EVERY
+    // selected service back-to-back. Without this, a 45 + 30 min booking
+    // shows 45-min slots and the customer hits a 409 at submit when their
+    // 75-min appointment collides with an existing reservation.
+    const combinedDuration = totalDuration.value > 0
+      ? totalDuration.value
+      : (selectedProduct.value?.duration ?? undefined)
     api.getAvailability(props.venue, {
       date,
       productId: selectedProduct.value?.id,
-      duration: selectedProduct.value?.duration ?? undefined,
+      duration: combinedDuration,
       type: typeFilter,
     })
       .then(res => setSlots(res.slots))
