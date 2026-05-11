@@ -276,9 +276,22 @@ export function ManageBooking({ venueSlug, cancelSecret, timezone, venueInfo, t,
                 {t('manage.rescheduleButton', { defaultValue: 'Cambiar horario' })}
               </Button>
             )}
-            <Button variant="destructive" fullWidth onClick={() => setShowCancel(true)}>
-              {t('manage.cancelButton')}
-            </Button>
+            {reservation.cancellation && (
+              <Button
+                variant="destructive"
+                fullWidth
+                onClick={() => setShowCancel(true)}
+                disabled={!reservation.cancellation.allowed}
+                title={!reservation.cancellation.allowed && reservation.cancellation.minHoursBeforeStart != null
+                  ? t('manage.cancelDisabledTooltip', {
+                      defaultValue: 'Solo puedes cancelar hasta {{hours}}h antes del inicio.',
+                      hours: reservation.cancellation.minHoursBeforeStart,
+                    })
+                  : undefined}
+              >
+                {t('manage.cancelButton')}
+              </Button>
+            )}
           </>
         )}
         <Button variant="outline" fullWidth onClick={onBack}>
