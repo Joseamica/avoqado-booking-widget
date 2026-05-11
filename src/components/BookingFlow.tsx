@@ -1805,16 +1805,19 @@ export function BookingFlow({ props }: BookingFlowProps) {
                 />
               </aside>
               <style>{`
-                .avq-appts-layout { display: grid; grid-template-columns: 1fr; gap: 0; }
+                .avq-appts-layout { display: grid; grid-template-columns: 1fr; gap: 24px; }
                 .avq-appts-main { min-width: 0; }
-                .avq-appts-sidebar { display: none; }
+                /* Mobile: sidebar stacks below the form so the customer
+                   always sees Resumen + totals + Reserva cita. Desktop
+                   pins it to the right. */
+                .avq-appts-sidebar { display: block; }
                 @media (min-width: 880px) {
                   .avq-appts-layout {
                     grid-template-columns: minmax(0, 1fr) 340px;
                     gap: 32px;
                     align-items: start;
                   }
-                  .avq-appts-sidebar { display: block; position: sticky; top: 24px; }
+                  .avq-appts-sidebar { position: sticky; top: 24px; }
                 }
               `}</style>
             </div>
