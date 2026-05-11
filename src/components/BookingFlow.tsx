@@ -40,6 +40,7 @@ import { ServiceDetailView } from './ServiceDetailView'
 import { DateTimePickerSquare } from './DateTimePickerSquare'
 import { PaymentStepHeader } from './PaymentStepHeader'
 import { PaymentChoiceInline, type InlineChoice } from './PaymentChoiceInline'
+import { CreditPacksModal } from './CreditPacksModal'
 import { AppointmentConfirmation } from './AppointmentConfirmation'
 import type { GuestFormData } from './GuestInfoForm'
 import type { Product } from '../types'
@@ -170,6 +171,11 @@ export function BookingFlow({ props }: BookingFlowProps) {
   // handleFormSubmit short-circuits its own credit-check API call and submits
   // straight to /reservations with the chosen balance (or no balance for cash).
   const [inlinePayment, setInlinePayment] = useState<InlineChoice>(null)
+  // Visibility of the top-nav-triggered "Comprar créditos" modal. The host
+  // page calls widget.showCreditPacks() → the widget dispatches
+  // _avq_show_credit_packs on its host element → this flag flips on. Picking
+  // a pack in the modal hands off to the existing CheckoutModal flow.
+  const [showCreditPacksModal, setShowCreditPacksModal] = useState(false)
 
   // Step config — hoisted ABOVE every useEffect so closures that reference
   // it never hit TDZ when an early-return guard (isLoading / portal / manage
@@ -204,8 +210,13 @@ export function BookingFlow({ props }: BookingFlowProps) {
     const host = props.hostElement
     if (!host) return
     const onShowAccount = () => { showPortal.value = true }
+    const onShowCreditPacks = () => { setShowCreditPacksModal(true) }
     host.addEventListener('_avq_show_account', onShowAccount)
-    return () => host.removeEventListener('_avq_show_account', onShowAccount)
+    host.addEventListener('_avq_show_credit_packs', onShowCreditPacks)
+    return () => {
+      host.removeEventListener('_avq_show_account', onShowAccount)
+      host.removeEventListener('_avq_show_credit_packs', onShowCreditPacks)
+    }
   }, [props.hostElement])
 
   // Customer-facing TZ — initialized from the stored preference. The TimezoneModal
@@ -259,9 +270,15 @@ export function BookingFlow({ props }: BookingFlowProps) {
             },
           },
         }))
-        // Load credit packs in background
+        // Load credit packs in background. Once they land, notify the host
+        // page so the top-nav "Comprar créditos" CTA can unhide itself when
+        // the venue actually has packs on offer.
         api.getCreditPacks(props.venue).then(packs => {
           creditPacks.value = packs
+          props.hostElement.dispatchEvent(new CustomEvent('avoqado:credit-packs-loaded', {
+            bubbles: true, composed: true,
+            detail: { count: packs.length },
+          }))
         }).catch(() => { /* silently ignore */ })
       })
       .catch((err) => {
@@ -1359,14 +1376,10 @@ export function BookingFlow({ props }: BookingFlowProps) {
                 }}
                 t={t}
               />
-              {creditPacks.value.length > 0 && (
-                <CreditPackBanner
-                  packs={creditPacks.value}
-                  onBuy={handleBuyPack}
-                  buyingPackId={buyingPackId}
-                  t={t}
-                />
-              )}
+              {/* CreditPackBanner removed from /appointments here — the top-nav
+                  "Comprar créditos" button now owns the buy-a-pack entry point.
+                  The banner survives in the no-credits-buy-prompt sub-state
+                  (further down) where context demands it inline. */}
             </div>
             <aside class="avq-appts-sidebar">
               <AppointmentSummarySidebar
@@ -1856,6 +1869,23 @@ export function BookingFlow({ props }: BookingFlowProps) {
           onClose={() => setCheckoutPackId(null)}
           onSubmit={handleCheckoutSubmit}
           submitting={!!buyingPackId}
+          t={t}
+        />
+      )}
+
+      {/* Credit-packs picker modal — triggered by the top-nav "Comprar
+          créditos" button. Picking a pack hands off to the CheckoutModal
+          above through handleBuyPack. */}
+      {showCreditPacksModal && (
+        <CreditPacksModal
+          packs={creditPacks.value}
+          buyingPackId={buyingPackId}
+          onBuy={(packId) => {
+            setShowCreditPacksModal(false)
+            handleBuyPack(packId)
+          }}
+          onClose={() => setShowCreditPacksModal(false)}
+          locale={props.locale}
           t={t}
         />
       )}

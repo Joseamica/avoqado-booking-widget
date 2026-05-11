@@ -162,6 +162,36 @@
     body.flow-appointments .topnav > .topnav-cta { display: none !important; }
     body.flow-appointments .topnav-hamburger { display: inline-flex !important; }
 
+    /* "Comprar créditos" header CTA — visible only when the appointments
+       wizard is active AND the venue has at least one credit pack on offer.
+       The widget unhides this via the avoqado:credit-packs-loaded event so
+       venues without packs never see a dead button. */
+    .topnav-cta-credits {
+      display: none;
+      align-items: center;
+      gap: 6px;
+      padding: 8px 14px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: var(--bg-elev);
+      color: var(--fg);
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      font-family: inherit;
+    }
+    .topnav-cta-credits svg { width: 14px; height: 14px; flex-shrink: 0; }
+    .topnav-cta-credits:hover {
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+    body.flow-appointments .topnav-cta-credits.is-available { display: inline-flex; }
+    /* Tighten the chrome on phones — keep only the icon when space is tight. */
+    @media (max-width: 480px) {
+      body.flow-appointments .topnav-cta-credits .topnav-cta-credits-label { display: none; }
+      .topnav-cta-credits { padding: 8px 10px; }
+    }
+
     /* MOBILE DRAWER */
     .drawer {
       position: fixed;
@@ -498,6 +528,13 @@
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
       Mi Cuenta
     </button>
+    <button class="topnav-cta-credits" id="nav-credits" type="button" aria-label="Comprar créditos">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="2" y="6" width="20" height="14" rx="2"/>
+        <line x1="2" y1="11" x2="22" y2="11"/>
+      </svg>
+      <span class="topnav-cta-credits-label">Comprar créditos</span>
+    </button>
     <button class="topnav-hamburger" id="nav-hamburger" type="button" aria-label="Abrir menú">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
     </button>
@@ -779,6 +816,26 @@
       var drawerSigninAppts = document.getElementById('drawer-signin-appointments')
       if (drawerSigninAppts) drawerSigninAppts.addEventListener('click', callShowAccount)
 
+      // "Comprar créditos" button — only visible on /appointments AND after the
+      // widget reports the venue actually has packs available. The widget's
+      // showCreditPacks() opens a modal listing every pack with its own buy
+      // CTA; clicking one continues through the existing CheckoutModal flow.
+      var navCredits = document.getElementById('nav-credits')
+      el.addEventListener('avoqado:credit-packs-loaded', function (e) {
+        var count = (e && e.detail && typeof e.detail.count === 'number') ? e.detail.count : 0
+        if (!navCredits) return
+        navCredits.classList.toggle('is-available', count > 0)
+      })
+      if (navCredits) {
+        navCredits.addEventListener('click', function () {
+          if (typeof el.showCreditPacks === 'function') {
+            el.showCreditPacks()
+          } else {
+            el.dispatchEvent(new CustomEvent('_avq_show_credit_packs', { bubbles: false }))
+          }
+        })
+      }
+
       // ----- Drawer venue-info hydration (appointments mode only) -----------
       // The widget fetches venue info, then dispatches avoqado:venue-loaded on
       // its host element with { name, address, phone, hours }. We read it here
@@ -788,6 +845,7 @@
         var info = e && e.detail && e.detail.venue
         if (!info) return
         if (drawerVenueName && info.name) drawerVenueName.textContent = info.name
+        if (navVenue && info.name) navVenue.textContent = info.name
 
         // Apply the venue brand color to the host page chrome (topnav "Mi
         // Cuenta" CTA, active tab underline, drawer links). Only honor it
@@ -797,6 +855,40 @@
         var brand = info.primaryColor
         if (!urlAccent && typeof brand === 'string' && /^(#|rgb|hsl|oklch|color\()/i.test(brand.trim())) {
           document.documentElement.style.setProperty('--accent', brand.trim())
+        }
+
+        // Wide marketing logo. When the venue has `logoFull` we replace the
+        // single-letter avatar + plain name with an <img>. The name stays in
+        // the DOM (sr-only via aria-label) so the topnav still reads as the
+        // venue name to assistive tech. Falls through to the existing
+        // initials avatar when missing.
+        if (info.logoFull && typeof info.logoFull === 'string' && navLogo) {
+          var img = document.createElement('img')
+          img.src = info.logoFull
+          img.alt = info.name || ''
+          img.style.maxHeight = '28px'
+          img.style.maxWidth = '180px'
+          img.style.objectFit = 'contain'
+          img.style.display = 'block'
+          navLogo.innerHTML = ''
+          navLogo.appendChild(img)
+          navLogo.style.background = 'transparent'
+          navLogo.style.border = '0'
+          navLogo.style.width = 'auto'
+          navLogo.style.height = 'auto'
+          // Hide the redundant name text once the wordmark is shown.
+          if (navVenue) navVenue.style.display = 'none'
+        } else if (info.logo && typeof info.logo === 'string' && navLogo) {
+          // Fall back to the small square logo if no wide variant exists.
+          var img2 = document.createElement('img')
+          img2.src = info.logo
+          img2.alt = ''
+          img2.style.width = '100%'
+          img2.style.height = '100%'
+          img2.style.objectFit = 'cover'
+          img2.style.borderRadius = '8px'
+          navLogo.innerHTML = ''
+          navLogo.appendChild(img2)
         }
 
         var phoneRow = document.getElementById('drawer-phone-row')

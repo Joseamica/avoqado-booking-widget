@@ -35,6 +35,12 @@ class AvoqadoBookingWidget extends HTMLElement {
    *  hosted page top-nav "Mi Cuenta" link so the host doesn't need to reach
    *  into the widget's internal state. */
   showAccount() { this.dispatchEvent(new CustomEvent('_avq_show_account', { bubbles: false })) }
+  /** Open the credit-packs picker modal. Used by the hosted page's top-nav
+   *  "Comprar créditos" button so the customer can buy a pack without
+   *  scrolling to the inline banner. The widget renders a modal listing
+   *  every available pack and hands off to the existing CheckoutModal on
+   *  pick. */
+  showCreditPacks() { this.dispatchEvent(new CustomEvent('_avq_show_credit_packs', { bubbles: false })) }
 
   private getProps(): WidgetProps {
     const common = readCommonAttrs(this)
