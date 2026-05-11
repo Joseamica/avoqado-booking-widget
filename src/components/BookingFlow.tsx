@@ -171,6 +171,12 @@ export function BookingFlow({ props }: BookingFlowProps) {
   // straight to /reservations with the chosen balance (or no balance for cash).
   const [inlinePayment, setInlinePayment] = useState<InlineChoice>(null)
 
+  // Step config — hoisted ABOVE every useEffect so closures that reference
+  // it never hit TDZ when an early-return guard (isLoading / portal / manage
+  // state) returns before the function body completes. Effect callbacks fire
+  // after the function returns, so they need the binding initialized by then.
+  const config = getStepConfig(hasServiceStep.value)
+
   // The unified landing (Square-style two-CTA picker) shows whenever the
   // customer enters via /<slug> with no flow segment. Picking a CTA flips
   // flowType in-memory + rewrites the URL so a refresh keeps the choice.
@@ -642,7 +648,6 @@ export function BookingFlow({ props }: BookingFlowProps) {
     )
   }
 
-  const config = getStepConfig(hasServiceStep.value)
   const stepLabels = hasServiceStep.value
     ? [t('steps.service'), t('steps.date'), t('steps.time'), t('steps.info'), t('steps.confirmation')]
     : [t('steps.date'), t('steps.time'), t('steps.info'), t('steps.confirmation')]
