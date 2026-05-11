@@ -153,9 +153,9 @@ export function CreditPacksModal({
                     fontSize: '12px', color: 'var(--avq-muted-fg, #6b7280)',
                   }}>
                     {pack.items.map(item => (
-                      <li key={item.productId} style={{ display: 'flex', justifyContent: 'space-between', gap: '8px' }}>
+                      <li key={item.id || item.productId} style={{ display: 'flex', justifyContent: 'space-between', gap: '8px' }}>
                         <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                          {item.quantity}× {item.productName}
+                          {item.quantity}× {item.product?.name ?? '—'}
                         </span>
                       </li>
                     ))}
