@@ -801,6 +801,25 @@
       var themeOverride = params.get('theme')
       if (themeOverride) el.setAttribute('theme', themeOverride)
 
+      // Deep-link to Manage Booking from the reminder email CTA. The email
+      // sends customers to /<slug>?manage=<cancelSecret>; we hand the secret
+      // to the widget once it's connected so it lands directly on the booking
+      // detail instead of the catalog. Wait one tick for connectedCallback().
+      var manageSecret = params.get('manage')
+      if (manageSecret) {
+        setTimeout(function () {
+          if (typeof el.showManageBooking === 'function') {
+            el.showManageBooking(manageSecret)
+          } else {
+            // Older widget bundle that doesn't have the public method yet.
+            el.dispatchEvent(new CustomEvent('_avq_show_manage', {
+              bubbles: false,
+              detail: { cancelSecret: manageSecret },
+            }))
+          }
+        }, 0)
+      }
+
       // Wire "Mi Cuenta" / "Iniciar sesión" buttons → widget.showAccount()
       function callShowAccount() {
         if (typeof el.showAccount === 'function') {

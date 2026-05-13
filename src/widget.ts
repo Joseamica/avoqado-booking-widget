@@ -41,6 +41,13 @@ class AvoqadoBookingWidget extends HTMLElement {
    *  every available pack and hands off to the existing CheckoutModal on
    *  pick. */
   showCreditPacks() { this.dispatchEvent(new CustomEvent('_avq_show_credit_packs', { bubbles: false })) }
+  /** Open the Manage Booking screen for a specific reservation. Used by the
+   *  hosted page when the URL has `?manage=<cancelSecret>` (e.g. from the
+   *  reminder email CTA) so the customer lands directly in their booking
+   *  detail instead of having to find it manually. */
+  showManageBooking(cancelSecret: string) {
+    this.dispatchEvent(new CustomEvent('_avq_show_manage', { bubbles: false, detail: { cancelSecret } }))
+  }
 
   private getProps(): WidgetProps {
     const common = readCommonAttrs(this)

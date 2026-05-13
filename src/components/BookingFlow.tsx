@@ -211,11 +211,21 @@ export function BookingFlow({ props }: BookingFlowProps) {
     if (!host) return
     const onShowAccount = () => { showPortal.value = true }
     const onShowCreditPacks = () => { setShowCreditPacksModal(true) }
+    // Deep-link from email "Ver mi reservación" CTA: host extracts the
+    // cancelSecret from ?manage=<secret> and calls widget.showManageBooking().
+    // We open ManageBooking with that secret so the customer lands on their
+    // booking detail without having to look it up.
+    const onShowManage = (e: Event) => {
+      const detail = (e as CustomEvent<{ cancelSecret?: string }>).detail
+      if (detail?.cancelSecret) manageSecret.value = detail.cancelSecret
+    }
     host.addEventListener('_avq_show_account', onShowAccount)
     host.addEventListener('_avq_show_credit_packs', onShowCreditPacks)
+    host.addEventListener('_avq_show_manage', onShowManage as EventListener)
     return () => {
       host.removeEventListener('_avq_show_account', onShowAccount)
       host.removeEventListener('_avq_show_credit_packs', onShowCreditPacks)
+      host.removeEventListener('_avq_show_manage', onShowManage as EventListener)
     }
   }, [props.hostElement])
 
