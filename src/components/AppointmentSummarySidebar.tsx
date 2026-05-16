@@ -2,6 +2,7 @@ import { h } from 'preact'
 import { useState } from 'preact/hooks'
 import type { Product, PublicSlot } from '../types'
 import type { TFunction } from '../i18n'
+import { selectedModifiers } from '../state/booking'
 
 /** Format MXN with thousand separators, no decimals. Mirrors ServiceSelector. */
 function formatPriceMXN(amount: number): string {
@@ -233,47 +234,91 @@ function SummaryRow({
     ? t('summary.variablePrice')
     : formatPriceMXN(Number(product.price))
 
+  // Picked modifiers for this product — only render rows that we can resolve
+  // against the product's modifierGroups (otherwise the price would be wrong).
+  const groupsById = new Map<string, { id: string; name: string; price: number }>()
+  for (const group of product.modifierGroups ?? []) {
+    for (const m of group.modifiers) {
+      groupsById.set(m.id, m)
+    }
+  }
+  const pickedForProduct = selectedModifiers.value.filter(
+    s => s.productId === product.id && groupsById.has(s.modifierId),
+  )
+
   return (
     <div style={{
-      display: 'flex', alignItems: 'flex-start', gap: '10px',
       paddingTop: '10px', paddingBottom: isLast ? '4px' : '10px',
       borderBottom: isLast ? 'none' : '1px solid transparent',
     }}>
-      <span style={{
-        width: '8px', height: '8px', borderRadius: '50%',
-        background: 'var(--avq-muted-fg, #9ca3af)',
-        flexShrink: 0, marginTop: '6px',
-      }} />
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{
-          fontSize: '14px', fontWeight: '600',
-          color: 'var(--avq-fg, #111827)',
-          lineHeight: 1.35,
-        }}>
-          {product.name}
-        </div>
-      </div>
-      <span style={{
-        fontSize: '13px',
-        color: product.price == null ? 'var(--avq-muted-fg, #6b7280)' : 'var(--avq-fg, #111827)',
-        whiteSpace: 'nowrap',
+      <div style={{
+        display: 'flex', alignItems: 'flex-start', gap: '10px',
       }}>
-        {priceLabel}
-      </span>
-      {onEdit && (
-        <button
-          type="button"
-          onClick={onEdit}
-          aria-label={t('summary.edit')}
-          style={{
-            background: 'transparent', border: 0,
-            cursor: 'pointer', padding: '4px',
-            color: 'var(--avq-muted-fg, #6b7280)',
-            display: 'inline-flex', alignItems: 'center',
-          }}
-        >
-          <PencilIcon />
-        </button>
+        <span style={{
+          width: '8px', height: '8px', borderRadius: '50%',
+          background: 'var(--avq-muted-fg, #9ca3af)',
+          flexShrink: 0, marginTop: '6px',
+        }} />
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{
+            fontSize: '14px', fontWeight: '600',
+            color: 'var(--avq-fg, #111827)',
+            lineHeight: 1.35,
+          }}>
+            {product.name}
+          </div>
+        </div>
+        <span style={{
+          fontSize: '13px',
+          color: product.price == null ? 'var(--avq-muted-fg, #6b7280)' : 'var(--avq-fg, #111827)',
+          whiteSpace: 'nowrap',
+        }}>
+          {priceLabel}
+        </span>
+        {onEdit && (
+          <button
+            type="button"
+            onClick={onEdit}
+            aria-label={t('summary.edit')}
+            style={{
+              background: 'transparent', border: 0,
+              cursor: 'pointer', padding: '4px',
+              color: 'var(--avq-muted-fg, #6b7280)',
+              display: 'inline-flex', alignItems: 'center',
+            }}
+          >
+            <PencilIcon />
+          </button>
+        )}
+      </div>
+
+      {pickedForProduct.length > 0 && (
+        <ul style={{
+          listStyle: 'none', padding: 0,
+          margin: '6px 0 0 18px',
+          display: 'flex', flexDirection: 'column', gap: '4px',
+        }}>
+          {pickedForProduct.map(sel => {
+            const mod = groupsById.get(sel.modifierId)!
+            const lineTotal = mod.price * sel.quantity
+            return (
+              <li key={`${sel.productId}-${sel.modifierId}`} style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                gap: '10px', fontSize: '12.5px',
+                color: 'var(--avq-muted-fg, #6b7280)',
+              }}>
+                <span>
+                  {mod.name}{sel.quantity > 1 ? ` × ${sel.quantity}` : ''}
+                </span>
+                {lineTotal > 0 && (
+                  <span style={{ whiteSpace: 'nowrap' }}>
+                    +{formatPriceMXN(lineTotal)}
+                  </span>
+                )}
+              </li>
+            )
+          })}
+        </ul>
       )}
     </div>
   )

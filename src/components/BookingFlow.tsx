@@ -11,7 +11,7 @@ import {
   creditPacks, customerCredits, selectedCreditBalance, creditPacksLoading,
   showPortal, portalData, customerToken, customerInfo, setCustomerSession, clearCustomerSession,
   flowType, visibleProducts,
-  selectedProducts, totalDuration, totalPrice,
+  selectedProducts, totalDuration, totalPrice, selectedModifiers,
   addSelectedProduct, removeSelectedProduct,
   slotHoldToken, slotHoldExpiresAt,
 } from '../state/booking'
@@ -1011,6 +1011,7 @@ export function BookingFlow({ props }: BookingFlowProps) {
         specialRequests: data.specialRequests || undefined,
         creditItemBalanceId: creditBalanceId || undefined,
         creditItemBalanceIds: creditBalanceIds,
+        modifierSelections: selectedModifiers.value.length > 0 ? selectedModifiers.value : undefined,
         holdId: slotHoldToken.value ?? undefined,
         successUrl,
         cancelUrl,
