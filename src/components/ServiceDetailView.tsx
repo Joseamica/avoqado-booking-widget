@@ -1,6 +1,8 @@
 import { h } from 'preact'
 import type { Product } from '../types'
 import type { TFunction } from '../i18n'
+import { ModifierPicker } from './ModifierPicker'
+import { selectedModifiers, setSelectedModifiers } from '../state/booking'
 
 function formatPriceMXN(amount: number): string {
   try {
@@ -99,6 +101,24 @@ export function ServiceDetailView({
         }}>
           {product.description}
         </p>
+      )}
+
+      {product.modifierGroups && product.modifierGroups.length > 0 && (
+        <section style={{ margin: '0 0 16px 0' }}>
+          {product.modifierGroups
+            .slice()
+            .sort((a, b) => a.displayOrder - b.displayOrder)
+            .map(group => (
+              <ModifierPicker
+                key={group.id}
+                productId={product.id}
+                group={group}
+                selections={selectedModifiers.value}
+                onChange={setSelectedModifiers}
+                t={t}
+              />
+            ))}
+        </section>
       )}
 
       {/* Actions — full-width within the main column (the sidebar already
