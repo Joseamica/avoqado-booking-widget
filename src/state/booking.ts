@@ -119,13 +119,32 @@ export const visibleProducts = computed<Product[]>(() => {
 
 export const hasServiceStep = computed(() => visibleProducts.value.length > 1)
 
-/** Combined duration of all selected products, in minutes. Used by the date/time
- *  picker to query availability for the full appointment span (Square pattern:
- *  if you pick a 45-min Iyashi + a 15-min recolección, we look for 60-min slots). */
+/** Combined duration of all selected products PLUS picked modifier duration deltas,
+ *  in minutes. Used by the date/time picker to query availability for the full
+ *  appointment span (Square pattern: if you pick a 45-min Iyashi + a 15-min
+ *  recolección, we look for 60-min slots; if a modifier adds 20 min, 80-min slots). */
 export const totalDuration = computed<number>(() => {
   const products = selectedProducts.value
-  if (products.length === 0) return selectedProduct.value?.duration ?? 0
-  return products.reduce((sum, p) => sum + (p.duration ?? 0), 0)
+  const baseDuration =
+    products.length === 0 ? selectedProduct.value?.duration ?? 0 : products.reduce((sum, p) => sum + (p.duration ?? 0), 0)
+
+  // Add modifier duration deltas. Skip picks whose modifier can't be resolved —
+  // the server rejects those at booking time anyway.
+  const mods = selectedModifiers.value
+  if (mods.length === 0) return baseDuration
+  const productById = new Map<string, Product>()
+  const allProducts = venueInfo.value?.products ?? []
+  for (const p of allProducts) productById.set(p.id, p)
+  let durationDelta = 0
+  for (const sel of mods) {
+    const product = productById.get(sel.productId)
+    if (!product?.modifierGroups) continue
+    for (const group of product.modifierGroups) {
+      const m = group.modifiers.find(mm => mm.id === sel.modifierId)
+      if (m?.durationMin != null) durationDelta += m.durationMin * sel.quantity
+    }
+  }
+  return baseDuration + durationDelta
 })
 
 /** Combined price of all selected products PLUS picked modifier deltas. Returns

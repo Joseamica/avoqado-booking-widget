@@ -26,6 +26,8 @@ export interface Modifier {
   id: string
   name: string
   price: number
+  /** Minutes this modifier adds to the booked service when selected (× qty). */
+  durationMin?: number | null
   active: boolean
 }
 
