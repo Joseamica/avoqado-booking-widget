@@ -22,6 +22,31 @@ export interface LayoutConfig {
  */
 export type UpfrontPolicy = 'required' | 'at_venue' | 'optional'
 
+export interface Modifier {
+  id: string
+  name: string
+  price: number
+  active: boolean
+}
+
+export interface ModifierGroup {
+  id: string
+  name: string
+  description: string | null
+  required: boolean
+  allowMultiple: boolean
+  minSelections: number
+  maxSelections: number | null
+  displayOrder: number
+  modifiers: Modifier[]
+}
+
+export interface ModifierSelection {
+  productId: string
+  modifierId: string
+  quantity: number
+}
+
 export interface Product {
   id: string
   name: string
@@ -42,6 +67,10 @@ export interface Product {
   creditCost?: number | null
   /** Resolved by the server — never 'inherit'. */
   upfrontPolicy?: UpfrontPolicy
+  /** Service add-ons / customizations the customer can pick during booking.
+   *  Mirrors Avoqado's TPV ModifierGroup model. Optional — only services
+   *  with assigned modifier groups in the dashboard will have this populated. */
+  modifierGroups?: ModifierGroup[]
 }
 
 export interface PublicVenueInfo {
@@ -165,6 +194,9 @@ export interface PublicCreateReservationRequest {
   successUrl?: string
   /** Where Stripe should send the customer back if they cancel/expire the checkout. */
   cancelUrl?: string
+  /** Add-ons / customizations the customer picked. Server validates against
+   *  the modifier groups assigned to each productId. */
+  modifierSelections?: ModifierSelection[]
 }
 
 export interface PublicBookingResult {
@@ -254,6 +286,13 @@ export interface PublicReservationDetail {
     minHoursBeforeStart: number | null
     productId: string | null
   }
+  modifiers?: {
+    id: string
+    productId: string
+    name: string
+    quantity: number
+    price: number
+  }[]
 }
 
 /**

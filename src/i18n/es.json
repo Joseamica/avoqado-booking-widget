@@ -312,5 +312,12 @@
     "packValidity": "Válido por {{days}} días",
     "packNoExpiry": "Sin expiración",
     "sessions": "sesiones"
+  },
+  "modifiers": {
+    "required": "Requerido",
+    "optional": "Opcional",
+    "pickOne": "Elige una opción",
+    "pickUpTo": "Elige hasta {{n}}",
+    "requiredMissing": "Completa las opciones requeridas"
   }
 }

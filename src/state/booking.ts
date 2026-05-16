@@ -1,5 +1,5 @@
 import { signal, computed } from '@preact/signals'
-import type { PublicVenueInfo, Product, PublicSlot, PublicBookingResult, CreditPackPublic, CustomerCreditBalance, CustomerPortalData, FlowType } from '../types'
+import type { PublicVenueInfo, Product, PublicSlot, PublicBookingResult, CreditPackPublic, CustomerCreditBalance, CustomerPortalData, FlowType, ModifierSelection } from '../types'
 
 // Step: 0=loading, 1=service, 2=date, 3=time, 4=form, 5=confirmed, 6=manage
 export const step = signal(0)
@@ -23,6 +23,11 @@ export const selectedProducts = signal<Product[]>([])
 export const selectedDate = signal<string | null>(null)   // YYYY-MM-DD
 export const selectedSlot = signal<PublicSlot | null>(null)
 export const selectedSpotIds = signal<string[]>([])
+/** Add-on / customization picks tied to a specific service in the multi-service
+ *  appointment. Each entry has productId so a modifier group attached to two
+ *  different services can be picked independently. Cleared on resetBooking,
+ *  on removeSelectedProduct (for that product), and on replaceSelectedProduct. */
+export const selectedModifiers = signal<ModifierSelection[]>([])
 export const bookingResult = signal<PublicBookingResult | null>(null)
 
 /** Hold token + expiry for the Square-style "Cita reservada durante 9:56" timer.
@@ -123,21 +128,42 @@ export const totalDuration = computed<number>(() => {
   return products.reduce((sum, p) => sum + (p.duration ?? 0), 0)
 })
 
-/** Combined price of all selected products. Returns null when ANY product has
- *  variable pricing (price === null), so the sidebar can render "+$X" with the
- *  variable note instead of a misleading total. */
+/** Combined price of all selected products PLUS picked modifier deltas. Returns
+ *  null when ANY product has variable pricing (price === null), so the sidebar
+ *  can render "+$X" with the variable note instead of a misleading total. */
 export const totalPrice = computed<number | null>(() => {
   const products = selectedProducts.value
+  const mods = selectedModifiers.value
+
+  let modifierTotal = 0
+  if (mods.length > 0) {
+    // Look up modifier prices via the venue payload (each product carries its
+    // assigned modifierGroups). Skip picks whose modifier we can't resolve —
+    // the server will reject those at booking time.
+    const productById = new Map<string, Product>()
+    const allProducts = venueInfo.value?.products ?? []
+    for (const p of allProducts) productById.set(p.id, p)
+    for (const sel of mods) {
+      const product = productById.get(sel.productId)
+      if (!product?.modifierGroups) continue
+      for (const group of product.modifierGroups) {
+        const m = group.modifiers.find(mm => mm.id === sel.modifierId)
+        if (m) modifierTotal += m.price * sel.quantity
+      }
+    }
+  }
+
   if (products.length === 0) {
     const p = selectedProduct.value
-    return p?.price ?? null
+    if (p == null) return modifierTotal === 0 ? null : modifierTotal
+    return p.price == null ? null : p.price + modifierTotal
   }
   let sum = 0
   for (const p of products) {
-    if (p.price == null) continue
+    if (p.price == null) return null
     sum += Number(p.price)
   }
-  return sum
+  return sum + modifierTotal
 })
 
 /** Push a product onto the multi-service selection. Idempotent — re-adding the
@@ -161,6 +187,7 @@ export function addSelectedProduct(product: Product) {
 export function removeSelectedProduct(productId: string) {
   selectedProducts.value = selectedProducts.value.filter(p => p.id !== productId)
   selectedProduct.value = selectedProducts.value[0] ?? null
+  selectedModifiers.value = selectedModifiers.value.filter(s => s.productId !== productId)
 }
 
 /** Replace one product with another (used by ServiceDetailView's Actualizar
@@ -176,11 +203,28 @@ export function replaceSelectedProduct(oldId: string, next: Product) {
   updated[idx] = next
   selectedProducts.value = updated
   selectedProduct.value = updated[0] ?? null
+  selectedModifiers.value = selectedModifiers.value.filter(s => s.productId !== oldId)
 }
 
 export function clearSelectedProducts() {
   selectedProducts.value = []
   selectedProduct.value = null
+  selectedModifiers.value = []
+}
+
+/** Replace all modifier selections (used by the picker's onChange). */
+export function setSelectedModifiers(next: ModifierSelection[]) {
+  selectedModifiers.value = next
+}
+
+/** Drop modifier selections for a single product (used when a product is removed). */
+export function clearModifiersForProduct(productId: string) {
+  selectedModifiers.value = selectedModifiers.value.filter(s => s.productId !== productId)
+}
+
+/** Clear all modifier selections. */
+export function clearAllModifiers() {
+  selectedModifiers.value = []
 }
 
 export function getStepConfig(hasService: boolean) {
@@ -203,6 +247,7 @@ export function resetBooking(venueData: PublicVenueInfo) {
   selectedSlot.value = null
   selectedSpotIds.value = []
   selectedProducts.value = []
+  selectedModifiers.value = []
   bookingResult.value = null
   selectedDate.value = null
   manageSecret.value = null

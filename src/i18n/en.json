@@ -312,5 +312,12 @@
     "packValidity": "Valid for {{days}} days",
     "packNoExpiry": "No expiration",
     "sessions": "sessions"
+  },
+  "modifiers": {
+    "required": "Required",
+    "optional": "Optional",
+    "pickOne": "Pick one",
+    "pickUpTo": "Pick up to {{n}}",
+    "requiredMissing": "Please complete the required options"
   }
 }

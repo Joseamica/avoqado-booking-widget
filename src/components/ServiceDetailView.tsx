@@ -1,6 +1,9 @@
 import { h } from 'preact'
 import type { Product } from '../types'
 import type { TFunction } from '../i18n'
+import { ModifierPicker } from './ModifierPicker'
+import { selectedModifiers, setSelectedModifiers } from '../state/booking'
+import { areRequiredModifiersSatisfied } from '../state/modifierValidation'
 
 function formatPriceMXN(amount: number): string {
   try {
@@ -41,6 +44,12 @@ export function ServiceDetailView({
     ? t('summary.variablePrice')
     : formatPriceMXN(Number(product.price))
   const durationLabel = product.duration ? t('service.duration', { min: product.duration }) : null
+
+  const canSubmit = areRequiredModifiersSatisfied(
+    product.modifierGroups,
+    product.id,
+    selectedModifiers.value,
+  )
 
   return (
     <div class="avq-animate-in" style={{ paddingTop: '4px' }}>
@@ -101,59 +110,103 @@ export function ServiceDetailView({
         </p>
       )}
 
+      {product.modifierGroups && product.modifierGroups.length > 0 && (
+        <section style={{ margin: '0 0 16px 0' }}>
+          {product.modifierGroups
+            .slice()
+            .sort((a, b) => a.displayOrder - b.displayOrder)
+            .map(group => (
+              <ModifierPicker
+                key={group.id}
+                productId={product.id}
+                group={group}
+                selections={selectedModifiers.value}
+                onChange={setSelectedModifiers}
+                t={t}
+              />
+            ))}
+        </section>
+      )}
+
       {/* Actions — full-width within the main column (the sidebar already
           carves out its own space; we don't need a second cap). */}
       {mode === 'add' ? (
-        <button
-          type="button"
-          onClick={onAdd}
-          style={{
-            width: '100%',
-            padding: '16px',
-            background: 'var(--avq-accent, #2563eb)', color: '#ffffff',
-            border: 0, borderRadius: '12px',
-            fontSize: '15px', fontWeight: '600',
-            cursor: 'pointer',
-            fontFamily: 'inherit',
-          }}
-        >
-          {t('serviceDetail.add')}
-        </button>
+        <>
+          <button
+            type="button"
+            onClick={onAdd}
+            disabled={!canSubmit}
+            style={{
+              width: '100%',
+              padding: '16px',
+              background: canSubmit ? 'var(--avq-accent, #2563eb)' : 'var(--avq-muted, #f3f4f6)',
+              color: canSubmit ? '#ffffff' : 'var(--avq-muted-fg, #6b7280)',
+              border: 0, borderRadius: '12px',
+              fontSize: '15px', fontWeight: '600',
+              cursor: canSubmit ? 'pointer' : 'not-allowed',
+              fontFamily: 'inherit',
+            }}
+          >
+            {t('serviceDetail.add')}
+          </button>
+          {!canSubmit && (
+            <p style={{
+              margin: '8px 0 0', fontSize: '13px',
+              color: 'var(--avq-danger-fg, #991b1b)',
+              textAlign: 'center',
+            }}>
+              {t('modifiers.requiredMissing')}
+            </p>
+          )}
+        </>
       ) : (
-        <div style={{
-          display: 'flex', gap: '10px', flexWrap: 'wrap',
-        }}>
-          <button
-            type="button"
-            onClick={onRemove}
-            style={{
-              flex: 1, minWidth: '140px',
-              padding: '16px',
-              background: '#f3f4f6', color: 'var(--avq-accent, #2563eb)',
-              border: 0, borderRadius: '12px',
-              fontSize: '15px', fontWeight: '600',
-              cursor: 'pointer',
-              fontFamily: 'inherit',
-            }}
-          >
-            {t('serviceDetail.remove')}
-          </button>
-          <button
-            type="button"
-            onClick={onUpdate}
-            style={{
-              flex: 1, minWidth: '140px',
-              padding: '16px',
-              background: 'var(--avq-accent, #2563eb)', color: '#ffffff',
-              border: 0, borderRadius: '12px',
-              fontSize: '15px', fontWeight: '600',
-              cursor: 'pointer',
-              fontFamily: 'inherit',
-            }}
-          >
-            {t('serviceDetail.update')}
-          </button>
-        </div>
+        <>
+          <div style={{
+            display: 'flex', gap: '10px', flexWrap: 'wrap',
+          }}>
+            <button
+              type="button"
+              onClick={onRemove}
+              style={{
+                flex: 1, minWidth: '140px',
+                padding: '16px',
+                background: '#f3f4f6', color: 'var(--avq-accent, #2563eb)',
+                border: 0, borderRadius: '12px',
+                fontSize: '15px', fontWeight: '600',
+                cursor: 'pointer',
+                fontFamily: 'inherit',
+              }}
+            >
+              {t('serviceDetail.remove')}
+            </button>
+            <button
+              type="button"
+              onClick={onUpdate}
+              disabled={!canSubmit}
+              style={{
+                flex: 1, minWidth: '140px',
+                padding: '16px',
+                background: canSubmit ? 'var(--avq-accent, #2563eb)' : 'var(--avq-muted, #f3f4f6)',
+                color: canSubmit ? '#ffffff' : 'var(--avq-muted-fg, #6b7280)',
+                border: 0, borderRadius: '12px',
+                fontSize: '15px', fontWeight: '600',
+                cursor: canSubmit ? 'pointer' : 'not-allowed',
+                fontFamily: 'inherit',
+              }}
+            >
+              {t('serviceDetail.update')}
+            </button>
+          </div>
+          {!canSubmit && (
+            <p style={{
+              margin: '8px 0 0', fontSize: '13px',
+              color: 'var(--avq-danger-fg, #991b1b)',
+              textAlign: 'center',
+            }}>
+              {t('modifiers.requiredMissing')}
+            </p>
+          )}
+        </>
       )}
     </div>
   )
