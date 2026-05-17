@@ -1,6 +1,19 @@
 import { h } from 'preact'
 import type { PublicBookingResult, PublicVenueInfo, Product } from '../types'
 import type { TFunction } from '../i18n'
+import { selectedModifiers } from '../state/booking'
+
+function formatPriceMXN(amount: number): string {
+  try {
+    return new Intl.NumberFormat('es-MX', {
+      style: 'currency',
+      currency: 'MXN',
+      maximumFractionDigits: 0,
+    }).format(amount)
+  } catch {
+    return `$${Math.round(amount).toLocaleString('es-MX')}`
+  }
+}
 
 function buildIcsContent(booking: PublicBookingResult, venueName: string): string {
   const start = new Date(booking.startsAt).toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '')
@@ -74,6 +87,12 @@ export function AppointmentConfirmation({
 
   const isPayAtVenue = booking.owesAtVenue || (!booking.creditRedeemed && booking.depositAmount == null)
   const hasVariablePrice = selectedProducts.some(p => p.price == null)
+  // When the venue requires upfront payment but lacks Stripe, the server
+  // confirms the booking and stamps depositAmount as "owed at the venue".
+  // Surface it so the customer knows the exact amount due on arrival.
+  const owedAmountLabel = booking.owesAtVenue && booking.depositAmount != null
+    ? `$${Number(booking.depositAmount).toLocaleString('es-MX')}`
+    : null
 
   const tx = locale === 'en'
     ? {
@@ -86,8 +105,10 @@ export function AppointmentConfirmation({
       nextSteps: 'Next steps',
       callBack: (p: string) => `We'll call you at ${p}.`,
       payment: 'Payment',
-      payAtVenuePill: 'Due at venue',
-      payAtVenueBody: 'You will pay at the appointment.',
+      payAtVenuePill: owedAmountLabel ? `${owedAmountLabel} due at venue` : 'Due at venue',
+      payAtVenueBody: owedAmountLabel
+        ? `You will pay ${owedAmountLabel} at the appointment.`
+        : 'You will pay at the appointment.',
       variableNote: 'This appointment includes a service with variable pricing. The amount will be set at the venue.',
       policyTitle: 'Cancellation policy',
       policyBody: 'You can cancel or reschedule your appointment before it starts.',
@@ -103,8 +124,10 @@ export function AppointmentConfirmation({
       nextSteps: 'Próximos pasos',
       callBack: (p: string) => `Te llamaremos al ${p}.`,
       payment: 'Pago',
-      payAtVenuePill: 'A pagar en la cita',
-      payAtVenueBody: 'Abonarás el pago en la cita.',
+      payAtVenuePill: owedAmountLabel ? `${owedAmountLabel} a pagar en la cita` : 'A pagar en la cita',
+      payAtVenueBody: owedAmountLabel
+        ? `Abonarás ${owedAmountLabel} en la cita.`
+        : 'Abonarás el pago en la cita.',
       variableNote: 'Esta cita incluye un servicio con un precio variable. El importe se determinará en la cita.',
       policyTitle: 'Política de cancelación',
       policyBody: 'Puedes cancelar o reprogramar tu cita antes de que comience.',
@@ -186,6 +209,47 @@ export function AppointmentConfirmation({
                   {' '}
                   {tzShortLabel(venueInfo.timezone)}
                 </div>
+                {/* Picked modifiers for this service. We read from selectedModifiers
+                    signal — still populated post-booking until the customer hits
+                    "Reservar de nuevo". Falls back gracefully when no modifiers. */}
+                {(() => {
+                  const groupsById = new Map<string, { id: string; name: string; price: number }>()
+                  for (const g of entry.product.modifierGroups ?? []) {
+                    for (const m of g.modifiers) groupsById.set(m.id, m)
+                  }
+                  const picked = selectedModifiers.value.filter(
+                    s => s.productId === entry.product.id && groupsById.has(s.modifierId),
+                  )
+                  if (picked.length === 0) return null
+                  return (
+                    <ul style={{
+                      listStyle: 'none', padding: 0,
+                      margin: '6px 0 0',
+                      display: 'flex', flexDirection: 'column', gap: '3px',
+                    }}>
+                      {picked.map(sel => {
+                        const mod = groupsById.get(sel.modifierId)!
+                        const lineTotal = mod.price * sel.quantity
+                        return (
+                          <li key={`${sel.productId}-${sel.modifierId}`} style={{
+                            fontSize: '12.5px',
+                            color: 'var(--avq-muted-fg, #6b7280)',
+                            display: 'flex', justifyContent: 'space-between', gap: '8px',
+                          }}>
+                            <span>
+                              {mod.name}{sel.quantity > 1 ? ` × ${sel.quantity}` : ''}
+                            </span>
+                            {lineTotal > 0 && (
+                              <span style={{ whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>
+                                +{formatPriceMXN(lineTotal)}
+                              </span>
+                            )}
+                          </li>
+                        )
+                      })}
+                    </ul>
+                  )
+                })()}
               </div>
             </div>
           ))}

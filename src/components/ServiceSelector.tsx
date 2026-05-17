@@ -1,5 +1,5 @@
 import { h } from 'preact'
-import { useMemo, useState } from 'preact/hooks'
+import { useEffect, useMemo, useState } from 'preact/hooks'
 import type { Product } from '../types'
 import type { TFunction } from '../i18n'
 
@@ -62,8 +62,16 @@ export function ServiceSelector({
   onOpenDetail,
   t,
 }: ServiceSelectorProps) {
+  const [queryRaw, setQueryRaw] = useState('')
   const [query, setQuery] = useState('')
   const [activeCategoryId, setActiveCategoryId] = useState<string | null>(null)
+
+  // Debounce search input so massive catalogs (200+ products) don't re-filter
+  // on every keystroke. 150ms feels instant but cuts filter work ~10x.
+  useEffect(() => {
+    const id = setTimeout(() => setQuery(queryRaw), 150)
+    return () => clearTimeout(id)
+  }, [queryRaw])
 
   // Build category buckets in displayOrder. We only surface categories whose
   // products survive the active filters, so empty chips never render.
@@ -207,9 +215,11 @@ export function ServiceSelector({
           <line x1="21" y1="21" x2="16.65" y2="16.65" />
         </svg>
         <input
-          type="text"
-          value={query}
-          onInput={(e: any) => setQuery(e.currentTarget.value)}
+          type="search"
+          role="searchbox"
+          aria-label={t('serviceSearch.placeholder')}
+          value={queryRaw}
+          onInput={(e: any) => setQueryRaw(e.currentTarget.value)}
           placeholder={t('serviceSearch.placeholder')}
           style={{
             width: '100%',
@@ -224,11 +234,14 @@ export function ServiceSelector({
             boxSizing: 'border-box',
           }}
         />
-        {query && (
+        {queryRaw && (
           <button
             type="button"
-            onClick={() => setQuery('')}
-            aria-label="clear"
+            onClick={() => {
+              setQueryRaw('')
+              setQuery('')
+            }}
+            aria-label="Limpiar búsqueda"
             style={{
               position: 'absolute',
               right: '8px',
@@ -262,6 +275,8 @@ export function ServiceSelector({
       {/* Category chips */}
       {hasCategoryData && categories.length > 0 && (
         <div
+          role="tablist"
+          aria-label="Categorías de servicio"
           style={{
             display: 'flex',
             gap: '8px',
@@ -269,6 +284,7 @@ export function ServiceSelector({
             marginBottom: '8px',
             paddingBottom: '4px',
             scrollbarWidth: 'thin',
+            WebkitOverflowScrolling: 'touch',
           }}
         >
           <CategoryChip
@@ -332,6 +348,8 @@ function CategoryChip({ label, active, onClick }: { label: string; active: boole
   return (
     <button
       type="button"
+      role="tab"
+      aria-selected={active}
       onClick={onClick}
       style={{
         flexShrink: 0,
