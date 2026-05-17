@@ -319,5 +319,10 @@
     "pickOne": "Pick one",
     "pickUpTo": "Pick up to {{n}}",
     "requiredMissing": "Please complete the required options"
+  },
+  "serviceSearch": {
+    "placeholder": "Search service",
+    "categoryAll": "All",
+    "noResults": "No services match your search"
   }
 }

@@ -73,6 +73,10 @@ export interface Product {
    *  Mirrors Avoqado's TPV ModifierGroup model. Optional — only services
    *  with assigned modifier groups in the dashboard will have this populated. */
   modifierGroups?: ModifierGroup[]
+  /** Category this product belongs to. Used by ServiceSelector to render
+   *  chips/headers and to filter the list. Optional for back-compat with
+   *  legacy embeds that pre-date the category-aware endpoint. */
+  category?: { id: string; name: string; slug: string; displayOrder: number } | null
 }
 
 export interface PublicVenueInfo {

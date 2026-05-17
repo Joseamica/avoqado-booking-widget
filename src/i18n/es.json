@@ -319,5 +319,10 @@
     "pickOne": "Elige una opción",
     "pickUpTo": "Elige hasta {{n}}",
     "requiredMissing": "Completa las opciones requeridas"
+  },
+  "serviceSearch": {
+    "placeholder": "Buscar servicio",
+    "categoryAll": "Todas",
+    "noResults": "No encontramos servicios que coincidan"
   }
 }
