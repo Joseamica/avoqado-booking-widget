@@ -1861,7 +1861,28 @@ export function BookingFlow({ props }: BookingFlowProps) {
           return (
             <div class="avq-appts-layout">
               <div class="avq-appts-main">
-                <PaymentStepHeader locale={props.locale} />
+                <PaymentStepHeader
+                  locale={props.locale}
+                  onExpired={() => {
+                    // Hold TTL hit zero. The slot is no longer guaranteed —
+                    // someone else could grab it. Send the customer back to
+                    // the time picker, clear the stale slot + hold state,
+                    // refresh availability so they see the current truth, and
+                    // surface a toast explaining why we moved them.
+                    const token = slotHoldToken.value
+                    if (token) {
+                      api.cancelHold(props.venue, token).catch(() => {
+                        /* silent — hold may already be GC'd server-side */
+                      })
+                    }
+                    slotHoldToken.value = null
+                    slotHoldExpiresAt.value = null
+                    selectedSlot.value = null
+                    step.value = config.timeStep
+                    fetchSlots()
+                    showToast(t('errors.slotExpired'), 'error')
+                  }}
+                />
                 {formStepBody}
               </div>
               <aside class="avq-appts-sidebar">

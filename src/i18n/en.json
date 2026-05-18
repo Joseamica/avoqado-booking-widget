@@ -154,6 +154,7 @@
     "reservationNotFound": "Reservation not found",
     "reservationNotFoundDescription": "This booking link may be expired or invalid.",
     "slotTaken": "This time slot is no longer available. Please choose another time.",
+    "slotExpired": "Your temporary reservation expired. Please pick your time again.",
     "generic": "Something went wrong. Please try again."
   },
   "actions": {

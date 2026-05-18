@@ -154,6 +154,7 @@
     "reservationNotFound": "Reservación no encontrada",
     "reservationNotFoundDescription": "Este enlace de reservación puede haber expirado o ser inválido.",
     "slotTaken": "Este horario ya no está disponible. Por favor elige otro horario.",
+    "slotExpired": "Tu reservación temporal expiró. Por favor elige tu horario de nuevo.",
     "generic": "Algo salió mal. Por favor intenta de nuevo."
   },
   "actions": {
