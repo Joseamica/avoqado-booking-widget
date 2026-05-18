@@ -1403,6 +1403,7 @@ export function BookingFlow({ props }: BookingFlowProps) {
                 venueSlug={props.venue}
                 timezone={resolveDisplayTz(info.timezone)}
                 venuePhone={info.phone ?? null}
+                products={info.products}
                 onBuyPack={creditPacks.value.length > 0 ? () => {
                   // No classes scheduled, but customer can pre-buy a pack so
                   // they're ready when sessions appear. Routes to the unified

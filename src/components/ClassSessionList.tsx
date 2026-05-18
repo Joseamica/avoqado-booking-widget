@@ -1,12 +1,33 @@
 import { h } from 'preact'
 import { useEffect, useMemo, useState } from 'preact/hooks'
-import type { PublicClassSessionSlot } from '../types'
+import type { Product, PublicClassSessionSlot } from '../types'
 import type { TFunction } from '../i18n'
 import * as api from '../api/booking'
 import { Spinner } from './ui/Spinner'
 import { CapacityBadge } from './CapacityBadge'
 import { CalendarView } from './CalendarView'
 import { InstructorAvatar } from './InstructorAvatar'
+
+/** MXN price formatter — mirrors AppointmentSummarySidebar/ServiceSelector. */
+function formatPriceMXN(amount: number): string {
+  try {
+    return new Intl.NumberFormat('es-MX', {
+      style: 'currency', currency: 'MXN', maximumFractionDigits: 0,
+    }).format(amount)
+  } catch {
+    return `$${Math.round(amount).toLocaleString('es-MX')}`
+  }
+}
+
+/** Render minutes as "1 h", "45 min", "1 h 30 min". */
+function formatDurationMin(min: number): string {
+  if (min <= 0) return ''
+  const h = Math.floor(min / 60)
+  const m = min % 60
+  if (h === 0) return `${m} min`
+  if (m === 0) return `${h} h`
+  return `${h} h ${m} min`
+}
 
 const VIEW_STORAGE_KEY = 'avq_classes_view'
 type ClassesView = 'list' | 'calendar'
@@ -35,6 +56,9 @@ interface ClassSessionListProps {
   venuePhone?: string | null
   /** Optional handler — when provided, the empty state shows a "Comprar paquete" CTA. */
   onBuyPack?: () => void
+  /** All venue products — used to resolve price/credit cost per row, since the
+   *  range availability endpoint doesn't include them. */
+  products?: Product[]
   t: TFunction
 }
 
@@ -66,13 +90,14 @@ export function formatDateHeading(
   const tmrStr = tmr.toLocaleDateString('en-CA', { timeZone: timezone })
   if (dateStr === todayStr) return t('classList.today')
   if (dateStr === tmrStr) return t('classList.tomorrow')
-  // Mié 7 may
+  // Square style: "Miércoles, 6 de mayo de 2026" — full weekday + day + month + year.
   const d = new Date(`${dateStr}T12:00:00Z`)
   const localeStr = locale === 'es' ? 'es-MX' : 'en-US'
   return d.toLocaleDateString(localeStr, {
-    weekday: 'short',
+    weekday: 'long',
     day: 'numeric',
-    month: 'short',
+    month: 'long',
+    year: 'numeric',
     timeZone: timezone,
   }).replace(/^\w/, c => c.toUpperCase())
 }
@@ -99,7 +124,7 @@ function isoToVenueDate(iso: string, timezone: string): string {
  * Mirrors the Square Classes booking page — sticky day headers, capacity badges,
  * tap-to-book directly into the form step. Used when flowType=clases.
  */
-export function ClassSessionList({ venueSlug, timezone, onSelect, onExit, venuePhone, onBuyPack, t }: ClassSessionListProps) {
+export function ClassSessionList({ venueSlug, timezone, onSelect, onExit, venuePhone, onBuyPack, products, t }: ClassSessionListProps) {
   const [slots, setSlots] = useState<PublicClassSessionSlot[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -185,6 +210,15 @@ export function ClassSessionList({ venueSlug, timezone, onSelect, onExit, venueP
 
   const nowMs = Date.now()
   const locale: 'en' | 'es' = (t('classList.today') === 'Today' ? 'en' : 'es')
+
+  // Look up Product by id so each row can render price + duration without a
+  // separate fetch. The range availability endpoint intentionally returns the
+  // slim PublicClassSessionSlot shape; price lives on the Product.
+  const productById = useMemo(() => {
+    const m = new Map<string, Product>()
+    if (products) for (const p of products) m.set(p.id, p)
+    return m
+  }, [products])
 
   if (loading && slots.length === 0) {
     return (
@@ -372,34 +406,41 @@ export function ClassSessionList({ venueSlug, timezone, onSelect, onExit, venueP
       {view === 'calendar' ? (
         <CalendarView slots={filteredSlots} timezone={timezone} onSelect={onSelect} nowMs={nowMs} t={t} />
       ) : (
-      /* Date-grouped list */
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+      /* Square-style date-grouped list: bold day headers + borderless rows with
+       * a subtle divider. Each row: instructor/product circle + class name +
+       * "$price · time · duration" meta line. Capacity badge on the right. */
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '32px' }}>
         {groupedByDate.map(([dateKey, daySlots]) => (
           <div key={dateKey}>
-            {/* Sticky header — uses position: sticky inside the scroll container */}
-            <div style={{
-              position: 'sticky',
-              top: 0,
-              background: 'var(--avq-bg, #ffffff)',
-              padding: '6px 0',
-              marginBottom: '8px',
-              fontSize: '11px',
+            <h3 style={{
+              margin: '0 0 16px',
+              fontSize: '17px',
               fontWeight: '700',
-              letterSpacing: '0.06em',
-              textTransform: 'uppercase',
-              color: 'var(--avq-muted-fg, #6b7280)',
-              zIndex: 1,
+              color: 'var(--avq-fg, #111827)',
+              letterSpacing: '-0.01em',
+              textTransform: 'capitalize',
             }}>
               {formatDateHeading(dateKey, nowMs, timezone, locale, t)}
-            </div>
+            </h3>
 
-            {/* Sessions for that day */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              {daySlots.map(slot => {
+            <div>
+              {daySlots.map((slot, idx) => {
                 const isFull = !slot.available || (slot.remaining ?? 0) === 0
                 const instructorName = slot.instructor
                   ? `${slot.instructor.firstName} ${slot.instructor.lastName}`.trim()
                   : null
+                const product = productById.get(slot.productId)
+                const price = product?.price != null ? Number(product.price) : null
+                const durationMin = Math.round(
+                  (new Date(slot.endsAt).getTime() - new Date(slot.startsAt).getTime()) / 60000,
+                )
+                const startTime = formatTimeOfDay(slot.startsAt, timezone, locale)
+                // Compose "$25 · 8:00 AM · 1h 45min". Each segment is optional —
+                // skip price when product unresolved or null (variable pricing).
+                const metaParts: string[] = []
+                if (price != null) metaParts.push(formatPriceMXN(price))
+                metaParts.push(startTime)
+                if (durationMin > 0) metaParts.push(formatDurationMin(durationMin))
                 const onClick = () => { if (!isFull) onSelect(slot) }
                 return (
                   <button
@@ -410,64 +451,77 @@ export function ClassSessionList({ venueSlug, timezone, onSelect, onExit, venueP
                     style={{
                       display: 'flex',
                       alignItems: 'center',
-                      gap: '14px',
-                      padding: '14px',
-                      borderRadius: '12px',
-                      border: '1px solid var(--avq-border, #e8eaed)',
-                      background: 'var(--avq-bg, #ffffff)',
+                      gap: '16px',
+                      padding: '16px 0',
+                      borderTop: idx === 0 ? 'none' : '1px solid var(--avq-border, #f1f3f5)',
+                      background: 'transparent',
+                      border: idx === 0 ? 'none' : undefined,
+                      borderBottom: 'none',
+                      borderLeft: 'none',
+                      borderRight: 'none',
                       cursor: isFull ? 'not-allowed' : 'pointer',
                       opacity: isFull ? 0.55 : 1,
                       textAlign: 'left',
                       width: '100%',
-                      transition: 'border-color 0.15s ease, transform 0.15s ease',
+                      transition: 'background 0.15s ease',
                     }}
                     onMouseEnter={e => {
-                      if (!isFull) (e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--avq-accent, #6366f1)'
+                      if (!isFull) (e.currentTarget as HTMLButtonElement).style.background = 'var(--avq-muted, #f8f9fb)'
                     }}
                     onMouseLeave={e => {
-                      if (!isFull) (e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--avq-border, #e8eaed)'
+                      (e.currentTarget as HTMLButtonElement).style.background = 'transparent'
                     }}
                   >
-                    {/* Time block */}
-                    <div style={{
-                      flexShrink: 0,
-                      width: '64px',
-                      textAlign: 'center',
-                      padding: '6px 4px',
-                      borderRadius: '8px',
-                      background: 'var(--avq-muted, #f8f9fb)',
-                    }}>
-                      <div style={{ fontSize: '14px', fontWeight: '700', color: 'var(--avq-fg, #111827)', lineHeight: 1.1 }}>
-                        {formatTimeOfDay(slot.startsAt, timezone, locale)}
-                      </div>
-                    </div>
-
-                    {/* Phase 7: product thumbnail when the venue uploaded one */}
-                    {slot.productImageUrl && (
+                    {/* Leading visual: product thumbnail if uploaded, else
+                     * instructor avatar — both render as a 44px circle so the
+                     * baseline stays aligned across mixed rows. */}
+                    {slot.productImageUrl ? (
                       <img
                         src={slot.productImageUrl}
                         alt=""
                         style={{
-                          width: '44px', height: '44px', borderRadius: '8px', flexShrink: 0,
+                          width: '44px', height: '44px', borderRadius: '50%', flexShrink: 0,
                           objectFit: 'cover',
                           background: 'var(--avq-muted, #f8f9fb)',
                         }}
                         onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none' }}
                       />
+                    ) : (
+                      <div style={{ flexShrink: 0 }}>
+                        <InstructorAvatar instructor={slot.instructor} size={44} />
+                      </div>
                     )}
 
-                    {/* Class info */}
+                    {/* Class info — Square pattern: name bold on row 1, meta line gray on row 2 */}
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: '14px', fontWeight: '600', color: 'var(--avq-fg, #111827)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      <div style={{
+                        fontSize: '15px',
+                        fontWeight: '600',
+                        color: 'var(--avq-fg, #111827)',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                        lineHeight: 1.3,
+                      }}>
                         {slot.productName}
                       </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '4px' }}>
-                        <InstructorAvatar instructor={slot.instructor} size={20} />
-                        <span style={{ fontSize: '12px', color: 'var(--avq-muted-fg, #6b7280)' }}>
-                          {instructorName
-                            ? t('classList.withInstructor', { name: instructorName })
-                            : t('classList.noInstructor')}
-                        </span>
+                      <div style={{
+                        fontSize: '13px',
+                        color: 'var(--avq-muted-fg, #6b7280)',
+                        marginTop: '4px',
+                        lineHeight: 1.4,
+                        display: 'flex',
+                        flexWrap: 'wrap',
+                        alignItems: 'center',
+                        gap: '6px',
+                      }}>
+                        <span>{metaParts.join(' · ')}</span>
+                        {instructorName && (
+                          <>
+                            <span aria-hidden="true">·</span>
+                            <span>{t('classList.withInstructor', { name: instructorName })}</span>
+                          </>
+                        )}
                       </div>
                     </div>
 
