@@ -58,6 +58,8 @@ export function AppointmentSummarySidebar({
   products,
   totalPrice,
   totalDuration,
+  selectedDate,
+  selectedSlot,
   onNext,
   nextDisabled = false,
   nextLabel,
@@ -83,6 +85,37 @@ export function AppointmentSummarySidebar({
   const countLabel = products.length === 1
     ? t('summary.servicesCount_one', { count: 1 })
     : t('summary.servicesCount', { count: products.length })
+
+  // Compose a single "lunes 18 de mayo · 14:30" line when the customer has
+  // already picked both date and slot. Date-only renders without a time.
+  let scheduleLabel: string | null = null
+  if (selectedSlot?.startsAt) {
+    const d = new Date(selectedSlot.startsAt)
+    if (!Number.isNaN(d.getTime())) {
+      try {
+        const datePart = new Intl.DateTimeFormat('es-MX', {
+          weekday: 'long', day: 'numeric', month: 'long',
+        }).format(d)
+        const timePart = new Intl.DateTimeFormat('es-MX', {
+          hour: '2-digit', minute: '2-digit', hour12: false,
+        }).format(d)
+        scheduleLabel = `${datePart} · ${timePart}`
+      } catch {
+        scheduleLabel = d.toLocaleString()
+      }
+    }
+  } else if (selectedDate) {
+    const d = new Date(`${selectedDate}T00:00:00`)
+    if (!Number.isNaN(d.getTime())) {
+      try {
+        scheduleLabel = new Intl.DateTimeFormat('es-MX', {
+          weekday: 'long', day: 'numeric', month: 'long',
+        }).format(d)
+      } catch {
+        scheduleLabel = selectedDate
+      }
+    }
+  }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
@@ -142,6 +175,27 @@ export function AppointmentSummarySidebar({
                 borderTop: '1px solid var(--avq-border, #e8eaed)',
                 padding: '6px 18px 14px',
               }}>
+                {scheduleLabel && (
+                  <div style={{
+                    display: 'flex', alignItems: 'center', gap: '8px',
+                    padding: '10px 0 8px',
+                    borderBottom: products.length > 0 ? '1px solid var(--avq-border, #f1f3f5)' : 'none',
+                    marginBottom: products.length > 0 ? '4px' : 0,
+                  }}>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--avq-muted-fg, #6b7280)', flexShrink: 0 }}>
+                      <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+                      <line x1="16" y1="2" x2="16" y2="6" />
+                      <line x1="8" y1="2" x2="8" y2="6" />
+                      <line x1="3" y1="10" x2="21" y2="10" />
+                    </svg>
+                    <span style={{
+                      fontSize: '13px', color: 'var(--avq-fg, #111827)',
+                      textTransform: 'capitalize',
+                    }}>
+                      {scheduleLabel}
+                    </span>
+                  </div>
+                )}
                 {products.map((product, idx) => (
                   <SummaryRow
                     key={product.id}

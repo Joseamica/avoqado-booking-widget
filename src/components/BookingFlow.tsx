@@ -1068,17 +1068,17 @@ export function BookingFlow({ props }: BookingFlowProps) {
       const slotWindowMinutes = Math.round(
         (new Date(slot.endsAt).getTime() - new Date(slot.startsAt).getTime()) / 60000,
       )
-      let summedDuration: number
-      if (selectedProducts.value.length > 1) {
-        const sum = selectedProducts.value.reduce((acc, p) => acc + (p.duration ?? 0), 0)
-        summedDuration = sum > 0 ? sum : slotWindowMinutes
-      } else {
-        summedDuration = selectedProduct.value?.duration ?? slotWindowMinutes
-      }
+      // Match the duration the /availability call used to size this slot.
+      // totalDuration includes modifier durationMin deltas (e.g. Rubber Base
+      // 20min + Gel modifier 20min = 40min). If we send the bare product
+      // duration here while slot.endsAt - slot.startsAt reflects the extended
+      // window, the server's Zod refine rejects with "duration no coincide
+      // con el rango de fechas".
+      const combinedDuration = totalDuration.value > 0 ? totalDuration.value : slotWindowMinutes
       const result = await api.createReservation(props.venue, {
         startsAt: slot.startsAt,
         endsAt: slot.endsAt,
-        duration: summedDuration,
+        duration: combinedDuration,
         guestName: data.guestName,
         guestPhone: data.guestPhone,
         guestEmail: data.guestEmail || undefined,
@@ -1576,6 +1576,8 @@ export function BookingFlow({ props }: BookingFlowProps) {
                 products={selectedProducts.value}
                 totalPrice={totalPrice.value}
                 totalDuration={totalDuration.value}
+                selectedDate={selectedDate.value}
+                selectedSlot={selectedSlot.value}
                 onEditProduct={(product) => {
                   setDetailViewProduct({ product, mode: 'edit' })
                   step.value = config.serviceStep
@@ -1925,6 +1927,8 @@ export function BookingFlow({ props }: BookingFlowProps) {
                   products={selectedProducts.value}
                   totalPrice={totalPrice.value}
                   totalDuration={totalDuration.value}
+                  selectedDate={selectedDate.value}
+                  selectedSlot={selectedSlot.value}
                   showTotals
                   subtotal={subtotal ?? 0}
                   taxes={0}
