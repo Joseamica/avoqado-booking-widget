@@ -8,7 +8,7 @@ import {
   step, venueInfo, selectedProduct, selectedDate, selectedSlot,
   selectedSpotIds, bookingResult, isLoading, apiError, manageSecret,
   hasServiceStep, getStepConfig, resetBooking, showToast,
-  creditPacks, customerCredits, selectedCreditBalance, creditPacksLoading,
+  creditPacks, customerCredits, selectedCreditBalance, creditPacksLoading, creditPacksLoaded,
   showPortal, portalData, customerToken, customerInfo, setCustomerSession, clearCustomerSession,
   flowType, visibleProducts,
   selectedProducts, totalDuration, totalPrice, selectedModifiers,
@@ -247,6 +247,31 @@ export function BookingFlow({ props }: BookingFlowProps) {
     setShowLanding(props.flowType === undefined || props.flowType === 'unified')
   }, [props.flowType])
 
+  // Auto-skip the picker when the venue only sells appointments — no point
+  // asking "¿Citas o clases?" when there are no classes and no packs. Fires
+  // once both venueInfo + the credit-packs fetch have settled so we don't
+  // race the API. URL is replaced (not pushed) so the back button doesn't
+  // land the customer on a landing that's just going to redirect again.
+  useEffect(() => {
+    if (!showLanding) return
+    const info = venueInfo.value
+    if (!info) return
+    if (!creditPacksLoaded.value) return
+    const hasClasses = info.products.some(p => p.type === 'CLASS')
+    const hasAppointments = info.products.some(p => p.type !== 'CLASS')
+    const hasPacks = creditPacks.value.length > 0
+    if (hasAppointments && !hasClasses && !hasPacks) {
+      flowType.value = 'appointments'
+      setShowLanding(false)
+      if (typeof window !== 'undefined' && window.history?.replaceState) {
+        const base = window.location.pathname.replace(/\/+$/, '').replace(/\/appointments$|\/classes$/, '')
+        window.history.replaceState({}, '', `${base}/appointments${window.location.search}`)
+      }
+      resetBooking(info)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showLanding, venueInfo.value, creditPacksLoaded.value])
+
   // Load venue info on mount
   useEffect(() => {
     if (!props.venue) return
@@ -290,11 +315,16 @@ export function BookingFlow({ props }: BookingFlowProps) {
         // the venue actually has packs on offer.
         api.getCreditPacks(props.venue).then(packs => {
           creditPacks.value = packs
+          creditPacksLoaded.value = true
           props.hostElement.dispatchEvent(new CustomEvent('avoqado:credit-packs-loaded', {
             bubbles: true, composed: true,
             detail: { count: packs.length },
           }))
-        }).catch(() => { /* silently ignore */ })
+        }).catch(() => {
+          // Treat fetch errors as "no packs" so the auto-skip below can still
+          // proceed instead of getting stuck waiting on a flag that never flips.
+          creditPacksLoaded.value = true
+        })
       })
       .catch((err) => {
         apiError.value = err.status === 404 ? t('errors.venueNotFound') : t('errors.generic')

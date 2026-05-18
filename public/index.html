@@ -324,13 +324,23 @@
       font-size: 12px;
       color: var(--fg-muted);
     }
-    .footer a { color: inherit; text-decoration: none; font-weight: 500; }
+    .footer a { color: inherit; text-decoration: none; font-weight: 500; display: inline-flex; align-items: center; }
     .footer a:hover { color: var(--fg); }
+    .footer-logo {
+      height: 18px;
+      width: auto;
+      display: inline-block;
+      vertical-align: middle;
+      margin-left: 2px;
+      opacity: 0.85;
+      transition: opacity 0.15s ease;
+    }
+    .footer a:hover .footer-logo { opacity: 1; }
     /* Compact, low-key footer everywhere — same tone whether the customer is
      * on the landing, classes listing, or in the middle of the appointments
      * wizard. Matches the "Con la tecnología de Avoqado" presentation Square
      * uses on its checkout chrome. */
-    .footer { font-size: 11px; padding: 24px 16px 24px; gap: 4px; }
+    .footer { font-size: 11px; padding: 24px 16px 24px; gap: 6px; align-items: center; }
 
     avoqado-booking { display: block; width: 100%; }
     .loading, .empty {
@@ -632,7 +642,9 @@
       </main>
       <div class="footer" id="footer">
         <span>Con la tecnología de</span>
-        <a href="https://avoqado.io" target="_blank" rel="noopener">Avoqado</a>
+        <a href="https://avoqado.io" target="_blank" rel="noopener" aria-label="Avoqado">
+          <img src="/avoqado-wordmark.svg" alt="Avoqado" class="footer-logo">
+        </a>
       </div>
     </div>
   </div>

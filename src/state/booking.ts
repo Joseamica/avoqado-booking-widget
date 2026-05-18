@@ -49,6 +49,10 @@ export const creditPacks = signal<CreditPackPublic[]>([])
 export const customerCredits = signal<CustomerCreditBalance | null>(null)
 export const selectedCreditBalance = signal<{ balanceId: string; productId: string } | null>(null)
 export const creditPacksLoading = signal(false)
+/** True once the venue's credit pack list has resolved (or errored). Lets the
+ *  landing-auto-skip effect distinguish "no packs configured" from "still
+ *  loading" — both produce creditPacks.value.length === 0. */
+export const creditPacksLoaded = signal(false)
 
 // Customer session state (persisted in localStorage)
 export interface CustomerInfo {
