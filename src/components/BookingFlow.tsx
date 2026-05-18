@@ -508,6 +508,13 @@ export function BookingFlow({ props }: BookingFlowProps) {
     const products = selectedProducts.value.length > 0
       ? selectedProducts.value
       : (selectedProduct.value ? [selectedProduct.value] : [])
+    // Race protection: capture the step we were on at request time. If the
+    // user clicks back BEFORE the createHold response arrives, the cancelHold
+    // effect (below) sees `slotHoldToken.value === null` and no-ops — and the
+    // late response would set the token AFTER step changed, leaving an
+    // orphan hold on the server. We check step.value when the response
+    // resolves and cancel inline if we've already moved on.
+    const requestedAtStep = step.value
     api.createHold(props.venue, {
       startsAt: slot.startsAt,
       endsAt: slot.endsAt,
@@ -516,6 +523,12 @@ export function BookingFlow({ props }: BookingFlowProps) {
       partySize: Math.max(selectedSpotIds.value.length, 1),
     })
       .then(res => {
+        if (step.value !== requestedAtStep) {
+          // User navigated back during the in-flight request. Don't store the
+          // token in widget state — just release it on the server.
+          api.cancelHold(props.venue, res.holdId).catch(() => { /* silent */ })
+          return
+        }
         slotHoldToken.value = res.holdId
         slotHoldExpiresAt.value = new Date(res.expiresAt).getTime()
       })
@@ -539,6 +552,37 @@ export function BookingFlow({ props }: BookingFlowProps) {
     slotHoldExpiresAt.value = null
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [step.value, props.flowType, props.venue])
+
+  // Release the slot hold when the page unloads (tab close, browser back,
+  // navigation away from book.avoqado.io). The React/Preact effect cleanup
+  // doesn't reliably fire on hard unload, so we use navigator.sendBeacon
+  // which fires a fire-and-forget HTTP request that the browser GUARANTEES
+  // to deliver even after the document has been torn down. Without this,
+  // an abandoned hold sits for the full 10-min TTL.
+  useEffect(() => {
+    if (props.flowType !== 'appointments') return
+    const handler = () => {
+      const token = slotHoldToken.value
+      if (!token) return
+      const url = `/api/v1/public/venues/${encodeURIComponent(props.venue)}/reservations/hold/${encodeURIComponent(token)}`
+      // sendBeacon doesn't natively support DELETE — but our server's route
+      // file accepts the cancel via DELETE only. Fall back to fetch with
+      // keepalive:true which has the same fire-and-forget semantics during
+      // unload across all evergreen browsers.
+      try {
+        fetch(url, { method: 'DELETE', keepalive: true }).catch(() => {})
+      } catch {
+        /* unload-time errors are silenced */
+      }
+    }
+    window.addEventListener('pagehide', handler)
+    window.addEventListener('beforeunload', handler)
+    return () => {
+      window.removeEventListener('pagehide', handler)
+      window.removeEventListener('beforeunload', handler)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [props.flowType, props.venue])
 
   // Visibility-based freshness refresh. Square's pattern: when the customer
   // returns to a tab that has been hidden long enough that the catalog could
