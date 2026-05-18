@@ -27,21 +27,14 @@
     /* /appointments runs the wizard with a sticky Resumen sidebar on desktop;
        it needs more horizontal real estate than the rest of the hosted site. */
     body.flow-appointments .shell { max-width: 1180px; }
-    @media (prefers-color-scheme: dark) {
-      :root {
-        --bg: #0f0f10;
-        --bg-elev: #161618;
-        --fg: #f4f4f5;
-        --fg-muted: #9ca3af;
-        --border: rgba(255, 255, 255, 0.08);
-        --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 32px rgba(0,0,0,.4);
-      }
-    }
-    /* Square-style appointments wizard forces light theme regardless of system
-       preference. The pattern depends on a clean white surface for the sidebar
-       Resumen + day-grid contrast; honoring dark mode would require recalibrating
-       every shadow and border weight in the wizard. */
-    body.flow-appointments {
+    /* Light theme forced everywhere (landing, classes, appointments).
+     * Dark mode is intentionally NOT honored — the booking surface depends on
+     * a clean light background for the sidebar Resumen + day-grid contrast,
+     * and inconsistent theming across surfaces hurt customer trust during
+     * design QA. If a venue ever needs a true dark embed we'll thread it
+     * through the `theme` attribute explicitly instead of the OS preference. */
+    html { color-scheme: light !important; }
+    body, body.flow-appointments, body.flow-classes {
       color-scheme: light !important;
       --bg: #ffffff;
       --bg-elev: #ffffff;
@@ -333,8 +326,11 @@
     }
     .footer a { color: inherit; text-decoration: none; font-weight: 500; }
     .footer a:hover { color: var(--fg); }
-    /* /appointments uses a smaller, Square-style footer ("Con la tecnología…"). */
-    body.flow-appointments .footer { font-size: 11px; padding: 24px 16px 24px; gap: 4px; }
+    /* Compact, low-key footer everywhere — same tone whether the customer is
+     * on the landing, classes listing, or in the middle of the appointments
+     * wizard. Matches the "Con la tecnología de Avoqado" presentation Square
+     * uses on its checkout chrome. */
+    .footer { font-size: 11px; padding: 24px 16px 24px; gap: 4px; }
 
     avoqado-booking { display: block; width: 100%; }
     .loading, .empty {
@@ -521,8 +517,8 @@
     </a>
     <nav class="topnav-links" id="nav-links" aria-label="Secciones del sitio">
       <a href="" data-route="appointments">Citas</a>
-      <a href="" data-route="classes">Clases</a>
-      <a href="" data-route="packs">Comprar paquetes</a>
+      <a href="" data-route="classes" data-requires="classes" hidden>Clases</a>
+      <a href="" data-route="packs" data-requires="packs" hidden>Comprar paquetes</a>
     </nav>
     <button class="topnav-cta" id="nav-account" type="button">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
@@ -549,8 +545,8 @@
       <!-- Default drawer (landing, classes, packs) — site navigation. -->
       <div class="drawer-default">
         <a class="drawer-link" href="" data-route="appointments">Citas</a>
-        <a class="drawer-link" href="" data-route="classes">Clases</a>
-        <a class="drawer-link" href="" data-route="packs">Comprar paquetes</a>
+        <a class="drawer-link" href="" data-route="classes" data-requires="classes" hidden>Clases</a>
+        <a class="drawer-link" href="" data-route="packs" data-requires="packs" hidden>Comprar paquetes</a>
         <button class="drawer-link is-cta" id="drawer-account" type="button">Mi Cuenta</button>
       </div>
 
@@ -635,7 +631,7 @@
         <div class="loading">Cargando…</div>
       </main>
       <div class="footer" id="footer">
-        <span>Reservas con</span>
+        <span>Con la tecnología de</span>
         <a href="https://avoqado.io" target="_blank" rel="noopener">Avoqado</a>
       </div>
     </div>
@@ -876,8 +872,15 @@
       var navCredits = document.getElementById('nav-credits')
       el.addEventListener('avoqado:credit-packs-loaded', function (e) {
         var count = (e && e.detail && typeof e.detail.count === 'number') ? e.detail.count : 0
-        if (!navCredits) return
-        navCredits.classList.toggle('is-available', count > 0)
+        // "Comprar créditos" CTA inside /appointments wizard
+        if (navCredits) navCredits.classList.toggle('is-available', count > 0)
+        // Top-nav "Comprar paquetes" links (header + drawer) — only render
+        // when the venue actually has packs configured. data-requires="packs"
+        // marker keeps the wiring declarative.
+        document.querySelectorAll('[data-requires="packs"]').forEach(function (el) {
+          if (count > 0) el.removeAttribute('hidden')
+          else el.setAttribute('hidden', '')
+        })
       })
       if (navCredits) {
         navCredits.addEventListener('click', function () {
@@ -899,6 +902,15 @@
         if (!info) return
         if (drawerVenueName && info.name) drawerVenueName.textContent = info.name
         if (navVenue && info.name) navVenue.textContent = info.name
+
+        // Hide "Clases" nav link (header + drawer) when the venue has no
+        // class-type products. Capability flag comes from the widget when it
+        // resolves venueInfo. Defensive default: keep hidden if missing.
+        var hasClasses = info.hasClasses === true
+        document.querySelectorAll('[data-requires="classes"]').forEach(function (el) {
+          if (hasClasses) el.removeAttribute('hidden')
+          else el.setAttribute('hidden', '')
+        })
 
         // Apply the venue brand color to the host page chrome (topnav "Mi
         // Cuenta" CTA, active tab underline, drawer links). Only honor it
@@ -976,14 +988,9 @@
         if (loading && loading.parentNode === mountEl) loading.remove()
       }, 600)
 
-      // /appointments swaps the footer text to Square's "Con la tecnología…"
-      // pattern. Done here (not CSS) so the link target stays the same.
-      if (flowType === 'appointments') {
-        var footer = document.getElementById('footer')
-        if (footer) {
-          footer.innerHTML = '<span>Con la tecnología de</span> <a href="https://avoqado.io" target="_blank" rel="noopener">Avoqado</a>'
-        }
-      }
+      // Footer copy now lives in the static HTML — same "Con la tecnología
+      // de Avoqado" on every surface (landing, classes, appointments). The
+      // per-flow swap that used to live here is no longer needed.
     })()
   </script>
   <!-- Same-origin widget bundle. Built by `npm run build` to dist/widget.js. -->

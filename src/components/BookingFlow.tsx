@@ -259,6 +259,7 @@ export function BookingFlow({ props }: BookingFlowProps) {
         // Notify the hosted page (book.avoqado.io) so it can populate the
         // appointments drawer with venue contact info. Plain hosts that don't
         // listen ignore it harmlessly.
+        const hasClasses = (info.products ?? []).some(p => p.type === 'CLASS')
         props.hostElement.dispatchEvent(new CustomEvent('avoqado:venue-loaded', {
           bubbles: true, composed: true,
           detail: {
@@ -277,6 +278,10 @@ export function BookingFlow({ props }: BookingFlowProps) {
               logo: info.logo ?? null,
               logoFull: info.logoFull ?? null,
               heroImageUrl: info.heroImageUrl ?? null,
+              // Capability flags so the hosted page can hide nav links the
+              // venue doesn't use (e.g. "Clases" when only appointments are
+              // offered). Keeps the chrome from showing dead-end CTAs.
+              hasClasses,
             },
           },
         }))
