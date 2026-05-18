@@ -199,7 +199,13 @@ export function readCommonAttrs(el: HTMLElement) {
   return {
     venue: el.getAttribute('venue') ?? '',
     locale: (el.getAttribute('locale') ?? 'es') as 'en' | 'es',
-    theme: (el.getAttribute('theme') ?? 'auto') as 'light' | 'dark' | 'auto',
+    // Default to light. Booking surfaces (landing, classes, appointments) all
+    // ship a light visual language on book.avoqado.io; honoring the OS dark
+    // preference produced unreadable text (white-on-white) on first paint
+    // when the host page hadn't yet wired a `theme` override. Embeds that
+    // explicitly want dark or system-following can still set theme="dark"
+    // or theme="auto" via the attribute.
+    theme: (el.getAttribute('theme') ?? 'light') as 'light' | 'dark' | 'auto',
     accentColor: el.getAttribute('accent-color') ?? undefined,
   }
 }
