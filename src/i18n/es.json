@@ -218,7 +218,9 @@
     "payAtVenue": "Pago al llegar al establecimiento",
     "payOptional": "Puedes pagar ahora o al llegar",
     "bookCta": "Reservar lugar",
-    "bookWithCredit": "Reservar con créditos"
+    "bookWithCredit": "Reservar con créditos",
+    "breadcrumbAll": "Todas las clases",
+    "staff": "Instructor"
   },
   "classList": {
     "title": "Próximas clases",
@@ -237,8 +239,9 @@
     "spotsLeftBadge_one": "{{count}} disponible",
     "withInstructor": "con {{name}}",
     "noInstructor": "Sin instructor asignado",
+    "viewLabel": "Mostrar",
     "viewList": "Lista",
-    "viewCalendar": "Calendar",
+    "viewCalendar": "Calendario",
     "filterClasses": "Todas las clases",
     "filterInstructors": "Todos los instructores",
     "filterRooms": "Todas las salas"

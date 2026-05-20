@@ -50,31 +50,9 @@ function formatTimeOfDay(iso: string, timezone: string, locale: 'en' | 'es'): st
   })
 }
 
-/**
- * Pick a color variant for a session block based on the underlying product.
- * Mirrors the v2-classes-calendar.html mockup palette so the live widget
- * matches the design exploration. Pure heuristic — no schema field for "tier"
- * yet, so we infer from price + creditCost + productName until we add a
- * `Product.colorTag` later.
- */
-function variantFor(slot: PublicClassSessionSlot): 'normal' | 'free' | 'premium' | 'at-venue' {
-  const name = (slot.productName ?? '').toLowerCase()
-  if (name.includes('gratis') || name.includes('free') || name.includes('demo')) return 'free'
-  if (name.includes('premium') || name.includes('workshop') || name.includes('lagree')) {
-    // 'premium' = pink, 'at-venue' = orange. Disambiguate by trying name keywords.
-    if (name.includes('lagree')) return 'premium'
-    return 'premium'
-  }
-  if (name.includes('pilates') || name.includes('al llegar') || name.includes('at venue')) return 'at-venue'
-  return 'normal'
-}
-
-const VARIANT_STYLES: Record<string, { bg: string; border: string; time: string }> = {
-  normal: { bg: 'var(--avq-accent-soft, #eef2ff)', border: '#c7d2fe', time: 'var(--avq-accent-text, #4338ca)' },
-  free: { bg: '#ecfdf5', border: '#6ee7b7', time: '#047857' },
-  premium: { bg: '#fdf2f8', border: '#f9a8d4', time: '#9d174d' },
-  'at-venue': { bg: '#fff7ed', border: '#fdba74', time: '#9a3412' },
-}
+/* Variant palette removed — Square's class calendar uses a single neutral
+ * surface throughout. Capacity tier (full / low / open) is signaled via a
+ * small dot in the card corner instead of bg color shifting. */
 
 export function CalendarView({ slots, timezone, onSelect, nowMs, t }: CalendarViewProps) {
   const now = nowMs ?? Date.now()
@@ -126,27 +104,33 @@ export function CalendarView({ slots, timezone, onSelect, nowMs, t }: CalendarVi
 
   return (
     <div class="avq-animate-in">
-      {/* Month + week shifters */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px', gap: '8px' }}>
-        <div style={{ fontSize: '15px', fontWeight: '600', color: 'var(--avq-fg, #111827)' }}>{monthLabel}</div>
-        <div style={{ display: 'flex', gap: '6px' }}>
-          <button
-            type="button"
-            onClick={() => shiftWeek(-1)}
-            aria-label={t('actions.goBack')}
-            style={navBtnStyle()}
-          >
-            <ChevronIcon dir="left" />
-          </button>
-          <button
-            type="button"
-            onClick={() => shiftWeek(1)}
-            aria-label={t('classList.loadMore')}
-            style={navBtnStyle()}
-          >
-            <ChevronIcon dir="right" />
-          </button>
+      {/* Month + week shifters — Square style: month label centered between
+       * two minimal chevron buttons, no extra borders, no chunky pills. */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px', gap: '8px' }}>
+        <button
+          type="button"
+          onClick={() => shiftWeek(-1)}
+          aria-label={t('actions.goBack')}
+          style={navBtnStyle()}
+        >
+          <ChevronIcon dir="left" />
+        </button>
+        <div style={{
+          fontSize: '17px',
+          fontWeight: '700',
+          color: 'var(--avq-fg, #111827)',
+          letterSpacing: '-0.01em',
+        }}>
+          {monthLabel}
         </div>
+        <button
+          type="button"
+          onClick={() => shiftWeek(1)}
+          aria-label={t('classList.loadMore')}
+          style={navBtnStyle()}
+        >
+          <ChevronIcon dir="right" />
+        </button>
       </div>
 
       {/* DESKTOP: 7-col week grid. Scroll horizontally if container is too narrow
@@ -165,24 +149,34 @@ export function CalendarView({ slots, timezone, onSelect, nowMs, t }: CalendarVi
           const daySlots = byDate.get(dayKey) ?? []
           const dayDate = new Date(`${dayKey}T12:00:00Z`).toLocaleDateString(locale === 'es' ? 'es-MX' : 'en-US', { day: 'numeric', timeZone: timezone })
           return (
-            <div key={dayKey} style={{ display: 'flex', flexDirection: 'column', gap: '8px', minWidth: 0 }}>
+            <div key={dayKey} style={{ display: 'flex', flexDirection: 'column', gap: '10px', minWidth: 0 }}>
               <div style={{
-                padding: '8px 4px 10px',
-                borderBottom: '1px solid var(--avq-border, #e8eaed)',
+                padding: '0 2px 12px',
+                borderBottom: '1px solid var(--avq-border, #f1f3f5)',
+                textAlign: 'left',
               }}>
                 <div style={{
-                  fontSize: '10px', fontWeight: '700', letterSpacing: '0.06em', textTransform: 'uppercase',
-                  color: isToday ? 'var(--avq-accent-text, #4338ca)' : 'var(--avq-muted-fg, #6b7280)',
-                }}>{isToday ? (locale === 'es' ? 'Hoy · ' : 'Today · ') : ''}{dayNames[idx]}</div>
+                  fontSize: '12px', fontWeight: '500',
+                  color: 'var(--avq-muted-fg, #6b7280)',
+                  textTransform: 'capitalize',
+                }}>
+                  {isToday ? (locale === 'es' ? 'Hoy' : 'Today') : dayNames[idx]}
+                </div>
                 <div style={{
-                  fontSize: '17px', fontWeight: '700',
-                  color: isToday ? 'var(--avq-accent-text, #4338ca)' : 'var(--avq-fg, #111827)',
-                  marginTop: '4px', lineHeight: 1,
+                  marginTop: '4px',
+                  display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                  minWidth: '34px', height: '34px',
+                  borderRadius: isToday ? '50%' : 0,
+                  background: isToday ? 'var(--avq-accent, #2563eb)' : 'transparent',
+                  color: isToday ? '#ffffff' : 'var(--avq-fg, #111827)',
+                  fontSize: '20px', fontWeight: '700',
+                  letterSpacing: '-0.02em',
+                  lineHeight: 1,
                 }}>{dayDate}</div>
               </div>
 
               {daySlots.length === 0 ? (
-                <div style={{ padding: '20px 8px', textAlign: 'center', fontSize: '11px', color: 'var(--avq-muted-fg, #9ca3af)' }}>—</div>
+                <div style={{ padding: '20px 8px', textAlign: 'center', fontSize: '11px', color: 'var(--avq-muted-fg, #cbd1d8)' }}>—</div>
               ) : daySlots.map(s => <SessionBlock key={s.classSessionId ?? s.startsAt} slot={s} timezone={timezone} locale={locale} t={t} onSelect={onSelect} />)}
             </div>
           )
@@ -280,16 +274,15 @@ function SessionBlock({
   t: TFunction
   onSelect: (s: PublicClassSessionSlot) => void
 }) {
-  const variant = variantFor(slot)
-  const styles = VARIANT_STYLES[variant]
   const isFull = !slot.available || (slot.remaining ?? 0) === 0
   const remaining = slot.remaining ?? 0
   const lowStock = !isFull && remaining > 0 && remaining <= 3
-  const badgeStyle: h.JSX.CSSProperties = isFull
-    ? { background: '#fee2e2', color: '#b91c1c' }
-    : lowStock
-      ? { background: '#fef3c7', color: '#92400e' }
-      : { background: '#dcfce7', color: '#166534' }
+  // Capacity dot — single visual cue instead of full-width colored card.
+  // Open (green) → low (amber) → full (red). Subtle, top-right of the block.
+  const dotColor = isFull ? '#ef4444' : lowStock ? '#f59e0b' : '#10b981'
+  const instructorName = slot.instructor
+    ? `${slot.instructor.firstName} ${slot.instructor.lastName}`.trim()
+    : null
 
   return (
     <button
@@ -297,48 +290,66 @@ function SessionBlock({
       onClick={() => { if (!isFull) onSelect(slot) }}
       disabled={isFull}
       style={{
+        position: 'relative',
         textAlign: 'left',
         padding: '10px 12px',
-        background: styles.bg,
-        border: `1px solid ${styles.border}`,
+        background: 'var(--avq-bg, #ffffff)',
+        border: '1px solid var(--avq-border, #e8eaed)',
         borderRadius: '10px',
         cursor: isFull ? 'not-allowed' : 'pointer',
-        opacity: isFull ? 0.55 : 1,
-        transition: 'transform 0.12s, box-shadow 0.12s',
+        opacity: isFull ? 0.5 : 1,
+        transition: 'background 0.15s ease, border-color 0.15s ease',
       }}
       onMouseEnter={e => {
         if (!isFull) {
-          (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(-1px)'
-          ;(e.currentTarget as HTMLButtonElement).style.boxShadow = '0 6px 16px rgba(99,102,241,0.18)'
+          (e.currentTarget as HTMLButtonElement).style.background = 'var(--avq-muted, #f8f9fb)'
+          ;(e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--avq-fg, #111827)'
         }
       }}
       onMouseLeave={e => {
-        (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(0)'
-        ;(e.currentTarget as HTMLButtonElement).style.boxShadow = 'none'
+        (e.currentTarget as HTMLButtonElement).style.background = 'var(--avq-bg, #ffffff)'
+        ;(e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--avq-border, #e8eaed)'
       }}
     >
-      <div style={{ fontSize: '11px', fontWeight: '700', color: styles.time, fontVariantNumeric: 'tabular-nums' }}>
+      {/* Capacity dot top-right */}
+      <span
+        aria-hidden="true"
+        title={isFull ? t('classList.fullClass') : t('classList.spotsLeftBadge', { count: remaining })}
+        style={{
+          position: 'absolute', top: '8px', right: '8px',
+          width: '6px', height: '6px', borderRadius: '50%',
+          background: dotColor,
+        }}
+      />
+      <div style={{
+        fontSize: '12px', fontWeight: '700',
+        color: 'var(--avq-fg, #111827)',
+        fontVariantNumeric: 'tabular-nums',
+        paddingRight: '12px',
+      }}>
         {formatTimeOfDay(slot.startsAt, timezone, locale)}
       </div>
-      <div style={{ fontSize: '12px', fontWeight: '600', color: '#111827', marginTop: '3px', lineHeight: 1.25 }}>
+      <div style={{
+        fontSize: '13px', fontWeight: '600',
+        color: 'var(--avq-fg, #111827)',
+        marginTop: '4px', lineHeight: 1.3,
+        overflow: 'hidden', textOverflow: 'ellipsis',
+        display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' as any,
+      }}>
         {slot.productName}
       </div>
-      {slot.instructor && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: '5px', marginTop: '4px', fontSize: '10px', color: '#6b7280' }}>
+      {instructorName && (
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: '5px',
+          marginTop: '6px',
+          fontSize: '11px', color: 'var(--avq-muted-fg, #6b7280)',
+        }}>
           <InstructorAvatar instructor={slot.instructor} size={16} />
           <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {`${slot.instructor.firstName} ${slot.instructor.lastName}`.trim()}
+            {instructorName}
           </span>
         </div>
       )}
-      <span style={{
-        display: 'inline-block', marginTop: '6px',
-        padding: '2px 7px', borderRadius: '999px',
-        fontSize: '9px', fontWeight: '700', letterSpacing: '0.3px',
-        ...badgeStyle,
-      }}>
-        {isFull ? t('classList.fullClass') : t('classList.spotsLeftBadge', { count: remaining })}
-      </span>
     </button>
   )
 }
@@ -405,16 +416,16 @@ function SessionRow({
 
 function navBtnStyle(): h.JSX.CSSProperties {
   return {
-    width: '32px',
-    height: '32px',
-    borderRadius: '8px',
+    width: '36px',
+    height: '36px',
+    borderRadius: '50%',
     border: '1px solid var(--avq-border, #e8eaed)',
     background: 'var(--avq-bg, #ffffff)',
     cursor: 'pointer',
     display: 'inline-flex',
     alignItems: 'center',
     justifyContent: 'center',
-    color: 'var(--avq-muted-fg, #6b7280)',
+    color: 'var(--avq-fg, #111827)',
   }
 }
 

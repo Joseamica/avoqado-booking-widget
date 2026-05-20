@@ -45,6 +45,7 @@ export function ClassDetailView({
     weekday: 'long',
     day: 'numeric',
     month: 'long',
+    year: 'numeric',
     timeZone: timezone,
   }).replace(/^\w/, c => c.toUpperCase())
   const startTime = startDate.toLocaleTimeString(localeStr, {
@@ -79,43 +80,47 @@ export function ClassDetailView({
 
   return (
     <div class="avq-animate-in">
-      {/* Back link */}
-      <button
-        type="button"
-        onClick={onBack}
-        style={{
-          display: 'inline-flex', alignItems: 'center', gap: '6px',
-          padding: '4px 0', marginBottom: '14px',
-          fontSize: '13px', fontWeight: '500',
-          color: 'var(--avq-muted-fg, #6b7280)',
-          background: 'none', border: 'none', cursor: 'pointer',
-        }}
-      >
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="15 18 9 12 15 6"/></svg>
-        {t('actions.goBack')}
-      </button>
-
       <div class="avq-classdetail-layout">
         <div class="avq-classdetail-main">
-          {/* Hero image */}
-          {heroSrc ? (
-            <div style={{
-              width: '100%', aspectRatio: '16/9', maxHeight: '320px',
-              borderRadius: '14px', overflow: 'hidden',
-              backgroundImage: `url('${heroSrc}')`,
-              backgroundSize: 'cover', backgroundPosition: 'center',
-              marginBottom: '20px',
-            }} />
-          ) : null}
+          {/* Breadcrumb — Square: "Todas las clases / nombre". The leftmost
+           * segment is a real button (returns to the listing), the rightmost
+           * is the current class name in black bold. */}
+          <nav aria-label="breadcrumb" style={{
+            display: 'flex', alignItems: 'center', gap: '8px',
+            marginBottom: '14px',
+            fontSize: '13px',
+          }}>
+            <button
+              type="button"
+              onClick={onBack}
+              style={{
+                background: 'none', border: 'none', padding: 0,
+                color: 'var(--avq-muted-fg, #6b7280)',
+                fontSize: '13px', fontWeight: '500',
+                cursor: 'pointer',
+              }}
+              onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.color = 'var(--avq-fg, #111827)' }}
+              onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.color = 'var(--avq-muted-fg, #6b7280)' }}
+            >
+              {t('classDetail.breadcrumbAll')}
+            </button>
+            <span style={{ color: 'var(--avq-muted-fg, #cbd1d8)' }}>/</span>
+            <span style={{
+              color: 'var(--avq-fg, #111827)', fontWeight: '600',
+              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+            }}>
+              {slot.productName}
+            </span>
+          </nav>
 
-          {/* Status pill */}
+          {/* Status pill — kept as-is, Square also uses a green/red pill */}
           <span style={{
             display: 'inline-flex', alignItems: 'center', gap: '6px',
             padding: '4px 10px', borderRadius: '999px',
             background: isFull ? '#fee2e2' : '#dcfce7',
             color: isFull ? '#b91c1c' : '#166534',
-            fontSize: '11px', fontWeight: '700', letterSpacing: '0.3px',
-            marginBottom: '12px',
+            fontSize: '12px', fontWeight: '600',
+            marginBottom: '14px',
           }}>
             <span style={{
               width: '5px', height: '5px', borderRadius: '50%',
@@ -124,103 +129,116 @@ export function ClassDetailView({
             {isFull ? t('classList.fullClass') : t('classList.spotsLeftBadge', { count: remaining })}
           </span>
 
-          {/* Title */}
+          {/* Title — Square uses a big serif-y black. 32px feels right for the
+           * widget's container width. */}
           <h1 style={{
-            margin: '0 0 12px',
-            fontSize: '28px', fontWeight: '700',
-            letterSpacing: '-0.8px', lineHeight: 1.1,
+            margin: '0 0 18px',
+            fontSize: '32px', fontWeight: '700',
+            letterSpacing: '-0.9px', lineHeight: 1.1,
             color: 'var(--avq-fg, #111827)',
           }}>
             {slot.productName}
           </h1>
 
-          {/* Tags */}
-          <div style={{ display: 'flex', gap: '6px', marginBottom: '24px', flexWrap: 'wrap' }}>
-            {product?.type === 'CLASS' && <Tag>{t('service.groupClass')}</Tag>}
-            {product?.duration ? <Tag>{product.duration} min</Tag> : null}
-          </div>
-
-          {/* Meta grid */}
+          {/* Inline meta — Square pattern: price on its own line, date next,
+           * "time — time" next. No card, no icons, no grid. Plain lines. */}
           <div style={{
-            display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px 22px',
-            padding: '18px 20px', background: 'var(--avq-muted, #f8f9fb)',
-            borderRadius: '14px', marginBottom: '24px',
-          }} class="avq-meta-grid">
-            <MetaItem icon={<CalendarIcon />} label={t('classDetail.fecha')} value={dateLabel} />
-            <MetaItem
-              icon={<ClockIcon />}
-              label={t('classDetail.hora')}
-              value={tzShort ? `${startTime} — ${endTime} ${tzShort}` : `${startTime} — ${endTime}`}
-            />
-            {slot.capacity != null && (
-              <MetaItem
-                icon={<UsersIcon />}
-                label={t('classDetail.cupo')}
-                value={`${slot.capacity} ${t('classDetail.peopleMax')} · ${(slot.enrolled ?? 0)} ${t('classDetail.enrolled')}`}
-              />
-            )}
+            display: 'flex', flexDirection: 'column', gap: '4px',
+            marginBottom: '24px',
+            fontSize: '15px', color: 'var(--avq-fg, #111827)',
+          }}>
+            <div style={{ fontWeight: '600' }}>
+              {price > 0 ? formatPrice(price, locale) : t('classDetail.free')}
+            </div>
+            <div>{dateLabel}</div>
+            <div>{tzShort ? `${startTime} – ${endTime} ${tzShort}` : `${startTime} – ${endTime}`}</div>
           </div>
 
-          {/* About */}
+          {/* Optional hero image — kept but smaller (Square doesn't show one,
+           * but if the venue uploaded one it's still useful context). Drops
+           * from before-title to after-meta so the hierarchy reads cleanly. */}
+          {heroSrc ? (
+            <div style={{
+              width: '100%', aspectRatio: '16/9', maxHeight: '220px',
+              borderRadius: '10px', overflow: 'hidden',
+              backgroundImage: `url('${heroSrc}')`,
+              backgroundSize: 'cover', backgroundPosition: 'center',
+              marginBottom: '20px',
+            }} />
+          ) : null}
+
+          {/* Description — short paragraph, gray, no heading (Square also
+           * skips the "About" heading when the description is one-liner). */}
           {product?.description && (
-            <div style={{ marginBottom: '24px' }}>
-              <h2 style={{
-                margin: '0 0 10px', fontSize: '16px', fontWeight: '700',
-                color: 'var(--avq-fg, #111827)',
-              }}>{t('classDetail.about')}</h2>
-              <p style={{
-                margin: 0, fontSize: '14px',
-                color: 'var(--avq-muted-fg, #6b7280)', lineHeight: 1.6,
-                whiteSpace: 'pre-wrap',
-              }}>{product.description}</p>
-            </div>
+            <p style={{
+              margin: '0 0 24px', fontSize: '14px',
+              color: 'var(--avq-muted-fg, #6b7280)', lineHeight: 1.6,
+              whiteSpace: 'pre-wrap',
+            }}>
+              {product.description}
+            </p>
           )}
 
-          {/* Instructor card */}
+          {/* Divider — separates Class block from Staff block (Square pattern) */}
+          <div style={{
+            height: '1px', background: 'var(--avq-border, #e8eaed)',
+            margin: '0 0 22px',
+          }} />
+
+          {/* Staff section — Square: bold heading + avatar circle + name row,
+           * no card / no border. Renders only when an instructor is assigned. */}
           {slot.instructor && (
-            <div style={{
-              display: 'flex', alignItems: 'center', gap: '12px',
-              padding: '14px 16px',
-              background: 'var(--avq-bg, #ffffff)',
-              border: '1px solid var(--avq-border, #e8eaed)',
-              borderRadius: '14px',
-              marginBottom: '24px',
-            }}>
-              <InstructorAvatar instructor={slot.instructor} size={48} />
-              <div style={{ minWidth: 0, flex: 1 }}>
-                <div style={{ fontSize: '14px', fontWeight: '700', color: 'var(--avq-fg, #111827)' }}>
+            <div style={{ marginBottom: '24px' }}>
+              <h2 style={{
+                margin: '0 0 12px', fontSize: '17px', fontWeight: '700',
+                color: 'var(--avq-fg, #111827)', letterSpacing: '-0.01em',
+              }}>
+                {t('classDetail.staff')}
+              </h2>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <InstructorAvatar instructor={slot.instructor} size={40} />
+                <div style={{
+                  fontSize: '15px', fontWeight: '500',
+                  color: 'var(--avq-fg, #111827)',
+                }}>
                   {instructorName}
-                </div>
-                <div style={{ fontSize: '12px', color: 'var(--avq-muted-fg, #6b7280)', marginTop: '2px' }}>
-                  {t('classDetail.aboutInstructor')}
                 </div>
               </div>
             </div>
           )}
         </div>
 
-        {/* Booking card — desktop sticky right rail; mobile renders below */}
+        {/* Booking sidebar — sticky right rail with the CTA + credits/upsell.
+         * Square doesn't have a sidebar here, but we keep one to surface the
+         * pack upsell + credits status (Avoqado pattern, consistent with the
+         * rest of the widget). Price is already shown in the main column so
+         * the sidebar only repeats it as a small caption. */}
         <aside class="avq-classdetail-booking">
           <div style={{
             background: 'var(--avq-bg, #ffffff)',
             border: '1px solid var(--avq-border, #e8eaed)',
-            borderRadius: '16px',
-            padding: '22px',
-            boxShadow: '0 12px 28px rgba(15,15,16,0.06)',
+            borderRadius: '14px',
+            padding: '18px',
           }}>
-            <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px', marginBottom: '4px' }}>
-              <span style={{ fontSize: '26px', fontWeight: '700', letterSpacing: '-0.6px', color: 'var(--avq-fg, #111827)' }}>
-                {price > 0 ? formatPrice(price, locale) : t('payment.payOptionalHint').includes('libre') ? '—' : (t('classDetail.free'))}
+            {/* Caption: "$25 · pago al reservar" — small, gray, single line.
+             * Avoids duplicating the main column's prominent price. */}
+            <div style={{
+              display: 'flex', alignItems: 'baseline', flexWrap: 'wrap', gap: '6px',
+              marginBottom: '6px',
+              fontSize: '13px', color: 'var(--avq-muted-fg, #6b7280)',
+            }}>
+              <span style={{ fontWeight: '600', color: 'var(--avq-fg, #111827)' }}>
+                {price > 0 ? formatPrice(price, locale) : t('classDetail.free')}
               </span>
               {creditCost > 0 && (
-                <span style={{ fontSize: '13px', color: 'var(--avq-muted-fg, #6b7280)' }}>
-                  {creditCost === 1
+                <span>
+                  · {creditCost === 1
                     ? t('classDetail.orOneCredit')
                     : t('classDetail.orNCredits', { count: creditCost })}
                 </span>
               )}
             </div>
-            <p style={{ margin: '0 0 16px', fontSize: '12px', color: 'var(--avq-muted-fg, #6b7280)' }}>
+            <p style={{ margin: '0 0 14px', fontSize: '12px', color: 'var(--avq-muted-fg, #6b7280)', lineHeight: 1.5 }}>
               {upfront === 'required'
                 ? t('classDetail.payAtBooking')
                 : upfront === 'at_venue'
@@ -235,13 +253,14 @@ export function ClassDetailView({
               style={{
                 width: '100%',
                 padding: '14px 16px',
-                background: isFull ? 'var(--avq-muted-fg, #9ca3af)' : 'var(--avq-accent, #6366F1)',
+                background: isFull ? 'var(--avq-muted-fg, #9ca3af)' : 'var(--avq-accent, #2563eb)',
                 color: '#ffffff',
-                fontSize: '14px',
-                fontWeight: '700',
+                fontSize: '15px',
+                fontWeight: '600',
                 border: 0,
                 borderRadius: '12px',
                 cursor: isFull ? 'not-allowed' : 'pointer',
+                transition: 'background 0.15s ease',
               }}
             >
               {requiresCredit
@@ -265,47 +284,7 @@ export function ClassDetailView({
           .avq-classdetail-main > * { min-width: 0; }
           .avq-classdetail-booking { margin-top: 0; position: sticky; top: 24px; }
         }
-        @media (max-width: 480px) {
-          .avq-meta-grid { grid-template-columns: 1fr !important; }
-        }
       `}</style>
-    </div>
-  )
-}
-
-function Tag({ children }: { children: any }) {
-  return (
-    <span style={{
-      padding: '4px 10px',
-      background: 'color-mix(in srgb, var(--avq-accent, #6366f1) 12%, var(--avq-bg, #fff))',
-      color: 'var(--avq-accent, #6366f1)',
-      borderRadius: '6px',
-      fontSize: '11px', fontWeight: '700', letterSpacing: '0.3px',
-      textTransform: 'uppercase',
-    }}>{children}</span>
-  )
-}
-
-function MetaItem({
-  icon,
-  label,
-  value,
-}: {
-  icon: any
-  label: string
-  value: string
-}) {
-  return (
-    <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
-      <span style={{ color: 'var(--avq-muted-fg, #6b7280)', flexShrink: 0, marginTop: '2px' }}>{icon}</span>
-      <div style={{ minWidth: 0 }}>
-        <div style={{ fontSize: '10px', fontWeight: '700', letterSpacing: '0.5px', color: 'var(--avq-muted-fg, #6b7280)', textTransform: 'uppercase' }}>
-          {label}
-        </div>
-        <div style={{ fontSize: '13px', fontWeight: '600', color: 'var(--avq-fg, #111827)', marginTop: '2px' }}>
-          {value}
-        </div>
-      </div>
     </div>
   )
 }
@@ -320,31 +299,3 @@ function formatPrice(amount: number, locale: 'en' | 'es'): string {
   }
 }
 
-function CalendarIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <rect x="3" y="4" width="18" height="18" rx="2" />
-      <line x1="16" y1="2" x2="16" y2="6" />
-      <line x1="8" y1="2" x2="8" y2="6" />
-      <line x1="3" y1="10" x2="21" y2="10" />
-    </svg>
-  )
-}
-function ClockIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <circle cx="12" cy="12" r="10" />
-      <polyline points="12 6 12 12 16 14" />
-    </svg>
-  )
-}
-function UsersIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
-      <circle cx="9" cy="7" r="4" />
-      <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
-      <path d="M16 3.13a4 4 0 0 1 0 7.75" />
-    </svg>
-  )
-}

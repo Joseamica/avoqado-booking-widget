@@ -32,6 +32,14 @@ interface AppointmentSummarySidebarProps {
   /** When provided, an extra "fecha + hora" row renders above the services list. */
   selectedDate?: string | null
   selectedSlot?: PublicSlot | null
+  /** Override the card title ("Resumen de la cita" by default). Used by
+   *  /classes to say "Resumen de la clase" instead. */
+  title?: string
+  /** Override the "N servicios" count label. /classes passes "1 clase" /
+   *  "N clases". When omitted, falls back to the i18n keys. */
+  countLabel?: string
+  /** Override "A pagar en la cita" → "A pagar en el estudio" for classes. */
+  dueAtVenueLabel?: string
   /** When set, the bottom CTA renders. Without this prop the sidebar is read-only
    *  (used on payment + confirmation, where the action lives elsewhere). */
   onNext?: () => void
@@ -60,6 +68,9 @@ export function AppointmentSummarySidebar({
   totalDuration,
   selectedDate,
   selectedSlot,
+  title,
+  countLabel: countLabelOverride,
+  dueAtVenueLabel,
   onNext,
   nextDisabled = false,
   nextLabel,
@@ -82,9 +93,10 @@ export function AppointmentSummarySidebar({
       ? `${hasVariable ? '+' : ''}${formatPriceMXN(totalPrice)}`
       : t('summary.variablePrice')
 
-  const countLabel = products.length === 1
-    ? t('summary.servicesCount_one', { count: 1 })
-    : t('summary.servicesCount', { count: products.length })
+  const countLabel = countLabelOverride
+    ?? (products.length === 1
+      ? t('summary.servicesCount_one', { count: 1 })
+      : t('summary.servicesCount', { count: products.length }))
 
   // Compose a single "lunes 18 de mayo · 14:30" line when the customer has
   // already picked both date and slot. Date-only renders without a time.
@@ -93,9 +105,13 @@ export function AppointmentSummarySidebar({
     const d = new Date(selectedSlot.startsAt)
     if (!Number.isNaN(d.getTime())) {
       try {
+        // Intl in es-MX returns "martes, 19 de mayo". Capitalize only the
+        // first letter so it reads "Martes, 19 de mayo" — using
+        // textTransform: capitalize on the render side would also uppercase
+        // "De Mayo", which Spanish convention rejects.
         const datePart = new Intl.DateTimeFormat('es-MX', {
           weekday: 'long', day: 'numeric', month: 'long',
-        }).format(d)
+        }).format(d).replace(/^\w/, c => c.toUpperCase())
         const timePart = new Intl.DateTimeFormat('es-MX', {
           hour: '2-digit', minute: '2-digit', hour12: false,
         }).format(d)
@@ -110,7 +126,7 @@ export function AppointmentSummarySidebar({
       try {
         scheduleLabel = new Intl.DateTimeFormat('es-MX', {
           weekday: 'long', day: 'numeric', month: 'long',
-        }).format(d)
+        }).format(d).replace(/^\w/, c => c.toUpperCase())
       } catch {
         scheduleLabel = selectedDate
       }
@@ -123,7 +139,7 @@ export function AppointmentSummarySidebar({
         margin: 0, fontSize: '17px', fontWeight: '700',
         color: 'var(--avq-fg, #111827)', letterSpacing: '-0.3px',
       }}>
-        {t('summary.title')}
+        {title ?? t('summary.title')}
       </h3>
 
       {/* Card */}
@@ -190,7 +206,6 @@ export function AppointmentSummarySidebar({
                     </svg>
                     <span style={{
                       fontSize: '13px', color: 'var(--avq-fg, #111827)',
-                      textTransform: 'capitalize',
                     }}>
                       {scheduleLabel}
                     </span>
@@ -234,7 +249,7 @@ export function AppointmentSummarySidebar({
             bold
           />
           <TotalRow
-            label={t('summary.dueAtVenue')}
+            label={dueAtVenueLabel ?? t('summary.dueAtVenue')}
             value={dueAtVenue != null ? `${hasVariable ? '+' : ''}${formatPriceMXN(dueAtVenue)}` : '—'}
             muted
           />

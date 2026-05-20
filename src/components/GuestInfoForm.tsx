@@ -38,6 +38,10 @@ interface GuestInfoFormProps {
    *  the form without rendering the button inside it. The fn always sees
    *  the latest field state thanks to a ref pointer kept in sync each render. */
   registerSubmit?: (fn: (() => void) | null) => void
+  /** When true, the party-size field is omitted from the rendered form and
+   *  fixed at 1 in the payload. Used by /classes (one spot per booking) and
+   *  any future flow where party size doesn't apply. */
+  hidePartySize?: boolean
 }
 
 function createSchema(requireEmail: boolean, requirePhone: boolean) {
@@ -54,7 +58,7 @@ function createSchema(requireEmail: boolean, requirePhone: boolean) {
   })
 }
 
-export function GuestInfoForm({ venueInfo, selectedSlot, selectedSpotCount, onSubmit, isSubmitting, t, loggedInCustomer, hideSubmitButton, registerSubmit }: GuestInfoFormProps) {
+export function GuestInfoForm({ venueInfo, selectedSlot, selectedSpotCount, onSubmit, isSubmitting, t, loggedInCustomer, hideSubmitButton, registerSubmit, hidePartySize }: GuestInfoFormProps) {
   const [phone, setPhone] = useState('')
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
@@ -229,8 +233,9 @@ export function GuestInfoForm({ venueInfo, selectedSlot, selectedSpotCount, onSu
           </div>
         ) : null}
 
-        {/* Party size — hidden when spots were pre-selected */}
-        {selectedSpotCount && selectedSpotCount > 0 ? (
+        {/* Party size — hidden when spots were pre-selected OR when
+         *  hidePartySize is set (e.g. /classes flow: one spot per booking). */}
+        {hidePartySize ? null : selectedSpotCount && selectedSpotCount > 0 ? (
           <div style={{
             padding: '12px 16px', borderRadius: '10px',
             background: 'color-mix(in srgb, var(--avq-accent, #6366f1) 6%, var(--avq-bg, #fff))',

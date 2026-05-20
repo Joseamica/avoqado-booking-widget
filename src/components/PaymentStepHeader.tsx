@@ -7,6 +7,9 @@ interface PaymentStepHeaderProps {
   /** Called when the countdown reaches zero. The parent typically routes the
    *  customer back to the time-slot picker with a "slot expired" toast. */
   onExpired?: () => void
+  /** Subject of the hold — "cita" by default, "clase" in /classes flow.
+   *  Drives the "Cita reservada / Clase reservada durante 9:56" copy. */
+  kind?: 'appointment' | 'class'
 }
 
 /**
@@ -20,7 +23,7 @@ interface PaymentStepHeaderProps {
  * TODO(jose): when POST /reservations/hold ships, hydrate slotHoldExpiresAt
  * from the server response and remove the visual-only fallback below.
  */
-export function PaymentStepHeader({ locale, onExpired }: PaymentStepHeaderProps) {
+export function PaymentStepHeader({ locale, onExpired, kind = 'appointment' }: PaymentStepHeaderProps) {
   const [secondsLeft, setSecondsLeft] = useState<number>(0)
 
   useEffect(() => {
@@ -50,9 +53,11 @@ export function PaymentStepHeader({ locale, onExpired }: PaymentStepHeaderProps)
   const ss = String(secondsLeft % 60).padStart(2, '0')
 
   const titleText = locale === 'en' ? 'Checkout' : 'Proceso de pago'
+  const subjectEn = kind === 'class' ? 'Class' : 'Appointment'
+  const subjectEs = kind === 'class' ? 'Clase reservada' : 'Cita reservada'
   const holdText = locale === 'en'
-    ? `Appointment held for ${mm}:${ss}`
-    : `Cita reservada durante ${mm}:${ss}`
+    ? `${subjectEn} held for ${mm}:${ss}`
+    : `${subjectEs} durante ${mm}:${ss}`
 
   return (
     <div style={{ textAlign: 'center', marginBottom: '24px' }}>

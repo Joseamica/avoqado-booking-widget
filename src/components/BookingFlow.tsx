@@ -1748,10 +1748,11 @@ export function BookingFlow({ props }: BookingFlowProps) {
                        * updater that returns the fn we actually want kept.
                        * Without this wrap, formSubmitFn ends up `undefined`
                        * and the sidebar's "Reserva cita" never enables. */
-                      hideSubmitButton={flowType.value === 'appointments'}
-                      registerSubmit={flowType.value === 'appointments'
+                      hideSubmitButton={flowType.value === 'appointments' || flowType.value === 'classes'}
+                      registerSubmit={flowType.value === 'appointments' || flowType.value === 'classes'
                         ? (fn) => setFormSubmitFn(() => fn)
                         : undefined}
+                      hidePartySize={flowType.value === 'classes'}
                     />
                   </>
                 )
@@ -1856,16 +1857,23 @@ export function BookingFlow({ props }: BookingFlowProps) {
             </>
           )
 
-          if (flowType.value !== 'appointments') {
+          if (flowType.value !== 'appointments' && flowType.value !== 'classes') {
             return formStepBody
           }
 
-          // Square /appointments: header + 2-col layout with Resumen sidebar.
-          // The slot-hold countdown is visual-only for now — wire to the real
-          // backend hold endpoint (POST /reservations/hold) once it ships and
-          // hydrate slotHoldExpiresAt in state.
+          // Square /appointments + /classes: header + 2-col layout with
+          // Resumen sidebar. The slot-hold countdown is visual-only for now —
+          // wire to the real backend hold endpoint (POST /reservations/hold)
+          // once it ships and hydrate slotHoldExpiresAt in state.
+          //
+          // For /classes the customer picked a single class via the detail
+          // view (sets selectedProduct, not selectedProducts), so derive the
+          // sidebar products array from either source.
+          const sidebarProducts = selectedProducts.value.length > 0
+            ? selectedProducts.value
+            : (selectedProduct.value ? [selectedProduct.value] : [])
           const subtotal = totalPrice.value
-          const hasVariable = selectedProducts.value.some(p => p.price == null)
+          const hasVariable = sidebarProducts.some(p => p.price == null)
           const variableNote = hasVariable
             ? (props.locale === 'en'
                 ? 'This appointment includes a service with variable pricing. The amount will be set at the venue and is not included in the total.'
@@ -1901,6 +1909,7 @@ export function BookingFlow({ props }: BookingFlowProps) {
               <div class="avq-appts-main">
                 <PaymentStepHeader
                   locale={props.locale}
+                  kind={flowType.value === 'classes' ? 'class' : 'appointment'}
                   onExpired={() => {
                     // Hold TTL hit zero. The slot is no longer guaranteed —
                     // someone else could grab it. Send the customer back to
@@ -1925,7 +1934,7 @@ export function BookingFlow({ props }: BookingFlowProps) {
               </div>
               <aside class="avq-appts-sidebar">
                 <AppointmentSummarySidebar
-                  products={selectedProducts.value}
+                  products={sidebarProducts}
                   totalPrice={totalPrice.value}
                   totalDuration={totalDuration.value}
                   selectedDate={selectedDate.value}
@@ -1955,8 +1964,19 @@ export function BookingFlow({ props }: BookingFlowProps) {
                    * If the inline payment picker is visible, the customer
                    * must commit a choice before the button enables. */
                   onNext={formSubmitFn ?? undefined}
-                  nextLabel={t('summary.reserveAppointment')}
+                  nextLabel={flowType.value === 'classes'
+                    ? (props.locale === 'en' ? 'Book class' : 'Reservar clase')
+                    : t('summary.reserveAppointment')}
                   nextDisabled={isLoading.value || !formSubmitFn || (paymentPickerVisible && !inlinePayment)}
+                  title={flowType.value === 'classes'
+                    ? (props.locale === 'en' ? 'Class summary' : 'Resumen de la clase')
+                    : undefined}
+                  countLabel={flowType.value === 'classes' && sidebarProducts.length === 1
+                    ? (props.locale === 'en' ? '1 class' : '1 clase')
+                    : undefined}
+                  dueAtVenueLabel={flowType.value === 'classes'
+                    ? (props.locale === 'en' ? 'Pay at venue' : 'A pagar en el estudio')
+                    : undefined}
                   t={t}
                 />
               </aside>

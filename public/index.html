@@ -925,13 +925,23 @@
         })
 
         // Apply the venue brand color to the host page chrome (topnav "Mi
-        // Cuenta" CTA, active tab underline, drawer links). Only honor it
-        // when the URL didn't already pin an accent-color override and the
-        // venue value looks like a CSS color — defensive against bad data.
+        // Cuenta" CTA, active tab underline, drawer links) AND propagate it
+        // to the widget element so the booking flow (CTAs, badges, links)
+        // also picks up the venue's color. Only honor it when the URL didn't
+        // already pin an accent-color override and the venue value looks
+        // like a CSS color — defensive against bad data.
         var urlAccent = params.get('accent-color')
         var brand = info.primaryColor
         if (!urlAccent && typeof brand === 'string' && /^(#|rgb|hsl|oklch|color\()/i.test(brand.trim())) {
-          document.documentElement.style.setProperty('--accent', brand.trim())
+          var trimmed = brand.trim()
+          document.documentElement.style.setProperty('--accent', trimmed)
+          // Widget reads `accent-color` HTML attribute → maps to --avq-accent
+          // CSS token (see App.tsx). Without this line /clases and
+          // /appointments ignored the venue admin's primaryColor and used the
+          // hardcoded default blue.
+          if (el && typeof el.setAttribute === 'function') {
+            el.setAttribute('accent-color', trimmed)
+          }
         }
 
         // Wide marketing logo. When the venue has `logoFull` we replace the

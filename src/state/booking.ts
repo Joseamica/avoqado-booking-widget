@@ -179,7 +179,10 @@ export const totalPrice = computed<number | null>(() => {
   if (products.length === 0) {
     const p = selectedProduct.value
     if (p == null) return modifierTotal === 0 ? null : modifierTotal
-    return p.price == null ? null : p.price + modifierTotal
+    // Coerce: Prisma Decimal serializes as a string ("350"), so `+` would
+    // string-concat with modifierTotal — gave "$3,500" on the /classes
+    // checkout for a $350 class.
+    return p.price == null ? null : Number(p.price) + modifierTotal
   }
   let sum = 0
   for (const p of products) {

@@ -347,24 +347,36 @@ export function ClassSessionList({ venueSlug, timezone, onSelect, onExit, venueP
             {t('classList.subtitle')}
           </p>
         </div>
+        {/* Square-style "Display | List/Calendar" pill — outline-only, neutral
+         * surface, no icons. Active state inverts to dark fill. */}
         <div style={{
-          display: 'inline-flex', padding: '3px',
-          background: 'var(--avq-muted, #f3f4f6)',
+          display: 'inline-flex', alignItems: 'center',
+          padding: '4px',
+          background: 'var(--avq-bg, #ffffff)',
           border: '1px solid var(--avq-border, #e8eaed)',
-          borderRadius: '999px',
+          borderRadius: '8px',
+          gap: '2px',
         }}>
-          <ToggleBtn active={view === 'list'} onClick={() => pickView('list')} label={t('classList.viewList')}>
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
-          </ToggleBtn>
-          <ToggleBtn active={view === 'calendar'} onClick={() => pickView('calendar')} label={t('classList.viewCalendar')}>
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
-          </ToggleBtn>
+          <span style={{
+            padding: '0 8px 0 6px',
+            fontSize: '12px', fontWeight: '600',
+            color: 'var(--avq-muted-fg, #6b7280)',
+          }}>
+            {t('classList.viewLabel') /* falls back gracefully if key absent */}
+          </span>
+          <ToggleBtn active={view === 'list'} onClick={() => pickView('list')} label={t('classList.viewList')} />
+          <ToggleBtn active={view === 'calendar'} onClick={() => pickView('calendar')} label={t('classList.viewCalendar')} />
         </div>
       </div>
 
-      {/* Filter chips with dropdowns */}
-      <div style={{ margin: '0 -16px 18px', overflowX: 'auto', WebkitOverflowScrolling: 'touch', position: 'relative' }}>
-        <div style={{ display: 'flex', gap: '8px', padding: '0 16px 4px' }}>
+      {/* Filter chips with dropdowns. Container used to have overflowX:auto
+       * for horizontal scroll on narrow viewports, but the CSS spec quirk
+       * "any non-visible overflow on one axis also clips the other axis"
+       * was clipping the dropdown menu below each chip. Switched to
+       * flex-wrap so chips wrap on small widths and the dropdown is free
+       * to render outside the row. */}
+      <div style={{ margin: '0 0 18px', position: 'relative' }}>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', padding: '0 0 4px' }}>
           <FilterChip
             label={classFilter || t('classList.filterClasses')}
             active={Boolean(classFilter)}
@@ -673,12 +685,10 @@ function ToggleBtn({
   active,
   onClick,
   label,
-  children,
 }: {
   active: boolean
   onClick: () => void
   label: string
-  children: any
 }) {
   return (
     <button
@@ -689,18 +699,15 @@ function ToggleBtn({
       style={{
         border: 0,
         background: active ? 'var(--avq-fg, #111827)' : 'transparent',
-        color: active ? 'var(--avq-bg, #ffffff)' : 'var(--avq-muted-fg, #6b7280)',
-        padding: '6px 12px',
+        color: active ? 'var(--avq-bg, #ffffff)' : 'var(--avq-fg, #111827)',
+        padding: '5px 12px',
         fontSize: '12px',
-        fontWeight: '600',
+        fontWeight: active ? '600' : '500',
         cursor: 'pointer',
-        borderRadius: '999px',
-        display: 'inline-flex',
-        alignItems: 'center',
-        gap: '5px',
+        borderRadius: '6px',
+        transition: 'background 0.15s ease, color 0.15s ease',
       }}
     >
-      {children}
       {label}
     </button>
   )

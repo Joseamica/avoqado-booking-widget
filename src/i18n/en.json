@@ -218,7 +218,9 @@
     "payAtVenue": "Pay when you arrive",
     "payOptional": "Pay now or on arrival",
     "bookCta": "Reserve spot",
-    "bookWithCredit": "Reserve with credits"
+    "bookWithCredit": "Reserve with credits",
+    "breadcrumbAll": "All classes",
+    "staff": "Staff"
   },
   "classList": {
     "title": "Upcoming classes",
@@ -237,6 +239,7 @@
     "spotsLeftBadge_one": "{{count}} spot left",
     "withInstructor": "with {{name}}",
     "noInstructor": "No instructor assigned",
+    "viewLabel": "Display",
     "viewList": "List",
     "viewCalendar": "Calendar",
     "filterClasses": "All classes",
