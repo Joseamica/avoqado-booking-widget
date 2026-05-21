@@ -326,6 +326,11 @@ export interface WidgetProps {
    *  rendered inside BookingFlow. Set when the host page (e.g. book.avoqado.io)
    *  already shows the brand in its own topnav, avoiding double-display. */
   hideVenueHeader?: boolean
+  /** Suppress the venue-chat FAB inside the widget shadow DOM. The host page
+   *  (book.avoqado.io) renders its own "Text us"-style FAB and triggers the
+   *  modal via the `avoqado:open-chat` window event; third-party embeds keep
+   *  the shadow-DOM FAB so chat works without a host-page button. */
+  hideChatFab?: boolean
   hostElement: HTMLElement
 }
 

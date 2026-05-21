@@ -399,7 +399,7 @@
       position: fixed;
       right: clamp(16px, 3vw, 24px);
       bottom: clamp(16px, 3vw, 24px);
-      display: none;
+      display: inline-flex;
       align-items: center;
       gap: 8px;
       padding: 12px 18px;
@@ -414,9 +414,8 @@
       z-index: 60;
       font-family: inherit;
     }
-    body.flow-appointments .textus-fab { display: inline-flex; }
     .textus-fab:hover { box-shadow: 0 10px 28px rgba(15,15,16,0.18); transform: translateY(-1px); }
-    .textus-fab svg { width: 18px; height: 18px; }
+    .textus-fab svg { width: 18px; height: 18px; flex-shrink: 0; }
 
     .textus-modal-overlay {
       position: fixed; inset: 0;
@@ -606,10 +605,15 @@
     </div>
   </div>
 
-  <!-- Floating "Envíanos un mensaje" lives inside the widget's shadow DOM
-       (VenueChatModal) — the host-page stub that used to be here was removed
-       because the widget delivers a real backend-wired chat across every flow
-       (landing / appointments / classes), not just /appointments. -->
+  <!-- "Text us" floating button — visible across landing, appointments, and
+       classes. Click dispatches `avoqado:open-chat` on window; the widget
+       (VenueChatModal, inside the shadow DOM) listens for it and opens the
+       real backend-wired chat. The widget's own shadow-DOM FAB is suppressed
+       via the `hide-chat-fab` attribute so we never render two buttons. -->
+  <button class="textus-fab" id="textus-fab" type="button" aria-label="Envíanos un mensaje">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+    <span>Envíanos un mensaje</span>
+  </button>
 
 <div class="page">
     <div class="shell">
@@ -704,11 +708,17 @@
         }
       })
 
-      // The drawer "Envíanos un SMS" row is now a passive informational row —
-      // the live chat lives in the widget FAB (VenueChatModal). Hide the row
-      // entirely to avoid pointing at a non-existent host-page modal.
+      // "Envíanos un mensaje" FAB + drawer row → opens the widget's real
+       // venue-chat modal (lives inside the shadow DOM) by dispatching a
+       // window event that VenueChatModal listens for.
+      function openVenueChat() {
+        window.dispatchEvent(new CustomEvent('avoqado:open-chat'))
+        if (drawer.classList.contains('open')) closeDrawer()
+      }
+      var textusFab = document.getElementById('textus-fab')
+      if (textusFab) textusFab.addEventListener('click', openVenueChat)
       var drawerTextus = document.getElementById('drawer-textus-row')
-      if (drawerTextus) drawerTextus.hidden = true
+      if (drawerTextus) drawerTextus.addEventListener('click', openVenueChat)
 
       // ----- Body flow class sync on client-side navigation ----------------
       // The widget pushes URL state when the customer enters appointments/
@@ -747,6 +757,11 @@
       // suppress the widget's inline venue header to avoid duplication.
       // External embeds (without our topnav) keep their own header.
       el.setAttribute('hide-venue-header', 'true')
+      // Host-page renders its own "Envíanos un mensaje" FAB in the light DOM
+      // (see #textus-fab + the click handler that dispatches
+      // `avoqado:open-chat`); the widget's internal shadow-DOM FAB would be
+      // a visual duplicate, so we suppress it here.
+      el.setAttribute('hide-chat-fab', 'true')
       // Square-style /appointments forces light theme regardless of system
       // preference; everything else honors auto. We set this BEFORE attaching
       // the element so the first paint is already light.

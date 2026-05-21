@@ -49,7 +49,13 @@ export default function App(props: WidgetProps) {
         <BookingFlow props={props} />
       </div>
       <Toast />
-      <VenueChatModal venueSlug={props.venue} venuePhone={venuePhone} flowOrigin={flowOrigin} locale={props.locale} />
+      <VenueChatModal
+        venueSlug={props.venue}
+        venuePhone={venuePhone}
+        flowOrigin={flowOrigin}
+        locale={props.locale}
+        hideFab={props.hideChatFab}
+      />
     </div>
   )
 }

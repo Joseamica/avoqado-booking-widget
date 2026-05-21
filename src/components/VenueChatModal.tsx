@@ -18,6 +18,10 @@ interface Props {
   // i18n-lite: the widget already chose a locale upstream; we accept Spanish
   // by default and let the parent override if it ever localizes the FAB.
   locale?: 'es' | 'en'
+  /** Hide the in-shadow-DOM FAB. Host pages (book.avoqado.io) render their
+   *  own "Text us" pill in the light DOM and open the modal via the
+   *  `avoqado:open-chat` window event. */
+  hideFab?: boolean
 }
 
 // Sticky FAB bottom-right that opens a venue chat modal. The modal hosts a
@@ -25,7 +29,7 @@ interface Props {
 // message, flips to a chat view that polls the server every 5s while
 // visible. Persists session+token to localStorage so refreshing the page
 // preserves the conversation.
-export function VenueChatModal({ venueSlug, venuePhone, flowOrigin = 'appointments' }: Props) {
+export function VenueChatModal({ venueSlug, venuePhone, flowOrigin = 'appointments', hideFab = false }: Props) {
   const [state, setState] = useState<ModalState>({ kind: 'closed' })
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [submitting, setSubmitting] = useState(false)
@@ -54,6 +58,16 @@ export function VenueChatModal({ venueSlug, venuePhone, flowOrigin = 'appointmen
     }
   }, [state.kind, venueSlug])
 
+  // External trigger: host pages (book.avoqado.io) render their own FAB in
+  // the light DOM and dispatch this window event to open the modal that lives
+  // inside the shadow DOM. Listening on window lets us cross the shadow
+  // boundary without exposing a programmatic API surface.
+  useEffect(() => {
+    const onOpen = () => openModal()
+    window.addEventListener('avoqado:open-chat', onOpen)
+    return () => window.removeEventListener('avoqado:open-chat', onOpen)
+  }, [openModal])
+
   const closeModal = useCallback(() => {
     setState({ kind: 'closed' })
     setError(null)
@@ -61,7 +75,7 @@ export function VenueChatModal({ venueSlug, venuePhone, flowOrigin = 'appointmen
 
   return (
     <div class="avq-chat-root">
-      {state.kind === 'closed' || state.kind === 'closed_session' ? (
+      {!hideFab && (state.kind === 'closed' || state.kind === 'closed_session') ? (
         <button type="button" class="avq-chat-fab" onClick={openModal} aria-label="Envíanos un mensaje">
           <span class="avq-chat-fab-icon" aria-hidden="true">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
