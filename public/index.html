@@ -606,36 +606,12 @@
     </div>
   </div>
 
-  <!-- Text us floating button — visible only on /appointments via CSS.
-       TODO: wire form submission to real SMS/contact-message backend.
-       For now the form validates input and triggers a confirmation toast,
-       but never actually sends anything. -->
-  <button class="textus-fab" id="textus-fab" type="button" aria-label="Envíanos un mensaje">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-    <span>Text us</span>
-  </button>
+  <!-- Floating "Envíanos un mensaje" lives inside the widget's shadow DOM
+       (VenueChatModal) — the host-page stub that used to be here was removed
+       because the widget delivers a real backend-wired chat across every flow
+       (landing / appointments / classes), not just /appointments. -->
 
-  <div class="textus-modal-overlay" id="textus-modal-overlay" role="dialog" aria-modal="true" aria-labelledby="textus-title">
-    <div class="textus-modal">
-      <button class="textus-close" id="textus-close" type="button" aria-label="Cerrar">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-      </button>
-      <div class="textus-icon-wrap" aria-hidden="true">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21l1.65-3.8a9 9 0 1 1 3.4 2.9L3 21"/><line x1="9" y1="10" x2="15" y2="10"/><line x1="9" y1="14" x2="13" y2="14"/></svg>
-      </div>
-      <h3 class="textus-title" id="textus-title">Envíanos un mensaje</h3>
-      <p class="textus-subtitle" id="textus-subtitle">Te responderemos lo antes posible</p>
-      <input class="textus-input" type="text" id="textus-name" placeholder="Nombre" autocomplete="name">
-      <input class="textus-input" type="tel" id="textus-phone" placeholder="Número de teléfono" autocomplete="tel">
-      <textarea class="textus-input" id="textus-message" placeholder="Mensaje"></textarea>
-      <p class="textus-legal">
-        Al enviar este mensaje aceptas recibir respuestas por SMS de este negocio. Pueden aplicar tarifas estándar.
-      </p>
-      <button class="textus-submit" id="textus-submit" type="button" disabled>Enviar mensaje</button>
-    </div>
-  </div>
-
-  <div class="page">
+<div class="page">
     <div class="shell">
       <main id="mount" tabindex="-1">
         <div class="loading">Cargando…</div>
@@ -725,60 +701,43 @@
       document.addEventListener('keydown', function (e) {
         if (e.key === 'Escape') {
           if (drawer.classList.contains('open')) closeDrawer()
-          if (textusOverlay.classList.contains('open')) closeTextus()
         }
       })
 
-      // ----- Text us modal --------------------------------------------------
-      // The submit handler is a UI stub. Real SMS/contact integration goes in
-      // a follow-up — wire it to a backend endpoint (POST /venues/:slug/contact
-      // or a Twilio relay) and replace the alert below.
-      var textusFab = document.getElementById('textus-fab')
-      var textusOverlay = document.getElementById('textus-modal-overlay')
-      var textusClose = document.getElementById('textus-close')
-      var textusName = document.getElementById('textus-name')
-      var textusPhone = document.getElementById('textus-phone')
-      var textusMessage = document.getElementById('textus-message')
-      var textusSubmit = document.getElementById('textus-submit')
-
-      function openTextus() {
-        textusOverlay.classList.add('open')
-        if (drawer.classList.contains('open')) closeDrawer()
-        setTimeout(function () { textusName.focus() }, 50)
-      }
-      function closeTextus() { textusOverlay.classList.remove('open') }
-      function textusValid() {
-        return textusName.value.trim().length > 0 &&
-               textusPhone.value.trim().length > 0 &&
-               textusMessage.value.trim().length > 0
-      }
-      function syncTextusSubmit() {
-        textusSubmit.classList.toggle('is-active', textusValid())
-        textusSubmit.disabled = !textusValid()
-      }
-      textusFab.addEventListener('click', openTextus)
-      textusClose.addEventListener('click', closeTextus)
-      textusOverlay.addEventListener('click', function (e) {
-        if (e.target === textusOverlay) closeTextus()
-      })
-      ;[textusName, textusPhone, textusMessage].forEach(function (input) {
-        input.addEventListener('input', syncTextusSubmit)
-      })
-      textusSubmit.addEventListener('click', function () {
-        if (!textusValid()) return
-        // TODO(jose): wire this to the real venue contact endpoint when it lands.
-        // Until then we acknowledge optimistically so the UX feels live during QA.
-        alert('Mensaje enviado. (UI stub — falta integración real con SMS).')
-        textusName.value = ''
-        textusPhone.value = ''
-        textusMessage.value = ''
-        syncTextusSubmit()
-        closeTextus()
-      })
-
-      // Bottom-of-drawer "Envíanos un SMS" row also opens the modal.
+      // The drawer "Envíanos un SMS" row is now a passive informational row —
+      // the live chat lives in the widget FAB (VenueChatModal). Hide the row
+      // entirely to avoid pointing at a non-existent host-page modal.
       var drawerTextus = document.getElementById('drawer-textus-row')
-      if (drawerTextus) drawerTextus.addEventListener('click', openTextus)
+      if (drawerTextus) drawerTextus.hidden = true
+
+      // ----- Body flow class sync on client-side navigation ----------------
+      // The widget pushes URL state when the customer enters appointments/
+      // classes from the unified landing (BookingFlow → pushState). Without
+      // this watcher the host page chrome (topnav active link, drawer mode,
+      // shell max-width) stays locked to whatever the URL was at first paint
+      // — which is why /appointments looked narrow until a manual refresh.
+      function syncFlowFromUrl() {
+        var parts = window.location.pathname.replace(/^\/+|\/+$/g, '').split('/').filter(Boolean)
+        var nextFlow = parts[1] || ''
+        document.body.classList.toggle('flow-appointments', nextFlow === 'appointments')
+        document.body.classList.toggle('flow-classes', nextFlow === 'classes')
+        flowType = nextFlow
+        activeNow = activeRoute()
+        applyActive(nav)
+        applyActive(drawer)
+      }
+      window.addEventListener('popstate', syncFlowFromUrl)
+      // pushState/replaceState don't emit events natively — patch them so we
+      // can react when the widget changes the URL without a reload.
+      ;['pushState', 'replaceState'].forEach(function (method) {
+        var original = history[method]
+        history[method] = function () {
+          var result = original.apply(this, arguments)
+          window.dispatchEvent(new Event('avq:locationchange'))
+          return result
+        }
+      })
+      window.addEventListener('avq:locationchange', syncFlowFromUrl)
 
       // ----- Widget mount ---------------------------------------------------
       var el = document.createElement('avoqado-booking')

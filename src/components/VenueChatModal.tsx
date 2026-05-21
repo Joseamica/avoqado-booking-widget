@@ -64,7 +64,9 @@ export function VenueChatModal({ venueSlug, venuePhone, flowOrigin = 'appointmen
       {state.kind === 'closed' || state.kind === 'closed_session' ? (
         <button type="button" class="avq-chat-fab" onClick={openModal} aria-label="Envíanos un mensaje">
           <span class="avq-chat-fab-icon" aria-hidden="true">
-            💬
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+            </svg>
           </span>
           <span class="avq-chat-fab-label">Envíanos un mensaje</span>
         </button>
