@@ -84,8 +84,12 @@ export const SHARED_CSS = `
   .max-w-lg { max-width: 32rem; }
   /* Wide container for /classes view — desktop calendar grid + sidebar need room. */
   .avq-wide { max-width: 1100px; }
-  /* Mid-width container for /appointments — wizard column + venue sidebar. */
-  .avq-mid { max-width: 880px; }
+  /* Wide container for /appointments — wizard column + venue sidebar. Must
+     match the host page's body.flow-appointments .shell width (1180px in
+     public/index.html); when this was 880px it clamped the layout to a narrow
+     island and the wider shell did nothing — the wizard looked cramped on
+     desktop. Keep the two values in sync. */
+  .avq-mid { max-width: 1180px; }
   .mx-auto { margin-left: auto; margin-right: auto; }
   .mb-2 { margin-bottom: 0.5rem; }
   .mb-3 { margin-bottom: 0.75rem; }

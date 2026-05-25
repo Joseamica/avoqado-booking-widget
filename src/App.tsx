@@ -9,9 +9,11 @@ import { getVenueInfo } from './api/booking'
 export default function App(props: WidgetProps) {
   // The default container max-width keeps the booking flow narrow + focused.
   // /classes widens to 1100px (calendar grid + sidebar). /appointments widens
-  // modestly to ~880px so the wizard step content + venue sidebar both have
-  // room on desktop. The host page (book.avoqado.io) widens its outer .shell
-  // accordingly via body.flow-classes / body.flow-appointments.
+  // to 1180px so the wizard step content + venue sidebar both have room on
+  // desktop. Each width must match the host page's outer .shell for that flow
+  // (book.avoqado.io sets body.flow-classes/.flow-appointments .shell to the
+  // same px in public/index.html) — otherwise the narrower of the two clamps
+  // the layout and the extra shell width does nothing.
   const widthClass =
     props.flowType === 'classes'
       ? 'avq-wide'
