@@ -2,6 +2,7 @@ import { h } from 'preact'
 import { useEffect, useMemo, useState } from 'preact/hooks'
 import type { Product } from '../types'
 import type { TFunction } from '../i18n'
+import { branding } from '../state/booking'
 
 /** Format MXN with thousand separators ("$6,962" not "$6962"). Drops cents to
  *  keep service-list rows scannable. */
@@ -386,8 +387,9 @@ function ServiceRow({
 }) {
   const [isHov, setIsHov] = useState(false)
 
+  const { showPrices, showDuration, showDescriptions } = branding.value
   const priceLabel = product.price == null ? t('summary.variablePrice') : formatPriceMXN(Number(product.price))
-  const durationLabel = product.duration ? t('service.duration', { min: product.duration }) : null
+  const durationLabel = showDuration && product.duration ? t('service.duration', { min: product.duration }) : null
 
   return (
     <button
@@ -448,7 +450,7 @@ function ServiceRow({
         )}
       </div>
 
-      {product.description && (
+      {showDescriptions && product.description && (
         <p
           style={{
             margin: 0,
@@ -476,17 +478,19 @@ function ServiceRow({
           marginTop: '2px',
         }}
       >
-        <span
-          style={{
-            fontWeight: '500',
-            color: product.price == null ? 'var(--avq-muted-fg, #6b7280)' : 'var(--avq-fg, #111827)',
-          }}
-        >
-          {priceLabel}
-        </span>
+        {showPrices && (
+          <span
+            style={{
+              fontWeight: '500',
+              color: product.price == null ? 'var(--avq-muted-fg, #6b7280)' : 'var(--avq-fg, #111827)',
+            }}
+          >
+            {priceLabel}
+          </span>
+        )}
         {durationLabel && (
           <>
-            <span aria-hidden="true">·</span>
+            {showPrices && <span aria-hidden="true">·</span>}
             <span>{durationLabel}</span>
           </>
         )}

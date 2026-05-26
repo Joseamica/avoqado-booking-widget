@@ -27,7 +27,7 @@ export const SHARED_CSS = `
   /* Inherit page bg instead of painting our own — keeps the widget flush
      with the host (book.avoqado.io) so it doesn't look like a floating panel.
      External embeds that want their own bg can wrap the element with one. */
-  .avq-root { background: transparent; color: var(--avq-fg, #111827); }
+  .avq-root { background: transparent; color: var(--avq-fg, #111827); font-family: var(--avq-font, inherit); }
   .animate-spin { animation: spin 1s linear infinite; }
   @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
   @keyframes avq-fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }

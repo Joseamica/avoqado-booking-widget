@@ -5,6 +5,8 @@ import { BookingFlow } from './components/BookingFlow'
 import { Toast } from './components/ui/Toast'
 import { VenueChatModal } from './components/VenueChatModal'
 import { getVenueInfo } from './api/booking'
+import { branding } from './state/booking'
+import { loadBrandingFont } from './lib/brandingFont'
 
 export default function App(props: WidgetProps) {
   // The default container max-width keeps the booking flow narrow + focused.
@@ -41,10 +43,25 @@ export default function App(props: WidgetProps) {
   // want packs to thread through, lift that signal up to App.
   const flowOrigin: 'appointments' | 'classes' | 'packs' = props.flowType === 'classes' ? 'classes' : 'appointments'
 
+  // Reservation branding tokens. accentColor (server-resolved from primaryColor)
+  // wins over the `accent-color` attribute; buttonShape → CTA radius; fontFamily
+  // → --avq-font. The font is loaded into document.head (see effect below) so it
+  // cascades into this Shadow DOM.
+  const b = branding.value
+  const accent = b.accentColor ?? props.accentColor
+  const shapeRadius = b.buttonShape === 'square' ? '0px' : b.buttonShape === 'pill' ? '9999px' : '0.5rem'
+  const rootStyle: Record<string, string> = { '--avq-btn-radius': shapeRadius }
+  if (accent) rootStyle['--avq-accent'] = accent
+  if (b.fontFamily) rootStyle['--avq-font'] = `"${b.fontFamily}", system-ui, sans-serif`
+
+  useEffect(() => {
+    loadBrandingFont(b.fontFamily)
+  }, [b.fontFamily])
+
   return (
     <div
       data-avq-theme={props.theme}
-      style={props.accentColor ? `--avq-accent:${props.accentColor}` : undefined}
+      style={rootStyle}
       class="avq-root"
     >
       <div class={'mx-auto px-4 py-6 ' + widthClass}>

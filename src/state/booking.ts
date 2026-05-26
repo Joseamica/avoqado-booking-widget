@@ -1,5 +1,23 @@
 import { signal, computed } from '@preact/signals'
-import type { PublicVenueInfo, Product, PublicSlot, PublicBookingResult, CreditPackPublic, CustomerCreditBalance, CustomerPortalData, FlowType, ModifierSelection } from '../types'
+import type { PublicVenueInfo, Product, PublicSlot, PublicBookingResult, CreditPackPublic, CustomerCreditBalance, CustomerPortalData, FlowType, ModifierSelection, ReservationBranding } from '../types'
+
+/** Reservation branding defaults — used until the venue payload arrives (and as
+ *  the fallback for older payloads that don't include `branding`). All toggles
+ *  default to "show"; accentColor null = fall through to the accent-color attr /
+ *  primaryColor. Mirrors DEFAULT_RESERVATION_BRANDING on the server. */
+export const DEFAULT_BRANDING: ReservationBranding = {
+  showLogo: true,
+  accentColor: null,
+  buttonShape: 'rounded',
+  fontFamily: 'DM Sans',
+  showHeroImage: true,
+  showDescriptions: true,
+  showDuration: true,
+  showPrices: true,
+}
+
+/** Active reservation branding, populated from venueInfo.branding on load. */
+export const branding = signal<ReservationBranding>(DEFAULT_BRANDING)
 
 // Step: 0=loading, 1=service, 2=date, 3=time, 4=form, 5=confirmed, 6=manage
 export const step = signal(0)

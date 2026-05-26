@@ -79,6 +79,20 @@ export interface Product {
   category?: { id: string; name: string; slug: string; displayOrder: number } | null
 }
 
+/** Reservation branding overrides (server-merged; accentColor already resolved
+ *  from venue primaryColor). All fields present once the server merges defaults.
+ *  Optional on PublicVenueInfo so older payloads / cached responses still work. */
+export interface ReservationBranding {
+  showLogo: boolean
+  accentColor: string | null
+  buttonShape: 'rounded' | 'square' | 'pill'
+  fontFamily: string
+  showHeroImage: boolean
+  showDescriptions: boolean
+  showDuration: boolean
+  showPrices: boolean
+}
+
 export interface PublicVenueInfo {
   name: string
   slug: string
@@ -93,6 +107,9 @@ export interface PublicVenueInfo {
    *  accent. Widget uses this as --avq-accent unless overridden by the
    *  `accent-color` HTML attribute on the host element. */
   primaryColor?: string | null
+  /** Reservation branding (server-merged + accentColor resolved). Optional so
+   *  older server payloads / cached responses still type-check. */
+  branding?: ReservationBranding
   type: string
   address: string | null
   phone: string | null

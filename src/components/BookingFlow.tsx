@@ -14,9 +14,11 @@ import {
   selectedProducts, totalDuration, totalPrice, selectedModifiers,
   addSelectedProduct, removeSelectedProduct,
   slotHoldToken, slotHoldExpiresAt,
+  branding, DEFAULT_BRANDING,
 } from '../state/booking'
 import { StepIndicator } from './StepIndicator'
 import { ServiceSelector } from './ServiceSelector'
+import { ReservationHero } from './ReservationHero'
 import { DatePicker } from './DatePicker'
 import { TimeSlotPicker } from './TimeSlotPicker'
 import { SeatPicker } from './SeatPicker'
@@ -280,6 +282,7 @@ export function BookingFlow({ props }: BookingFlowProps) {
     api.getVenueInfo(props.venue)
       .then(info => {
         venueInfo.value = info
+        branding.value = info.branding ?? DEFAULT_BRANDING
         resetBooking(info)
         // Notify the hosted page (book.avoqado.io) so it can populate the
         // appointments drawer with venue contact info. Plain hosts that don't
@@ -645,6 +648,7 @@ export function BookingFlow({ props }: BookingFlowProps) {
         if (!productsChanged && !hoursChanged) return
 
         venueInfo.value = fresh
+        branding.value = fresh.branding ?? DEFAULT_BRANDING
 
         // Drop any selected services that are no longer in the catalog. If
         // EVERY selected service vanished, route the customer back to the
@@ -1334,6 +1338,12 @@ export function BookingFlow({ props }: BookingFlowProps) {
 
       {/* Steps */}
       <div class="avq-animate-in" key={`${step.value}-${showLanding}`}>
+        {/* Reservation hero — wide cover photo above the appointments service
+            step, gated by branding.showHeroImage + a configured heroImageUrl. */}
+        {!showLanding && flowType.value === 'appointments' && step.value === config.serviceStep &&
+          branding.value.showHeroImage && info.heroImageUrl && (
+          <ReservationHero imageUrl={info.heroImageUrl} alt={info.name} />
+        )}
         {/* Unified landing: two-CTA picker shown only when entering via /<slug>. */}
         {showLanding && flowType.value === 'unified' && (
           <UnifiedLanding

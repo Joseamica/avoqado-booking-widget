@@ -274,7 +274,7 @@ export function AppointmentSummarySidebar({
             padding: '14px',
             background: nextDisabled ? '#d1d5db' : 'var(--avq-accent, #2563eb)',
             color: nextDisabled ? '#6b7280' : '#ffffff',
-            border: 0, borderRadius: '12px',
+            border: 0, borderRadius: 'var(--avq-btn-radius, 12px)',
             fontSize: '15px', fontWeight: '600',
             cursor: nextDisabled ? 'not-allowed' : 'pointer',
             fontFamily: 'inherit',
