@@ -262,7 +262,7 @@ export function AppointmentConfirmation({
             style={{
               width: '100%', padding: '14px',
               background: 'var(--avq-accent, #2563eb)', color: '#ffffff',
-              border: 0, borderRadius: '12px',
+              border: 0, borderRadius: 'var(--avq-btn-radius, 12px)',
               fontSize: '15px', fontWeight: '600',
               cursor: 'pointer',
               fontFamily: 'inherit',

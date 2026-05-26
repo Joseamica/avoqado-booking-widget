@@ -44,7 +44,7 @@ export function BookButtonApp(props: BookButtonAppProps) {
           alignItems: 'center',
           gap: '8px',
           padding: '12px 24px',
-          borderRadius: '12px',
+          borderRadius: 'var(--avq-btn-radius, 12px)',
           border: 'none',
           background: 'var(--avq-accent, #6366f1)',
           color: '#ffffff',

@@ -151,7 +151,7 @@ export function CheckoutModal({ phone, email, onPhoneChange, onEmailChange, onCl
             onClick={onClose}
             disabled={submitting}
             style={{
-              flex: 1, height: '44px', borderRadius: '12px',
+              flex: 1, height: '44px', borderRadius: 'var(--avq-btn-radius, 12px)',
               border: '1.5px solid var(--avq-border, #e8eaed)',
               background: 'var(--avq-bg, #ffffff)',
               fontSize: '14px', fontWeight: '500', color: 'var(--avq-fg, #111827)',
@@ -167,7 +167,7 @@ export function CheckoutModal({ phone, email, onPhoneChange, onEmailChange, onCl
             onClick={onSubmit}
             disabled={!canSubmit}
             style={{
-              flex: 1, height: '44px', borderRadius: '12px',
+              flex: 1, height: '44px', borderRadius: 'var(--avq-btn-radius, 12px)',
               border: 'none', background: 'var(--avq-accent, #6366f1)',
               fontSize: '14px', fontWeight: '600', color: '#ffffff',
               cursor: canSubmit ? 'pointer' : 'not-allowed',

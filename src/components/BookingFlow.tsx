@@ -1233,13 +1233,16 @@ export function BookingFlow({ props }: BookingFlowProps) {
     await submitReservation(data)
   }
 
-  // Apply venue brand color as --avq-accent unless the host element supplied an
-  // explicit `accent-color` attribute (which already set it on .avq-root). The
-  // venue's color wins over the default but loses to an explicit override —
-  // gives the widget a personalized feel without taking control away from
-  // embedders who pass their own accent.
-  const accentOverride = !props.accentColor && info.primaryColor
-    ? { ['--avq-accent' as any]: info.primaryColor }
+  // Apply the venue's resolved brand accent as --avq-accent unless the host
+  // element supplied an explicit `accent-color` attribute (which already set it
+  // on .avq-root). Prefer the resolved reservation branding accent (which the
+  // server already resolves as accentColor ?? primaryColor) so this inner
+  // override stays consistent with the .avq-root token set in App.tsx — using
+  // raw primaryColor here would shadow a venue's custom branding.accentColor
+  // for the whole booking subtree. Loses to an explicit embedder override.
+  const venueAccent = branding.value.accentColor ?? info.primaryColor
+  const accentOverride = !props.accentColor && venueAccent
+    ? { ['--avq-accent' as any]: venueAccent }
     : undefined
 
   return (

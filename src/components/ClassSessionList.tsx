@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from 'preact/hooks'
 import type { Product, PublicClassSessionSlot } from '../types'
 import type { TFunction } from '../i18n'
 import * as api from '../api/booking'
+import { branding } from '../state/booking'
 import { Spinner } from './ui/Spinner'
 import { CapacityBadge } from './CapacityBadge'
 import { CalendarView } from './CalendarView'
@@ -450,9 +451,9 @@ export function ClassSessionList({ venueSlug, timezone, onSelect, onExit, venueP
                 // Compose "$25 · 8:00 AM · 1h 45min". Each segment is optional —
                 // skip price when product unresolved or null (variable pricing).
                 const metaParts: string[] = []
-                if (price != null) metaParts.push(formatPriceMXN(price))
+                if (branding.value.showPrices && price != null) metaParts.push(formatPriceMXN(price))
                 metaParts.push(startTime)
-                if (durationMin > 0) metaParts.push(formatDurationMin(durationMin))
+                if (branding.value.showDuration && durationMin > 0) metaParts.push(formatDurationMin(durationMin))
                 const onClick = () => { if (!isFull) onSelect(slot) }
                 return (
                   <button

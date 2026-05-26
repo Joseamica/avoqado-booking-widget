@@ -1,6 +1,7 @@
 import { h } from 'preact'
 import type { PublicClassSessionSlot, Product } from '../types'
 import type { TFunction } from '../i18n'
+import { branding } from '../state/booking'
 import { InstructorAvatar } from './InstructorAvatar'
 
 interface ClassDetailViewProps {
@@ -147,9 +148,11 @@ export function ClassDetailView({
             marginBottom: '24px',
             fontSize: '15px', color: 'var(--avq-fg, #111827)',
           }}>
-            <div style={{ fontWeight: '600' }}>
-              {price > 0 ? formatPrice(price, locale) : t('classDetail.free')}
-            </div>
+            {branding.value.showPrices && (
+              <div style={{ fontWeight: '600' }}>
+                {price > 0 ? formatPrice(price, locale) : t('classDetail.free')}
+              </div>
+            )}
             <div>{dateLabel}</div>
             <div>{tzShort ? `${startTime} – ${endTime} ${tzShort}` : `${startTime} – ${endTime}`}</div>
           </div>
@@ -169,7 +172,7 @@ export function ClassDetailView({
 
           {/* Description — short paragraph, gray, no heading (Square also
            * skips the "About" heading when the description is one-liner). */}
-          {product?.description && (
+          {branding.value.showDescriptions && product?.description && (
             <p style={{
               margin: '0 0 24px', fontSize: '14px',
               color: 'var(--avq-muted-fg, #6b7280)', lineHeight: 1.6,
@@ -227,12 +230,14 @@ export function ClassDetailView({
               marginBottom: '6px',
               fontSize: '13px', color: 'var(--avq-muted-fg, #6b7280)',
             }}>
-              <span style={{ fontWeight: '600', color: 'var(--avq-fg, #111827)' }}>
-                {price > 0 ? formatPrice(price, locale) : t('classDetail.free')}
-              </span>
+              {branding.value.showPrices && (
+                <span style={{ fontWeight: '600', color: 'var(--avq-fg, #111827)' }}>
+                  {price > 0 ? formatPrice(price, locale) : t('classDetail.free')}
+                </span>
+              )}
               {creditCost > 0 && (
                 <span>
-                  · {creditCost === 1
+                  {branding.value.showPrices ? '· ' : ''}{creditCost === 1
                     ? t('classDetail.orOneCredit')
                     : t('classDetail.orNCredits', { count: creditCost })}
                 </span>

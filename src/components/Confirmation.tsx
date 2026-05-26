@@ -173,7 +173,7 @@ export function Confirmation({ booking, venueInfo, onManageBooking, onNewBooking
           onMouseLeave={() => setCalHover(false)}
           style={{
             flex: 1, height: '44px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
-            borderRadius: '12px', border: '1px solid var(--avq-border, #e8eaed)',
+            borderRadius: 'var(--avq-btn-radius, 12px)', border: '1px solid var(--avq-border, #e8eaed)',
             background: calHover ? 'var(--avq-muted, #f8f9fb)' : 'var(--avq-bg, #ffffff)',
             fontSize: '13px', fontWeight: '500', color: 'var(--avq-fg, #111827)',
             cursor: 'pointer', transition: 'all 0.15s ease',
@@ -189,7 +189,7 @@ export function Confirmation({ booking, venueInfo, onManageBooking, onNewBooking
           onMouseLeave={() => setIcsHover(false)}
           style={{
             flex: 1, height: '44px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
-            borderRadius: '12px', border: '1px solid var(--avq-border, #e8eaed)',
+            borderRadius: 'var(--avq-btn-radius, 12px)', border: '1px solid var(--avq-border, #e8eaed)',
             background: icsHover ? 'var(--avq-muted, #f8f9fb)' : 'var(--avq-bg, #ffffff)',
             fontSize: '13px', fontWeight: '500', color: 'var(--avq-fg, #111827)',
             cursor: 'pointer', transition: 'all 0.15s ease',
@@ -206,7 +206,7 @@ export function Confirmation({ booking, venueInfo, onManageBooking, onNewBooking
         onMouseEnter={() => setManageHover(true)}
         onMouseLeave={() => setManageHover(false)}
         style={{
-          width: '100%', height: '44px', borderRadius: '12px',
+          width: '100%', height: '44px', borderRadius: 'var(--avq-btn-radius, 12px)',
           background: manageHover ? 'var(--avq-muted-hover, #eef0f4)' : 'var(--avq-muted, #f8f9fb)',
           border: 'none', fontSize: '14px', fontWeight: '500',
           color: 'var(--avq-fg, #111827)', cursor: 'pointer',
