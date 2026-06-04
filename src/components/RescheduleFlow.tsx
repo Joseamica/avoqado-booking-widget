@@ -147,7 +147,7 @@ export function RescheduleFlow({ venueSlug, cancelSecret, reservation, venueInfo
         <DatePicker
           selectedDate={selectedDate}
           onSelect={(d) => { setSelectedDate(d); setStep('time') }}
-          maxAdvanceDays={30}
+          maxAdvanceDays={venueInfo.scheduling?.maxAdvanceDays ?? 30}
           timezone={venueInfo.timezone}
           operatingHours={venueInfo.operatingHours}
           t={t}

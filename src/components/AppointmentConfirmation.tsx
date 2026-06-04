@@ -94,10 +94,18 @@ export function AppointmentConfirmation({
     ? `$${Number(booking.depositAmount).toLocaleString('es-MX')}`
     : null
 
+  // autoConfirm=false venues land the booking in PENDING awaiting manual
+  // approval (NOT a deposit/checkout-pending PENDING). Reflect that in the
+  // heading so the customer doesn't think they're confirmed and show up.
+  const awaitingApproval =
+    booking.status === 'PENDING' && !booking.checkoutUrl && booking.depositAmount == null && !booking.owesAtVenue
+
   const tx = locale === 'en'
     ? {
       thanks: 'Thanks for your reservation',
       almost: "You're almost ready for your appointment.",
+      pendingThanks: 'Request received',
+      pendingAlmost: 'Your appointment is pending confirmation by the venue. We\'ll let you know once it\'s approved.',
       addCal: 'Add to calendar',
       reschedule: 'Reschedule',
       cancel: 'Cancel',
@@ -117,6 +125,8 @@ export function AppointmentConfirmation({
     : {
       thanks: 'Gracias por tu reserva',
       almost: 'Falta poco para tu cita.',
+      pendingThanks: 'Solicitud recibida',
+      pendingAlmost: 'Tu cita está pendiente de confirmación por el negocio. Te avisaremos cuando la aprueben.',
       addCal: 'Añadir al calendario',
       reschedule: 'Reprogramar',
       cancel: 'Cancelar',
@@ -143,13 +153,13 @@ export function AppointmentConfirmation({
           color: 'var(--avq-fg, #111827)',
           letterSpacing: '-0.6px',
         }}>
-          {tx.thanks}
+          {awaitingApproval ? tx.pendingThanks : tx.thanks}
         </h1>
         <p style={{
           margin: '4px 0 0', fontSize: '14px',
           color: 'var(--avq-muted-fg, #6b7280)',
         }}>
-          {tx.almost}
+          {awaitingApproval ? tx.pendingAlmost : tx.almost}
         </p>
       </header>
 

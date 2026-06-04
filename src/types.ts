@@ -133,6 +133,19 @@ export interface PublicVenueInfo {
     appointmentUpfrontDefault: UpfrontPolicy
     classUpfrontDefault: UpfrontPolicy
   }
+  /**
+   * Scheduling window the venue admin configured. Optional so older/cached
+   * payloads still type-check (fall back to sane defaults when absent).
+   * - maxAdvanceDays: how far ahead the customer may book → caps the date picker.
+   * - minNoticeMin: minimum lead time before a slot (server also enforces).
+   * - autoConfirm: when false, bookings land PENDING (await venue approval) →
+   *   the confirmation screen should say so instead of "confirmed".
+   */
+  scheduling?: {
+    maxAdvanceDays: number
+    minNoticeMin: number
+    autoConfirm: boolean
+  }
 }
 
 export interface OperatingHours {

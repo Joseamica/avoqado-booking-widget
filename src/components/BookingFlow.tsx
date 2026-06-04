@@ -1609,7 +1609,13 @@ export function BookingFlow({ props }: BookingFlowProps) {
                 slotsLoading={slotsLoading}
                 timezone={info.timezone}
                 operatingHours={info.operatingHours}
-                onJoinWaitlist={() => showToast(t('summary.title') /* placeholder */, 'success')}
+                maxAdvanceDays={info.scheduling?.maxAdvanceDays ?? 30}
+                // Waitlist intentionally NOT wired: there is no public waitlist
+                // endpoint yet, and the old placeholder just showed a success
+                // toast without joining anything — misleading the customer.
+                // Omitting onJoinWaitlist hides the CTA (DateTimePickerSquare
+                // only renders it when the handler is provided). Re-add once a
+                // real public join-waitlist API exists.
                 locale={props.locale}
                 t={t}
               />
@@ -1658,7 +1664,7 @@ export function BookingFlow({ props }: BookingFlowProps) {
                 selectedSlot.value = null
                 step.value = config.timeStep
               }}
-              maxAdvanceDays={30}
+              maxAdvanceDays={info.scheduling?.maxAdvanceDays ?? 30}
               timezone={info.timezone}
               operatingHours={info.operatingHours}
               t={t}
