@@ -219,7 +219,15 @@ export function BookingFlow({ props }: BookingFlowProps) {
     // booking detail without having to look it up.
     const onShowManage = (e: Event) => {
       const detail = (e as CustomEvent<{ cancelSecret?: string }>).detail
-      if (detail?.cancelSecret) manageSecret.value = detail.cancelSecret
+      if (detail?.cancelSecret) {
+        manageSecret.value = detail.cancelSecret
+        // BUGFIX: must also switch the step, otherwise the render gate
+        // (step.value === MANAGE_STEP) stays false and the customer lands on
+        // the booking catalog instead of their reservation. This was the Amaena
+        // reminder-link bug — the email CTA opened the service menu, not the
+        // cancel screen, so the customer could never self-cancel.
+        step.value = MANAGE_STEP
+      }
     }
     host.addEventListener('_avq_show_account', onShowAccount)
     host.addEventListener('_avq_show_credit_packs', onShowCreditPacks)
@@ -230,6 +238,27 @@ export function BookingFlow({ props }: BookingFlowProps) {
       host.removeEventListener('_avq_show_manage', onShowManage as EventListener)
     }
   }, [props.hostElement])
+
+  // Hosted-page deep link, read directly from the URL on mount. The host page
+  // (book.avoqado.io) also fires showManageBooking() via the event above, but
+  // that dispatch can race this component's effect attachment. Reading
+  // ?manage=<cancelSecret> here makes the deep-link reliable regardless of host
+  // timing — belt-and-suspenders with the event handler.
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    if (manageSecret.value) return // already opened (event, or after a booking)
+    try {
+      const secret = new URLSearchParams(window.location.search).get('manage')
+      if (secret) {
+        manageSecret.value = secret
+        step.value = MANAGE_STEP
+      }
+    } catch {
+      /* malformed URL — ignore, fall through to normal catalog */
+    }
+    // run once on mount
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // Customer-facing TZ — initialized from the stored preference. The TimezoneModal
   // (rendered below) updates this signal when the customer picks one. Used by

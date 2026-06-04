@@ -297,7 +297,14 @@ export interface PublicReservationDetail {
   depositAmount: number | null
   depositStatus: string | null
   cancellation?: {
+    /** Full decision (venue toggle + status + time window). Disable the cancel
+     *  control when false — never re-derive this client-side. */
     allowed: boolean
+    /** Why cancellation is blocked when `allowed` is false. null when allowed. */
+    reason?: 'NOT_ALLOWED' | 'TOO_LATE' | 'NOT_CANCELLABLE_STATUS' | null
+    /** Raw venue toggle, separate from `allowed`, so the UI can tell apart
+     *  "venue never allows online cancel" from "too late this time". */
+    allowCustomerCancel?: boolean
     minHoursBeforeStart: number | null
     creditsUsed: number
     creditsRefundable: number

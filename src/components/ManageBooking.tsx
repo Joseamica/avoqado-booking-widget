@@ -50,8 +50,13 @@ export function ManageBooking({ venueSlug, cancelSecret, timezone, venueInfo, t,
       const updated = await api.getReservation(venueSlug, cancelSecret)
       setReservation(updated)
       setShowCancel(false)
-    } catch {
-      setError(t('errors.generic'))
+    } catch (err) {
+      // Surface the server's specific message (e.g. "No se puede cancelar con
+      // menos de 2 horas de anticipación. Contacta al negocio directamente.")
+      // instead of a generic error — the backend message tells the customer
+      // exactly why and what to do next. `request()` puts it on err.message.
+      const serverMsg = err instanceof Error && err.message ? err.message : ''
+      setError(serverMsg || t('errors.generic'))
     } finally {
       setCancelling(false)
     }
