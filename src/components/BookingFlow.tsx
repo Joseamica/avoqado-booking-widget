@@ -298,7 +298,11 @@ export function BookingFlow({ props }: BookingFlowProps) {
         const base = window.location.pathname.replace(/\/+$/, '').replace(/\/appointments$|\/classes$/, '')
         window.history.replaceState({}, '', `${base}/appointments${window.location.search}`)
       }
-      resetBooking(info)
+      // Don't clobber an active manage deep-link (?manage=<secret>). resetBooking
+      // nulls manageSecret and resets step, which would bounce a customer who
+      // arrived via the WhatsApp/email "Gestionar mi cita" link back to the
+      // catalog — the appointment-only-venue variant of the Amaena deep-link bug.
+      if (step.value !== MANAGE_STEP) resetBooking(info)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showLanding, venueInfo.value, creditPacksLoaded.value])
@@ -312,7 +316,10 @@ export function BookingFlow({ props }: BookingFlowProps) {
       .then(info => {
         venueInfo.value = info
         branding.value = info.branding ?? DEFAULT_BRANDING
-        resetBooking(info)
+        // Skip the initial booking-state reset when a manage deep-link is active
+        // (see the auto-skip effect above) so the ?manage=<secret> screen isn't
+        // wiped back to the catalog while the venue info loads.
+        if (step.value !== MANAGE_STEP) resetBooking(info)
         // Notify the hosted page (book.avoqado.io) so it can populate the
         // appointments drawer with venue contact info. Plain hosts that don't
         // listen ignore it harmlessly.
