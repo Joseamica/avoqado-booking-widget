@@ -248,6 +248,14 @@ export function customerLogin(slug: string, data: { email: string; password: str
   })
 }
 
+export function requestOtp(slug: string, data: { phone?: string; email?: string }): Promise<{ ok: true }> {
+  return request(`${BASE}/venues/${slug}/auth/otp/request`, { method: 'POST', body: JSON.stringify(data) })
+}
+
+export function verifyOtp(slug: string, data: { phone?: string; email?: string; code: string }): Promise<AuthResponse> {
+  return request(`${BASE}/venues/${slug}/auth/otp/verify`, { method: 'POST', body: JSON.stringify(data) })
+}
+
 export function getCustomerPortal(slug: string, token: string): Promise<CustomerPortalData> {
   return request(`${BASE}/venues/${slug}/customer/portal`, {
     headers: { Authorization: `Bearer ${token}` },

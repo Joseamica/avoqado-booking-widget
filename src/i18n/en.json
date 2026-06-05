@@ -324,6 +324,21 @@
     "packNoExpiry": "No expiration",
     "sessions": "sessions"
   },
+  "otp": {
+    "title": "Sign in with WhatsApp",
+    "phoneLabel": "Your WhatsApp number",
+    "sendCode": "Send code",
+    "sent": "We sent you a code on WhatsApp",
+    "codeLabel": "6-digit code",
+    "verify": "Sign in",
+    "resend": "Resend code",
+    "resendIn": "Resend in {{s}}s",
+    "useEmail": "Use email",
+    "emailLabel": "Your email",
+    "orPassword": "or sign in with email and password",
+    "errorInvalid": "Incorrect code.",
+    "errorGeneric": "We couldn't send the code. Please try again."
+  },
   "modifiers": {
     "required": "Required",
     "optional": "Optional",

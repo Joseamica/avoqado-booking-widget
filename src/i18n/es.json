@@ -324,6 +324,21 @@
     "packNoExpiry": "Sin expiración",
     "sessions": "sesiones"
   },
+  "otp": {
+    "title": "Entrar con WhatsApp",
+    "phoneLabel": "Tu número de WhatsApp",
+    "sendCode": "Enviar código",
+    "sent": "Te enviamos un código por WhatsApp",
+    "codeLabel": "Código de 6 dígitos",
+    "verify": "Entrar",
+    "resend": "Reenviar código",
+    "resendIn": "Reenviar en {{s}}s",
+    "useEmail": "Usar correo",
+    "emailLabel": "Tu correo",
+    "orPassword": "o entra con correo y contraseña",
+    "errorInvalid": "Código incorrecto.",
+    "errorGeneric": "No se pudo enviar el código. Intenta de nuevo."
+  },
   "modifiers": {
     "required": "Requerido",
     "optional": "Opcional",

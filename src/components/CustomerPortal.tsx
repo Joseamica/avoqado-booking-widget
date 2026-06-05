@@ -41,6 +41,27 @@ export function CustomerPortal({ venueSlug, timezone, venuePhone, t, onBack, onM
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
 
+  // WhatsApp-OTP login state. OTP is the PRIMARY login path; the email/password
+  // form is revealed as a secondary option via `showEmailLogin`.
+  const [showEmailLogin, setShowEmailLogin] = useState(false)
+  const [otpStep, setOtpStep] = useState<'phone' | 'code'>('phone')
+  // Which contact channel the OTP is sent to. Defaults to WhatsApp (phone);
+  // "Usar correo" swaps it to email so the same flow works over email OTP.
+  const [otpChannel, setOtpChannel] = useState<'phone' | 'email'>('phone')
+  const [otpPhone, setOtpPhone] = useState('')
+  const [otpEmail, setOtpEmail] = useState('')
+  const [otpCode, setOtpCode] = useState('')
+  const [cooldown, setCooldown] = useState(0)
+  const [otpError, setOtpError] = useState<string | null>(null)
+  const [otpSubmitting, setOtpSubmitting] = useState(false)
+
+  // Cooldown tick — counts down the "Reenviar en {{s}}s" timer once per second.
+  useEffect(() => {
+    if (!cooldown) return
+    const id = setInterval(() => setCooldown(c => c - 1), 1000)
+    return () => clearInterval(id)
+  }, [cooldown])
+
   // Profile edit state
   const [editingProfile, setEditingProfile] = useState(false)
   const [editFirstName, setEditFirstName] = useState('')
@@ -134,6 +155,61 @@ export function CustomerPortal({ venueSlug, timezone, venuePhone, t, onBack, onM
     }
   }
 
+  /** Build the { phone } | { email } payload from the active OTP channel. */
+  function otpDestination(): { phone?: string; email?: string } {
+    return otpChannel === 'phone'
+      ? { phone: otpPhone.trim() }
+      : { email: otpEmail.trim() }
+  }
+
+  function otpDestinationFilled(): boolean {
+    return otpChannel === 'phone' ? !!otpPhone.trim() : !!otpEmail.trim()
+  }
+
+  async function handleSendOtp(e?: Event) {
+    if (e) e.preventDefault()
+    if (!otpDestinationFilled()) return
+    setOtpSubmitting(true)
+    setOtpError(null)
+    try {
+      await api.requestOtp(venueSlug, otpDestination())
+      setOtpStep('code')
+      setCooldown(30)
+    } catch {
+      setOtpError(t('otp.errorGeneric'))
+    } finally {
+      setOtpSubmitting(false)
+    }
+  }
+
+  async function handleResendOtp() {
+    if (cooldown > 0 || !otpDestinationFilled()) return
+    setOtpError(null)
+    try {
+      await api.requestOtp(venueSlug, otpDestination())
+      setCooldown(30)
+    } catch {
+      setOtpError(t('otp.errorGeneric'))
+    }
+  }
+
+  async function handleVerifyOtp(e: Event) {
+    e.preventDefault()
+    if (otpCode.trim().length < 6) return
+    setOtpSubmitting(true)
+    setOtpError(null)
+    try {
+      const result = await api.verifyOtp(venueSlug, { ...otpDestination(), code: otpCode.trim() })
+      // Reuse the EXACT success path the email login uses (identical AuthResponse).
+      setCustomerSession(result.token, result.customer)
+      await loadPortal(result.token)
+    } catch (err: any) {
+      setOtpError(err.data?.message ?? t('otp.errorInvalid'))
+    } finally {
+      setOtpSubmitting(false)
+    }
+  }
+
   function handleLogout() {
     clearCustomerSession()
     setEmail('')
@@ -143,6 +219,15 @@ export function CustomerPortal({ venueSlug, timezone, venuePhone, t, onBack, onM
     setError(null)
     setMode('login')
     setEditingProfile(false)
+    // Reset OTP flow so a subsequent login starts clean
+    setShowEmailLogin(false)
+    setOtpStep('phone')
+    setOtpChannel('phone')
+    setOtpPhone('')
+    setOtpEmail('')
+    setOtpCode('')
+    setCooldown(0)
+    setOtpError(null)
   }
 
   function startEditProfile() {
@@ -221,8 +306,154 @@ export function CustomerPortal({ venueSlug, timezone, venuePhone, t, onBack, onM
     )
   }
 
-  // Auth forms (login / register)
+  // Auth forms — WhatsApp-OTP is primary; email/password is the secondary option.
   if (!data) {
+    // PRIMARY: WhatsApp-OTP login flow
+    if (!showEmailLogin) {
+      const destFilled = otpDestinationFilled()
+      return (
+        <div class="avq-animate-in">
+          <div style={{ textAlign: 'center', marginBottom: '24px' }}>
+            <div style={{
+              width: '56px', height: '56px', borderRadius: '50%',
+              background: 'var(--avq-muted, #f8f9fb)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              margin: '0 auto 14px',
+            }}>
+              {otpChannel === 'phone' ? (
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="#25D366" aria-hidden="true">
+                  <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 0 1-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 0 1-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 0 1 2.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0 0 12.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 0 0 5.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 0 0-3.48-8.413" />
+                </svg>
+              ) : (
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--avq-accent, #6366f1)" stroke-width="2">
+                  <rect x="2" y="4" width="20" height="16" rx="2" />
+                  <path d="m22 7-10 5L2 7" />
+                </svg>
+              )}
+            </div>
+            <h2 style={{ fontSize: '18px', fontWeight: '700', color: 'var(--avq-fg, #111827)', margin: '0 0 6px' }}>
+              {t('otp.title')}
+            </h2>
+            <p style={{ fontSize: '14px', color: 'var(--avq-muted-fg, #6b7280)', margin: 0 }}>
+              {t('portal.subtitle')}
+            </p>
+          </div>
+
+          {otpStep === 'phone' ? (
+            <form onSubmit={handleSendOtp} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              {otpChannel === 'phone' ? (
+                <div>
+                  <label style={labelStyle}>{t('otp.phoneLabel')}</label>
+                  <Input
+                    type="tel"
+                    value={otpPhone}
+                    placeholder={t('form.phonePlaceholder')}
+                    onInput={(e) => setOtpPhone((e.target as HTMLInputElement).value)}
+                  />
+                </div>
+              ) : (
+                <div>
+                  <label style={labelStyle}>{t('otp.emailLabel')}</label>
+                  <Input
+                    type="email"
+                    value={otpEmail}
+                    placeholder={t('form.emailPlaceholder')}
+                    onInput={(e) => setOtpEmail((e.target as HTMLInputElement).value)}
+                  />
+                </div>
+              )}
+
+              {otpError && (
+                <p style={{ fontSize: '13px', color: '#ef4444', margin: 0 }}>{otpError}</p>
+              )}
+
+              <Button type="submit" fullWidth disabled={otpSubmitting || !destFilled}>
+                {otpSubmitting ? <Spinner size={18} /> : t('otp.sendCode')}
+              </Button>
+
+              {/* Swap OTP channel: WhatsApp ↔ email */}
+              <div style={{ textAlign: 'center' }}>
+                <button
+                  type="button"
+                  onClick={() => { setOtpChannel(otpChannel === 'phone' ? 'email' : 'phone'); setOtpError(null) }}
+                  style={{
+                    background: 'none', border: 'none', cursor: 'pointer',
+                    color: 'var(--avq-accent, #6366f1)', fontWeight: '500',
+                    fontSize: '13px', textDecoration: 'underline', textUnderlineOffset: '2px',
+                  }}
+                >
+                  {otpChannel === 'phone' ? t('otp.useEmail') : t('otp.title')}
+                </button>
+              </div>
+            </form>
+          ) : (
+            <form onSubmit={handleVerifyOtp} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <p style={{ fontSize: '13px', color: 'var(--avq-muted-fg, #6b7280)', margin: 0, textAlign: 'center' }}>
+                {t('otp.sent')}
+              </p>
+              <div>
+                <label style={labelStyle}>{t('otp.codeLabel')}</label>
+                <Input
+                  type="text"
+                  value={otpCode}
+                  placeholder="123456"
+                  onInput={(e) => setOtpCode((e.target as HTMLInputElement).value.replace(/\D/g, '').slice(0, 6))}
+                />
+              </div>
+
+              {otpError && (
+                <p style={{ fontSize: '13px', color: '#ef4444', margin: 0 }}>{otpError}</p>
+              )}
+
+              <Button type="submit" fullWidth disabled={otpSubmitting || otpCode.trim().length < 6}>
+                {otpSubmitting ? <Spinner size={18} /> : t('otp.verify')}
+              </Button>
+
+              {/* Resend code — disabled while the cooldown is counting down */}
+              <div style={{ textAlign: 'center' }}>
+                <button
+                  type="button"
+                  onClick={handleResendOtp}
+                  disabled={cooldown > 0}
+                  style={{
+                    background: 'none', border: 'none',
+                    cursor: cooldown > 0 ? 'default' : 'pointer',
+                    color: cooldown > 0 ? 'var(--avq-muted-fg, #6b7280)' : 'var(--avq-accent, #6366f1)',
+                    fontWeight: '500', fontSize: '13px',
+                    textDecoration: cooldown > 0 ? 'none' : 'underline', textUnderlineOffset: '2px',
+                  }}
+                >
+                  {cooldown > 0 ? t('otp.resendIn', { s: cooldown }) : t('otp.resend')}
+                </button>
+              </div>
+            </form>
+          )}
+
+          {/* Reveal the email/password login as a secondary option */}
+          <div style={{ textAlign: 'center', marginTop: '16px' }}>
+            <button
+              type="button"
+              onClick={() => { setShowEmailLogin(true); setOtpError(null) }}
+              style={{
+                background: 'none', border: 'none', cursor: 'pointer',
+                color: 'var(--avq-muted-fg, #6b7280)', fontWeight: '500',
+                fontSize: '13px', textDecoration: 'underline', textUnderlineOffset: '2px',
+              }}
+            >
+              {t('otp.orPassword')}
+            </button>
+          </div>
+
+          <div style={{ marginTop: '12px' }}>
+            <Button variant="ghost" fullWidth onClick={onBack}>
+              {t('portal.backToBooking')}
+            </Button>
+          </div>
+        </div>
+      )
+    }
+
+    // SECONDARY: email / password login + register (unchanged behavior)
     return (
       <div class="avq-animate-in">
         <div style={{ textAlign: 'center', marginBottom: '24px' }}>
@@ -318,6 +549,21 @@ export function CustomerPortal({ venueSlug, timezone, venuePhone, t, onBack, onM
               {mode === 'login' ? t('portal.createAccount') : t('portal.loginButton')}
             </button>
           </p>
+        </div>
+
+        {/* Back to the primary WhatsApp-OTP login */}
+        <div style={{ textAlign: 'center', marginTop: '12px' }}>
+          <button
+            type="button"
+            onClick={() => { setShowEmailLogin(false); setError(null) }}
+            style={{
+              background: 'none', border: 'none', cursor: 'pointer',
+              color: 'var(--avq-muted-fg, #6b7280)', fontWeight: '500',
+              fontSize: '13px', textDecoration: 'underline', textUnderlineOffset: '2px',
+            }}
+          >
+            {t('otp.title')}
+          </button>
         </div>
 
         <div style={{ marginTop: '12px' }}>
