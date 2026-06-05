@@ -112,6 +112,13 @@
     "stepDate": "1 · Date",
     "stepTime": "2 · Time",
     "stepSeat": "3 · Seat",
+    "stepConfirm": "3 · Confirm",
+    "newTimeLabel": "New time",
+    "confirmButton": "Confirm change",
+    "pickAnother": "Pick another time",
+    "holdCountdown": "Slot held for {{time}}",
+    "holdExpired": "Time to confirm ran out. Please pick the slot again.",
+    "slotTakenError": "That time is no longer available, pick another.",
     "applying": "Applying change…",
     "success": "Done! Your reservation is at the new time."
   },

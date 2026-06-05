@@ -112,6 +112,13 @@
     "stepDate": "1 · Fecha",
     "stepTime": "2 · Hora",
     "stepSeat": "3 · Lugar",
+    "stepConfirm": "3 · Confirmar",
+    "newTimeLabel": "Nuevo horario",
+    "confirmButton": "Confirmar cambio",
+    "pickAnother": "Elegir otro horario",
+    "holdCountdown": "Horario reservado por {{time}}",
+    "holdExpired": "Se agotó el tiempo para confirmar. Elige el horario de nuevo.",
+    "slotTakenError": "Ese horario ya no está disponible, elige otro.",
     "applying": "Aplicando cambio…",
     "success": "¡Listo! Tu reserva quedó en el nuevo horario."
   },

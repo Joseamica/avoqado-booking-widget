@@ -142,6 +142,43 @@ export function rescheduleReservation(
   })
 }
 
+// ---- Appointment reschedule (scoped by cancelSecret; excludes self server-side) ----
+
+/** Offered slots of the SAME service for `date`, excluding the reservation being
+ *  moved (so adjacent/overlapping slots show). */
+export function getRescheduleAvailability(
+  slug: string,
+  cancelSecret: string,
+  params: { date: string },
+): Promise<PublicAvailabilityResponse> {
+  const q = new URLSearchParams({ date: params.date })
+  return request(`${BASE}/venues/${slug}/reservations/${cancelSecret}/reschedule/availability?${q}`)
+}
+
+/** Reserve the target appointment slot for ~10 min before confirming. */
+export function createRescheduleHold(
+  slug: string,
+  cancelSecret: string,
+  body: { startsAt: string; endsAt: string },
+): Promise<CreateHoldResponse> {
+  return request(`${BASE}/venues/${slug}/reservations/${cancelSecret}/reschedule/hold`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
+}
+
+/** Confirm an appointment reschedule to `startsAt` (consuming the hold). */
+export function rescheduleAppointment(
+  slug: string,
+  cancelSecret: string,
+  body: { startsAt: string; holdId?: string },
+): Promise<{ confirmationCode: string; status: string; startsAt: string; endsAt: string }> {
+  return request(`${BASE}/venues/${slug}/reservations/${cancelSecret}/reschedule`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
+}
+
 // ==================== Credit Packs ====================
 
 export function getCreditPacks(slug: string, productId?: string): Promise<CreditPackPublic[]> {

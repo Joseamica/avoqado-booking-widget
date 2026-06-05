@@ -326,6 +326,9 @@ export interface PublicReservationDetail {
   }
   reschedule?: {
     allowed: boolean
+    /** Which reschedule mini-flow to run: 'class' swaps session, 'appointment'
+     *  picks a new slot. Older backends omit it → treat missing as 'class'. */
+    kind?: 'class' | 'appointment'
     minHoursBeforeStart: number | null
     productId: string | null
   }
