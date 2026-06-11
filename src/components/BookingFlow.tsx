@@ -778,7 +778,15 @@ export function BookingFlow({ props }: BookingFlowProps) {
       type: typeFilter,
     })
       .then(res => setSlots(res.slots))
-      .catch(() => setSlots([]))
+      .catch((err: any) => {
+        setSlots([])
+        // 403 PLAN_REQUIRED: the venue's plan doesn't include online
+        // reservations — surface the server message instead of silently
+        // rendering the generic "no availability" empty state.
+        if (err?.status === 403 || err?.data?.code === 'PLAN_REQUIRED') {
+          showToast(err.data?.message ?? t('errors.generic'), 'error')
+        }
+      })
       .finally(() => setSlotsLoading(false))
   }
 
@@ -1251,7 +1259,14 @@ export function BookingFlow({ props }: BookingFlowProps) {
           setShowNoCreditsBuyPrompt(true)
           return
         }
-      } catch {
+      } catch (err: any) {
+        // 403 PLAN_REQUIRED: the venue's plan doesn't include online
+        // reservations — show the server message instead of silently
+        // falling through to the no-credits logic.
+        if (err?.status === 403 || err?.data?.code === 'PLAN_REQUIRED') {
+          showToast(err.data?.message ?? t('errors.generic'), 'error')
+          return
+        }
         // No credits found or error
         if (requiresCredit) {
           setPendingFormData(data)
