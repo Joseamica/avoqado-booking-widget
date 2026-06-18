@@ -5,7 +5,7 @@ import { BookingFlow } from './components/BookingFlow'
 import { Toast } from './components/ui/Toast'
 import { VenueChatModal } from './components/VenueChatModal'
 import { getVenueInfo } from './api/booking'
-import { branding } from './state/booking'
+import { branding, flowType } from './state/booking'
 import { loadBrandingFont } from './lib/brandingFont'
 
 export default function App(props: WidgetProps) {
@@ -16,10 +16,20 @@ export default function App(props: WidgetProps) {
   // (book.avoqado.io sets body.flow-classes/.flow-appointments .shell to the
   // same px in public/index.html) — otherwise the narrower of the two clamps
   // the layout and the extra shell width does nothing.
+  //
+  // Bind to the LIVE flowType signal, not props.flowType. props.flowType is
+  // frozen at mount from the `flow-type` HTML attribute, but when a customer
+  // enters appointments/classes from the unified landing the widget only flips
+  // the signal (no attribute change), so a prop-driven width stayed at the
+  // narrow `max-w-lg` while the host shell widened — the "cramped until reload"
+  // bug. We still fall back to the prop while the signal is at its initial
+  // 'unified' default so a direct /appointments load paints wide on first frame
+  // (no flash) before BookingFlow's mount effect seeds the signal.
+  const activeFlow = flowType.value !== 'unified' ? flowType.value : (props.flowType ?? 'unified')
   const widthClass =
-    props.flowType === 'classes'
+    activeFlow === 'classes'
       ? 'avq-wide'
-      : props.flowType === 'appointments'
+      : activeFlow === 'appointments'
         ? 'avq-mid'
         : 'max-w-lg'
 
