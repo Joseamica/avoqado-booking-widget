@@ -724,6 +724,19 @@
       var drawerTextus = document.getElementById('drawer-textus-row')
       if (drawerTextus) drawerTextus.addEventListener('click', openVenueChat)
 
+      // Hide the "message us" pill + drawer row when the venue can't actually be
+      // reached (server says no relay and no phone → the chat form would just
+      // dead-end after the customer fills it out). The widget computes this from
+      // the venue-info `chat.canMessage` and mirrors it here via a window event
+      // (it suppresses its own shadow-DOM FAB on this host page). Default-visible
+      // until the verdict arrives so reachable venues show the pill with no delay;
+      // fail-open if the detail is malformed/absent.
+      window.addEventListener('avoqado:chat-availability', function (e) {
+        var canMessage = !e || !e.detail || e.detail.canMessage !== false
+        if (textusFab) textusFab.style.display = canMessage ? '' : 'none'
+        if (drawerTextus) drawerTextus.style.display = canMessage ? '' : 'none'
+      })
+
       // ----- Body flow class sync on client-side navigation ----------------
       // The widget pushes URL state when the customer enters appointments/
       // classes from the unified landing (BookingFlow → pushState). Without

@@ -146,6 +146,21 @@ export interface PublicVenueInfo {
     minNoticeMin: number
     autoConfirm: boolean
   }
+  /**
+   * Venue-chat availability (server-resolved). `canMessage` is the single gate
+   * the widget FAB + host-page "message us" pill use: false means neither the
+   * in-widget relay nor a wa.me phone is available, so the affordance would
+   * dead-end after the customer fills out the form — hide it. Optional + treated
+   * as available when absent, so older/cached server payloads keep the FAB
+   * (fail-open, preserving pre-rollout behavior).
+   * - RELAY: in-widget chat works regardless of phone.
+   * - WA_ME_FALLBACK: deep-links to wa.me (only usable when a phone exists).
+   * - DISABLED: chat turned off.
+   */
+  chat?: {
+    mode: 'RELAY' | 'WA_ME_FALLBACK' | 'DISABLED'
+    canMessage: boolean
+  }
 }
 
 export interface OperatingHours {

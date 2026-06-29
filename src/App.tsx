@@ -33,13 +33,31 @@ export default function App(props: WidgetProps) {
         ? 'avq-mid'
         : 'max-w-lg'
 
-  // Lightweight venue fetch just for the wa.me fallback. Doesn't block
-  // BookingFlow — that component also fetches venue info on its own.
+  // Lightweight venue fetch for the wa.me fallback + chat availability. Doesn't
+  // block BookingFlow — that component also fetches venue info on its own.
   const [venuePhone, setVenuePhone] = useState<string | null>(null)
+  // Whether a "message us" affordance can actually reach the venue (server-
+  // resolved: RELAY, or WA_ME_FALLBACK with a phone). Defaults to true so we
+  // fail-open when the fetch errors or an older server omits `chat` — the FAB
+  // only hides when the server explicitly says the channel would dead-end.
+  const [chatCanMessage, setChatCanMessage] = useState(true)
   useEffect(() => {
     let active = true
     getVenueInfo(props.venue)
-      .then(v => { if (active) setVenuePhone(v?.phone ?? null) })
+      .then(v => {
+        if (!active) return
+        setVenuePhone(v?.phone ?? null)
+        const canMessage = v?.chat?.canMessage ?? true
+        setChatCanMessage(canMessage)
+        // Mirror the verdict to the host page: book.avoqado.io renders its own
+        // "message us" pill in the light DOM and suppresses our shadow-DOM FAB
+        // (hide-chat-fab), so it can't read `chat.canMessage` itself. It listens
+        // for this on window and hides its pill + drawer row when canMessage is
+        // false. Absent listener (third-party embeds) → harmless no-op.
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('avoqado:chat-availability', { detail: { canMessage } }))
+        }
+      })
       .catch(() => {})
     return () => { active = false }
   }, [props.venue])
@@ -83,7 +101,7 @@ export default function App(props: WidgetProps) {
         venuePhone={venuePhone}
         flowOrigin={flowOrigin}
         locale={props.locale}
-        hideFab={props.hideChatFab}
+        hideFab={props.hideChatFab || !chatCanMessage}
       />
     </div>
   )
