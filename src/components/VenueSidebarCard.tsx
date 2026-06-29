@@ -1,5 +1,6 @@
 import { h } from 'preact'
-import type { PublicVenueInfo, CreditPackPublic, CustomerInfo } from '../types'
+import type { PublicVenueInfo, CreditPackPublic } from '../types'
+import type { CustomerInfo } from '../state/booking'
 import type { TFunction } from '../i18n'
 
 interface VenueSidebarCardProps {

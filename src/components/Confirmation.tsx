@@ -94,7 +94,7 @@ export function Confirmation({ booking, venueInfo, onManageBooking, onNewBooking
           </svg>
           <span style={{ fontSize: '13px', fontWeight: '500', color: 'var(--avq-success-fg)' }}>
             {(booking.creditsUsed ?? 1) > 1
-              ? t('creditPacks.creditsUsed', { count: booking.creditsUsed })
+              ? t('creditPacks.creditsUsed', { count: booking.creditsUsed ?? 1 })
               : t('creditPacks.creditUsed')}
             {' — '}{t('creditPacks.noCreditNeeded')}
           </span>
