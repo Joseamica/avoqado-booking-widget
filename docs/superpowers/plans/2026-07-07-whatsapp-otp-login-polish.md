@@ -779,8 +779,9 @@ export function CountryPhoneInput({
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
     if (!q) return COUNTRIES
+    const digits = q.replace(/\D/g, '')
     return COUNTRIES.filter(
-      c => c.name.toLowerCase().includes(q) || c.dial.includes(q.replace(/\D/g, '')),
+      c => c.name.toLowerCase().includes(q) || (digits !== '' && c.dial.includes(digits)),
     )
   }, [query])
 
@@ -1030,7 +1031,7 @@ export function OtpInput({ value, onChange, onComplete, disabled, length = 6 }: 
       {Array.from({ length }).map((_, i) => (
         <input
           key={i}
-          ref={el => (refs.current[i] = el)}
+          ref={el => { refs.current[i] = el }}
           type="text"
           inputMode="numeric"
           maxLength={1}
@@ -1243,7 +1244,7 @@ with:
                 <OtpInput
                   value={otpCode}
                   onChange={setOtpCode}
-                  onComplete={() => handleVerifyOtp()}
+                  onComplete={(code) => handleVerifyOtp(undefined, code)}
                   disabled={otpSubmitting}
                 />
               </div>
