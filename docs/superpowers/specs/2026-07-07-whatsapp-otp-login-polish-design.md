@@ -117,24 +117,37 @@ it via a `splitName()` helper (same first-word/rest-of-words split already
 used in `auth.consumer.service.ts` — mirrored locally rather than importing
 across bounded contexts).
 
-### 4. Guest-booking auto-link — tolerant phone matching (forward-looking fix)
+### 4. Guest-booking auto-link — canonical phone matching (forward-looking fix)
 
-**New shared file:** `src/utils/phone.ts` (avoqado-server) —
-`normalizePhone(phone)` (moved out of `otpAuth.public.service.ts`, which
-starts importing it instead of defining it locally) and a new
-`phoneMatchCandidates(rawPhone)` returning:
-- `exact`: de-duped array of `[trimmed input, "+digits", "digits"]`
-- `last10`: the last 10 digits, for a bounded-risk `endsWith` fallback match
+**Revised after discovery:** `avoqado-server` **already depends on
+`libphonenumber-js`** and already ships `src/utils/phone.ts` with a tested
+`normalizePhoneE164(input)` helper. The "libphonenumber is too heavy"
+constraint only ever applied to the **widget** IIFE bundle — on the server,
+canonical E.164 normalization is free and already in use. So the server-side
+matching uses real E.164 canonicalization, not a hand-rolled `endsWith`
+heuristic.
+
+**Extend the existing `src/utils/phone.ts`** (avoqado-server) with two small
+pure helpers alongside the existing `normalizePhoneE164`:
+- `phoneLast10(input)` → last 10 digits (or `null` if fewer), used as a cheap
+  coarse SQL prefilter (`endsWith`) that catches every formatting variant
+  since all variants of a number share the same trailing 10 digits.
+- `phonesMatch(a, b)` → `true` when both normalize to the same E.164 string;
+  falls back to a last-10-digit comparison only when one side can't be parsed
+  to a valid E.164 number. This is the canonical verify that eliminates the
+  false positives a bare `endsWith` prefilter would admit.
 
 Reused in **both**:
-- `reservation.public.controller.ts:1889` (`matchedCustomer` lookup) — OR's
-  in the candidate phones plus the `endsWith` last-10 match, alongside the
-  existing exact-email match.
-- The new backfill lookup in `otpAuth.public.service.ts` (§3), matching
-  against `Reservation.guestPhone`.
+- `reservation.public.controller.ts:1889` (`matchedCustomer` lookup) —
+  coarse-prefilter candidate customers by `phone endsWith last10`, then accept
+  only those where `phonesMatch(customer.phone, body.guestPhone)`, alongside
+  the existing exact-email match.
+- The new backfill lookup in `otpAuth.public.service.ts` (§3), matching the
+  login destination against `Reservation.guestPhone` the same way.
 
-This is a single shared, tolerant-matching helper instead of writing the
-same heuristic twice.
+One shared, canonical matching helper instead of writing a fuzzy heuristic
+twice. This does **not** touch the widget bundle, so the "keep the widget
+light" decision stands.
 
 ## Data flow summary
 
@@ -184,10 +197,14 @@ Widget renders:
 
 ## Out of scope
 
-- Normalizing `Customer.phone` at every write site (`registerCustomer`,
-  `updateProfile`) so all phone storage is byte-for-byte consistent. That
-  would need a data migration across existing rows and is a separate,
-  larger effort.
-- Per-country phone number length/format validation.
+- Backfilling/normalizing existing `Customer.phone` rows and adding
+  `normalizePhoneE164` to every write site (`registerCustomer`,
+  `updateProfile`) so all *stored* phone data is canonical. `phonesMatch`
+  already makes read-time matching correct regardless of stored format, so a
+  historical migration is a separate, larger effort with no user-facing
+  urgency once matching is canonical.
+- Per-country phone number length/format validation **in the widget**
+  (the server's `normalizePhoneE164` validates, but the widget picker does
+  not gate submission on it).
 - Applying the country-code dropdown to any other phone field in the widget
   (register, edit-profile, guest booking).
