@@ -197,14 +197,18 @@ export function CustomerPortal({ venueSlug, timezone, venuePhone, t, onBack, onM
     }
   }
 
-  async function handleVerifyOtp(e?: Event) {
+  // `codeOverride` lets the OtpInput's onComplete pass the just-completed code
+  // directly: when auto-submit fires synchronously, the `otpCode` state hasn't
+  // flushed yet, so reading it from the closure would see a stale <6-digit value.
+  async function handleVerifyOtp(e?: Event, codeOverride?: string) {
     if (e) e.preventDefault()
     if (otpSubmitting) return
-    if (otpCode.trim().length < 6) return
+    const code = (codeOverride ?? otpCode).trim()
+    if (code.length < 6) return
     setOtpSubmitting(true)
     setOtpError(null)
     try {
-      const result = await api.verifyOtp(venueSlug, { ...otpDestination(), code: otpCode.trim() })
+      const result = await api.verifyOtp(venueSlug, { ...otpDestination(), code })
       // Reuse the EXACT success path the email login uses (identical AuthResponse).
       setCustomerSession(result.token, result.customer)
       await loadPortal(result.token)
@@ -405,7 +409,7 @@ export function CustomerPortal({ venueSlug, timezone, venuePhone, t, onBack, onM
                 <OtpInput
                   value={otpCode}
                   onChange={setOtpCode}
-                  onComplete={() => handleVerifyOtp()}
+                  onComplete={(code) => handleVerifyOtp(undefined, code)}
                   disabled={otpSubmitting}
                 />
               </div>

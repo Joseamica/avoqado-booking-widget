@@ -30,8 +30,11 @@ export function CountryPhoneInput({
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
     if (!q) return COUNTRIES
+    // Only match on dial code when the query actually has digits — otherwise
+    // `''.includes('')`-style always-true matching would defeat the name filter.
+    const digits = q.replace(/\D/g, '')
     return COUNTRIES.filter(
-      c => c.name.toLowerCase().includes(q) || c.dial.includes(q.replace(/\D/g, '')),
+      c => c.name.toLowerCase().includes(q) || (digits !== '' && c.dial.includes(digits)),
     )
   }, [query])
 
