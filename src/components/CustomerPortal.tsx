@@ -5,6 +5,9 @@ import type { CreditPackPublic } from '../types'
 import { Spinner } from './ui/Spinner'
 import { Button } from './ui/Button'
 import { Input } from './ui/Input'
+import { CountryPhoneInput } from './ui/CountryPhoneInput'
+import { OtpInput } from './ui/OtpInput'
+import { DEFAULT_DIAL } from '../data/countries'
 import * as api from '../api/booking'
 import { portalData, portalLoading, customerToken, customerInfo, setCustomerSession, clearCustomerSession } from '../state/booking'
 
@@ -49,6 +52,7 @@ export function CustomerPortal({ venueSlug, timezone, venuePhone, t, onBack, onM
   // "Usar correo" swaps it to email so the same flow works over email OTP.
   const [otpChannel, setOtpChannel] = useState<'phone' | 'email'>('phone')
   const [otpPhone, setOtpPhone] = useState('')
+  const [otpDialCode, setOtpDialCode] = useState(DEFAULT_DIAL)
   const [otpEmail, setOtpEmail] = useState('')
   const [otpCode, setOtpCode] = useState('')
   const [cooldown, setCooldown] = useState(0)
@@ -158,12 +162,12 @@ export function CustomerPortal({ venueSlug, timezone, venuePhone, t, onBack, onM
   /** Build the { phone } | { email } payload from the active OTP channel. */
   function otpDestination(): { phone?: string; email?: string } {
     return otpChannel === 'phone'
-      ? { phone: otpPhone.trim() }
+      ? { phone: `+${otpDialCode}${otpPhone.replace(/\D/g, '')}` }
       : { email: otpEmail.trim() }
   }
 
   function otpDestinationFilled(): boolean {
-    return otpChannel === 'phone' ? !!otpPhone.trim() : !!otpEmail.trim()
+    return otpChannel === 'phone' ? !!otpPhone.replace(/\D/g, '') : !!otpEmail.trim()
   }
 
   async function handleSendOtp(e?: Event) {
@@ -193,8 +197,9 @@ export function CustomerPortal({ venueSlug, timezone, venuePhone, t, onBack, onM
     }
   }
 
-  async function handleVerifyOtp(e: Event) {
-    e.preventDefault()
+  async function handleVerifyOtp(e?: Event) {
+    if (e) e.preventDefault()
+    if (otpSubmitting) return
     if (otpCode.trim().length < 6) return
     setOtpSubmitting(true)
     setOtpError(null)
@@ -224,6 +229,7 @@ export function CustomerPortal({ venueSlug, timezone, venuePhone, t, onBack, onM
     setOtpStep('phone')
     setOtpChannel('phone')
     setOtpPhone('')
+    setOtpDialCode(DEFAULT_DIAL)
     setOtpEmail('')
     setOtpCode('')
     setCooldown(0)
@@ -344,11 +350,14 @@ export function CustomerPortal({ venueSlug, timezone, venuePhone, t, onBack, onM
               {otpChannel === 'phone' ? (
                 <div>
                   <label style={labelStyle}>{t('otp.phoneLabel')}</label>
-                  <Input
-                    type="tel"
-                    value={otpPhone}
-                    placeholder={t('form.phonePlaceholder')}
-                    onInput={(e) => setOtpPhone((e.target as HTMLInputElement).value)}
+                  <CountryPhoneInput
+                    dialCode={otpDialCode}
+                    nationalNumber={otpPhone}
+                    onDialCodeChange={setOtpDialCode}
+                    onNationalNumberChange={setOtpPhone}
+                    numberPlaceholder={t('form.phonePlaceholder')}
+                    searchPlaceholder={t('otp.countrySearchPlaceholder')}
+                    noResultsText={t('otp.countryNoResults')}
                   />
                 </div>
               ) : (
@@ -393,11 +402,11 @@ export function CustomerPortal({ venueSlug, timezone, venuePhone, t, onBack, onM
               </p>
               <div>
                 <label style={labelStyle}>{t('otp.codeLabel')}</label>
-                <Input
-                  type="text"
+                <OtpInput
                   value={otpCode}
-                  placeholder="123456"
-                  onInput={(e) => setOtpCode((e.target as HTMLInputElement).value.replace(/\D/g, '').slice(0, 6))}
+                  onChange={setOtpCode}
+                  onComplete={() => handleVerifyOtp()}
+                  disabled={otpSubmitting}
                 />
               </div>
 
@@ -591,7 +600,9 @@ export function CustomerPortal({ venueSlug, timezone, venuePhone, t, onBack, onM
         <div>
           <h2 style={{ fontSize: '18px', fontWeight: '700', color: 'var(--avq-fg, #111827)', margin: 0 }}>
             {customer
-              ? `${t('portal.hello')}, ${customer.firstName || customer.email}`
+              ? (customer.firstName || customer.email)
+                ? `${t('portal.hello')}, ${customer.firstName || customer.email}`
+                : t('portal.hello')
               : t('portal.title')}
           </h2>
           {customer?.email && customer.firstName && (

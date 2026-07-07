@@ -337,7 +337,9 @@
     "emailLabel": "Your email",
     "orPassword": "or sign in with email and password",
     "errorInvalid": "Incorrect code.",
-    "errorGeneric": "We couldn't send the code. Please try again."
+    "errorGeneric": "We couldn't send the code. Please try again.",
+    "countrySearchPlaceholder": "Search country or code",
+    "countryNoResults": "No results"
   },
   "modifiers": {
     "required": "Required",
