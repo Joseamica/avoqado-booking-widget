@@ -11,6 +11,14 @@ interface PaymentSelectorProps {
   credits: CustomerCreditBalance | null
   /** Resolved policy for this product — already merged with venue defaults. */
   upfrontPolicy: UpfrontPolicy
+  /**
+   * Whether the venue can actually collect money online (chargeable e-commerce
+   * rail). When false, we hide the "buy a pack" CTAs (buying would dead-end at
+   * checkout) and treat any upfront policy as "pay at venue" (the backend already
+   * falls back to that). Redeeming EXISTING credits still works — it moves no
+   * money. Undefined (older backend) is treated as "can charge" for compatibility.
+   */
+  canCharge?: boolean
   /** User picked "use credits" — pass the credit-pack item-balance ID to consume. */
   onSelectCredits: (creditItemBalanceId: string) => void
   /** User picked "pay cash now" or "pay at venue" — proceeds with reservation, no credit. */
@@ -35,11 +43,18 @@ export function PaymentSelector({
   seats,
   credits,
   upfrontPolicy,
+  canCharge,
   onSelectCredits,
   onSelectCash,
   onBuyPack,
   t,
 }: PaymentSelectorProps) {
+  // When the venue can't charge online, hide anything that would move money
+  // online: no "buy a pack" CTA, and any upfront requirement collapses to
+  // "pay at venue" (matching the backend's graceful fallback). Redeeming
+  // EXISTING credits stays available — it charges nothing.
+  const cannotCharge = canCharge === false
+  const effectivePolicy: UpfrontPolicy = cannotCharge ? 'at_venue' : upfrontPolicy
   const creditCost = product.creditCost == null ? 1 : product.creditCost
   const cashPrice = product.price ?? 0
   const creditOnly = product.requireCreditForBooking === true
@@ -69,14 +84,14 @@ export function PaymentSelector({
   const insufficientBalance = !sufficientBalance && creditBalances.length > 0 ? creditBalances[0] : null
 
   const cashLabel =
-    upfrontPolicy === 'required'
+    effectivePolicy === 'required'
       ? t('payment.payNow', { amount: formatPrice(cashPrice * seats) })
       : t('payment.payAtVenue', { amount: formatPrice(cashPrice * seats) })
 
   const cashHint =
-    upfrontPolicy === 'required'
+    effectivePolicy === 'required'
       ? t('payment.payNowHint')
-      : upfrontPolicy === 'at_venue'
+      : effectivePolicy === 'at_venue'
         ? t('payment.payAtVenueHint')
         : t('payment.payOptionalHint')
 
@@ -113,8 +128,8 @@ export function PaymentSelector({
           </button>
         )}
 
-        {/* Insufficient credits — show "buy more" CTA */}
-        {acceptsCredits && !sufficientBalance && insufficientBalance && (
+        {/* Insufficient credits — show "buy more" CTA (only if the venue can charge) */}
+        {!cannotCharge && acceptsCredits && !sufficientBalance && insufficientBalance && (
           <button
             type="button"
             onClick={onBuyPack}
@@ -137,8 +152,8 @@ export function PaymentSelector({
           </button>
         )}
 
-        {/* No matching credit balance at all — buy pack option */}
-        {acceptsCredits && creditBalances.length === 0 && (
+        {/* No matching credit balance at all — buy pack option (only if the venue can charge) */}
+        {!cannotCharge && acceptsCredits && creditBalances.length === 0 && (
           <button
             type="button"
             onClick={onBuyPack}
@@ -166,8 +181,8 @@ export function PaymentSelector({
             style={paymentOptionStyle(true)}
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-              <span style={iconBadgeStyle(upfrontPolicy === 'required' ? 'accent' : 'neutral')}>
-                {upfrontPolicy === 'required' ? '💳' : '🏪'}
+              <span style={iconBadgeStyle(effectivePolicy === 'required' ? 'accent' : 'neutral')}>
+                {effectivePolicy === 'required' ? '💳' : '🏪'}
               </span>
               <div style={{ textAlign: 'left', flex: 1 }}>
                 <div style={{ fontSize: '14px', fontWeight: '600', color: 'var(--avq-fg, #111827)' }}>

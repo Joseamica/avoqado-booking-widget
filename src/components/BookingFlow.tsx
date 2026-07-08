@@ -334,21 +334,35 @@ export function BookingFlow({ props }: BookingFlowProps) {
             },
           },
         }))
-        // Load credit packs in background. Once they land, notify the host
-        // page so the top-nav "Comprar créditos" CTA can unhide itself when
-        // the venue actually has packs on offer.
-        api.getCreditPacks(props.venue).then(packs => {
-          creditPacks.value = packs
+        // Load credit packs in background — but ONLY if the venue can actually
+        // collect money online. When it can't (no chargeable e-commerce
+        // merchant, info.canCharge === false), the pack storefront would just
+        // dead-end at checkout, so we hide it entirely: treat it as "no packs".
+        // Free reservations are unaffected. Older backends omit canCharge
+        // (undefined) → we keep the previous always-fetch behavior.
+        if (info.canCharge === false) {
+          creditPacks.value = []
           creditPacksLoaded.value = true
           props.hostElement.dispatchEvent(new CustomEvent('avoqado:credit-packs-loaded', {
             bubbles: true, composed: true,
-            detail: { count: packs.length },
+            detail: { count: 0 },
           }))
-        }).catch(() => {
-          // Treat fetch errors as "no packs" so the auto-skip below can still
-          // proceed instead of getting stuck waiting on a flag that never flips.
-          creditPacksLoaded.value = true
-        })
+        } else {
+          // Once they land, notify the host page so the top-nav "Comprar
+          // créditos" CTA can unhide itself when the venue actually has packs.
+          api.getCreditPacks(props.venue).then(packs => {
+            creditPacks.value = packs
+            creditPacksLoaded.value = true
+            props.hostElement.dispatchEvent(new CustomEvent('avoqado:credit-packs-loaded', {
+              bubbles: true, composed: true,
+              detail: { count: packs.length },
+            }))
+          }).catch(() => {
+            // Treat fetch errors as "no packs" so the auto-skip below can still
+            // proceed instead of getting stuck waiting on a flag that never flips.
+            creditPacksLoaded.value = true
+          })
+        }
       })
       .catch((err) => {
         apiError.value = err.status === 404 ? t('errors.venueNotFound') : t('errors.generic')
@@ -1819,6 +1833,7 @@ export function BookingFlow({ props }: BookingFlowProps) {
                   seats={bookingSeatCount(pendingFormData)}
                   credits={customerCredits.value}
                   upfrontPolicy={selectedProduct.value.upfrontPolicy ?? 'at_venue'}
+                  canCharge={venueInfo.value?.canCharge}
                   onSelectCredits={(balanceId) => {
                     selectedCreditBalance.value = { balanceId, productId: selectedProduct.value?.id || '' }
                     setShowPaymentSelector(false)

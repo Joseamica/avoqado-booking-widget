@@ -134,6 +134,14 @@ export interface PublicVenueInfo {
     classUpfrontDefault: UpfrontPolicy
   }
   /**
+   * Whether the venue can actually collect money online (has a chargeable
+   * e-commerce merchant on the backend). When false, the widget hides the
+   * credit-pack storefront and the online pre-pay option — free reservations
+   * still work. Optional: older/cached server payloads omit it, in which case
+   * the widget treats the venue as chargeable (previous behavior).
+   */
+  canCharge?: boolean
+  /**
    * Scheduling window the venue admin configured. Optional so older/cached
    * payloads still type-check (fall back to sane defaults when absent).
    * - maxAdvanceDays: how far ahead the customer may book → caps the date picker.
