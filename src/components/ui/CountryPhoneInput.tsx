@@ -1,6 +1,6 @@
 import { h } from 'preact'
 import { useState, useRef, useEffect, useMemo } from 'preact/hooks'
-import { COUNTRIES, flagEmoji, type Country } from '../../data/countries'
+import { COUNTRIES, flagEmoji, detectCountryFromFullNumber, type Country } from '../../data/countries'
 
 interface CountryPhoneInputProps {
   dialCode: string
@@ -108,7 +108,20 @@ export function CountryPhoneInput({
           placeholder={numberPlaceholder}
           onFocus={() => setFocused(true)}
           onBlur={() => setFocused(false)}
-          onInput={e => onNationalNumberChange((e.target as HTMLInputElement).value.replace(/\D/g, ''))}
+          onInput={e => {
+            const raw = (e.target as HTMLInputElement).value
+            // Pasting a full "+<country><national>" number auto-selects the
+            // country and keeps only the national digits. A paste fires this
+            // same input event with the whole string, so no paste handler is
+            // needed. Plain digit input (no leading "+") is unchanged.
+            const detected = detectCountryFromFullNumber(raw)
+            if (detected) {
+              onDialCodeChange(detected.dial)
+              onNationalNumberChange(detected.national)
+            } else {
+              onNationalNumberChange(raw.replace(/\D/g, ''))
+            }
+          }}
           style={{
             flex: 1, minWidth: 0, border: 'none', outline: 'none',
             padding: '0 14px', fontSize: '15px',
