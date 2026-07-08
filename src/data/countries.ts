@@ -235,3 +235,27 @@ export const COUNTRIES: Country[] = [
   { iso2: 'ZM', name: 'Zambia', dial: '260' },
   { iso2: 'ZW', name: 'Zimbabue', dial: '263' },
 ]
+
+// Unique dial codes, longest first — so "+1441" (Bermuda) is tried before "+1"
+// (US/Canada). Computed once at module load, not per keystroke.
+const DIALS_LONGEST_FIRST: string[] = [...new Set(COUNTRIES.map(c => c.dial))].sort(
+  (a, b) => b.length - a.length,
+)
+
+/**
+ * When the user pastes/enters a FULL international number (must start with "+"),
+ * split it into { dial, national }. Returns null when there is no leading "+"
+ * (so a plain national number is never mis-parsed) or no dial code prefixes it
+ * with at least one national digit left over.
+ */
+export function detectCountryFromFullNumber(raw: string): { dial: string; national: string } | null {
+  if (!raw.trim().startsWith('+')) return null
+  const digits = raw.replace(/\D/g, '')
+  if (!digits) return null
+  for (const dial of DIALS_LONGEST_FIRST) {
+    if (digits.startsWith(dial) && digits.length > dial.length) {
+      return { dial, national: digits.slice(dial.length) }
+    }
+  }
+  return null
+}
