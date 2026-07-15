@@ -22,3 +22,6 @@ page-*.png
 page-*.yml
 console-*.log
 .gstack/
+
+# graphify knowledge graph output
+graphify-out/

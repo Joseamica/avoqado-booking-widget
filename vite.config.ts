@@ -5,7 +5,7 @@ import tailwindcss from '@tailwindcss/vite'
 export default defineConfig({
   plugins: [preact(), tailwindcss()],
   server: {
-    port: 5174,
+    port: 5176, // antes 5174; movido para no chocar con avoqado-checkout (que usa 5174)
     proxy: {
       '/api': {
         target: 'http://localhost:3000',

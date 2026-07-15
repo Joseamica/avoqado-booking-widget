@@ -5,7 +5,7 @@ This file provides guidance to Codex (Codex.ai/code) when working with code in t
 ## Commands
 
 ```bash
-npm run dev      # Dev server at http://localhost:5174 (proxies /api → localhost:3000)
+npm run dev      # Dev server at http://localhost:5176 (proxies /api → localhost:3000)
 npm run build    # IIFE bundle → dist/widget.js
 npm run preview  # Preview the built bundle
 ```
@@ -100,4 +100,4 @@ Manual test without WordPress:
 <script type="module" src="/src/widget.ts"></script>
 <avoqado-booking venue="avoqado-full" locale="es" theme="light"></avoqado-booking>
 ```
-Open `http://localhost:5174/test.html` (not `file://` — CORS blocks API calls from file:// origins).
+Open `http://localhost:5176/test.html` (not `file://` — CORS blocks API calls from file:// origins).
