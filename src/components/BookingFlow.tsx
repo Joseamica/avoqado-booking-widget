@@ -7,11 +7,11 @@ import * as api from '../api/booking'
 import {
   step, venueInfo, selectedProduct, selectedDate, selectedSlot,
   selectedSpotIds, bookingResult, isLoading, apiError, manageSecret,
-  hasServiceStep, getStepConfig, resetBooking, showToast,
+  hasServiceStep, hasStaffStep, getStepConfig, resetBooking, showToast,
   creditPacks, customerCredits, selectedCreditBalance, creditPacksLoading, creditPacksLoaded,
   showPortal, portalData, customerToken, customerInfo, setCustomerSession, clearCustomerSession,
   flowType, visibleProducts,
-  selectedProducts, totalDuration, totalPrice, selectedModifiers,
+  selectedProducts, selectedStaffId, totalDuration, totalPrice, selectedModifiers,
   addSelectedProduct, removeSelectedProduct,
   slotHoldToken, slotHoldExpiresAt,
   branding, DEFAULT_BRANDING,
@@ -39,6 +39,7 @@ import { TimezoneModal, getStoredTzPreference } from './TimezoneModal'
 import { VenueSidebarCard } from './VenueSidebarCard'
 import { AppointmentSummarySidebar } from './AppointmentSummarySidebar'
 import { ServiceDetailView } from './ServiceDetailView'
+import { StaffSelector } from './StaffSelector'
 import { DateTimePickerSquare } from './DateTimePickerSquare'
 import { PaymentStepHeader } from './PaymentStepHeader'
 import { PaymentChoiceInline, type InlineChoice } from './PaymentChoiceInline'
@@ -46,6 +47,12 @@ import { CreditPacksModal } from './CreditPacksModal'
 import { AppointmentConfirmation } from './AppointmentConfirmation'
 import type { GuestFormData } from './GuestInfoForm'
 import type { Product } from '../types'
+import {
+  baseWindowForSlot,
+  intersectEligibleStaff,
+  modifierDurationDelta,
+  reconcileAppointmentSelection,
+} from '../lib/appointmentStaff'
 
 interface BookingFlowProps {
   props: WidgetProps
@@ -144,6 +151,8 @@ export function BookingFlow({ props }: BookingFlowProps) {
   const [showCreditSelector, setShowCreditSelector] = useState(false)
   const [showNoCreditsBuyPrompt, setShowNoCreditsBuyPrompt] = useState(false)
   const [showPaymentSelector, setShowPaymentSelector] = useState(false)
+  const [holdReleaseFailed, setHoldReleaseFailed] = useState(false)
+  const [guestDraft, setGuestDraft] = useState<GuestFormData | null>(null)
   // Square-style /appointments wizard: ServiceDetailView intermediate page.
   // When non-null, the service-step main column renders the detail view instead
   // of the list. mode='add' for products not yet picked, 'edit' for ones already
@@ -163,17 +172,69 @@ export function BookingFlow({ props }: BookingFlowProps) {
   // _avq_show_credit_packs on its host element → this flag flips on. Picking
   // a pack in the modal hands off to the existing CheckoutModal flow.
   const [showCreditPacksModal, setShowCreditPacksModal] = useState(false)
+  const pendingHoldReleaseActionRef = useRef<(() => void | Promise<void>) | null>(null)
+  const baseDurationOverrideRef = useRef<{ productKey: string; duration: number } | null>(null)
 
   // Step config — hoisted ABOVE every useEffect so closures that reference
   // it never hit TDZ when an early-return guard (isLoading / portal / manage
   // state) returns before the function body completes. Effect callbacks fire
   // after the function returns, so they need the binding initialized by then.
-  const config = getStepConfig(hasServiceStep.value)
+  const config = getStepConfig(hasServiceStep.value, hasStaffStep.value)
 
   // The unified landing (Square-style two-CTA picker) shows whenever the
   // customer enters via /<slug> with no flow segment. Picking a CTA flips
   // flowType in-memory + rewrites the URL so a refresh keeps the choice.
   const [showLanding, setShowLanding] = useState(props.flowType === undefined || props.flowType === 'unified')
+
+  const appointmentProducts = selectedProducts.value.length > 0
+    ? selectedProducts.value
+    : (selectedProduct.value ? [selectedProduct.value] : [])
+  const eligibleStaff = intersectEligibleStaff(
+    venueInfo.value?.staffSelection?.staffByProductId ?? {},
+    appointmentProducts.map(product => product.id),
+  )
+  const staffSummaryLabel = hasStaffStep.value
+    ? (eligibleStaff.find(staff => staff.id === selectedStaffId.value)?.name ?? t('staffSelection.anyone'))
+    : undefined
+
+  /** The only in-app path that releases a hold. Failure deliberately keeps
+   * the token in state, blocks navigation/new holds, and exposes a retry. */
+  async function releaseHold(explicitToken?: string): Promise<boolean> {
+    const token = explicitToken ?? slotHoldToken.value
+    if (!token) {
+      setHoldReleaseFailed(false)
+      return true
+    }
+    try {
+      await api.cancelHold(props.venue, token)
+      if (slotHoldToken.value === token) {
+        slotHoldToken.value = null
+        slotHoldExpiresAt.value = null
+      }
+      setHoldReleaseFailed(false)
+      return true
+    } catch {
+      // A late hold response can arrive after navigation. Retain its token so
+      // the user can retry instead of silently orphaning it server-side.
+      if (!slotHoldToken.value) slotHoldToken.value = token
+      setHoldReleaseFailed(true)
+      showToast(t('errors.holdReleaseFailed'), 'error')
+      return false
+    }
+  }
+
+  async function releaseHoldBefore(continueAction: () => void | Promise<void>): Promise<boolean> {
+    if (await releaseHold()) {
+      pendingHoldReleaseActionRef.current = null
+      return true
+    }
+    pendingHoldReleaseActionRef.current = async () => {
+      if (!(await releaseHold())) return
+      pendingHoldReleaseActionRef.current = null
+      await continueAction()
+    }
+    return false
+  }
 
   // When the customer returns from a successful Stripe checkout we open the
   // landing on the 'Comprar paquetes' tab so they immediately see the credits
@@ -202,16 +263,16 @@ export function BookingFlow({ props }: BookingFlowProps) {
     // cancelSecret from ?manage=<secret> and calls widget.showManageBooking().
     // We open ManageBooking with that secret so the customer lands on their
     // booking detail without having to look it up.
-    const onShowManage = (e: Event) => {
+    const onShowManage = async (e: Event) => {
       const detail = (e as CustomEvent<{ cancelSecret?: string }>).detail
       if (detail?.cancelSecret) {
-        manageSecret.value = detail.cancelSecret
-        // BUGFIX: must also switch the step, otherwise the render gate
-        // (step.value === MANAGE_STEP) stays false and the customer lands on
-        // the booking catalog instead of their reservation. This was the Amaena
-        // reminder-link bug — the email CTA opened the service menu, not the
-        // cancel screen, so the customer could never self-cancel.
-        step.value = MANAGE_STEP
+        const continueToManage = () => {
+          manageSecret.value = detail.cancelSecret!
+          // Must switch the step too, or the customer lands on the catalog.
+          step.value = MANAGE_STEP
+        }
+        if (slotHoldToken.value && !(await releaseHoldBefore(continueToManage))) return
+        continueToManage()
       }
     }
     host.addEventListener('_avq_show_account', onShowAccount)
@@ -581,6 +642,16 @@ export function BookingFlow({ props }: BookingFlowProps) {
     const products = selectedProducts.value.length > 0
       ? selectedProducts.value
       : (selectedProduct.value ? [selectedProduct.value] : [])
+    const usesBaseWindow = venueInfo.value?.appointmentWindowSemantics === 'base'
+    let heldEndsAt = slot.endsAt
+    if (usesBaseWindow) {
+      try {
+        heldEndsAt = baseWindowForSlot(slot, products, selectedModifiers.value).endsAt
+      } catch {
+        showToast(t('errors.appointmentWindowChanged'), 'error')
+        return
+      }
+    }
     // Race protection: capture the step we were on at request time. If the
     // user clicks back BEFORE the createHold response arrives, the cancelHold
     // effect (below) sees `slotHoldToken.value === null` and no-ops — and the
@@ -588,56 +659,56 @@ export function BookingFlow({ props }: BookingFlowProps) {
     // orphan hold on the server. We check step.value when the response
     // resolves and cancel inline if we've already moved on.
     const requestedAtStep = step.value
-    api.createHold(props.venue, {
+    void api.createHold(props.venue, {
       startsAt: slot.startsAt,
-      endsAt: slot.endsAt,
+      endsAt: heldEndsAt,
       productIds: products.map(p => p.id),
       classSessionId: slot.classSessionId ?? undefined,
       partySize: Math.max(selectedSpotIds.value.length, 1),
+      ...(selectedStaffId.value ? { staffId: selectedStaffId.value } : {}),
+      ...(selectedModifiers.value.length > 0 ? { modifierSelections: selectedModifiers.value } : {}),
+      ...(usesBaseWindow ? { windowSemantics: 'base' as const } : {}),
     })
-      .then(res => {
+      .then(async res => {
         if (step.value !== requestedAtStep) {
-          // User navigated back during the in-flight request. Don't store the
-          // token in widget state — just release it on the server.
-          api.cancelHold(props.venue, res.holdId).catch(() => { /* silent */ })
+          await releaseHold(res.holdId)
           return
         }
         slotHoldToken.value = res.holdId
         slotHoldExpiresAt.value = new Date(res.expiresAt).getTime()
       })
-      .catch(() => {
-        // Backend not deployed yet, or the slot was already taken. Either way
-        // PaymentStepHeader will fall back to a visual-only 10-min counter.
+      .catch((err: any) => {
+        if (err?.data?.code === 'APPOINTMENT_WINDOW_CHANGED') {
+          void recoverAppointmentWindow(undefined, err?.data?.details?.expectedBaseDurationMin)
+          return
+        }
+        if (err?.status === 409) {
+          selectedSlot.value = null
+          step.value = config.timeStep
+          void fetchSlots()
+          showToast(t('errors.slotTaken'), 'error')
+          return
+        }
+        if (err?.status && err.status !== 404) {
+          showToast(err?.data?.message ?? t('errors.generic'), 'error')
+        }
+        // Old backend (404) or a transient network failure: keep the legacy
+        // visual countdown and let authoritative create enforce availability.
       })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [step.value, selectedSlot.value?.startsAt, props.flowType, props.venue])
 
-  // Release the hold when the customer navigates away from the form step
-  // (back button to time picker, full reset, etc). The cancel endpoint is
-  // idempotent — failures are silent.
-  useEffect(() => {
-    if (props.flowType !== 'appointments') return
-    if (step.value === config.formStep) return
-    const token = slotHoldToken.value
-    if (!token) return
-    api.cancelHold(props.venue, token).catch(() => { /* silent */ })
-    slotHoldToken.value = null
-    slotHoldExpiresAt.value = null
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [step.value, props.flowType, props.venue])
-
   // Release the slot hold when the page unloads (tab close, browser back,
   // navigation away from book.avoqado.io). The React/Preact effect cleanup
-  // doesn't reliably fire on hard unload, so we use navigator.sendBeacon
-  // which fires a fire-and-forget HTTP request that the browser GUARANTEES
-  // to deliver even after the document has been torn down. Without this,
+  // doesn't reliably fire on hard unload, so use a keepalive request against
+  // the same configured API origin as every other booking call. Without this,
   // an abandoned hold sits for the full 10-min TTL.
   useEffect(() => {
     if (props.flowType !== 'appointments') return
     const handler = () => {
       const token = slotHoldToken.value
       if (!token) return
-      const url = `/api/v1/public/venues/${encodeURIComponent(props.venue)}/reservations/hold/${encodeURIComponent(token)}`
+      const url = api.holdReleaseUrl(props.venue, token)
       // sendBeacon doesn't natively support DELETE — but our server's route
       // file accepts the cancel via DELETE only. Fall back to fetch with
       // keepalive:true which has the same fire-and-forget semantics during
@@ -680,33 +751,69 @@ export function BookingFlow({ props }: BookingFlowProps) {
         const freshSig = fresh.products.map(sig).join('\n')
         const productsChanged = prevSig !== freshSig
         const hoursChanged = JSON.stringify(prev.operatingHours) !== JSON.stringify(fresh.operatingHours)
-        if (!productsChanged && !hoursChanged) return
+        const staffCapabilityChanged =
+          prev.appointmentWindowSemantics !== fresh.appointmentWindowSemantics ||
+          JSON.stringify(prev.staffSelection) !== JSON.stringify(fresh.staffSelection)
+        if (!productsChanged && !hoursChanged && !staffCapabilityChanged) return
+
+        if (slotHoldToken.value && !(await releaseHoldBefore(refreshStaleVenue))) return
 
         venueInfo.value = fresh
         branding.value = fresh.branding ?? DEFAULT_BRANDING
 
-        // Drop any selected services that are no longer in the catalog. If
-        // EVERY selected service vanished, route the customer back to the
-        // service step so they can rebuild their cart from scratch.
-        const freshIds = new Set(fresh.products.map(p => p.id))
-        const stillValid = selectedProducts.value.filter(p => freshIds.has(p.id))
-        if (stillValid.length !== selectedProducts.value.length) {
-          selectedProducts.value = stillValid
-          selectedProduct.value = stillValid[0] ?? null
-          if (stillValid.length === 0 && step.value > config.serviceStep) {
-            step.value = config.serviceStep
-          }
-          showToast(
-            props.locale === 'en'
-              ? 'Some services were updated. Please review your appointment.'
-              : 'Algunos servicios cambiaron. Revisa tu cita.',
-            'error',
-          )
-        } else if (productsChanged || hoursChanged) {
+        if (props.flowType !== 'appointments') {
+          const freshById = new Map(fresh.products.map(product => [product.id, product]))
+          const refreshedProducts = selectedProducts.value.flatMap(product => {
+            const replacement = freshById.get(product.id)
+            return replacement ? [replacement] : []
+          })
+          selectedProducts.value = refreshedProducts
+          selectedProduct.value = selectedProduct.value ? (freshById.get(selectedProduct.value.id) ?? null) : null
           showToast(
             props.locale === 'en' ? 'The catalog was updated.' : 'El catálogo se actualizó.',
             'success',
           )
+          return
+        }
+
+        const previousSelection = selectedProducts.value.length > 0
+          ? selectedProducts.value
+          : (selectedProduct.value ? [selectedProduct.value] : [])
+        const reconciled = reconcileAppointmentSelection(previousSelection, selectedModifiers.value, fresh)
+        const stillValid = reconciled.products
+        selectedProducts.value = stillValid
+        selectedProduct.value = stillValid[0] ?? null
+        selectedModifiers.value = reconciled.modifiers
+        if (reconciled.changed) baseDurationOverrideRef.current = null
+        selectedSlot.value = null
+        selectedSpotIds.value = []
+        setSlots([])
+
+        const refreshedEligibleStaff = intersectEligibleStaff(
+          fresh.staffSelection?.staffByProductId ?? {},
+          stillValid.map(product => product.id),
+        )
+        const refreshedVisibleCount = fresh.products.filter(product => product.type !== 'CLASS').length
+        if (selectedStaffId.value && !refreshedEligibleStaff.some(staff => staff.id === selectedStaffId.value)) {
+          selectedStaffId.value = null
+          selectedDate.value = null
+          selectedSlot.value = null
+          const refreshedConfig = getStepConfig(refreshedVisibleCount > 1, fresh.staffSelection?.enabled === true)
+          step.value = refreshedConfig.staffStep || refreshedConfig.dateStep
+          showToast(t('staffSelection.changed'), 'error')
+        } else {
+          const refreshedConfig = getStepConfig(refreshedVisibleCount > 1, fresh.staffSelection?.enabled === true)
+          if (stillValid.length === 0) {
+            selectedDate.value = null
+            step.value = refreshedConfig.serviceStep || refreshedConfig.staffStep || refreshedConfig.dateStep
+          } else if (fresh.staffSelection?.enabled === true && refreshedEligibleStaff.length === 0) {
+            selectedDate.value = null
+            step.value = refreshedConfig.staffStep
+          } else {
+            step.value = selectedDate.value ? refreshedConfig.timeStep : refreshedConfig.dateStep
+            if (selectedDate.value) await fetchSlots()
+          }
+          showToast(t('staffSelection.catalogChanged'), reconciled.changed ? 'error' : 'success')
         }
 
         // Refresh the customer's credit balance too — they may have redeemed
@@ -751,8 +858,73 @@ export function BookingFlow({ props }: BookingFlowProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [props.venue, props.locale])
 
+  async function recoverAppointmentWindow(draft?: GuestFormData, expectedBaseDurationMin?: number): Promise<void> {
+    if (draft) setGuestDraft(draft)
+    const continueRecovery = async () => {
+      selectedSlot.value = null
+      selectedSpotIds.value = []
+      setSlots([])
+      setShowCreditSelector(false)
+      setShowNoCreditsBuyPrompt(false)
+      setShowPaymentSelector(false)
+      setPendingFormData(null)
+
+      try {
+        const fresh = await api.getVenueInfo(props.venue)
+        const previousProducts = selectedProducts.value.length > 0
+          ? selectedProducts.value
+          : (selectedProduct.value ? [selectedProduct.value] : [])
+        const reconciled = reconcileAppointmentSelection(previousProducts, selectedModifiers.value, fresh)
+
+        venueInfo.value = fresh
+        branding.value = fresh.branding ?? DEFAULT_BRANDING
+        selectedProducts.value = reconciled.products
+        selectedProduct.value = reconciled.products[0] ?? null
+        selectedModifiers.value = reconciled.modifiers
+        baseDurationOverrideRef.current =
+          reconciled.products.length === previousProducts.length && Number.isInteger(expectedBaseDurationMin) && expectedBaseDurationMin! > 0
+            ? { productKey: reconciled.products.map(product => product.id).join(','), duration: expectedBaseDurationMin! }
+            : null
+
+        const freshEligibleStaff = intersectEligibleStaff(
+          fresh.staffSelection?.staffByProductId ?? {},
+          reconciled.products.map(product => product.id),
+        )
+        if (selectedStaffId.value && !freshEligibleStaff.some(staff => staff.id === selectedStaffId.value)) {
+          selectedStaffId.value = null
+          showToast(t('staffSelection.changed'), 'error')
+        } else if (reconciled.changed) {
+          showToast(t('staffSelection.catalogChanged'), 'error')
+        } else {
+          showToast(t('errors.appointmentWindowChanged'), 'error')
+        }
+
+        const freshVisible = fresh.products.filter(product => product.type !== 'CLASS')
+        const freshHasStaff = fresh.staffSelection?.enabled === true
+        const freshConfig = getStepConfig(freshVisible.length > 1, freshHasStaff)
+        if (reconciled.products.length === 0) {
+          selectedDate.value = null
+          step.value = freshConfig.serviceStep || freshConfig.staffStep || freshConfig.dateStep
+          return
+        }
+        if (freshHasStaff && freshEligibleStaff.length === 0) {
+          selectedDate.value = null
+          step.value = freshConfig.staffStep
+          return
+        }
+        step.value = selectedDate.value ? freshConfig.timeStep : freshConfig.dateStep
+        if (selectedDate.value) await fetchSlots()
+      } catch (err: any) {
+        showToast(err?.data?.message ?? t('errors.generic'), 'error')
+        step.value = config.timeStep
+      }
+    }
+    if (!(await releaseHoldBefore(continueRecovery))) return
+    await continueRecovery()
+  }
+
   // Fetch available slots for a date
-  function fetchSlots() {
+  async function fetchSlots() {
     const date = selectedDate.value
     const info = venueInfo.value
     if (!date || !info) return
@@ -767,32 +939,50 @@ export function BookingFlow({ props }: BookingFlowProps) {
     // selected service back-to-back. Without this, a 45 + 30 min booking
     // shows 45-min slots and the customer hits a 409 at submit when their
     // 75-min appointment collides with an existing reservation.
-    const combinedDuration = totalDuration.value > 0
-      ? totalDuration.value
-      : (selectedProduct.value?.duration ?? undefined)
-    api.getAvailability(props.venue, {
-      date,
-      productId: selectedProduct.value?.id,
-      duration: combinedDuration,
-      type: typeFilter,
-    })
-      .then(res => setSlots(res.slots))
-      .catch((err: any) => {
-        setSlots([])
-        // 403 PLAN_REQUIRED: the venue's plan doesn't include online
-        // reservations — surface the server message instead of silently
-        // rendering the generic "no availability" empty state.
-        if (err?.status === 403 || err?.data?.code === 'PLAN_REQUIRED') {
-          showToast(err.data?.message ?? t('errors.generic'), 'error')
-        }
+    const productIds = selectedProducts.value.length > 0
+      ? selectedProducts.value.map(product => product.id)
+      : (selectedProduct.value ? [selectedProduct.value.id] : [])
+    const usesBaseWindow = flow === 'appointments' && info.appointmentWindowSemantics === 'base'
+    const modifierDelta = modifierDurationDelta(
+      selectedProducts.value.length > 0 ? selectedProducts.value : (selectedProduct.value ? [selectedProduct.value] : []),
+      selectedModifiers.value,
+    )
+    const matchingBaseOverride = baseDurationOverrideRef.current?.productKey === productIds.join(',')
+      ? baseDurationOverrideRef.current.duration
+      : null
+    const combinedDuration = usesBaseWindow && matchingBaseOverride
+      ? matchingBaseOverride + modifierDelta
+      : totalDuration.value > 0
+        ? totalDuration.value
+        : (selectedProduct.value?.duration ?? undefined)
+    try {
+      const res = await api.getAvailability(props.venue, {
+        date,
+        productId: selectedProduct.value?.id,
+        ...(usesBaseWindow && productIds.length > 0 ? { productIds } : {}),
+        ...(selectedStaffId.value ? { staffId: selectedStaffId.value } : {}),
+        duration: combinedDuration,
+        ...(usesBaseWindow ? { windowSemantics: 'base' as const } : {}),
+        type: typeFilter,
       })
-      .finally(() => setSlotsLoading(false))
+      setSlots(res.slots)
+    } catch (err: any) {
+      setSlots([])
+      // 403 PLAN_REQUIRED: the venue's plan doesn't include online
+      // reservations — surface the server message instead of silently
+      // rendering the generic "no availability" empty state.
+      if (err?.status === 403 || err?.data?.code === 'PLAN_REQUIRED') {
+        showToast(err.data?.message ?? t('errors.generic'), 'error')
+      }
+    } finally {
+      setSlotsLoading(false)
+    }
   }
 
   // Load availability when date changes
   useEffect(() => {
-    fetchSlots()
-  }, [selectedDate.value, selectedProduct.value?.id])
+    void fetchSlots()
+  }, [selectedDate.value, selectedProduct.value?.id, selectedProducts.value.map(product => product.id).join(','), selectedStaffId.value])
 
   // Dispatch custom events on host element
   function dispatchEvent(name: string, detail: Record<string, unknown>) {
@@ -881,10 +1071,14 @@ export function BookingFlow({ props }: BookingFlowProps) {
             showPortal.value = false
             portalData.value = null
           }}
-          onManageBooking={(cancelSecret) => {
-            showPortal.value = false
-            manageSecret.value = cancelSecret
-            step.value = MANAGE_STEP
+          onManageBooking={async (cancelSecret) => {
+            const continueToManage = () => {
+              showPortal.value = false
+              manageSecret.value = cancelSecret
+              step.value = MANAGE_STEP
+            }
+            if (slotHoldToken.value && !(await releaseHoldBefore(continueToManage))) return
+            continueToManage()
           }}
         />
         {/* Avoqado footer — suppressed when the host page renders its own
@@ -925,9 +1119,14 @@ export function BookingFlow({ props }: BookingFlowProps) {
     )
   }
 
-  const stepLabels = hasServiceStep.value
-    ? [t('steps.service'), t('steps.date'), t('steps.time'), t('steps.info'), t('steps.confirmation')]
-    : [t('steps.date'), t('steps.time'), t('steps.info'), t('steps.confirmation')]
+  const stepLabels = [
+    ...(hasServiceStep.value ? [t('steps.service')] : []),
+    ...(hasStaffStep.value ? [t('steps.staff')] : []),
+    t('steps.date'),
+    t('steps.time'),
+    t('steps.info'),
+    t('steps.confirmation'),
+  ]
 
   // Auto-skip the GuestInfoForm when the logged-in customer already has every
   // field the venue needs. We submit on their behalf with the saved data, so
@@ -969,11 +1168,11 @@ export function BookingFlow({ props }: BookingFlowProps) {
   // its own Atrás link) and on the listing itself. It still fires for the
   // appointments wizard's middle steps and the class flow's seat picker / form.
   const showBack = !showLanding && !classDetailActive && (
-    (step.value > (hasServiceStep.value ? config.serviceStep : config.dateStep) && step.value < config.confirmStep)
+    (step.value > (config.serviceStep || config.staffStep || config.dateStep) && step.value < config.confirmStep)
     || (step.value === config.timeStep && seatPickerActive)
   ) && !(flowType.value === 'classes' && step.value === config.dateStep)
 
-  function handleBack() {
+  async function handleBack() {
     // If showing no-credits buy prompt, go back to form
     if (showNoCreditsBuyPrompt) {
       setShowNoCreditsBuyPrompt(false)
@@ -1012,14 +1211,18 @@ export function BookingFlow({ props }: BookingFlowProps) {
       }
     }
     if (step.value === config.formStep) {
-      // If product has layout, go back to seat picker
-      if (selectedProduct.value?.layoutConfig && selectedSlot.value?.classSessionId) {
-        setSeatPickerActive(true)
-        step.value = config.timeStep
-      } else {
-        fetchSlots() // Refresh capacity data when going back to time picker
-        step.value = config.timeStep
+      const continueBackFromForm = () => {
+        // If product has layout, go back to seat picker
+        if (selectedProduct.value?.layoutConfig && selectedSlot.value?.classSessionId) {
+          setSeatPickerActive(true)
+          step.value = config.timeStep
+        } else {
+          void fetchSlots() // Refresh capacity data when going back to time picker
+          step.value = config.timeStep
+        }
       }
+      if (flowType.value === 'appointments' && !(await releaseHoldBefore(continueBackFromForm))) return
+      continueBackFromForm()
     } else if (step.value === config.timeStep) {
       if (seatPickerActive) {
         // Going back from seat picker to time slot selection
@@ -1029,6 +1232,10 @@ export function BookingFlow({ props }: BookingFlowProps) {
       } else {
         step.value = config.dateStep
       }
+    } else if (step.value === config.dateStep && config.staffStep) {
+      step.value = config.staffStep
+    } else if (step.value === config.staffStep && hasServiceStep.value) {
+      step.value = config.serviceStep
     } else if (step.value === config.dateStep && hasServiceStep.value) step.value = config.serviceStep
   }
 
@@ -1103,9 +1310,13 @@ export function BookingFlow({ props }: BookingFlowProps) {
       // Multi-service appointments: send the full ordered productIds[] when
       // the customer picked more than one service. The server sums durations
       // and uses productIds[0] as the lead product for legacy joins.
-      const multiProductIds = selectedProducts.value.length > 1
-        ? selectedProducts.value.map(p => p.id)
-        : undefined
+      const usesBaseWindow = flowType.value === 'appointments' && venueInfo.value?.appointmentWindowSemantics === 'base'
+      const selectedProductIds = selectedProducts.value.length > 0
+        ? selectedProducts.value.map(product => product.id)
+        : (selectedProduct.value ? [selectedProduct.value.id] : [])
+      const wireProductIds = usesBaseWindow
+        ? selectedProductIds
+        : selectedProductIds.length > 1 ? selectedProductIds : undefined
       // Authoritative fallback: the slot window the customer picked. Used when
       // any selected product is missing duration (legacy data — admin created
       // an APPOINTMENTS_SERVICE before the dashboard form required it). The
@@ -1121,17 +1332,25 @@ export function BookingFlow({ props }: BookingFlowProps) {
       // duration here while slot.endsAt - slot.startsAt reflects the extended
       // window, the server's Zod refine rejects with "duration no coincide
       // con el rango de fechas".
-      const combinedDuration = totalDuration.value > 0 ? totalDuration.value : slotWindowMinutes
+      let wireEndsAt = slot.endsAt
+      let combinedDuration = totalDuration.value > 0 ? totalDuration.value : slotWindowMinutes
+      if (usesBaseWindow) {
+        const baseWindow = baseWindowForSlot(slot, appointmentProducts, selectedModifiers.value)
+        wireEndsAt = baseWindow.endsAt
+        combinedDuration = baseWindow.duration
+      }
       const result = await api.createReservation(props.venue, {
         startsAt: slot.startsAt,
-        endsAt: slot.endsAt,
+        endsAt: wireEndsAt,
         duration: combinedDuration,
         guestName: data.guestName,
         guestPhone: data.guestPhone,
         guestEmail: data.guestEmail || undefined,
         partySize: spots.length > 0 ? spots.length : (data.partySize || undefined),
         productId: selectedProduct.value?.id,
-        productIds: multiProductIds,
+        productIds: wireProductIds,
+        ...(selectedStaffId.value ? { staffId: selectedStaffId.value } : {}),
+        ...(usesBaseWindow ? { windowSemantics: 'base' as const } : {}),
         classSessionId: slot.classSessionId || undefined,
         spotIds: spots.length > 0 ? spots : undefined,
         specialRequests: data.specialRequests || undefined,
@@ -1146,6 +1365,10 @@ export function BookingFlow({ props }: BookingFlowProps) {
       // and minted a Stripe Checkout session. Hand off to Stripe; the webhook will
       // flip the reservation to CONFIRMED on payment success.
       if (result.checkoutUrl) {
+        slotHoldToken.value = null
+        slotHoldExpiresAt.value = null
+        setHoldReleaseFailed(false)
+        pendingHoldReleaseActionRef.current = null
         try {
           sessionStorage.setItem('avq:pendingReservation', JSON.stringify({
             venue: props.venue,
@@ -1156,6 +1379,11 @@ export function BookingFlow({ props }: BookingFlowProps) {
         window.location.href = result.checkoutUrl
         return
       }
+      slotHoldToken.value = null
+      slotHoldExpiresAt.value = null
+      setHoldReleaseFailed(false)
+      pendingHoldReleaseActionRef.current = null
+      setGuestDraft(null)
       bookingResult.value = result
       step.value = config.confirmStep
       setShowCreditSelector(false)
@@ -1167,13 +1395,19 @@ export function BookingFlow({ props }: BookingFlowProps) {
         productName: selectedProduct.value?.name,
       })
     } catch (err: any) {
-      if (err.status === 409) {
-        showToast(t('errors.slotTaken'), 'error')
-        selectedSlot.value = null
-        fetchSlots()
-        step.value = config.timeStep
-        setShowCreditSelector(false)
-        setPendingFormData(null)
+      if (err?.data?.code === 'APPOINTMENT_WINDOW_CHANGED') {
+        await recoverAppointmentWindow(data, err?.data?.details?.expectedBaseDurationMin)
+      } else if (err.status === 409) {
+        const continueAfterSlotConflict = () => {
+          showToast(t('errors.slotTaken'), 'error')
+          selectedSlot.value = null
+          void fetchSlots()
+          step.value = config.timeStep
+          setShowCreditSelector(false)
+          setPendingFormData(null)
+        }
+        if (!(await releaseHoldBefore(continueAfterSlotConflict))) return
+        continueAfterSlotConflict()
       } else {
         showToast(err.data?.message ?? t('errors.generic'), 'error')
       }
@@ -1358,6 +1592,19 @@ export function BookingFlow({ props }: BookingFlowProps) {
         t={t}
       />
 
+      {holdReleaseFailed && (
+        <div role="alert" style={{ marginBottom: '16px', padding: '12px 14px', borderRadius: '12px', border: '1px solid var(--avq-danger-border, #fecaca)', background: 'var(--avq-danger-bg, #fef2f2)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
+          <span style={{ fontSize: '13px', color: 'var(--avq-danger-fg, #991b1b)' }}>{t('errors.holdReleaseFailed')}</span>
+          <button type="button" onClick={() => {
+            const retryAction = pendingHoldReleaseActionRef.current
+            if (retryAction) void retryAction()
+            else void releaseHold()
+          }} style={{ border: 0, background: 'transparent', color: 'var(--avq-accent, #6366f1)', fontWeight: '700', cursor: 'pointer', fontFamily: 'inherit' }}>
+            {t('actions.retry')}
+          </button>
+        </div>
+      )}
+
       {/* Step indicator — hidden for:
           - the class flow (the list IS the selector)
           - the unified landing (no concept of "steps" yet)
@@ -1536,14 +1783,26 @@ export function BookingFlow({ props }: BookingFlowProps) {
             <ServiceDetailView
               product={detailViewProduct.product}
               mode={detailViewProduct.mode}
-              onAdd={() => {
-                addSelectedProduct(detailViewProduct.product)
-                setDetailViewProduct(null)
+              onAdd={async () => {
+                const applyAdd = () => {
+                  addSelectedProduct(detailViewProduct.product)
+                  setDetailViewProduct(null)
+                }
+                if (slotHoldToken.value && !(await releaseHoldBefore(applyAdd))) return
+                applyAdd()
               }}
-              onUpdate={() => setDetailViewProduct(null)}
-              onRemove={() => {
-                removeSelectedProduct(detailViewProduct.product.id)
-                setDetailViewProduct(null)
+              onUpdate={async () => {
+                const applyUpdate = () => setDetailViewProduct(null)
+                if (slotHoldToken.value && !(await releaseHoldBefore(applyUpdate))) return
+                applyUpdate()
+              }}
+              onRemove={async () => {
+                const applyRemove = () => {
+                  removeSelectedProduct(detailViewProduct.product.id)
+                  setDetailViewProduct(null)
+                }
+                if (slotHoldToken.value && !(await releaseHoldBefore(applyRemove))) return
+                applyRemove()
               }}
               onBack={() => setDetailViewProduct(null)}
               t={t}
@@ -1580,8 +1839,11 @@ export function BookingFlow({ props }: BookingFlowProps) {
                   // (date/time/form steps still on Phase-pre-multi code) reads
                   // the lead service. Phase 4+ migrate them to selectedProducts.
                   selectedProduct.value = selectedProducts.value[0] ?? null
+                  selectedStaffId.value = null
+                  selectedDate.value = null
+                  selectedSlot.value = null
                   setDetailViewProduct(null)
-                  step.value = config.dateStep
+                  step.value = config.staffStep || config.dateStep
                 }}
                 nextDisabled={selectedProducts.value.length === 0}
                 t={t}
@@ -1605,26 +1867,58 @@ export function BookingFlow({ props }: BookingFlowProps) {
           </div>
         )}
 
+        {!showLanding && flowType.value === 'appointments' && config.staffStep > 0 && step.value === config.staffStep && (
+          <StaffSelector
+            staff={eligibleStaff}
+            selectedStaffId={selectedStaffId.value}
+            onSelect={async (staffId) => {
+              const applyStaffSelection = () => {
+                selectedStaffId.value = staffId
+                selectedDate.value = null
+                selectedSlot.value = null
+                selectedSpotIds.value = []
+                setSlots([])
+              }
+              if (slotHoldToken.value && !(await releaseHoldBefore(applyStaffSelection))) return
+              applyStaffSelection()
+            }}
+            onNext={() => {
+              selectedDate.value = null
+              selectedSlot.value = null
+              step.value = config.dateStep
+            }}
+            t={t}
+          />
+        )}
+
         {/* /appointments — Square-style merged date+time picker with sidebar */}
         {!showLanding && flowType.value === 'appointments' && (step.value === config.dateStep || step.value === config.timeStep) && !seatPickerActive && (
           <div class="avq-appts-layout">
             <div class="avq-appts-main">
               <DateTimePickerSquare
                 selectedDate={selectedDate.value}
-                onSelectDate={(date) => {
-                  selectedDate.value = date
-                  selectedSlot.value = null
-                  step.value = config.timeStep
+                onSelectDate={async (date) => {
+                  const applyDateSelection = () => {
+                    selectedDate.value = date
+                    selectedSlot.value = null
+                    step.value = config.timeStep
+                  }
+                  if (slotHoldToken.value && !(await releaseHoldBefore(applyDateSelection))) return
+                  applyDateSelection()
                 }}
                 selectedSlot={selectedSlot.value}
-                onSelectSlot={(slot) => {
-                  selectedSlot.value = slot
-                  selectedSpotIds.value = []
-                  if (selectedProduct.value?.layoutConfig && slot.classSessionId) {
-                    setSeatPickerActive(true)
-                  } else {
-                    step.value = config.formStep
+                onSelectSlot={async (slot) => {
+                  const applySlotSelection = () => {
+                    selectedSlot.value = slot
+                    selectedSpotIds.value = []
+                    if (selectedProduct.value?.layoutConfig && slot.classSessionId) {
+                      setSeatPickerActive(true)
+                    } else {
+                      step.value = config.formStep
+                    }
                   }
+                  if (slotHoldToken.value && !(await releaseHoldBefore(applySlotSelection))) return
+                  applySlotSelection()
                 }}
                 slots={slots}
                 slotsLoading={slotsLoading}
@@ -1648,6 +1942,7 @@ export function BookingFlow({ props }: BookingFlowProps) {
                 totalDuration={totalDuration.value}
                 selectedDate={selectedDate.value}
                 selectedSlot={selectedSlot.value}
+                staffLabel={staffSummaryLabel}
                 onEditProduct={(product) => {
                   setDetailViewProduct({ product, mode: 'edit' })
                   step.value = config.serviceStep
@@ -1805,6 +2100,7 @@ export function BookingFlow({ props }: BookingFlowProps) {
                       onSubmit={handleFormSubmit}
                       isSubmitting={isLoading.value}
                       t={t}
+                      initialData={guestDraft}
                       loggedInCustomer={customerInfo.value}
                       /* On the Square /appointments wizard the submit lives in
                        * the sticky sidebar as "Reserva cita" — hide the inline
@@ -1932,9 +2228,8 @@ export function BookingFlow({ props }: BookingFlowProps) {
           }
 
           // Square /appointments + /classes: header + 2-col layout with
-          // Resumen sidebar. The slot-hold countdown is visual-only for now —
-          // wire to the real backend hold endpoint (POST /reservations/hold)
-          // once it ships and hydrate slotHoldExpiresAt in state.
+          // Resumen sidebar. Appointment countdown state is hydrated by the
+          // real backend hold endpoint above.
           //
           // For /classes the customer picked a single class via the detail
           // view (sets selectedProduct, not selectedProducts), so derive the
@@ -1980,24 +2275,20 @@ export function BookingFlow({ props }: BookingFlowProps) {
                 <PaymentStepHeader
                   locale={props.locale}
                   kind={flowType.value === 'classes' ? 'class' : 'appointment'}
-                  onExpired={() => {
+                  onExpired={async () => {
                     // Hold TTL hit zero. The slot is no longer guaranteed —
                     // someone else could grab it. Send the customer back to
                     // the time picker, clear the stale slot + hold state,
                     // refresh availability so they see the current truth, and
                     // surface a toast explaining why we moved them.
-                    const token = slotHoldToken.value
-                    if (token) {
-                      api.cancelHold(props.venue, token).catch(() => {
-                        /* silent — hold may already be GC'd server-side */
-                      })
+                    const continueAfterExpiry = () => {
+                      selectedSlot.value = null
+                      step.value = config.timeStep
+                      void fetchSlots()
+                      showToast(t('errors.slotExpired'), 'error')
                     }
-                    slotHoldToken.value = null
-                    slotHoldExpiresAt.value = null
-                    selectedSlot.value = null
-                    step.value = config.timeStep
-                    fetchSlots()
-                    showToast(t('errors.slotExpired'), 'error')
+                    if (!(await releaseHoldBefore(continueAfterExpiry))) return
+                    continueAfterExpiry()
                   }}
                 />
                 {formStepBody}
@@ -2009,6 +2300,7 @@ export function BookingFlow({ props }: BookingFlowProps) {
                   totalDuration={totalDuration.value}
                   selectedDate={selectedDate.value}
                   selectedSlot={selectedSlot.value}
+                  staffLabel={staffSummaryLabel}
                   showTotals
                   subtotal={subtotal ?? 0}
                   taxes={0}

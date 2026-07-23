@@ -32,6 +32,8 @@ interface AppointmentSummarySidebarProps {
   /** When provided, an extra "fecha + hora" row renders above the services list. */
   selectedDate?: string | null
   selectedSlot?: PublicSlot | null
+  /** Customer-facing staff choice (specific name or localized "anyone"). */
+  staffLabel?: string
   /** Override the card title ("Resumen de la cita" by default). Used by
    *  /classes to say "Resumen de la clase" instead. */
   title?: string
@@ -68,6 +70,7 @@ export function AppointmentSummarySidebar({
   totalDuration,
   selectedDate,
   selectedSlot,
+  staffLabel,
   title,
   countLabel: countLabelOverride,
   dueAtVenueLabel,
@@ -209,6 +212,15 @@ export function AppointmentSummarySidebar({
                     }}>
                       {scheduleLabel}
                     </span>
+                  </div>
+                )}
+                {staffLabel && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 0 8px', borderBottom: '1px solid var(--avq-border, #f1f3f5)', marginBottom: '4px' }}>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--avq-muted-fg, #6b7280)', flexShrink: 0 }}>
+                      <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+                      <circle cx="12" cy="7" r="4" />
+                    </svg>
+                    <span style={{ fontSize: '13px', color: 'var(--avq-fg, #111827)' }}>{staffLabel}</span>
                   </div>
                 )}
                 {products.map((product, idx) => (

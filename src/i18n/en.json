@@ -2,10 +2,19 @@
   "poweredBy": "Powered by Avoqado",
   "steps": {
     "service": "Service",
+    "staff": "Professional",
     "date": "Date",
     "time": "Time",
     "info": "Details",
     "confirmation": "Confirmed"
+  },
+  "staffSelection": {
+    "title": "Choose your professional",
+    "subtitle": "Pick someone specific or let us assign anyone available.",
+    "anyone": "Anyone available",
+    "noEligible": "No professional can perform every selected service. Go back and adjust your services.",
+    "changed": "Team availability changed. Review your selection.",
+    "catalogChanged": "Some services or add-ons changed. Review your appointment."
   },
   "service": {
     "title": "Select a service",
@@ -162,6 +171,8 @@
     "reservationNotFoundDescription": "This booking link may be expired or invalid.",
     "slotTaken": "This time slot is no longer available. Please choose another time.",
     "slotExpired": "Your temporary reservation expired. Please pick your time again.",
+    "holdReleaseFailed": "We couldn't release the held time. Retry before continuing.",
+    "appointmentWindowChanged": "The duration changed. Review your services and pick a new time.",
     "generic": "Something went wrong. Please try again."
   },
   "actions": {

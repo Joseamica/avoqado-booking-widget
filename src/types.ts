@@ -123,6 +123,16 @@ export interface PublicVenueInfo {
      *  Surface a "log in to continue" gate before the form/landing CTAs. */
     requireAccount?: boolean
   }
+  /** Present only when the server advertises the staff-aware appointment
+   *  window contract. Older servers omit it and clients must keep the legacy
+   *  wire shape. */
+  appointmentWindowSemantics?: 'base'
+  /** Optional public staff picker capability. `id` is Staff.id (not
+   *  StaffVenue.id). Missing capability means the staff step is omitted. */
+  staffSelection?: {
+    enabled: true
+    staffByProductId: Record<string, PublicBookingStaff[]>
+  }
   operatingHours?: OperatingHours
   /**
    * Type-aware upfront defaults the venue admin configured. Widget uses these
@@ -190,6 +200,7 @@ export interface PublicSlot {
   startsAt: string
   endsAt: string
   available: boolean
+  reason?: 'FULL'
   classSessionId?: string
   capacity?: number
   enrolled?: number
@@ -238,6 +249,11 @@ export interface PublicCreateReservationRequest {
   /** Multi-service appointments (Square pattern). When present and non-empty,
    *  the server sums durations + sets productId = productIds[0] for back-compat. */
   productIds?: string[]
+  /** Explicit public staff selection. Omit for "anyone" / server auto-assign. */
+  staffId?: string
+  /** Capability-negotiated marker: endsAt is the base service window; the
+   *  server authoritatively adds modifier duration. */
+  windowSemantics?: 'base'
   classSessionId?: string
   spotIds?: string[]
   specialRequests?: string
@@ -256,6 +272,12 @@ export interface PublicCreateReservationRequest {
   /** Add-ons / customizations the customer picked. Server validates against
    *  the modifier groups assigned to each productId. */
   modifierSelections?: ModifierSelection[]
+}
+
+export interface PublicBookingStaff {
+  id: string
+  name: string
+  photoUrl: string | null
 }
 
 export interface PublicBookingResult {

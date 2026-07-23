@@ -8,6 +8,7 @@ import type {
   CreditPackPublic,
   CustomerCreditBalance,
   CustomerPortalData,
+  ModifierSelection,
 } from '../types'
 
 const BASE = (import.meta.env?.VITE_API_URL as string | undefined)
@@ -28,6 +29,7 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
     const e = Object.assign(new Error(err.message ?? 'Request failed'), { status: res.status, data: err })
     throw e
   }
+  if (res.status === 204) return undefined as T
   return res.json()
 }
 
@@ -40,6 +42,9 @@ export function getAvailability(slug: string, params: {
   duration?: number
   partySize?: number
   productId?: string
+  productIds?: string[]
+  staffId?: string
+  windowSemantics?: 'base'
   /**
    * Optional flow filter. Server narrows the candidate products it considers
    * when computing slots. Useful when the customer is on /clases (only show
@@ -52,6 +57,9 @@ export function getAvailability(slug: string, params: {
   if (params.duration) q.append('duration', String(params.duration))
   if (params.partySize) q.append('partySize', String(params.partySize))
   if (params.productId) q.append('productId', params.productId)
+  if (params.productIds?.length) q.append('productIds', params.productIds.join(','))
+  if (params.staffId) q.append('staffId', params.staffId)
+  if (params.windowSemantics) q.append('windowSemantics', params.windowSemantics)
   if (params.type) q.append('type', params.type)
   return request(`${BASE}/venues/${slug}/availability?${q}`)
 }
@@ -96,12 +104,17 @@ export interface CreateHoldRequest {
   classSessionId?: string
   partySize?: number
   fingerprint?: string
+  staffId?: string
+  modifierSelections?: ModifierSelection[]
+  windowSemantics?: 'base'
 }
 
 export interface CreateHoldResponse {
   holdId: string
   expiresAt: string  // ISO 8601 — widget reads this to drive the countdown
   ttlSeconds: number
+  /** Server-selected Staff.id when the customer chose "anyone". */
+  staffId?: string
 }
 
 /** Creates a SlotHold and returns its id + expiry. The widget plumbs the
@@ -118,6 +131,11 @@ export function createHold(slug: string, data: CreateHoldRequest): Promise<Creat
  *  different slot). Idempotent — missing hold returns 204. */
 export function cancelHold(slug: string, holdId: string): Promise<void> {
   return request(`${BASE}/venues/${slug}/reservations/hold/${holdId}`, { method: 'DELETE' })
+}
+
+/** Absolute/configured endpoint for the unload-time keepalive cleanup. */
+export function holdReleaseUrl(slug: string, holdId: string): string {
+  return `${BASE}/venues/${encodeURIComponent(slug)}/reservations/hold/${encodeURIComponent(holdId)}`
 }
 
 export function getReservation(slug: string, cancelSecret: string): Promise<PublicReservationDetail> {

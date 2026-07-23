@@ -42,6 +42,9 @@ interface GuestInfoFormProps {
    *  fixed at 1 in the payload. Used by /classes (one spot per booking) and
    *  any future flow where party size doesn't apply. */
   hidePartySize?: boolean
+  /** Restores customer-entered data after a recoverable scheduling conflict
+   *  sends the wizard back to availability. */
+  initialData?: GuestFormData | null
 }
 
 function createSchema(requireEmail: boolean, requirePhone: boolean) {
@@ -58,18 +61,18 @@ function createSchema(requireEmail: boolean, requirePhone: boolean) {
   })
 }
 
-export function GuestInfoForm({ venueInfo, selectedSlot, selectedSpotCount, onSubmit, isSubmitting, t, loggedInCustomer, hideSubmitButton, registerSubmit, hidePartySize }: GuestInfoFormProps) {
-  const [phone, setPhone] = useState('')
-  const [name, setName] = useState('')
-  const [email, setEmail] = useState('')
+export function GuestInfoForm({ venueInfo, selectedSlot, selectedSpotCount, onSubmit, isSubmitting, t, loggedInCustomer, hideSubmitButton, registerSubmit, hidePartySize, initialData }: GuestInfoFormProps) {
+  const [phone, setPhone] = useState(initialData?.guestPhone ?? '')
+  const [name, setName] = useState(initialData?.guestName ?? '')
+  const [email, setEmail] = useState(initialData?.guestEmail ?? '')
   // Default 1, NOT 2. The previous default came from restaurant reservation
   // patterns where party size is the norm. For appointments services
   // (Iyashi, manicure, etc.) booking is 1:1 — defaulting to 2 caused
   // logged-in customers paying with credits to silently redeem TWO credits
   // per single-service appointment. Caught in QA: Carla redeemed 2 credits
   // from her Iyashi pack for one session.
-  const [partySize, setPartySize] = useState('1')
-  const [requests, setRequests] = useState('')
+  const [partySize, setPartySize] = useState(String(initialData?.partySize ?? 1))
+  const [requests, setRequests] = useState(initialData?.specialRequests ?? '')
   const [errors, setErrors] = useState<Record<string, string>>({})
 
   // Stable submit fn the parent (sidebar Reserva-cita button) can call. We

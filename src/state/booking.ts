@@ -38,6 +38,8 @@ export const selectedProduct = signal<Product | null>(null)
  *  so the sidebar Resumen and the eventual /reservations payload preserve it.
  *  Empty array = nothing picked yet, which gates the Siguiente CTA. */
 export const selectedProducts = signal<Product[]>([])
+/** Public Staff.id. null means "anyone" and lets the server auto-assign. */
+export const selectedStaffId = signal<string | null>(null)
 export const selectedDate = signal<string | null>(null)   // YYYY-MM-DD
 export const selectedSlot = signal<PublicSlot | null>(null)
 export const selectedSpotIds = signal<string[]>([])
@@ -50,8 +52,7 @@ export const bookingResult = signal<PublicBookingResult | null>(null)
 
 /** Hold token + expiry for the Square-style "Cita reservada durante 9:56" timer.
  *  Set when the customer enters the payment step and the backend hold endpoint
- *  succeeds; null when running in visual-only fallback (backend not deployed
- *  yet). slotHoldExpiresAt is epoch milliseconds. */
+ *  succeeds. slotHoldExpiresAt is epoch milliseconds. */
 export const slotHoldToken = signal<string | null>(null)
 export const slotHoldExpiresAt = signal<number | null>(null)
 
@@ -140,6 +141,9 @@ export const visibleProducts = computed<Product[]>(() => {
 })
 
 export const hasServiceStep = computed(() => visibleProducts.value.length > 1)
+export const hasStaffStep = computed(
+  () => flowType.value === 'appointments' && venueInfo.value?.staffSelection?.enabled === true,
+)
 
 /** Combined duration of all selected products PLUS picked modifier duration deltas,
  *  in minutes. Used by the date/time picker to query availability for the full
@@ -225,6 +229,9 @@ export function addSelectedProduct(product: Product) {
   // Keep the legacy single-product signal in sync for downstream consumers
   // (classes flow, time-slot query, etc.) that still read selectedProduct.
   selectedProduct.value = selectedProducts.value[0] ?? null
+  selectedStaffId.value = null
+  selectedDate.value = null
+  selectedSlot.value = null
 }
 
 /** Remove a product from the multi-service selection by id. */
@@ -232,6 +239,9 @@ export function removeSelectedProduct(productId: string) {
   selectedProducts.value = selectedProducts.value.filter(p => p.id !== productId)
   selectedProduct.value = selectedProducts.value[0] ?? null
   selectedModifiers.value = selectedModifiers.value.filter(s => s.productId !== productId)
+  selectedStaffId.value = null
+  selectedDate.value = null
+  selectedSlot.value = null
 }
 
 /** Replace one product with another (used by ServiceDetailView's Actualizar
@@ -248,34 +258,53 @@ export function replaceSelectedProduct(oldId: string, next: Product) {
   selectedProducts.value = updated
   selectedProduct.value = updated[0] ?? null
   selectedModifiers.value = selectedModifiers.value.filter(s => s.productId !== oldId)
+  selectedStaffId.value = null
+  selectedDate.value = null
+  selectedSlot.value = null
 }
 
 export function clearSelectedProducts() {
   selectedProducts.value = []
   selectedProduct.value = null
   selectedModifiers.value = []
+  selectedStaffId.value = null
+  selectedDate.value = null
+  selectedSlot.value = null
 }
 
 /** Replace all modifier selections (used by the picker's onChange). */
 export function setSelectedModifiers(next: ModifierSelection[]) {
   selectedModifiers.value = next
+  selectedStaffId.value = null
+  selectedDate.value = null
+  selectedSlot.value = null
 }
 
 /** Drop modifier selections for a single product (used when a product is removed). */
 export function clearModifiersForProduct(productId: string) {
   selectedModifiers.value = selectedModifiers.value.filter(s => s.productId !== productId)
+  selectedStaffId.value = null
+  selectedDate.value = null
+  selectedSlot.value = null
 }
 
 /** Clear all modifier selections. */
 export function clearAllModifiers() {
   selectedModifiers.value = []
+  selectedStaffId.value = null
+  selectedDate.value = null
+  selectedSlot.value = null
 }
 
-export function getStepConfig(hasService: boolean) {
-  if (hasService) {
-    return { totalSteps: 5, serviceStep: 1, dateStep: 2, timeStep: 3, formStep: 4, confirmStep: 5 }
-  }
-  return { totalSteps: 4, serviceStep: 0, dateStep: 1, timeStep: 2, formStep: 3, confirmStep: 4 }
+export function getStepConfig(hasService: boolean, hasStaff: boolean = false) {
+  let cursor = 1
+  const serviceStep = hasService ? cursor++ : 0
+  const staffStep = hasStaff ? cursor++ : 0
+  const dateStep = cursor++
+  const timeStep = cursor++
+  const formStep = cursor++
+  const confirmStep = cursor
+  return { totalSteps: confirmStep, serviceStep, staffStep, dateStep, timeStep, formStep, confirmStep }
 }
 
 export function resetBooking(venueData: PublicVenueInfo) {
@@ -287,10 +316,12 @@ export function resetBooking(venueData: PublicVenueInfo) {
     : flowType.value === 'classes'
       ? all.filter(p => p.type === 'CLASS')
       : all.filter(p => p.type !== 'CLASS')
-  const config = getStepConfig(visible.length > 1)
+  const staffSelectionEnabled = flowType.value === 'appointments' && venueData.staffSelection?.enabled === true
+  const config = getStepConfig(visible.length > 1, staffSelectionEnabled)
   selectedSlot.value = null
   selectedSpotIds.value = []
   selectedProducts.value = []
+  selectedStaffId.value = null
   selectedModifiers.value = []
   bookingResult.value = null
   selectedDate.value = null
@@ -314,7 +345,7 @@ export function resetBooking(venueData: PublicVenueInfo) {
     // Mirror to selectedProducts so the Square sidebar Resumen renders the
     // single product without forcing the user through the (skipped) service step.
     selectedProducts.value = visible[0] ? [visible[0]] : []
-    step.value = config.dateStep
+    step.value = config.staffStep || config.dateStep
   } else {
     selectedProduct.value = null
     selectedProducts.value = []
