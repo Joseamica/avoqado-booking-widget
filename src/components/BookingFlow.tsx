@@ -10,6 +10,7 @@ import {
   hasServiceStep, hasStaffStep, getStepConfig, resetBooking, showToast,
   creditPacks, customerCredits, selectedCreditBalance, creditPacksLoading, creditPacksLoaded,
   showPortal, portalData, customerToken, customerInfo, setCustomerSession, clearCustomerSession,
+  bookingAccess,
   flowType, visibleProducts,
   selectedProducts, selectedStaffId, totalDuration, totalPrice, selectedModifiers,
   addSelectedProduct, removeSelectedProduct,
@@ -451,13 +452,15 @@ export function BookingFlow({ props }: BookingFlowProps) {
     if (customerToken.value && !portalData.value) {
       api.getCustomerPortal(props.venue, customerToken.value).then(data => {
         portalData.value = data
+        // Fase 0.B: the portal carries "¿puedo reservar aquí?" — keep it fresh.
+        if (data.bookingAccess) bookingAccess.value = data.bookingAccess
         // Backfill customerInfo if not yet stored (e.g. login from older version)
         if (!customerInfo.value && data.customer) {
           const { id, firstName, lastName, email, phone } = data.customer
-          setCustomerSession(customerToken.value!, { id, firstName, lastName, email, phone })
+          setCustomerSession(props.venue, customerToken.value!, { id, firstName, lastName, email, phone })
         }
       }).catch(() => {
-        clearCustomerSession()
+        clearCustomerSession(props.venue)
       })
     }
   }, [props.venue])
@@ -483,14 +486,15 @@ export function BookingFlow({ props }: BookingFlowProps) {
 
     if (flag !== 'success') return
 
-    let stash: { phone?: string; email?: string; venue?: string } = {}
-    try {
-      const raw = sessionStorage.getItem('avq:pendingCheckout')
-      if (raw) stash = JSON.parse(raw)
-      sessionStorage.removeItem('avq:pendingCheckout')
-    } catch { /* */ }
+    // The contact stash was only needed to re-query the balance by contact;
+    // the balance is now session-bound, so just clear it.
+    try { sessionStorage.removeItem('avq:pendingCheckout') } catch { /* */ }
 
-    if (!stash.phone && !stash.email) {
+    // Fase 0.B: the balance is account data — only a logged-in customer can
+    // poll it. A guest purchase still succeeds server-side (bound by contact);
+    // we just can't show the fresh balance without a session.
+    const pollToken = customerToken.value
+    if (!pollToken) {
       showToast(t('creditPacks.purchaseSuccess'), 'success')
       return
     }
@@ -502,10 +506,7 @@ export function BookingFlow({ props }: BookingFlowProps) {
     const tick = async () => {
       attempts++
       try {
-        const fresh = await api.getCustomerCredits(props.venue, {
-          email: stash.email,
-          phone: stash.phone,
-        })
+        const fresh = await api.getCustomerCredits(props.venue, {}, pollToken)
         const newCount = fresh.purchases.length
         if (newCount > baselineCount || attempts >= maxAttempts) {
           customerCredits.value = fresh
@@ -607,12 +608,9 @@ export function BookingFlow({ props }: BookingFlowProps) {
   useEffect(() => {
     if (props.flowType !== 'appointments') return
     if (step.value !== config.formStep) return
-    const customer = customerInfo.value
+    const token = customerToken.value
     const product = selectedProduct.value
-    if (!customer || !product) return
-    const phone = customer.phone ?? undefined
-    const email = customer.email ?? undefined
-    if (!phone && !email) return
+    if (!token || !product) return // Fase 0.B: balance is session-bound
     const seats = Math.max(selectedSpotIds.value.length, 1)
     // Multi-service: pass every selected productId so the server returns
     // balances for any of them. PaymentChoiceInline then verifies coverage
@@ -620,11 +618,11 @@ export function BookingFlow({ props }: BookingFlowProps) {
     const productIds = selectedProducts.value.length > 0
       ? selectedProducts.value.map(p => p.id)
       : [product.id]
-    api.getCustomerCredits(props.venue, { phone, email, seats, productIds })
+    api.getCustomerCredits(props.venue, { seats, productIds }, token)
       .then(credits => { customerCredits.value = credits })
       .catch(() => { /* silent — picker just won't render */ })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [step.value, customerInfo.value?.id, selectedProduct.value?.id, selectedProducts.value.length, props.flowType, props.venue])
+  }, [step.value, customerToken.value, selectedProduct.value?.id, selectedProducts.value.length, props.flowType, props.venue])
 
   // Slot hold: when the Square /appointments wizard reaches the payment step
   // with a slot picked, ask the server to hold that window for 10 min and
@@ -818,19 +816,14 @@ export function BookingFlow({ props }: BookingFlowProps) {
 
         // Refresh the customer's credit balance too — they may have redeemed
         // credits in another tab while this one was hidden.
-        const customer = customerInfo.value
+        const token = customerToken.value
         const product = selectedProduct.value
-        if (customer && (customer.phone || customer.email) && product) {
+        if (token && product) { // Fase 0.B: balance is session-bound
           const seats = Math.max(selectedSpotIds.value.length, 1)
           const productIds = selectedProducts.value.length > 0
             ? selectedProducts.value.map(p => p.id)
             : [product.id]
-          api.getCustomerCredits(props.venue, {
-            email: customer.email ?? undefined,
-            phone: customer.phone ?? undefined,
-            seats,
-            productIds,
-          })
+          api.getCustomerCredits(props.venue, { seats, productIds }, token)
             .then(c => { customerCredits.value = c })
             .catch(() => { /* silent — picker just won't update */ })
         }
@@ -1265,12 +1258,14 @@ export function BookingFlow({ props }: BookingFlowProps) {
       url.searchParams.set('avq_credits', 'cancel')
       const cancelUrl = url.toString()
 
+      // Fase 0.B: with a session the purchase binds to the logged-in customer
+      // (server metadata.customerId), not to the contact typed in the form.
       const result = await api.createPackCheckout(props.venue, checkoutPackId, {
         phone,
         email,
         successUrl,
         cancelUrl,
-      })
+      }, customerToken.value)
       if (result.checkoutUrl) {
         window.location.href = result.checkoutUrl
       }
@@ -1453,14 +1448,13 @@ export function BookingFlow({ props }: BookingFlowProps) {
     const upfrontPolicy = selectedProduct.value?.upfrontPolicy
     const seats = bookingSeatCount(data)
 
-    if (productId && (data.guestEmail || data.guestPhone)) {
+    // Fase 0.B: credits are account data. Only a logged-in customer can see or
+    // spend them — the server answers 401 CUSTOMER_AUTH_REQUIRED otherwise, and
+    // a guest booking with a balanceId is rejected BEFORE anything is created.
+    const sessionToken = customerToken.value
+    if (productId && sessionToken) {
       try {
-        const credits = await api.getCustomerCredits(props.venue, {
-          email: data.guestEmail || undefined,
-          phone: data.guestPhone,
-          seats,
-          productId,
-        })
+        const credits = await api.getCustomerCredits(props.venue, { seats, productId }, sessionToken)
         customerCredits.value = credits
 
         // Any matching balance with the right product?
@@ -1500,6 +1494,15 @@ export function BookingFlow({ props }: BookingFlowProps) {
           showToast(err.data?.message ?? t('errors.generic'), 'error')
           return
         }
+        // Session expired / invalid mid-flow: the server said who we are is
+        // not trusted anymore. Drop it and ask to sign in again — never fall
+        // through to a guest booking the customer didn't intend.
+        if (err?.status === 401) {
+          clearCustomerSession(props.venue)
+          showToast(t('creditPacks.loginToUseCredits'), 'error')
+          showPortal.value = true
+          return
+        }
         // No credits found or error
         if (requiresCredit) {
           setPendingFormData(data)
@@ -1508,8 +1511,10 @@ export function BookingFlow({ props }: BookingFlowProps) {
         }
       }
     } else if (requiresCredit) {
-      // Can't check credits without contact info
-      showToast(t('creditPacks.requiredNoCredits'), 'error')
+      // Guest on a credits-only product: say it and open sign-in — the
+      // capability is not hidden, it's explained (activación rule).
+      showToast(t('creditPacks.loginToUseCredits'), 'error')
+      showPortal.value = true
       return
     }
 
@@ -1591,6 +1596,22 @@ export function BookingFlow({ props }: BookingFlowProps) {
         onChoose={setTzPreference}
         t={t}
       />
+
+      {/* Fase 0.B — bookingAccess: the server told us at sign-in whether this
+          customer can book here (plan → public booking → approval). Say it up
+          front instead of letting the customer discover a 403 at the end. The
+          flow stays visible (browsing is fine); only creating is blocked. */}
+      {customerToken.value && bookingAccess.value && !bookingAccess.value.canCreateReservation && (
+        <div role="status" style={{ marginBottom: '16px', padding: '12px 14px', borderRadius: '12px', border: '1px solid var(--avq-warning-border, #fde68a)', background: 'var(--avq-warning-bg, #fffbeb)' }}>
+          <span style={{ fontSize: '13px', color: 'var(--avq-warning-fg, #92400e)' }}>
+            {bookingAccess.value.blockedBy === 'PLAN'
+              ? t('bookingAccess.blockedPlan')
+              : bookingAccess.value.blockedBy === 'PUBLIC_BOOKING_OFF'
+                ? t('bookingAccess.blockedPublicBookingOff')
+                : t('bookingAccess.blockedApproval')}
+          </span>
+        </div>
+      )}
 
       {holdReleaseFailed && (
         <div role="alert" style={{ marginBottom: '16px', padding: '12px 14px', borderRadius: '12px', border: '1px solid var(--avq-danger-border, #fecaca)', background: 'var(--avq-danger-bg, #fef2f2)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>

@@ -288,7 +288,8 @@
     "checkoutCancelled": "Cancelaste la compra",
     "checkoutTitle": "Antes de pagar",
     "checkoutSubtitle": "Necesitamos tu teléfono para asociar los créditos a tu cuenta. Te llevaremos al pago seguro de Stripe.",
-    "continueToPayment": "Ir al pago"
+    "continueToPayment": "Ir al pago",
+    "loginToUseCredits": "Inicia sesión para usar tus créditos."
   },
   "portal": {
     "title": "Mi Cuenta",
@@ -363,5 +364,10 @@
     "placeholder": "Buscar servicio",
     "categoryAll": "Todas",
     "noResults": "No encontramos servicios que coincidan"
+  },
+  "bookingAccess": {
+    "blockedPlan": "Este negocio no tiene reservaciones en línea disponibles por el momento.",
+    "blockedPublicBookingOff": "Las reservaciones en línea están desactivadas. Contacta al negocio para reservar.",
+    "blockedApproval": "Tu cuenta está pendiente de aprobación. Podrás reservar cuando el negocio te apruebe."
   }
 }

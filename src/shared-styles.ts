@@ -1,3 +1,5 @@
+import { bindCustomerSessionToVenue } from './state/booking'
+
 /** Shared CSS for all Avoqado widget custom elements. */
 export const SHARED_CSS = `
   :host { display: block; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
@@ -296,8 +298,13 @@ export function createShadowContainer(host: HTMLElement): { shadow: ShadowRoot; 
 
 /** Read common attributes from a custom element. */
 export function readCommonAttrs(el: HTMLElement) {
+  const venue = el.getAttribute('venue') ?? ''
+  // Fase 0.B: the customer session is per venue. Bind it BEFORE the first
+  // render so any mount effect that reads `customerToken` sees THIS venue's
+  // token (and never another venue's). Idempotent.
+  bindCustomerSessionToVenue(venue)
   return {
-    venue: el.getAttribute('venue') ?? '',
+    venue,
     locale: (el.getAttribute('locale') ?? 'es') as 'en' | 'es',
     // Default to light. Booking surfaces (landing, classes, appointments) all
     // ship a light visual language on book.avoqado.io; honoring the OS dark

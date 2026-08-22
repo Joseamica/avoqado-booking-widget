@@ -81,43 +81,151 @@ export interface CustomerInfo {
   email: string | null
   phone: string | null
 }
-const STORAGE_TOKEN = 'avq_customer_token'
-const STORAGE_CUSTOMER = 'avq_customer_info'
+// ---------------------------------------------------------------------------
+// Fase 0.B — the customer session is PER VENUE.
+//
+// A customer token is minted for ONE venue and the server now rejects it on any
+// other (401 CUSTOMER_TOKEN_VENUE_MISMATCH). Before, the token lived under a
+// single global localStorage key, so a visitor who logged in at venue A and
+// then opened venue B's widget carried A's token into B (and B's 401 would
+// wipe A's session). Now:
+//   - localStorage keys are namespaced: `avq_customer_token:<slug>` /
+//     `avq_customer_info:<slug>`;
+//   - an in-memory Map keeps one session per slug;
+//   - `bindCustomerSessionToVenue(slug)` (called by the mounting element)
+//     loads that slug's session into the signals;
+//   - the legacy global keys are deleted on first load (one re-login, once).
+//
+// Known limit (declared, not hidden): the signals below are a module
+// singleton, so TWO widgets of DIFFERENT venues mounted on the SAME page share
+// the live signals — the last one bound wins the UI (data already loaded for
+// one venue can be painted inside the other's widget). What IS isolated:
+// `setCustomerSession(slug, …)` / `clearCustomerSession(slug)` take the
+// caller's venue explicitly, so a login finished in A is stored under A's
+// key (never B's) and a 401 raised in A never wipes B's stored session; the
+// server also rejects any cross-venue token. True per-element UI isolation
+// needs per-instance stores (follow-up); book.avoqado.io mounts one venue.
+// ---------------------------------------------------------------------------
+const STORAGE_TOKEN_PREFIX = 'avq_customer_token'
+const STORAGE_CUSTOMER_PREFIX = 'avq_customer_info'
+const LEGACY_GLOBAL_KEYS = ['avq_customer_token', 'avq_customer_info']
 
-// Hydrate from localStorage immediately (synchronous — no race conditions)
-function hydrateCustomer(): { token: string | null; info: CustomerInfo | null } {
-  try {
-    const token = localStorage.getItem(STORAGE_TOKEN)
-    const raw = localStorage.getItem(STORAGE_CUSTOMER)
-    const info = raw ? JSON.parse(raw) as CustomerInfo : null
-    return { token, info }
-  } catch { return { token: null, info: null } }
+const tokenKey = (slug: string) => `${STORAGE_TOKEN_PREFIX}:${slug}`
+const customerKey = (slug: string) => `${STORAGE_CUSTOMER_PREFIX}:${slug}`
+
+export interface BookingAccessState {
+  status: 'APPROVED' | 'PENDING' | 'REJECTED'
+  canCreateReservation: boolean
+  blockedBy?: 'PLAN' | 'PUBLIC_BOOKING_OFF' | 'APPROVAL'
 }
-const _hydrated = hydrateCustomer()
 
-export const customerToken = signal<string | null>(_hydrated.token)
-export const customerInfo = signal<CustomerInfo | null>(_hydrated.info)
+interface VenueSession {
+  token: string | null
+  info: CustomerInfo | null
+  portalData: CustomerPortalData | null
+  bookingAccess: BookingAccessState | null
+}
+
+const sessionByVenue = new Map<string, VenueSession>()
+
+function dropLegacyGlobalKeys() {
+  try { LEGACY_GLOBAL_KEYS.forEach(k => localStorage.removeItem(k)) } catch { /* storage blocked */ }
+}
+
+/** Read ONE venue's session from localStorage (synchronous — no race conditions). */
+function hydrateCustomer(slug: string): VenueSession {
+  try {
+    const token = localStorage.getItem(tokenKey(slug))
+    const raw = localStorage.getItem(customerKey(slug))
+    const info = raw ? JSON.parse(raw) as CustomerInfo : null
+    return { token, info, portalData: null, bookingAccess: null }
+  } catch { return { token: null, info: null, portalData: null, bookingAccess: null } }
+}
+
+/** Slug whose session the signals currently reflect. */
+export const activeVenueSlug = signal<string | null>(null)
+
+export const customerToken = signal<string | null>(null)
+export const customerInfo = signal<CustomerInfo | null>(null)
 
 // Customer portal state (async, loaded after login)
 export const portalData = signal<CustomerPortalData | null>(null)
 export const portalLoading = signal(false)
 export const showPortal = signal(false)
 
-/** Save customer session to localStorage + signals */
-export function setCustomerSession(token: string, customer: CustomerInfo) {
-  customerToken.value = token
-  customerInfo.value = customer
-  localStorage.setItem(STORAGE_TOKEN, token)
-  localStorage.setItem(STORAGE_CUSTOMER, JSON.stringify(customer))
+/** Fase 0.B — "¿puedo reservar aquí?", as the server computed it at login/portal. */
+export const bookingAccess = signal<BookingAccessState | null>(null)
+
+/**
+ * Point the session signals at `slug`. Idempotent; call it from every element
+ * that mounts with a `venue` attribute, BEFORE any authenticated request.
+ */
+export function bindCustomerSessionToVenue(slug: string) {
+  if (!slug) return
+  dropLegacyGlobalKeys()
+  if (activeVenueSlug.value === slug) return
+  // Park the outgoing venue's in-memory bits (portalData/bookingAccess aren't persisted).
+  const prev = activeVenueSlug.value
+  if (prev) {
+    sessionByVenue.set(prev, {
+      token: customerToken.value,
+      info: customerInfo.value,
+      portalData: portalData.value,
+      bookingAccess: bookingAccess.value,
+    })
+  }
+  const next = sessionByVenue.get(slug) ?? hydrateCustomer(slug)
+  sessionByVenue.set(slug, next)
+  activeVenueSlug.value = slug
+  customerToken.value = next.token
+  customerInfo.value = next.info
+  portalData.value = next.portalData
+  bookingAccess.value = next.bookingAccess
 }
 
-/** Clear customer session */
-export function clearCustomerSession() {
-  customerToken.value = null
-  customerInfo.value = null
-  portalData.value = null
-  localStorage.removeItem(STORAGE_TOKEN)
-  localStorage.removeItem(STORAGE_CUSTOMER)
+/**
+ * Save a customer session FOR `slug` (the caller always knows its venue: `props.venue` /
+ * `venueSlug`). Writes that venue's storage + Map entry; the live signals only change when
+ * `slug` is the active one — so a login finished in venue A's portal can never be stored
+ * under venue B's key, nor repaint B's UI (auditoría 4).
+ */
+export function setCustomerSession(slug: string, token: string, customer: CustomerInfo, access?: BookingAccessState | null) {
+  const isActive = activeVenueSlug.value === slug
+  const prev = sessionByVenue.get(slug)
+  const next: VenueSession = {
+    token,
+    info: customer,
+    portalData: isActive ? portalData.value : (prev?.portalData ?? null),
+    bookingAccess: access !== undefined ? access : isActive ? bookingAccess.value : (prev?.bookingAccess ?? null),
+  }
+  sessionByVenue.set(slug, next)
+  if (isActive) {
+    customerToken.value = token
+    customerInfo.value = customer
+    if (access !== undefined) bookingAccess.value = access
+  }
+  try {
+    localStorage.setItem(tokenKey(slug), token)
+    localStorage.setItem(customerKey(slug), JSON.stringify(customer))
+  } catch { /* storage blocked (3rd-party iframe) — session lives in memory */ }
+}
+
+/**
+ * Clear the customer session OF `slug` only. A 401 raised by venue A's widget must never
+ * wipe venue B's stored session (auditoría 4). Signals are cleared only if `slug` is active.
+ */
+export function clearCustomerSession(slug: string) {
+  sessionByVenue.set(slug, { token: null, info: null, portalData: null, bookingAccess: null })
+  if (activeVenueSlug.value === slug) {
+    customerToken.value = null
+    customerInfo.value = null
+    portalData.value = null
+    bookingAccess.value = null
+  }
+  try {
+    localStorage.removeItem(tokenKey(slug))
+    localStorage.removeItem(customerKey(slug))
+  } catch { /* storage blocked */ }
 }
 
 /**

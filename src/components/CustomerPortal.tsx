@@ -9,7 +9,7 @@ import { CountryPhoneInput } from './ui/CountryPhoneInput'
 import { OtpInput } from './ui/OtpInput'
 import { DEFAULT_DIAL } from '../data/countries'
 import * as api from '../api/booking'
-import { portalData, portalLoading, customerToken, customerInfo, setCustomerSession, clearCustomerSession } from '../state/booking'
+import { portalData, portalLoading, customerToken, customerInfo, setCustomerSession, clearCustomerSession, bookingAccess } from '../state/booking'
 
 interface CustomerPortalProps {
   venueSlug: string
@@ -102,9 +102,11 @@ export function CustomerPortal({ venueSlug, timezone, venuePhone, t, onBack, onM
     try {
       const result = await api.getCustomerPortal(venueSlug, tkn)
       portalData.value = result
+      // Fase 0.B: the portal carries "¿puedo reservar aquí?" — keep it fresh.
+      if (result.bookingAccess) bookingAccess.value = result.bookingAccess
     } catch {
       // Token expired or invalid
-      clearCustomerSession()
+      clearCustomerSession(venueSlug)
     } finally {
       portalLoading.value = false
     }
@@ -129,7 +131,7 @@ export function CustomerPortal({ venueSlug, timezone, venuePhone, t, onBack, onM
     setError(null)
     try {
       const result = await api.customerLogin(venueSlug, { email: email.trim(), password: password.trim() })
-      setCustomerSession(result.token, result.customer)
+      setCustomerSession(venueSlug, result.token, result.customer, result.bookingAccess ?? null)
       await loadPortal(result.token)
     } catch (err: any) {
       setError(err.data?.message ?? t('errors.generic'))
@@ -150,7 +152,7 @@ export function CustomerPortal({ venueSlug, timezone, venuePhone, t, onBack, onM
         phone: phone.trim() || undefined,
         firstName: firstName.trim() || undefined,
       })
-      setCustomerSession(result.token, result.customer)
+      setCustomerSession(venueSlug, result.token, result.customer, result.bookingAccess ?? null)
       await loadPortal(result.token)
     } catch (err: any) {
       setError(err.data?.message ?? t('errors.generic'))
@@ -210,7 +212,7 @@ export function CustomerPortal({ venueSlug, timezone, venuePhone, t, onBack, onM
     try {
       const result = await api.verifyOtp(venueSlug, { ...otpDestination(), code })
       // Reuse the EXACT success path the email login uses (identical AuthResponse).
-      setCustomerSession(result.token, result.customer)
+      setCustomerSession(venueSlug, result.token, result.customer, result.bookingAccess ?? null)
       await loadPortal(result.token)
     } catch (err: any) {
       setOtpError(err.data?.message ?? t('otp.errorInvalid'))
@@ -220,7 +222,7 @@ export function CustomerPortal({ venueSlug, timezone, venuePhone, t, onBack, onM
   }
 
   function handleLogout() {
-    clearCustomerSession()
+    clearCustomerSession(venueSlug)
     setEmail('')
     setPassword('')
     setPhone('')
@@ -275,7 +277,7 @@ export function CustomerPortal({ venueSlug, timezone, venuePhone, t, onBack, onM
           lastName: result.customer.lastName,
           phone: result.customer.phone,
         }
-        setCustomerSession(token, updated)
+        setCustomerSession(venueSlug, token, updated)
       }
       // Reload portal data to refresh everything
       await loadPortal(token)
@@ -294,12 +296,14 @@ export function CustomerPortal({ venueSlug, timezone, venuePhone, t, onBack, onM
     if (!cust?.email && !cust?.phone) return
     setCheckoutLoading(packId)
     try {
+      // Fase 0.B: the portal is always a logged-in surface — bind the purchase
+      // to the session customer (server metadata.customerId), not to the contact.
       const result = await api.createPackCheckout(venueSlug, packId, {
         email: cust.email || undefined,
         phone: cust.phone || '',
         successUrl: window.location.href,
         cancelUrl: window.location.href,
-      })
+      }, customerToken.value)
       window.location.href = result.checkoutUrl
     } catch (err: any) {
       setError(err.data?.message ?? t('errors.generic'))

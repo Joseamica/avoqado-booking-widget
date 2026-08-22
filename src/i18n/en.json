@@ -288,7 +288,8 @@
     "checkoutCancelled": "Purchase cancelled",
     "checkoutTitle": "Before you pay",
     "checkoutSubtitle": "We need your phone to link the credits to your account. We'll take you to Stripe's secure checkout.",
-    "continueToPayment": "Continue to payment"
+    "continueToPayment": "Continue to payment",
+    "loginToUseCredits": "Sign in to use your credits."
   },
   "portal": {
     "title": "My Account",
@@ -363,5 +364,10 @@
     "placeholder": "Search service",
     "categoryAll": "All",
     "noResults": "No services match your search"
+  },
+  "bookingAccess": {
+    "blockedPlan": "Online booking is not available at this business right now.",
+    "blockedPublicBookingOff": "Online booking is turned off. Contact the business to book.",
+    "blockedApproval": "Your account is pending approval. You can book once the business approves you."
   }
 }

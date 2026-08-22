@@ -471,4 +471,10 @@ export interface CustomerPortalData {
       product: { id: string; name: string; price: number | null } | null
     }>
   }
+  /** Fase 0.B — see `BookingAccess` in api/booking.ts. Optional: older servers omit it. */
+  bookingAccess?: {
+    status: 'APPROVED' | 'PENDING' | 'REJECTED'
+    canCreateReservation: boolean
+    blockedBy?: 'PLAN' | 'PUBLIC_BOOKING_OFF' | 'APPROVAL'
+  }
 }

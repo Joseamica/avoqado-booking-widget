@@ -206,38 +206,63 @@ export function getCreditPacks(slug: string, productId?: string): Promise<Credit
   return request(`${BASE}/venues/${slug}/credit-packs${qs ? `?${qs}` : ''}`)
 }
 
+/**
+ * Credit balance of the LOGGED-IN customer (Fase 0.B).
+ *
+ * The server now resolves the balance from the session token — never from
+ * email/phone (knowing someone's email used to be enough to see and spend
+ * their credits). Without a token the server answers 401
+ * `CUSTOMER_AUTH_REQUIRED`; callers should skip the call for guests.
+ */
 export function getCustomerCredits(slug: string, params: {
-  email?: string
-  phone?: string
   seats?: number
   productId?: string
   /** Multi-service /appointments: pass every selected productId so the server
    *  returns balances for any of them in a single round trip. Wins over
    *  `productId` when both are present. */
   productIds?: string[]
-}): Promise<CustomerCreditBalance> {
+}, token: string): Promise<CustomerCreditBalance> {
   const q = new URLSearchParams()
-  if (params.email) q.append('email', params.email)
-  if (params.phone) q.append('phone', params.phone)
   if (params.seats != null) q.append('seats', String(params.seats))
   if (params.productIds && params.productIds.length > 0) {
     q.append('productIds', params.productIds.join(','))
   } else if (params.productId) {
     q.append('productId', params.productId)
   }
-  return request(`${BASE}/venues/${slug}/credit-packs/balance?${q}`)
+  return request(`${BASE}/venues/${slug}/credit-packs/balance?${q}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  })
 }
 
+/**
+ * Fase 0.B: with a session token the purchase is bound to THAT customer
+ * (server puts `customerId` in the Stripe metadata and fulfills by id, never
+ * by the email typed in the form). Guests (no token) still buy by contact.
+ */
 export function createPackCheckout(slug: string, packId: string, data: {
   email?: string; phone: string; successUrl: string; cancelUrl: string
-}): Promise<{ checkoutUrl: string }> {
+}, token?: string | null): Promise<{ checkoutUrl: string }> {
   return request(`${BASE}/venues/${slug}/credit-packs/${packId}/checkout`, {
     method: 'POST',
+    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
     body: JSON.stringify(data),
   })
 }
 
 // ==================== Customer Portal ====================
+
+/**
+ * Fase 0.B — "can this customer create a reservation here?" Composed by the
+ * server in this order: PLAN (venue has RESERVATIONS·PRO) → PUBLIC_BOOKING_OFF
+ * (venue turned public booking off) → APPROVAL (Fase 1: per-customer approval).
+ * `blockedBy` is the FIRST one that fails. Present on login / register /
+ * otp-verify / portal responses; optional because older servers omit it.
+ */
+export interface BookingAccess {
+  status: 'APPROVED' | 'PENDING' | 'REJECTED'
+  canCreateReservation: boolean
+  blockedBy?: 'PLAN' | 'PUBLIC_BOOKING_OFF' | 'APPROVAL'
+}
 
 export interface AuthResponse {
   token: string
@@ -248,6 +273,7 @@ export interface AuthResponse {
     email: string | null
     phone: string | null
   }
+  bookingAccess?: BookingAccess
 }
 
 export function customerRegister(slug: string, data: {
