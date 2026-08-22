@@ -427,7 +427,12 @@ export function BookingFlow({ props }: BookingFlowProps) {
         }
       })
       .catch((err) => {
-        apiError.value = err.status === 404 ? t('errors.venueNotFound') : t('errors.generic')
+        // Apagado se VE y se EXPLICA: cuando el server dice POR QUÉ (reservas en línea
+        // deshabilitadas, el plan del negocio no las incluye…), ese mensaje se muestra tal
+        // cual; el genérico "Algo salió mal" dejaba al cliente sin saber qué pasó ni a quién
+        // pedírselo. 404 conserva su copy propio ("negocio no encontrado").
+        const serverMessage = typeof err?.data?.message === 'string' ? err.data.message : null
+        apiError.value = err.status === 404 ? t('errors.venueNotFound') : (serverMessage ?? t('errors.generic'))
       })
       .finally(() => { isLoading.value = false })
   }, [props.venue])
