@@ -9,7 +9,13 @@
     "skipLibCheck": true,
     "esModuleInterop": true,
     "lib": ["ES2020", "DOM", "DOM.Iterable"],
-    "types": ["vite/client"]
+    "types": ["vite/client"],
+    // El bundle lo produce Vite (`vite build`), nunca tsc: aquí tsc sólo revisa tipos.
+    // Sin esto, `npx tsc` / `tsc -b` ESCRIBE un .js junto a cada .tsx — y Vite resuelve
+    // `.js` ANTES que `.tsx`, así que el dev server empieza a servir código viejo y el
+    // fallo se ve como un bug del widget. Pasó el 2026-08-24: 56 archivos emitidos y el
+    // widget dejó de renderizar con 404 de módulos que "existían".
+    "noEmit": true
   },
   "include": ["src"]
 }
