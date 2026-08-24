@@ -368,6 +368,11 @@
   "bookingAccess": {
     "blockedPlan": "Este negocio no tiene reservaciones en línea disponibles por el momento.",
     "blockedPublicBookingOff": "Las reservaciones en línea están desactivadas. Contacta al negocio para reservar.",
-    "blockedApproval": "Tu cuenta está pendiente de aprobación. Podrás reservar cuando el negocio te apruebe."
+    "blockedApproval": "Tu cuenta está pendiente de aprobación. Podrás reservar cuando el negocio te apruebe.",
+    "blockedRejected": "Este negocio no aprobó tu cuenta para reservar en línea. Contáctalos directamente.",
+    "pendingTitle": "Tu cuenta está en revisión",
+    "pendingDescription": "{{venue}} revisa cada cuenta nueva antes de habilitar las reservas en línea. Te avisamos por correo en cuanto la revisen — no necesitas hacer nada más.",
+    "rejectedTitle": "Tu cuenta no fue habilitada",
+    "rejectedDescription": "{{venue}} no habilitó tu cuenta para reservar en línea. Si crees que es un error, comunícate directamente con el negocio."
   }
 }

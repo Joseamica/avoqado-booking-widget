@@ -368,6 +368,11 @@
   "bookingAccess": {
     "blockedPlan": "Online booking is not available at this business right now.",
     "blockedPublicBookingOff": "Online booking is turned off. Contact the business to book.",
-    "blockedApproval": "Your account is pending approval. You can book once the business approves you."
+    "blockedApproval": "Your account is pending approval. You can book once the business approves you.",
+    "blockedRejected": "This business did not approve your account for online booking. Please contact them directly.",
+    "pendingTitle": "Your account is under review",
+    "pendingDescription": "{{venue}} reviews every new account before enabling online booking. We will email you as soon as they review it — there is nothing else you need to do.",
+    "rejectedTitle": "Your account was not enabled",
+    "rejectedDescription": "{{venue}} did not enable your account for online booking. If you think this is a mistake, contact the business directly."
   }
 }

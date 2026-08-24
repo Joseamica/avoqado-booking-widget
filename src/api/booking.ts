@@ -120,10 +120,22 @@ export interface CreateHoldResponse {
 /** Creates a SlotHold and returns its id + expiry. The widget plumbs the
  *  holdId onto its createReservation call so the server can consume it
  *  transactionally on success. Falls back gracefully (no hold) if this 404s. */
-export function createHold(slug: string, data: CreateHoldRequest): Promise<CreateHoldResponse> {
+export function createHold(
+  slug: string,
+  data: CreateHoldRequest,
+  /**
+   * 🔴 Fase 1 — obligatorio de facto cuando el negocio aprueba clientes: la ruta del hold
+   * ahora pasa por el gate, y sin `Authorization` el server ve un invitado y responde
+   * `CUSTOMER_AUTH_REQUIRED` — incluso a alguien YA APROBADO. Era la única llamada del widget
+   * que no mandaba el token. Sigue siendo opcional porque los venues sin aprobación admiten
+   * invitados, que es el caso de todos los demás.
+   */
+  token?: string,
+): Promise<CreateHoldResponse> {
   return request(`${BASE}/venues/${slug}/reservations/hold`, {
     method: 'POST',
     body: JSON.stringify(data),
+    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
   })
 }
 

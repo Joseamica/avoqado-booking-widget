@@ -182,6 +182,20 @@ export function BookingFlow({ props }: BookingFlowProps) {
   // after the function returns, so they need the binding initialized by then.
   const config = getStepConfig(hasServiceStep.value, hasStaffStep.value)
 
+  /**
+   * Fase 1 — ¿este cliente está frenado por la APROBACIÓN del negocio?
+   *
+   * Se declara junto a `config`, arriba de los effects, por la misma razón que él: los
+   * effects corren después de que la función retorna, así que necesitan el binding ya
+   * inicializado aunque un early-return se haya llevado el render por otro lado.
+   *
+   * Sólo `APPROVAL`: los otros bloqueos (plan del negocio, reservas apagadas) no son "de esta
+   * persona" y ya tienen su propio mensaje.
+   */
+  const approvalBlocked = Boolean(
+    bookingAccess.value && !bookingAccess.value.canCreateReservation && bookingAccess.value.blockedBy === 'APPROVAL',
+  )
+
   // The unified landing (Square-style two-CTA picker) shows whenever the
   // customer enters via /<slug> with no flow segment. Picking a CTA flips
   // flowType in-memory + rewrites the URL so a refresh keeps the choice.
@@ -638,6 +652,11 @@ export function BookingFlow({ props }: BookingFlowProps) {
   useEffect(() => {
     if (props.flowType !== 'appointments') return
     if (step.value !== config.formStep) return
+    // Fase 1 — no pidas un apartado que el server ya sabe que va a rechazar. El gate de
+    // aprobación vive también en la ruta del hold, así que esto salía 403 sin remedio: un
+    // request perdido por cada render y una línea de error en el log por alguien que no
+    // hizo nada malo. Con el corte, el bloqueado ni siquiera lo intenta.
+    if (approvalBlocked) return
     const slot = selectedSlot.value
     if (!slot) return
     // Only create one hold per slot — react re-renders shouldn't fire dupes.
@@ -671,7 +690,7 @@ export function BookingFlow({ props }: BookingFlowProps) {
       ...(selectedStaffId.value ? { staffId: selectedStaffId.value } : {}),
       ...(selectedModifiers.value.length > 0 ? { modifierSelections: selectedModifiers.value } : {}),
       ...(usesBaseWindow ? { windowSemantics: 'base' as const } : {}),
-    })
+    }, customerToken.value ?? undefined)
       .then(async res => {
         if (step.value !== requestedAtStep) {
           await releaseHold(res.holdId)
@@ -1136,6 +1155,11 @@ export function BookingFlow({ props }: BookingFlowProps) {
     if (step.value !== config.formStep) return
     if (flowType.value === 'appointments') return
     if (showCreditSelector || showNoCreditsBuyPrompt || showPaymentSelector) return
+    // 🔴 Fase 1 — un cliente en espera de aprobación con el perfil completo caía justo aquí:
+    // este efecto reservaba POR ÉL, sin mostrarle nada, y el 403 del server salía como un
+    // toast seco al final. La pantalla que explica su estado (más abajo, en este mismo paso)
+    // no llegaba a verse nunca.
+    if (approvalBlocked) return
     const c = customerInfo.value
     if (!c) return
     const hasName = Boolean(c.firstName)
@@ -1397,6 +1421,18 @@ export function BookingFlow({ props }: BookingFlowProps) {
     } catch (err: any) {
       if (err?.data?.code === 'APPOINTMENT_WINDOW_CHANGED') {
         await recoverAppointmentWindow(data, err?.data?.details?.expectedBaseDurationMin)
+      } else if (err?.data?.code === 'CUSTOMER_APPROVAL_PENDING' || err?.data?.code === 'CUSTOMER_APPROVAL_REJECTED') {
+        // 🔴 Fase 1 — el negocio decidió mientras esta persona estaba a media reserva. El
+        // estado que traía de su inicio de sesión ya es viejo: se corrige con lo que acaba de
+        // decir el server, y así la pantalla explicativa aparece en vez de un toast que se va
+        // solo y la deja mirando un formulario que nunca va a funcionar.
+        const rejected = err.data.code === 'CUSTOMER_APPROVAL_REJECTED'
+        bookingAccess.value = {
+          status: rejected ? 'REJECTED' : 'PENDING',
+          canCreateReservation: false,
+          blockedBy: 'APPROVAL',
+        }
+        step.value = config.formStep
       } else if (err.status === 409) {
         const continueAfterSlotConflict = () => {
           showToast(t('errors.slotTaken'), 'error')
@@ -1606,14 +1642,25 @@ export function BookingFlow({ props }: BookingFlowProps) {
           customer can book here (plan → public booking → approval). Say it up
           front instead of letting the customer discover a 403 at the end. The
           flow stays visible (browsing is fine); only creating is blocked. */}
-      {customerToken.value && bookingAccess.value && !bookingAccess.value.canCreateReservation && (
+      {/* 🔴 …salvo cuando el paso del formulario YA está mostrando el panel completo con
+          esta misma explicación: ahí el banner sale pegado encima del panel, con dos
+          redacciones distintas del mismo hecho, y se lee como si fueran dos problemas.
+          Medido en pantalla (2026-08-24): "Tu cuenta está pendiente de aprobación"
+          arriba y "Tu cuenta está en revisión" abajo, a 3 cm de distancia. */}
+      {customerToken.value && bookingAccess.value && !bookingAccess.value.canCreateReservation && !(approvalBlocked && step.value === config.formStep) && (
         <div role="status" style={{ marginBottom: '16px', padding: '12px 14px', borderRadius: '12px', border: '1px solid var(--avq-warning-border, #fde68a)', background: 'var(--avq-warning-bg, #fffbeb)' }}>
           <span style={{ fontSize: '13px', color: 'var(--avq-warning-fg, #92400e)' }}>
             {bookingAccess.value.blockedBy === 'PLAN'
               ? t('bookingAccess.blockedPlan')
               : bookingAccess.value.blockedBy === 'PUBLIC_BOOKING_OFF'
                 ? t('bookingAccess.blockedPublicBookingOff')
-                : t('bookingAccess.blockedApproval')}
+                : // Fase 1 — "en espera" y "rechazado" NO son lo mismo para quien lo lee: al
+                  // primero hay que pedirle que espere, al segundo mandarlo con el negocio.
+                  // El server manda `status` desde el principio; nadie lo leía, así que a los
+                  // dos les salía el mismo texto de "pendiente de aprobación".
+                  bookingAccess.value.status === 'REJECTED'
+                  ? t('bookingAccess.blockedRejected')
+                  : t('bookingAccess.blockedApproval')}
           </span>
         </div>
       )}
@@ -2070,7 +2117,36 @@ export function BookingFlow({ props }: BookingFlowProps) {
           const formStepBody = (
             <>
               {!showCreditSelector && !showNoCreditsBuyPrompt && !showPaymentSelector && (
-                info.publicBooking.requireAccount && !customerInfo.value ? (
+                /* 🔴 Fase 1 — va ANTES de la puerta de "inicia sesión": alguien en espera de
+                   aprobación YA tiene sesión, así que aquella no lo detiene y le pintaría el
+                   formulario de una reserva que el server va a rechazar. Aquí se le explica
+                   en qué punto está en vez de dejarlo llenar datos para nada. */
+                approvalBlocked ? (
+                  <div class="avq-animate-in" style={{ padding: '32px 16px', textAlign: 'center' }}>
+                    <div style={{
+                      width: '56px', height: '56px', borderRadius: '50%',
+                      background: 'var(--avq-warning-bg, #fffbeb)',
+                      color: 'var(--avq-warning-fg, #92400e)',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      margin: '0 auto 16px',
+                    }}>
+                      <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <circle cx="12" cy="12" r="10" />
+                        <polyline points="12 6 12 12 16 14" />
+                      </svg>
+                    </div>
+                    <h3 style={{ fontSize: '16px', fontWeight: '600', color: 'var(--avq-fg, #111827)', margin: '0 0 6px' }}>
+                      {bookingAccess.value?.status === 'REJECTED'
+                        ? t('bookingAccess.rejectedTitle')
+                        : t('bookingAccess.pendingTitle')}
+                    </h3>
+                    <p style={{ fontSize: '14px', color: 'var(--avq-muted-fg, #6b7280)', margin: '0', lineHeight: '1.5' }}>
+                      {bookingAccess.value?.status === 'REJECTED'
+                        ? t('bookingAccess.rejectedDescription', { venue: info.name })
+                        : t('bookingAccess.pendingDescription', { venue: info.name })}
+                    </p>
+                  </div>
+                ) : info.publicBooking.requireAccount && !customerInfo.value ? (
                   <div class="avq-animate-in" style={{ padding: '32px 16px', textAlign: 'center' }}>
                     <div style={{
                       width: '56px', height: '56px', borderRadius: '50%',
@@ -2248,6 +2324,21 @@ export function BookingFlow({ props }: BookingFlowProps) {
               )}
             </>
           )
+
+          // 🔴 Fase 1 — a quien está frenado por la aprobación NO se le monta el andamiaje
+          // de un cobro. Sin este corte, el paso seguía trayendo el encabezado "Proceso de
+          // pago", el cronómetro del apartado y el resumen con Subtotal/Impuestos/Total/
+          // "A pagar hoy" alrededor de la explicación: la pantalla le decía a la vez "no
+          // puedes reservar" y "tienes 9:34 para pagar tu clase". Medido en pantalla el
+          // 2026-08-24 — la revisión de código no lo veía porque cada pieza, por separado,
+          // era correcta.
+          //
+          // El cronómetro además MIENTE: el server rechaza el apartado (403), no se crea
+          // ningún SlotHold —verificado, 0 filas— y el respaldo visual del header lo pinta
+          // igual. Quitar el header es lo que borra el cronómetro fantasma.
+          if (approvalBlocked) {
+            return formStepBody
+          }
 
           if (flowType.value !== 'appointments' && flowType.value !== 'classes') {
             return formStepBody
