@@ -645,6 +645,30 @@
       if (flowType === 'classes') document.body.classList.add('flow-classes')
       else if (flowType === 'appointments') document.body.classList.add('flow-appointments')
 
+      // ----- /:venueSlug/checkin/:challengeId  (Fase 5 del kiosco) ----------
+      //
+      // El kiosco enseña un QR; esto es lo que abre. El secreto viaja en el
+      // FRAGMENTO (#secret=…) a propósito: el navegador no lo manda al servidor
+      // ni en el `Referer`, así que no queda en los logs de nadie. Se lee una vez
+      // y se borra de la barra en el acto, para que no sobreviva en el historial
+      // ni en una captura de pantalla.
+      //
+      // Este carril NO monta el widget de reservas: es una sola pregunta con una
+      // sola respuesta, y meter la agenda del negocio en medio sería ruido.
+      if (flowType === 'checkin') {
+        var challengeId = parts[2] || ''
+        var secret = ''
+        try {
+          var hm = /(?:^|[#&])secret=([^&]+)/.exec(window.location.hash || '')
+          if (hm) secret = decodeURIComponent(hm[1])
+        } catch (e) { /* hash ilegible: se trata como si no viniera */ }
+        if (secret) {
+          try { history.replaceState(null, '', window.location.pathname) } catch (e) {}
+        }
+        runKioskCheckIn(slug, challengeId, secret)
+        return
+      }
+
       if (!slug) {
         var mountEmpty = document.getElementById('mount')
         mountEmpty.innerHTML =
@@ -696,6 +720,101 @@
       applyActive(nav)
       applyActive(document.getElementById('drawer'))
       nav.hidden = false
+
+      // ===== Check-in del kiosco =========================================
+      function runKioskCheckIn(venueSlug, challengeId, secret) {
+        var mount = document.getElementById('mount')
+        var nav = document.getElementById('topnav')
+        if (nav) nav.style.display = 'none'
+        document.body.classList.add('flow-checkin')
+
+        function screen(icon, title, body, extraHtml) {
+          mount.innerHTML =
+            '<div class="empty" style="padding:48px 24px;text-align:center">' +
+              '<div style="font-size:44px;line-height:1;margin-bottom:16px">' + icon + '</div>' +
+              '<p class="empty-title">' + title + '</p>' +
+              '<p>' + body + '</p>' +
+              (extraHtml || '') +
+            '</div>'
+        }
+
+        if (!challengeId || !secret) {
+          screen('🔗', 'Este enlace está incompleto',
+            'Vuelve a escanear el código de la pantalla. Si sigue igual, pide ayuda en el mostrador.')
+          return
+        }
+
+        // La sesión está separada POR NEGOCIO (Fase 0): un token de otro local no
+        // sirve aquí, y usarlo daría un 401 en vez de un check-in.
+        function readToken() {
+          try { return localStorage.getItem('avq_customer_token:' + venueSlug) } catch (e) { return null }
+        }
+
+        function send(token) {
+          screen('⏳', 'Un momento…', 'Estamos registrando tu llegada.')
+          // En local se apunta al server de desarrollo; publicado, a producción.
+          var host = window.location.hostname
+          var isLocal = host === 'localhost' || host === '127.0.0.1'
+          var base = window.AVQ_API_URL || (isLocal ? 'http://localhost:3000/api/v1/public' : 'https://api.avoqado.io/api/v1/public')
+          fetch(base + '/venues/' + encodeURIComponent(venueSlug) + '/customer/checkin/' + encodeURIComponent(challengeId), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+            body: JSON.stringify({ secret: secret }),
+          })
+            .then(function (r) { return r.json().then(function (j) { return { status: r.status, body: j } }) })
+            .then(function (out) {
+              var code = (out.body && (out.body.code || (out.body.error && out.body.error.code))) || ''
+              if (out.status >= 200 && out.status < 300) {
+                var again = out.body && out.body.outcome === 'ALREADY_CHECKED_IN'
+                screen('✅', again ? 'Ya estabas registrado' : '¡Listo, llegaste!',
+                  again ? 'Tu llegada ya estaba anotada. Puedes pasar.' : 'Anotamos tu llegada. Que disfrutes tu clase.')
+                return
+              }
+              // Cada caso dice qué HACER, no qué falló: quien lee esto está de pie
+              // frente a una pantalla, con gente detrás.
+              if (code === 'CHECK_IN_CHALLENGE_EXPIRED') {
+                screen('⌛', 'Este código ya venció', 'Vuelve a escanear el de la pantalla: se renueva solo cada pocos minutos.')
+              } else if (code === 'CHECK_IN_ALREADY_CLAIMED') {
+                screen('🙋', 'Ese código ya lo usó alguien más', 'Pide uno nuevo en la pantalla y vuelve a escanear.')
+              } else if (code === 'CHECK_IN_OUTSIDE_WINDOW') {
+                screen('🕒', 'Todavía es temprano', 'El check-in se abre 20 minutos antes de tu clase. Vuelve a intentarlo en un rato.')
+              } else if (code === 'CUSTOMER_APPROVAL_PENDING') {
+                screen('⏳', 'Tu cuenta está en revisión', 'El negocio todavía no la aprueba. Pregunta en el mostrador.')
+              } else if (code === 'CUSTOMER_APPROVAL_REJECTED' || code === 'CUSTOMER_TOKEN_VENUE_MISMATCH') {
+                screen('🙋', 'Necesitamos ayuda del mostrador', 'Muestra esta pantalla a alguien del equipo.')
+              } else if (out.status === 401) {
+                askLogin()
+              } else if (out.status === 429) {
+                screen('🐢', 'Demasiados intentos', 'Espera un minuto y vuelve a escanear.')
+              } else {
+                screen('🙋', 'No pudimos registrarte', 'Pide ayuda en el mostrador: te anotan en un segundo.')
+              }
+            })
+            .catch(function () {
+              screen('📶', 'Sin conexión', 'Revisa tu señal y vuelve a escanear el código.')
+            })
+        }
+
+        function askLogin() {
+          screen('👋', 'Identifícate para continuar', 'Entra con tu teléfono o correo y seguimos con tu check-in.',
+            '<div id="checkin-portal" style="margin-top:20px"></div>')
+          var host = document.createElement('avoqado-portal')
+          host.setAttribute('venue', venueSlug)
+          document.getElementById('checkin-portal').appendChild(host)
+          // El portal no avisa por evento cuando alguien entra, así que se vigila
+          // la llave del almacenamiento: en cuanto aparece el token, se continúa.
+          var tries = 0
+          var poll = setInterval(function () {
+            var t = readToken()
+            if (t) { clearInterval(poll); send(t) }
+            else if (++tries > 600) clearInterval(poll) // 5 minutos y se rinde
+          }, 500)
+        }
+
+        var token = readToken()
+        if (token) send(token)
+        else askLogin()
+      }
 
       // Drawer behavior (mobile + appointments-mode-everywhere)
       var drawer = document.getElementById('drawer')
@@ -894,6 +1013,26 @@
           }
         })
       }
+
+      // Enlace profundo `?packs=1` — a donde apunta el aviso nocturno de renovación
+      // (Fase 9). Se prefiere esto a una sesión de pago pre-creada porque el aviso sale
+      // de noche y esas sesiones caducan en ~24 h: el enlace tiene que seguir sirviendo
+      // el martes, no sólo la mañana siguiente.
+      try {
+        if (new URLSearchParams(window.location.search).get('packs') === '1') {
+          var openPacks = function () {
+            if (typeof el.showCreditPacks === 'function') el.showCreditPacks()
+            else el.dispatchEvent(new CustomEvent('_avq_show_credit_packs', { bubbles: false }))
+          }
+          // Espera a que el widget sepa qué paquetes hay; si nunca avisa, abre igual
+          // a los 3 s para no dejar al cliente mirando la portada.
+          var opened = false
+          el.addEventListener('avoqado:credit-packs-loaded', function () {
+            if (!opened) { opened = true; openPacks() }
+          })
+          setTimeout(function () { if (!opened) { opened = true; openPacks() } }, 3000)
+        }
+      } catch (e) { /* URLSearchParams no disponible: se ignora el enlace profundo */ }
 
       // ----- Drawer venue-info hydration (appointments mode only) -----------
       // The widget fetches venue info, then dispatches avoqado:venue-loaded on
