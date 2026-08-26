@@ -25,3 +25,4 @@ console-*.log
 
 # graphify knowledge graph output
 graphify-out/
+*.tsbuildinfo
