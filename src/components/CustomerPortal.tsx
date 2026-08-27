@@ -710,6 +710,42 @@ export function CustomerPortal({ venueSlug, timezone, venuePhone, t, onBack, onM
         </div>
       )}
 
+      {/* Tarjeta de sellos — 🔴 la seccion completa depende de `enabled`, que manda el
+          servidor. Dibujar el boton sin ese dato lo haria responder 403 al tocarlo, y
+          el cliente creeria que el negocio le esta fallando. */}
+      {data.stampCard?.enabled && customer && (
+        <div style={{ marginBottom: '20px' }}>
+          <h3 style={{ fontSize: '14px', fontWeight: '600', color: 'var(--avq-fg, #111827)', margin: '0 0 10px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--avq-accent, #6366f1)" stroke-width="2" aria-hidden="true">
+              <rect x="2" y="5" width="20" height="14" rx="2" />
+              <path d="M2 10h20" />
+            </svg>
+            {t('portal.stampCard')}
+          </h3>
+          <div style={{ borderRadius: '12px', padding: '14px', border: '1px solid var(--avq-border, #e8eaed)' }}>
+            <p style={{ fontSize: '14px', fontWeight: '600', color: 'var(--avq-fg, #111827)', margin: '0 0 4px' }}>
+              {t('portal.stampProgress')
+                .replace('{earned}', String(data.stampCard.stampsEarned))
+                .replace('{required}', String(data.stampCard.stampsRequired))}
+            </p>
+            {data.stampCard.rewardLabel && (
+              <p style={{ fontSize: '13px', color: 'var(--avq-muted-fg, #6b7280)', margin: '0 0 12px' }}>
+                {t('portal.stampReward').replace('{reward}', data.stampCard.rewardLabel)}
+              </p>
+            )}
+            <a
+              href={api.walletPassUrl(venueSlug, customer.id)}
+              style={{ display: 'inline-block', padding: '10px 16px', borderRadius: '10px', background: 'var(--avq-accent, #6366f1)', color: '#fff', fontSize: '14px', fontWeight: '600', textDecoration: 'none' }}
+            >
+              {t('portal.saveCard')}
+            </a>
+            <p style={{ fontSize: '12px', color: 'var(--avq-muted-fg, #6b7280)', margin: '10px 0 0' }}>
+              {t('portal.iphoneOnly')}
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Credits */}
       {hasCredits && (
         <div style={{ marginBottom: '20px' }}>

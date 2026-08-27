@@ -334,7 +334,12 @@
     "packIncludes": "Includes",
     "packValidity": "Valid for {{days}} days",
     "packNoExpiry": "No expiration",
-    "sessions": "sessions"
+    "sessions": "sessions",
+    "stampCard": "Your stamp card",
+    "stampProgress": "You've got {earned} of {required} stamps",
+    "stampReward": "When you complete it: {reward}",
+    "saveCard": "Save to my iPhone",
+    "iphoneOnly": "For now the card only saves to iPhone. The Android version is on the way."
   },
   "otp": {
     "title": "Sign in with WhatsApp",

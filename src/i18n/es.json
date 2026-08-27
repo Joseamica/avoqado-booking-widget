@@ -334,7 +334,12 @@
     "packIncludes": "Incluye",
     "packValidity": "Válido por {{days}} días",
     "packNoExpiry": "Sin expiración",
-    "sessions": "sesiones"
+    "sessions": "sesiones",
+    "stampCard": "Tu tarjeta de sellos",
+    "stampProgress": "Llevas {earned} de {required} sellos",
+    "stampReward": "Al completarla: {reward}",
+    "saveCard": "Guardar en mi iPhone",
+    "iphoneOnly": "Por ahora la tarjeta sólo se guarda en iPhone. La versión para Android viene en camino."
   },
   "otp": {
     "title": "Entrar con WhatsApp",

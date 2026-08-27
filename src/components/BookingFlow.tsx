@@ -264,6 +264,23 @@ export function BookingFlow({ props }: BookingFlowProps) {
     return 'book'
   })
 
+  // 🔴 `#cuenta` abre el portal directo, sin pasar por el flujo de reserva. Es lo que
+  // hace util el QR pegado en el mostrador: quien lo escanea quiere su tarjeta, no una
+  // cita.
+  //
+  // Va en su PROPIO efecto y NO en el de `_avq_show_account`: aquel arranca con
+  // `if (!host) return`, y en la pagina hospedada (book.avoqado.io) no hay
+  // `hostElement` — el deep link habria quedado muerto justo donde mas se usa, sin
+  // dar ningun error. Se lee una sola vez al montar: cambiar el hash despues, al
+  // navegar dentro del widget, no debe reabrir el portal encima de lo que el cliente
+  // este haciendo. Se aceptan las dos formas por si el cartel se imprimio en el otro
+  // idioma.
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const hash = window.location.hash.toLowerCase()
+    if (hash === '#cuenta' || hash === '#account') showPortal.value = true
+  }, [])
+
   // Listen for the custom `_avq_show_account` event the host page top-nav fires
   // when the customer clicks "Mi Cuenta". The host calls widgetEl.showAccount()
   // → the widget element fires this event → we open the portal. Decoupled from

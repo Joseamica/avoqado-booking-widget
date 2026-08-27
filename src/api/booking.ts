@@ -33,6 +33,16 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
   return res.json()
 }
 
+/**
+ * La liga que el cliente abre para guardar su tarjeta en Wallet.
+ *
+ * `BASE` ya trae el prefijo `/api/v1/public`, asi que aqui solo cuelga la ruta.
+ * El id va codificado por higiene, aunque hoy sea un cuid sin caracteres raros.
+ */
+export function walletPassUrl(slug: string, customerId: string): string {
+  return `${BASE}/venues/${encodeURIComponent(slug)}/wallet/apple/${encodeURIComponent(customerId)}`
+}
+
 export function getVenueInfo(slug: string): Promise<PublicVenueInfo> {
   return request(`${BASE}/venues/${slug}/info`)
 }

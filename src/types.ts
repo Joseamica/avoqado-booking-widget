@@ -421,6 +421,19 @@ export interface WidgetProps {
 
 // Customer Portal types
 export interface CustomerPortalData {
+  /**
+   * La tarjeta de sellos, tal como la manda el servidor.
+   *
+   * Opcional a proposito: un widget nuevo puede hablar con un servidor que
+   * todavia no lo devuelve, y ahi la seccion simplemente no se dibuja — nunca
+   * revienta ni pinta "undefined de undefined".
+   */
+  stampCard?: {
+    enabled: boolean
+    stampsEarned: number
+    stampsRequired: number
+    rewardLabel: string
+  }
   customer: {
     id: string
     firstName: string | null
