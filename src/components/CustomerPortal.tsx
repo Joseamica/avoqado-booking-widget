@@ -739,6 +739,13 @@ export function CustomerPortal({ venueSlug, timezone, venuePhone, t, onBack, onM
             )}
             <a
               href={isAndroidDevice ? api.googleWalletPassUrl(venueSlug, customer.id) : api.walletPassUrl(venueSlug, customer.id)}
+              // 🔴 El portal va incrustado en el sitio del negocio. La liga de Apple dispara
+              // una descarga y la página se queda; la de Google hace un 302 a
+              // pay.google.com y SE LLEVA el sitio del negocio, sin regreso, si no abre en
+              // pestaña nueva. `rel="noopener"` evita que esa pestaña nueva controle la de
+              // origen (`window.opener`).
+              target="_blank"
+              rel="noopener"
               style={{ display: 'inline-block', padding: '10px 16px', borderRadius: '10px', background: 'var(--avq-accent, #6366f1)', color: '#fff', fontSize: '14px', fontWeight: '600', textDecoration: 'none' }}
             >
               {t('portal.saveCard')}
@@ -749,6 +756,11 @@ export function CustomerPortal({ venueSlug, timezone, venuePhone, t, onBack, onM
             <p style={{ fontSize: '12px', color: 'var(--avq-muted-fg, #6b7280)', margin: '10px 0 0' }}>
               <a
                 href={isAndroidDevice ? api.walletPassUrl(venueSlug, customer.id) : api.googleWalletPassUrl(venueSlug, customer.id)}
+                // 🔴 Misma razón que la liga principal: esta es la de escape (la otra
+                // cartera), y también puede ser la de Google — mismo riesgo de llevarse el
+                // sitio del negocio.
+                target="_blank"
+                rel="noopener"
                 style={{ color: 'var(--avq-muted-fg, #6b7280)' }}
               >
                 {t('portal.saveOnOther', { sistema: isAndroidDevice ? 'iPhone' : 'Android' })}
