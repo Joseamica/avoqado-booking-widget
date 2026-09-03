@@ -338,8 +338,8 @@
     "stampCard": "Your stamp card",
     "stampProgress": "You've got {earned} of {required} stamps",
     "stampReward": "When you complete it: {reward}",
-    "saveCard": "Save to my iPhone",
-    "iphoneOnly": "For now the card only saves to iPhone. The Android version is on the way."
+    "saveCard": "Save my card",
+    "saveOnOther": "Have {{sistema}}? save it here"
   },
   "otp": {
     "title": "Sign in with WhatsApp",

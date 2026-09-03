@@ -600,6 +600,10 @@ export function CustomerPortal({ venueSlug, timezone, venuePhone, t, onBack, onM
   const hasCredits = data.credits.purchases.length > 0 && totalCredits > 0
   const hasUpcoming = data.reservations.upcoming.length > 0
   const hasPast = data.reservations.past.length > 0
+  // 🔴 Ante la duda gana iPhone: es el camino que ya funciona en producción. La liga
+  // de escape existe porque la detección falla en tablets raras y navegadores con
+  // user-agent modificado.
+  const isAndroidDevice = api.esAndroid(navigator.userAgent)
 
   return (
     <div class="avq-animate-in">
@@ -734,13 +738,21 @@ export function CustomerPortal({ venueSlug, timezone, venuePhone, t, onBack, onM
               </p>
             )}
             <a
-              href={api.walletPassUrl(venueSlug, customer.id)}
+              href={isAndroidDevice ? api.googleWalletPassUrl(venueSlug, customer.id) : api.walletPassUrl(venueSlug, customer.id)}
               style={{ display: 'inline-block', padding: '10px 16px', borderRadius: '10px', background: 'var(--avq-accent, #6366f1)', color: '#fff', fontSize: '14px', fontWeight: '600', textDecoration: 'none' }}
             >
               {t('portal.saveCard')}
             </a>
+            {/* 🔴 La salida existe porque la detección falla: tablets raras, navegadores
+                con user-agent modificado. Sin ella ese cliente se queda sin tarjeta y no
+                hay a quién preguntarle en el mostrador. */}
             <p style={{ fontSize: '12px', color: 'var(--avq-muted-fg, #6b7280)', margin: '10px 0 0' }}>
-              {t('portal.iphoneOnly')}
+              <a
+                href={isAndroidDevice ? api.walletPassUrl(venueSlug, customer.id) : api.googleWalletPassUrl(venueSlug, customer.id)}
+                style={{ color: 'var(--avq-muted-fg, #6b7280)' }}
+              >
+                {t('portal.saveOnOther', { sistema: isAndroidDevice ? 'iPhone' : 'Android' })}
+              </a>
             </p>
           </div>
         </div>
