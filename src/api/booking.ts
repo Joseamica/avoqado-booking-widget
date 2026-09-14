@@ -337,3 +337,18 @@ export function updateCustomerProfile(slug: string, token: string, data: {
     body: JSON.stringify(data),
   })
 }
+
+/**
+ * 🔴 Se decide por user-agent y se ofrece SIEMPRE la salida al otro sistema. La
+ * detección falla en tablets raras y navegadores con user-agent modificado; sin la
+ * liga de escape, ese cliente se queda sin forma de guardar su tarjeta.
+ *
+ * Ante la duda gana iPhone: es el camino que ya funciona en producción.
+ */
+export function esAndroid(ua: string): boolean {
+  return /android/i.test(ua) && !/windows phone/i.test(ua)
+}
+
+export function googleWalletPassUrl(slug: string, customerId: string): string {
+  return `${BASE}/venues/${encodeURIComponent(slug)}/wallet/google/${encodeURIComponent(customerId)}`
+}

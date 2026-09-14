@@ -863,17 +863,23 @@
 
         // ----- Paso 3: guardar la tarjeta -----
         function mostrarTarjeta(customerId) {
-          var liga = api + '/wallet/apple/' + encodeURIComponent(customerId)
+          var esAndroid = /android/i.test(navigator.userAgent) && !/windows phone/i.test(navigator.userAgent)
+          var ligaApple = api + '/wallet/apple/' + encodeURIComponent(customerId)
+          var ligaGoogle = api + '/wallet/google/' + encodeURIComponent(customerId)
+          var principal = esAndroid ? ligaGoogle : ligaApple
+          var otra = esAndroid ? ligaApple : ligaGoogle
+          var textoOtro = esAndroid ? '¿Tienes iPhone? guárdala aquí' : '¿Tienes Android? guárdala aquí'
           var premio = negocio.reward
             ? '<p style="font-size:15px;color:#6b7280;margin:0 0 20px">Junta ' + esc(negocio.required) + ' sellos y te ganas: ' + esc(negocio.reward) + '.</p>'
             : '<p style="font-size:15px;color:#6b7280;margin:0 0 20px">Junta ' + esc(negocio.required) + ' sellos y te ganas tu premio.</p>'
           marco(
             '<p style="font-size:19px;font-weight:600;margin:0 0 8px">¡Listo!</p>' +
             premio +
-            '<a href="' + esc(liga) + '" style="' + estiloBoton + ';display:block;text-decoration:none;box-sizing:border-box">Guardar mi tarjeta</a>' +
-            // 🔴 Se dice aquí, no en una nota al pie: quien tenga Android va a tocar
-            // ese botón y no se le va a guardar nada. Mejor que lo sepa antes.
-            '<p style="font-size:13px;color:#6b7280;margin:16px 0 0">Por ahora la tarjeta se guarda en iPhone. Si tienes Android, pregunta en el mostrador.</p>'
+            '<a href="' + esc(principal) + '" style="' + estiloBoton + ';display:block;text-decoration:none;box-sizing:border-box">Guardar mi tarjeta</a>' +
+            // 🔴 La salida existe porque la detección falla: tablets raras, navegadores
+            // con user-agent modificado. Sin ella ese cliente se queda sin tarjeta y no
+            // hay a quién preguntarle en el mostrador.
+            '<p style="font-size:13px;color:#6b7280;margin:16px 0 0"><a href="' + esc(otra) + '" style="color:#6b7280">' + textoOtro + '</a></p>'
           )
         }
 

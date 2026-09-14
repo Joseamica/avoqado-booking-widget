@@ -338,8 +338,8 @@
     "stampCard": "Tu tarjeta de sellos",
     "stampProgress": "Llevas {earned} de {required} sellos",
     "stampReward": "Al completarla: {reward}",
-    "saveCard": "Guardar en mi iPhone",
-    "iphoneOnly": "Por ahora la tarjeta sólo se guarda en iPhone. La versión para Android viene en camino."
+    "saveCard": "Guardar mi tarjeta",
+    "saveOnOther": "¿Tienes {{sistema}}? guárdala aquí"
   },
   "otp": {
     "title": "Entrar con WhatsApp",
