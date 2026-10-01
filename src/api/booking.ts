@@ -298,15 +298,6 @@ export interface AuthResponse {
   bookingAccess?: BookingAccess
 }
 
-export function customerRegister(slug: string, data: {
-  email: string; password: string; phone?: string; firstName?: string; lastName?: string
-}): Promise<AuthResponse> {
-  return request(`${BASE}/venues/${slug}/customer/register`, {
-    method: 'POST',
-    body: JSON.stringify(data),
-  })
-}
-
 export function customerLogin(slug: string, data: { email: string; password: string }): Promise<AuthResponse> {
   return request(`${BASE}/venues/${slug}/customer/login`, {
     method: 'POST',
@@ -329,7 +320,7 @@ export function getCustomerPortal(slug: string, token: string): Promise<Customer
 }
 
 export function updateCustomerProfile(slug: string, token: string, data: {
-  firstName?: string; lastName?: string; phone?: string
+  firstName?: string; lastName?: string
 }): Promise<{ customer: AuthResponse['customer'] }> {
   return request(`${BASE}/venues/${slug}/customer/profile`, {
     method: 'PATCH',

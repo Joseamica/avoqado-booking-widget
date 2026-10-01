@@ -295,16 +295,10 @@
     "title": "Mi Cuenta",
     "subtitle": "Consulta tus créditos y reservaciones",
     "login": "Iniciar Sesión",
-    "register": "Crear Cuenta",
     "email": "Correo electrónico",
     "password": "Contraseña",
-    "passwordMinChars": "Mínimo 6 caracteres",
-    "optional": "opcional",
     "loginButton": "Iniciar Sesión",
-    "registerButton": "Crear Cuenta",
     "noAccount": "¿No tienes cuenta?",
-    "hasAccount": "¿Ya tienes cuenta?",
-    "createAccount": "Crear una",
     "backToBooking": "Volver a Reservar",
     "hello": "Hola",
     "credits": "Mis Créditos",
@@ -339,7 +333,9 @@
     "stampProgress": "Llevas {earned} de {required} sellos",
     "stampReward": "Al completarla: {reward}",
     "saveCard": "Guardar mi tarjeta",
-    "saveOnOther": "¿Tienes {{sistema}}? guárdala aquí"
+    "saveOnOther": "¿Tienes {{sistema}}? guárdala aquí",
+    "enterWithCode": "Entra con un código",
+    "phoneChangeHint": "Para actualizar tu teléfono sin perder tu historial, pide ayuda al negocio."
   },
   "otp": {
     "title": "Entrar con WhatsApp",
@@ -356,7 +352,9 @@
     "errorInvalid": "Código incorrecto.",
     "errorGeneric": "No se pudo enviar el código. Intenta de nuevo.",
     "countrySearchPlaceholder": "Buscar país o lada",
-    "countryNoResults": "Sin resultados"
+    "countryNoResults": "Sin resultados",
+    "titleEmail": "Entrar con código por correo",
+    "sentEmail": "Te enviamos un código a tu correo"
   },
   "modifiers": {
     "required": "Requerido",

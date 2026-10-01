@@ -36,11 +36,9 @@ const labelStyle: Record<string, string> = {
 }
 
 export function CustomerPortal({ venueSlug, timezone, venuePhone, t, onBack, onManageBooking }: CustomerPortalProps) {
-  const [mode, setMode] = useState<'login' | 'register'>('login')
+  // Correo y contraseña: sólo para entrar a una cuenta que YA la tiene. Toda cuenta nueva se crea con código (seguridad, 1-oct).
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
-  const [phone, setPhone] = useState('')
-  const [firstName, setFirstName] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
 
@@ -70,7 +68,6 @@ export function CustomerPortal({ venueSlug, timezone, venuePhone, t, onBack, onM
   const [editingProfile, setEditingProfile] = useState(false)
   const [editFirstName, setEditFirstName] = useState('')
   const [editLastName, setEditLastName] = useState('')
-  const [editPhone, setEditPhone] = useState('')
   const [profileSaving, setProfileSaving] = useState(false)
   const [profileSuccess, setProfileSuccess] = useState(false)
 
@@ -131,27 +128,6 @@ export function CustomerPortal({ venueSlug, timezone, venuePhone, t, onBack, onM
     setError(null)
     try {
       const result = await api.customerLogin(venueSlug, { email: email.trim(), password: password.trim() })
-      setCustomerSession(venueSlug, result.token, result.customer, result.bookingAccess ?? null)
-      await loadPortal(result.token)
-    } catch (err: any) {
-      setError(err.data?.message ?? t('errors.generic'))
-    } finally {
-      setSubmitting(false)
-    }
-  }
-
-  async function handleRegister(e: Event) {
-    e.preventDefault()
-    if (!email.trim() || !password.trim()) return
-    setSubmitting(true)
-    setError(null)
-    try {
-      const result = await api.customerRegister(venueSlug, {
-        email: email.trim(),
-        password: password.trim(),
-        phone: phone.trim() || undefined,
-        firstName: firstName.trim() || undefined,
-      })
       setCustomerSession(venueSlug, result.token, result.customer, result.bookingAccess ?? null)
       await loadPortal(result.token)
     } catch (err: any) {
@@ -225,10 +201,7 @@ export function CustomerPortal({ venueSlug, timezone, venuePhone, t, onBack, onM
     clearCustomerSession(venueSlug)
     setEmail('')
     setPassword('')
-    setPhone('')
-    setFirstName('')
     setError(null)
-    setMode('login')
     setEditingProfile(false)
     // Reset OTP flow so a subsequent login starts clean
     setShowEmailLogin(false)
@@ -246,7 +219,6 @@ export function CustomerPortal({ venueSlug, timezone, venuePhone, t, onBack, onM
     const c = data?.customer
     setEditFirstName(c?.firstName || '')
     setEditLastName(c?.lastName || '')
-    setEditPhone(c?.phone || '')
     setEditingProfile(true)
     setProfileSuccess(false)
   }
@@ -260,7 +232,6 @@ export function CustomerPortal({ venueSlug, timezone, venuePhone, t, onBack, onM
       const c = data?.customer
       if (editFirstName.trim() !== (c?.firstName || '')) updates.firstName = editFirstName.trim()
       if (editLastName.trim() !== (c?.lastName || '')) updates.lastName = editLastName.trim()
-      if (editPhone.trim() !== (c?.phone || '')) updates.phone = editPhone.trim()
 
       if (Object.keys(updates).length === 0) {
         setEditingProfile(false)
@@ -346,7 +317,7 @@ export function CustomerPortal({ venueSlug, timezone, venuePhone, t, onBack, onM
               )}
             </div>
             <h2 style={{ fontSize: '18px', fontWeight: '700', color: 'var(--avq-fg, #111827)', margin: '0 0 6px' }}>
-              {t('otp.title')}
+              {otpChannel === 'email' ? t('otp.titleEmail') : t('otp.title')}
             </h2>
             <p style={{ fontSize: '14px', color: 'var(--avq-muted-fg, #6b7280)', margin: 0 }}>
               {t('portal.subtitle')}
@@ -406,7 +377,7 @@ export function CustomerPortal({ venueSlug, timezone, venuePhone, t, onBack, onM
           ) : (
             <form onSubmit={handleVerifyOtp} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
               <p style={{ fontSize: '13px', color: 'var(--avq-muted-fg, #6b7280)', margin: 0, textAlign: 'center' }}>
-                {t('otp.sent')}
+                {otpChannel === 'email' ? t('otp.sentEmail') : t('otp.sent')}
               </p>
               <div>
                 <label style={labelStyle}>{t('otp.codeLabel')}</label>
@@ -470,7 +441,8 @@ export function CustomerPortal({ venueSlug, timezone, venuePhone, t, onBack, onM
       )
     }
 
-    // SECONDARY: email / password login + register (unchanged behavior)
+    // SECONDARY: correo y contraseña, sólo para quien YA tiene contraseña. Toda cuenta nueva se crea con código
+    // (seguridad, 1-oct): el alta con contraseña dejaba quedarse con la cuenta de otro cliente.
     return (
       <div class="avq-animate-in">
         <div style={{ textAlign: 'center', marginBottom: '24px' }}>
@@ -486,26 +458,14 @@ export function CustomerPortal({ venueSlug, timezone, venuePhone, t, onBack, onM
             </svg>
           </div>
           <h2 style={{ fontSize: '18px', fontWeight: '700', color: 'var(--avq-fg, #111827)', margin: '0 0 6px' }}>
-            {mode === 'login' ? t('portal.login') : t('portal.register')}
+            {t('portal.login')}
           </h2>
           <p style={{ fontSize: '14px', color: 'var(--avq-muted-fg, #6b7280)', margin: 0 }}>
             {t('portal.subtitle')}
           </p>
         </div>
 
-        <form onSubmit={mode === 'login' ? handleLogin : handleRegister} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-          {mode === 'register' && (
-            <div>
-              <label style={labelStyle}>{t('form.name')}</label>
-              <Input
-                type="text"
-                value={firstName}
-                placeholder={t('form.namePlaceholder')}
-                onInput={(e) => setFirstName((e.target as HTMLInputElement).value)}
-              />
-            </div>
-          )}
-
+        <form onSubmit={handleLogin} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
           <div>
             <label style={labelStyle}>{t('portal.email')}</label>
             <Input
@@ -521,66 +481,37 @@ export function CustomerPortal({ venueSlug, timezone, venuePhone, t, onBack, onM
             <Input
               type="password"
               value={password}
-              placeholder={mode === 'register' ? t('portal.passwordMinChars') : '••••••'}
+              placeholder="••••••"
               onInput={(e) => setPassword((e.target as HTMLInputElement).value)}
             />
           </div>
-
-          {mode === 'register' && (
-            <div>
-              <label style={labelStyle}>
-                {t('form.phone')} <span style={{ color: 'var(--avq-muted-fg, #6b7280)' }}>({t('portal.optional')})</span>
-              </label>
-              <Input
-                type="tel"
-                value={phone}
-                placeholder={t('form.phonePlaceholder')}
-                onInput={(e) => setPhone((e.target as HTMLInputElement).value)}
-              />
-            </div>
-          )}
 
           {error && (
             <p style={{ fontSize: '13px', color: '#ef4444', margin: 0 }}>{error}</p>
           )}
 
           <Button type="submit" fullWidth disabled={submitting || !email.trim() || !password.trim()}>
-            {submitting ? <Spinner size={18} /> : mode === 'login' ? t('portal.loginButton') : t('portal.registerButton')}
+            {submitting ? <Spinner size={18} /> : t('portal.loginButton')}
           </Button>
         </form>
 
-        {/* Toggle login/register */}
+        {/* ¿Sin cuenta? Se crea entrando con código: vuelve a la vista principal */}
         <div style={{ textAlign: 'center', marginTop: '16px' }}>
           <p style={{ fontSize: '13px', color: 'var(--avq-muted-fg, #6b7280)', margin: 0 }}>
-            {mode === 'login' ? t('portal.noAccount') : t('portal.hasAccount')}
+            {t('portal.noAccount')}
             {' '}
             <button
               type="button"
-              onClick={() => { setMode(mode === 'login' ? 'register' : 'login'); setError(null) }}
+              onClick={() => { setShowEmailLogin(false); setError(null) }}
               style={{
                 background: 'none', border: 'none', cursor: 'pointer',
                 color: 'var(--avq-accent, #6366f1)', fontWeight: '500',
                 fontSize: '13px', textDecoration: 'underline', textUnderlineOffset: '2px',
               }}
             >
-              {mode === 'login' ? t('portal.createAccount') : t('portal.loginButton')}
+              {t('portal.enterWithCode')}
             </button>
           </p>
-        </div>
-
-        {/* Back to the primary WhatsApp-OTP login */}
-        <div style={{ textAlign: 'center', marginTop: '12px' }}>
-          <button
-            type="button"
-            onClick={() => { setShowEmailLogin(false); setError(null) }}
-            style={{
-              background: 'none', border: 'none', cursor: 'pointer',
-              color: 'var(--avq-muted-fg, #6b7280)', fontWeight: '500',
-              fontSize: '13px', textDecoration: 'underline', textUnderlineOffset: '2px',
-            }}
-          >
-            {t('otp.title')}
-          </button>
         </div>
 
         <div style={{ marginTop: '12px' }}>
@@ -690,14 +621,13 @@ export function CustomerPortal({ venueSlug, timezone, venuePhone, t, onBack, onM
                 onInput={(e) => setEditLastName((e.target as HTMLInputElement).value)}
               />
             </div>
+            {/* El teléfono no se edita aquí (seguridad, 1-oct): lo cambia el negocio, para no perder el historial. */}
             <div>
               <label style={labelStyle}>{t('portal.phone')}</label>
-              <Input
-                type="tel"
-                value={editPhone}
-                placeholder="+52..."
-                onInput={(e) => setEditPhone((e.target as HTMLInputElement).value)}
-              />
+              {data?.customer?.phone && (
+                <p style={{ fontSize: '14px', color: 'var(--avq-fg, #111827)', margin: '0 0 4px' }}>{data.customer.phone}</p>
+              )}
+              <p style={{ fontSize: '12px', color: 'var(--avq-muted-fg, #6b7280)', margin: 0 }}>{t('portal.phoneChangeHint')}</p>
             </div>
             {error && (
               <p style={{ fontSize: '13px', color: '#ef4444', margin: 0 }}>{error}</p>

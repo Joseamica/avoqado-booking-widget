@@ -295,16 +295,10 @@
     "title": "My Account",
     "subtitle": "Check your credits and reservations",
     "login": "Log In",
-    "register": "Create Account",
     "email": "Email",
     "password": "Password",
-    "passwordMinChars": "At least 6 characters",
-    "optional": "optional",
     "loginButton": "Log In",
-    "registerButton": "Create Account",
     "noAccount": "Don't have an account?",
-    "hasAccount": "Already have an account?",
-    "createAccount": "Create one",
     "backToBooking": "Back to Booking",
     "hello": "Hello",
     "credits": "My Credits",
@@ -339,7 +333,9 @@
     "stampProgress": "You've got {earned} of {required} stamps",
     "stampReward": "When you complete it: {reward}",
     "saveCard": "Save my card",
-    "saveOnOther": "Have {{sistema}}? save it here"
+    "saveOnOther": "Have {{sistema}}? save it here",
+    "enterWithCode": "Sign in with a code",
+    "phoneChangeHint": "To update your phone without losing your history, ask the business for help."
   },
   "otp": {
     "title": "Sign in with WhatsApp",
@@ -356,7 +352,9 @@
     "errorInvalid": "Incorrect code.",
     "errorGeneric": "We couldn't send the code. Please try again.",
     "countrySearchPlaceholder": "Search country or code",
-    "countryNoResults": "No results"
+    "countryNoResults": "No results",
+    "titleEmail": "Sign in with an email code",
+    "sentEmail": "We sent you a code by email"
   },
   "modifiers": {
     "required": "Required",
