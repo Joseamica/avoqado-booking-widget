@@ -1,5 +1,5 @@
 import { h } from 'preact'
-import { useEffect, useState } from 'preact/hooks'
+import { useLayoutEffect, useState } from 'preact/hooks'
 import { slotHoldExpiresAt } from '../state/booking'
 
 interface PaymentStepHeaderProps {
@@ -26,7 +26,7 @@ interface PaymentStepHeaderProps {
 export function PaymentStepHeader({ locale, onExpired, kind = 'appointment' }: PaymentStepHeaderProps) {
   const [secondsLeft, setSecondsLeft] = useState<number>(0)
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     let expiresAt = slotHoldExpiresAt.value
     // Visual-only fallback: 10-minute countdown from form-step entry. Real hold
     // tokens come from the (future) backend endpoint.
@@ -36,15 +36,15 @@ export function PaymentStepHeader({ locale, onExpired, kind = 'appointment' }: P
     }
 
     function tick() {
-      const left = Math.max(0, Math.floor(((slotHoldExpiresAt.value ?? expiresAt!) - Date.now()) / 1000))
+      const left = Math.max(0, Math.ceil(((slotHoldExpiresAt.value ?? expiresAt!) - Date.now()) / 1000))
       setSecondsLeft(left)
       if (left <= 0) {
         clearInterval(interval)
         if (onExpired) onExpired()
       }
     }
-    tick()
     const interval = setInterval(tick, 1000)
+    tick()
     return () => clearInterval(interval)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])

@@ -98,6 +98,7 @@
   "manage": {
     "title": "Your Reservation",
     "cancelButton": "Cancel Reservation",
+    "cancelDisabledTooltip": "You can only cancel until {{hours}}h before the start.",
     "cancelTitle": "Cancel Reservation",
     "cancelDescription": "Are you sure you want to cancel this reservation? This action cannot be undone.",
     "cancelReasonLabel": "Reason (optional)",
@@ -113,7 +114,8 @@
     "noRefund": "If you cancel now you lose the {{count}} credits from this booking.",
     "refundedSuccess": "We refunded {{count}} credit(s) to your account.",
     "rescheduleButton": "Change time",
-    "rescheduleDisabledTooltip": "You can only change time up to {{hours}}h before the start."
+    "rescheduleDisabledTooltip": "You can only change time up to {{hours}}h before the start.",
+    "checkAgain": "Check again"
   },
   "reschedule": {
     "title": "Change time",
@@ -146,7 +148,19 @@
     "title": "Deposit Required",
     "description": "A deposit is required to confirm this reservation.",
     "atVenueNote": "Payment will be collected at the venue.",
-    "acknowledge": "Got it"
+    "acknowledge": "Got it",
+    "confirming": "We are confirming the deposit",
+    "pending": "The deposit is not confirmed yet",
+    "paid": "Payment received",
+    "refunded": "Deposit refunded",
+    "cardHold": "Card hold; payment is not confirmed",
+    "forfeited": "Deposit retained",
+    "expired": "The deposit deadline expired",
+    "disputed": "Deposit disputed",
+    "returnUnverified": "You returned from payment; we could not check its result yet",
+    "unknown": "We could not confirm the deposit status yet",
+    "missingReference": "We could not recover this reservation in this browser. Check your confirmation or contact the business",
+    "close": "Close notice"
   },
   "seats": {
     "title": "Choose your spot",
@@ -173,7 +187,8 @@
     "slotExpired": "Your temporary reservation expired. Please pick your time again.",
     "holdReleaseFailed": "We couldn't release the held time. Retry before continuing.",
     "appointmentWindowChanged": "The duration changed. Review your services and pick a new time.",
-    "generic": "Something went wrong. Please try again."
+    "generic": "Something went wrong. Please try again.",
+    "reservationQueryFailed": "We could not check the reservation"
   },
   "actions": {
     "goBack": "Back",

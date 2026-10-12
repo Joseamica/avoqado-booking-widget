@@ -1,5 +1,5 @@
 import { h } from 'preact'
-import { useState, useEffect, useRef } from 'preact/hooks'
+import { useState, useEffect, useLayoutEffect, useRef } from 'preact/hooks'
 import { z } from 'zod'
 import type { PublicVenueInfo, PublicSlot } from '../types'
 import type { TFunction } from '../i18n'
@@ -38,6 +38,7 @@ interface GuestInfoFormProps {
    *  the form without rendering the button inside it. The fn always sees
    *  the latest field state thanks to a ref pointer kept in sync each render. */
   registerSubmit?: (fn: (() => void) | null) => void
+  registerDraft?: (read: (() => GuestFormData) | null) => void
   /** When true, the party-size field is omitted from the rendered form and
    *  fixed at 1 in the payload. Used by /classes (one spot per booking) and
    *  any future flow where party size doesn't apply. */
@@ -61,7 +62,7 @@ function createSchema(requireEmail: boolean, requirePhone: boolean) {
   })
 }
 
-export function GuestInfoForm({ venueInfo, selectedSlot, selectedSpotCount, onSubmit, isSubmitting, t, loggedInCustomer, hideSubmitButton, registerSubmit, hidePartySize, initialData }: GuestInfoFormProps) {
+export function GuestInfoForm({ venueInfo, selectedSlot, selectedSpotCount, onSubmit, isSubmitting, t, loggedInCustomer, hideSubmitButton, registerSubmit, registerDraft, hidePartySize, initialData }: GuestInfoFormProps) {
   const [phone, setPhone] = useState(initialData?.guestPhone ?? '')
   const [name, setName] = useState(initialData?.guestName ?? '')
   const [email, setEmail] = useState(initialData?.guestEmail ?? '')
@@ -79,6 +80,14 @@ export function GuestInfoForm({ venueInfo, selectedSlot, selectedSpotCount, onSu
   // keep the latest handleSubmit in a ref so the exposed function always
   // closes over fresh state, but the function identity itself is stable.
   const submitRef = useRef<(() => void) | null>(null)
+  const draftRef = useRef<GuestFormData>({ guestPhone: '', guestName: '' })
+  draftRef.current = {
+    guestPhone: phone,
+    guestName: name,
+    guestEmail: email || undefined,
+    partySize: partySize ? Number(partySize) : undefined,
+    specialRequests: requests || undefined,
+  }
 
   // Pre-fill from logged-in customer
   useEffect(() => {
@@ -94,17 +103,12 @@ export function GuestInfoForm({ venueInfo, selectedSlot, selectedSpotCount, onSu
 
   function handleSubmit(e: Event) {
     e.preventDefault()
+    if (isSubmitting) return
     const schema = createSchema(
       venueInfo.publicBooking.requireEmail,
       venueInfo.publicBooking.requirePhone,
     )
-    const result = schema.safeParse({
-      guestPhone: phone,
-      guestName: name,
-      guestEmail: email || undefined,
-      partySize: partySize ? Number(partySize) : undefined,
-      specialRequests: requests || undefined,
-    })
+    const result = schema.safeParse(draftRef.current)
 
     if (!result.success) {
       const errs: Record<string, string> = {}
@@ -137,10 +141,13 @@ export function GuestInfoForm({ venueInfo, selectedSlot, selectedSpotCount, onSu
   submitRef.current = () => {
     handleSubmit({ preventDefault: () => {} } as Event)
   }
-  useEffect(() => {
-    if (!registerSubmit) return
-    registerSubmit(() => submitRef.current?.())
-    return () => registerSubmit(null)
+  useLayoutEffect(() => {
+    registerSubmit?.(() => submitRef.current?.())
+    registerDraft?.(() => draftRef.current)
+    return () => {
+      registerSubmit?.(null)
+      registerDraft?.(null)
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 

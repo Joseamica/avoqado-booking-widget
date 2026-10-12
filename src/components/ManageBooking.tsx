@@ -1,5 +1,5 @@
 import { h } from 'preact'
-import { useState, useEffect } from 'preact/hooks'
+import { useState, useEffect, useRef } from 'preact/hooks'
 import type { PublicReservationDetail, PublicVenueInfo } from '../types'
 import type { TFunction } from '../i18n'
 import { Spinner } from './ui/Spinner'
@@ -7,15 +7,18 @@ import { Button } from './ui/Button'
 import { Textarea } from './ui/Input'
 import * as api from '../api/booking'
 import { RescheduleFlow } from './RescheduleFlow'
+import { depositNotice } from '../lib/depositReturn'
 
 interface ManageBookingProps {
   venueSlug: string
   cancelSecret: string
   timezone: string
+  locale?: 'en' | 'es'
   /** Venue info — needed by the reschedule mini-flow to drive DatePicker / SeatPicker. */
   venueInfo: PublicVenueInfo
   t: TFunction
   onBack: () => void
+  depositReturn?: boolean
 }
 
 const statusConfig: Record<string, { bg: string; text: string }> = {
@@ -27,7 +30,7 @@ const statusConfig: Record<string, { bg: string; text: string }> = {
   NO_SHOW: { bg: '#ffedd5', text: '#9a3412' },
 }
 
-export function ManageBooking({ venueSlug, cancelSecret, timezone, venueInfo, t, onBack }: ManageBookingProps) {
+export function ManageBooking({ venueSlug, cancelSecret, timezone, locale = 'es', venueInfo, t, onBack, depositReturn = false }: ManageBookingProps) {
   const [reservation, setReservation] = useState<PublicReservationDetail | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -36,48 +39,126 @@ export function ManageBooking({ venueSlug, cancelSecret, timezone, venueInfo, t,
   const [cancelReason, setCancelReason] = useState('')
   const [cancelling, setCancelling] = useState(false)
 
+  const [querying, setQuerying] = useState(false)
+  const [notFound, setNotFound] = useState(false)
+  const sourceRef = useRef({ venueSlug, cancelSecret })
+  if (sourceRef.current.venueSlug !== venueSlug || sourceRef.current.cancelSecret !== cancelSecret) {
+    sourceRef.current = { venueSlug, cancelSecret }
+  }
+  const renderSource = sourceRef.current
+  const generationRef = useRef(0)
+  const stopRef = useRef<(() => void) | null>(null)
+
+  function stopReads() {
+    generationRef.current++
+    stopRef.current?.()
+    stopRef.current = null
+  }
+
+  function startRound(initial = false) {
+    stopReads()
+    const generation = generationRef.current
+    const source = sourceRef.current
+    const current = () => generation === generationRef.current && source === sourceRef.current
+    let controller: AbortController | null = null
+    let timeout: ReturnType<typeof setTimeout> | undefined
+    let next: ReturnType<typeof setTimeout> | undefined
+    let attempts = 0
+    stopRef.current = () => { controller?.abort(); clearTimeout(timeout); clearTimeout(next) }
+    setError(null)
+    setNotFound(false)
+    setQuerying(true)
+    setLoading(initial)
+
+    async function read() {
+      if (!current()) return
+      attempts++
+      controller = new AbortController()
+      try {
+        const timedOut = new Promise<never>((_, reject) => {
+          timeout = setTimeout(() => { controller?.abort(); reject(new Error('Reservation read timed out')) }, 10000)
+        })
+        const fresh = await Promise.race([
+          api.getReservation(source.venueSlug, source.cancelSecret, controller.signal), timedOut,
+        ])
+        if (!current()) return
+        setReservation(fresh)
+        setLoading(false)
+        if (fresh.depositStatus === 'PENDING' && attempts < 12) {
+          next = setTimeout(read, 2500)
+        } else {
+          setQuerying(false)
+        }
+      } catch (err) {
+        if (!current()) return
+        const missing = (err as { status?: number })?.status === 404
+        setNotFound(missing)
+        if (missing) setReservation(null)
+        setError(t(missing ? 'errors.reservationNotFound' : 'errors.reservationQueryFailed'))
+        setLoading(false)
+        setQuerying(false)
+      } finally {
+        clearTimeout(timeout)
+      }
+    }
+    void read()
+  }
+
   useEffect(() => {
-    api.getReservation(venueSlug, cancelSecret)
-      .then(setReservation)
-      .catch(() => setError(t('errors.reservationNotFound')))
-      .finally(() => setLoading(false))
+    setReservation(null)
+    setShowCancel(false)
+    setShowReschedule(false)
+    setCancelReason('')
+    setCancelling(false)
+    startRound(true)
+    return () => { stopReads(); sourceRef.current = { ...sourceRef.current } }
   }, [venueSlug, cancelSecret])
 
   async function handleCancel() {
+    const source = sourceRef.current
+    stopReads()
+    setQuerying(false)
     setCancelling(true)
+    setError(null)
     try {
-      await api.cancelReservation(venueSlug, cancelSecret, cancelReason || undefined)
-      const updated = await api.getReservation(venueSlug, cancelSecret)
-      setReservation(updated)
+      await api.cancelReservation(source.venueSlug, source.cancelSecret, cancelReason || undefined)
+      if (source !== sourceRef.current) return
       setShowCancel(false)
+      startRound()
     } catch (err) {
-      // Surface the server's specific message (e.g. "No se puede cancelar con
-      // menos de 2 horas de anticipación. Contacta al negocio directamente.")
-      // instead of a generic error — the backend message tells the customer
-      // exactly why and what to do next. `request()` puts it on err.message.
+      if (source !== sourceRef.current) return
       const serverMsg = err instanceof Error && err.message ? err.message : ''
       setError(serverMsg || t('errors.generic'))
     } finally {
-      setCancelling(false)
+      if (source === sourceRef.current) setCancelling(false)
     }
   }
 
+  const financialNotice = (
+    <div role="status" aria-live="polite" style={{ marginBottom: '16px', padding: '12px 14px', borderRadius: '12px', background: 'var(--avq-muted, #f8f9fb)', fontSize: '13px' }}>
+      {t(depositNotice(reservation?.depositStatus ?? null, querying, depositReturn))}
+    </div>
+  )
+
   if (loading) {
     return (
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '64px 0' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', alignItems: 'center', justifyContent: 'center', padding: '64px 0' }}>
         <Spinner size={28} />
+        {depositReturn && financialNotice}
       </div>
     )
   }
 
-  if (error || !reservation) {
+  if (!reservation) {
     return (
       <div class="avq-animate-in" style={{ padding: '48px 0', textAlign: 'center' }}>
         <div style={{ width: '48px', height: '48px', borderRadius: '50%', background: 'var(--avq-muted, #f8f9fb)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 12px' }}>
           <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--avq-muted-fg, #9ca3af)" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
         </div>
-        <p style={{ fontWeight: '600', color: 'var(--avq-fg, #111827)', marginBottom: '4px' }}>{t('errors.reservationNotFound')}</p>
-        <p style={{ fontSize: '14px', color: 'var(--avq-muted-fg, #6b7280)', marginBottom: '20px' }}>{t('errors.reservationNotFoundDescription')}</p>
+        <p style={{ fontWeight: '600', color: 'var(--avq-fg, #111827)', marginBottom: '4px' }}>{error ?? t('errors.reservationQueryFailed')}</p>
+        {notFound && <p style={{ fontSize: '14px', color: 'var(--avq-muted-fg, #6b7280)', marginBottom: '20px' }}>{t('errors.reservationNotFoundDescription')}</p>}
+        {depositReturn && financialNotice}
+        {!notFound && <Button variant="outline" disabled={querying} onClick={() => startRound()}>{t('manage.checkAgain')}</Button>}
         <Button variant="outline" onClick={onBack}>{t('actions.goBack')}</Button>
       </div>
     )
@@ -86,10 +167,11 @@ export function ManageBooking({ venueSlug, cancelSecret, timezone, venueInfo, t,
   const isCancelled = reservation.status === 'CANCELLED'
   const startDate = new Date(reservation.startsAt)
   const endDate = new Date(reservation.endsAt)
-  const dateStr = startDate.toLocaleDateString(undefined, {
+  const dateLocale = locale === 'en' ? 'en-US' : 'es-MX'
+  const dateStr = startDate.toLocaleDateString(dateLocale, {
     weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', timeZone: timezone,
   })
-  const timeStr = `${startDate.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', timeZone: timezone })} - ${endDate.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', timeZone: timezone })}`
+  const timeStr = `${startDate.toLocaleTimeString(dateLocale, { hour: '2-digit', minute: '2-digit', timeZone: timezone })} - ${endDate.toLocaleTimeString(dateLocale, { hour: '2-digit', minute: '2-digit', timeZone: timezone })}`
 
   const sc = statusConfig[reservation.status] ?? statusConfig.COMPLETED
 
@@ -98,6 +180,9 @@ export function ManageBooking({ venueSlug, cancelSecret, timezone, venueInfo, t,
       <h2 style={{ fontSize: '18px', fontWeight: '700', color: 'var(--avq-fg, #111827)', marginBottom: '20px' }}>
         {t('manage.title')}
       </h2>
+
+      {financialNotice}
+      {error && <p role="alert">{error}</p>}
 
       {/* Status */}
       <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '16px' }}>
@@ -247,13 +332,10 @@ export function ManageBooking({ venueSlug, cancelSecret, timezone, venueInfo, t,
             reservation={reservation}
             venueInfo={venueInfo}
             t={t}
-            onSuccess={async () => {
+            onSuccess={() => {
+              if (renderSource !== sourceRef.current) return
               setShowReschedule(false)
-              // Refresh reservation
-              try {
-                const updated = await api.getReservation(venueSlug, cancelSecret)
-                setReservation(updated)
-              } catch { /* */ }
+              startRound()
             }}
             onCancel={() => setShowReschedule(false)}
           />
@@ -269,7 +351,7 @@ export function ManageBooking({ venueSlug, cancelSecret, timezone, venueInfo, t,
               <Button
                 variant="outline"
                 fullWidth
-                onClick={() => setShowReschedule(true)}
+                onClick={() => { stopReads(); setQuerying(false); setShowReschedule(true) }}
                 disabled={!reservation.reschedule.allowed}
                 title={!reservation.reschedule.allowed && reservation.reschedule.minHoursBeforeStart != null
                   ? t('manage.rescheduleDisabledTooltip', {
@@ -299,6 +381,9 @@ export function ManageBooking({ venueSlug, cancelSecret, timezone, venueInfo, t,
             )}
           </>
         )}
+        <Button variant="outline" fullWidth disabled={querying || cancelling || showReschedule} onClick={() => startRound()}>
+          {t('manage.checkAgain')}
+        </Button>
         <Button variant="outline" fullWidth onClick={onBack}>
           {t('manage.backToBooking')}
         </Button>

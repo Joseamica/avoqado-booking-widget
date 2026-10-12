@@ -1,6 +1,7 @@
 import { h } from 'preact'
 import { useEffect, useRef, useState } from 'preact/hooks'
-import type { WidgetProps, PublicClassSessionSlot, OperatingHours } from '../types'
+import { useSignal } from '@preact/signals'
+import type { WidgetProps, PublicClassSessionSlot, OperatingHours, PublicVenueInfo } from '../types'
 import type { PublicSlot } from '../types'
 import { createT } from '../i18n'
 import * as api from '../api/booking'
@@ -17,6 +18,8 @@ import {
   slotHoldToken, slotHoldExpiresAt,
   branding, DEFAULT_BRANDING,
 } from '../state/booking'
+import { resolveDepositReturn, savePendingReservation, clearPendingReservation, depositCheckoutUrl } from '../lib/depositReturn'
+import { Button } from './ui/Button'
 import { StepIndicator } from './StepIndicator'
 import { ServiceSelector } from './ServiceSelector'
 import { ReservationHero } from './ReservationHero'
@@ -136,6 +139,39 @@ function formatHoursLabel(
 
 export function BookingFlow({ props }: BookingFlowProps) {
   const t = createT(props.locale)
+  const recoveryRef = useRef<(ReturnType<typeof resolveDepositReturn> & { venue: string }) | null>(null)
+  if (recoveryRef.current?.venue !== props.venue) {
+    recoveryRef.current = { venue: props.venue, ...resolveDepositReturn(props.venue) }
+  }
+  const recovery = recoveryRef.current
+  const manageOwnerRef = useRef<{ venue: string; secret: string } | null>(null)
+  const [returnNoticeClosed, setReturnNoticeClosed] = useState(false)
+
+  function openManage(secret: string) {
+    manageOwnerRef.current = { venue: props.venue, secret }
+    manageSecret.value = secret
+    step.value = MANAGE_STEP
+  }
+
+  function closeManage(info: PublicVenueInfo) {
+    clearPendingReservation(props.venue)
+    recovery.saved = null
+    recovery.returned = false
+    manageOwnerRef.current = null
+    setReturnNoticeClosed(true)
+    setGuestDraft(null)
+    setSubmissionError(null)
+    resetBooking(info)
+  }
+
+  useEffect(() => {
+    setReturnNoticeClosed(false)
+    if (recovery.saved) {
+      showPortal.value = false
+      openManage(recovery.saved.cancelSecret)
+    }
+  }, [props.venue])
+
   const [slots, setSlots] = useState<PublicSlot[]>([])
   const [slotsLoading, setSlotsLoading] = useState(false)
   const [seatPickerActive, setSeatPickerActive] = useState(false)
@@ -154,6 +190,9 @@ export function BookingFlow({ props }: BookingFlowProps) {
   const [showPaymentSelector, setShowPaymentSelector] = useState(false)
   const [holdReleaseFailed, setHoldReleaseFailed] = useState(false)
   const [guestDraft, setGuestDraft] = useState<GuestFormData | null>(null)
+  const reservationSubmittingRef = useRef(false)
+  const expiryTransition = useSignal<Promise<void> | null>(null)
+  const [submissionError, setSubmissionError] = useState<string | null>(null)
   // Square-style /appointments wizard: ServiceDetailView intermediate page.
   // When non-null, the service-step main column renders the detail view instead
   // of the list. mode='add' for products not yet picked, 'edit' for ones already
@@ -164,6 +203,7 @@ export function BookingFlow({ props }: BookingFlowProps) {
   // Null when no form is currently mounted; set when GuestInfoForm registers
   // itself; cleared again on unmount.
   const [formSubmitFn, setFormSubmitFn] = useState<(() => void) | null>(null)
+  const guestDraftReader = useRef<(() => GuestFormData) | null>(null)
   // Inline payment choice for /appointments (PaymentChoiceInline). When set,
   // handleFormSubmit short-circuits its own credit-check API call and submits
   // straight to /reservations with the chosen balance (or no balance for cash).
@@ -217,6 +257,7 @@ export function BookingFlow({ props }: BookingFlowProps) {
   async function releaseHold(explicitToken?: string): Promise<boolean> {
     const token = explicitToken ?? slotHoldToken.value
     if (!token) {
+      slotHoldExpiresAt.value = null
       setHoldReleaseFailed(false)
       return true
     }
@@ -249,6 +290,36 @@ export function BookingFlow({ props }: BookingFlowProps) {
       await continueAction()
     }
     return false
+  }
+
+  function holdHasExpired(): boolean {
+    const expiresAt = slotHoldExpiresAt.value
+    return expiresAt !== null && expiresAt <= Date.now()
+  }
+
+  async function expireSelectedSlot(): Promise<void> {
+    // An in-flight create owns its hold until the server answers. A successful
+    // response clears the expiry; only an error may replay local expiration.
+    if (reservationSubmittingRef.current || pendingHoldReleaseActionRef.current || !selectedSlot.value || !holdHasExpired()) return
+    if (expiryTransition.value) return expiryTransition.value
+    const transition = (async () => {
+      const continueAfterExpiry = () => {
+        const draft = guestDraftReader.current?.()
+        if (draft) setGuestDraft(draft)
+        selectedSlot.value = null
+        step.value = config.timeStep
+        void fetchSlots()
+        showToast(t('errors.slotExpired'), 'error')
+      }
+      if (!(await releaseHoldBefore(continueAfterExpiry))) return
+      continueAfterExpiry()
+    })()
+    expiryTransition.value = transition
+    try {
+      await transition
+    } finally {
+      expiryTransition.value = null
+    }
   }
 
   // When the customer returns from a successful Stripe checkout we open the
@@ -289,20 +360,21 @@ export function BookingFlow({ props }: BookingFlowProps) {
     if (typeof window === 'undefined') return
     const host = props.hostElement
     if (!host) return
-    const onShowAccount = () => { showPortal.value = true }
+    const onShowAccount = () => {
+      if (reservationSubmittingRef.current || expiryTransition.value) return
+      showPortal.value = true
+    }
     const onShowCreditPacks = () => { setShowCreditPacksModal(true) }
     // Deep-link from email "Ver mi reservación" CTA: host extracts the
     // cancelSecret from ?manage=<secret> and calls widget.showManageBooking().
     // We open ManageBooking with that secret so the customer lands on their
     // booking detail without having to look it up.
     const onShowManage = async (e: Event) => {
+      if (reservationSubmittingRef.current || expiryTransition.value) return
       const detail = (e as CustomEvent<{ cancelSecret?: string }>).detail
+      if (recovery.returned || recovery.saved) return
       if (detail?.cancelSecret) {
-        const continueToManage = () => {
-          manageSecret.value = detail.cancelSecret!
-          // Must switch the step too, or the customer lands on the catalog.
-          step.value = MANAGE_STEP
-        }
+        const continueToManage = () => openManage(detail.cancelSecret!)
         if (slotHoldToken.value && !(await releaseHoldBefore(continueToManage))) return
         continueToManage()
       }
@@ -315,7 +387,7 @@ export function BookingFlow({ props }: BookingFlowProps) {
       host.removeEventListener('_avq_show_credit_packs', onShowCreditPacks)
       host.removeEventListener('_avq_show_manage', onShowManage as EventListener)
     }
-  }, [props.hostElement])
+  }, [props.hostElement, props.venue])
 
   // Hosted-page deep link, read directly from the URL on mount. The host page
   // (book.avoqado.io) also fires showManageBooking() via the event above, but
@@ -324,12 +396,12 @@ export function BookingFlow({ props }: BookingFlowProps) {
   // timing — belt-and-suspenders with the event handler.
   useEffect(() => {
     if (typeof window === 'undefined') return
-    if (manageSecret.value) return // already opened (event, or after a booking)
+    if (recovery.returned || recovery.saved) return
+    if (manageOwnerRef.current) return // already opened by this instance
     try {
       const secret = new URLSearchParams(window.location.search).get('manage')
       if (secret) {
-        manageSecret.value = secret
-        step.value = MANAGE_STEP
+        openManage(secret)
       }
     } catch {
       /* malformed URL — ignore, fall through to normal catalog */
@@ -1023,7 +1095,7 @@ export function BookingFlow({ props }: BookingFlowProps) {
     props.hostElement.dispatchEvent(new CustomEvent(name, { bubbles: true, composed: true, detail }))
   }
 
-  if (isLoading.value) {
+  if (isLoading.value && !reservationSubmittingRef.current) {
     return (
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '64px 0', gap: '12px' }}>
         <Spinner size={28} />
@@ -1046,6 +1118,15 @@ export function BookingFlow({ props }: BookingFlowProps) {
         >
           {t('actions.retry')}
         </button>
+      </div>
+    )
+  }
+
+  if (recovery.returned && !recovery.saved && !returnNoticeClosed) {
+    return (
+      <div class="avq-animate-in" style={{ padding: '32px 0', textAlign: 'center' }}>
+        <p role="status" aria-live="polite">{t('deposit.missingReference')}</p>
+        <Button variant="outline" onClick={() => setReturnNoticeClosed(true)}>{t('deposit.close')}</Button>
       </div>
     )
   }
@@ -1108,8 +1189,7 @@ export function BookingFlow({ props }: BookingFlowProps) {
           onManageBooking={async (cancelSecret) => {
             const continueToManage = () => {
               showPortal.value = false
-              manageSecret.value = cancelSecret
-              step.value = MANAGE_STEP
+              openManage(cancelSecret)
             }
             if (slotHoldToken.value && !(await releaseHoldBefore(continueToManage))) return
             continueToManage()
@@ -1130,16 +1210,21 @@ export function BookingFlow({ props }: BookingFlowProps) {
   }
 
   // Manage booking screen
-  if (step.value === MANAGE_STEP) {
+  const ownedManage = manageOwnerRef.current?.venue === props.venue
+    && manageOwnerRef.current.secret === manageSecret.value
+  if (step.value === MANAGE_STEP && ownedManage) {
     return (
       <div>
         <ManageBooking
+          key={`${props.venue}:${manageSecret.value}`}
           venueSlug={props.venue}
           cancelSecret={manageSecret.value!}
           timezone={info.timezone}
+          locale={props.locale}
           venueInfo={info}
           t={t}
-          onBack={() => resetBooking(info)}
+          onBack={() => closeManage(info)}
+          depositReturn={Boolean(recovery.saved)}
         />
         {!props.hideVenueHeader && (
           <div style={{ marginTop: '32px', textAlign: 'center', paddingBottom: '4px' }}>
@@ -1212,6 +1297,7 @@ export function BookingFlow({ props }: BookingFlowProps) {
   ) && !(flowType.value === 'classes' && step.value === config.dateStep)
 
   async function handleBack() {
+    if (reservationSubmittingRef.current || expiryTransition.value) return
     // If showing no-credits buy prompt, go back to form
     if (showNoCreditsBuyPrompt) {
       setShowNoCreditsBuyPrompt(false)
@@ -1234,10 +1320,14 @@ export function BookingFlow({ props }: BookingFlowProps) {
     // not to the date picker (which doesn't exist in this flow).
     if (flowType.value === 'classes') {
       if (step.value === config.formStep) {
-        selectedSlot.value = null
-        selectedSpotIds.value = []
-        selectedProduct.value = null
-        step.value = config.dateStep // re-renders ClassSessionList
+        const continueBackFromClass = () => {
+          selectedSlot.value = null
+          selectedSpotIds.value = []
+          selectedProduct.value = null
+          step.value = config.dateStep // re-renders ClassSessionList
+        }
+        if (!(await releaseHoldBefore(continueBackFromClass))) return
+        continueBackFromClass()
         return
       }
       if (step.value === config.timeStep && seatPickerActive) {
@@ -1330,7 +1420,15 @@ export function BookingFlow({ props }: BookingFlowProps) {
     creditPayload?: string | string[],
   ) {
     const slot = selectedSlot.value
-    if (!slot) return
+    if (!slot || reservationSubmittingRef.current) return
+    setGuestDraft(data)
+    if (holdHasExpired()) {
+      await expireSelectedSlot()
+      return
+    }
+    reservationSubmittingRef.current = true
+    let expireAfterError = false
+    setSubmissionError(null)
     isLoading.value = true
     try {
       const spots = selectedSpotIds.value
@@ -1338,16 +1436,8 @@ export function BookingFlow({ props }: BookingFlowProps) {
       const creditBalanceIds = Array.isArray(creditPayload) && creditPayload.length > 0 ? creditPayload : undefined
       // If the venue requires upfront payment, the server will return checkoutUrl
       // and we'll redirect to Stripe. Tell Stripe where to send the customer back.
-      const successUrl = (() => {
-        const u = new URL(window.location.href)
-        u.searchParams.set('avq_payment', 'success')
-        return u.toString()
-      })()
-      const cancelUrl = (() => {
-        const u = new URL(window.location.href)
-        u.searchParams.set('avq_payment', 'cancelled')
-        return u.toString()
-      })()
+      const successUrl = depositCheckoutUrl('success')
+      const cancelUrl = depositCheckoutUrl('cancelled')
       // Multi-service appointments: send the full ordered productIds[] when
       // the customer picked more than one service. The server sums durations
       // and uses productIds[0] as the lead product for legacy joins.
@@ -1385,7 +1475,7 @@ export function BookingFlow({ props }: BookingFlowProps) {
         endsAt: wireEndsAt,
         duration: combinedDuration,
         guestName: data.guestName,
-        guestPhone: data.guestPhone,
+        guestPhone: data.guestPhone || undefined,
         guestEmail: data.guestEmail || undefined,
         partySize: spots.length > 0 ? spots.length : (data.partySize || undefined),
         productId: selectedProduct.value?.id,
@@ -1410,13 +1500,7 @@ export function BookingFlow({ props }: BookingFlowProps) {
         slotHoldExpiresAt.value = null
         setHoldReleaseFailed(false)
         pendingHoldReleaseActionRef.current = null
-        try {
-          sessionStorage.setItem('avq:pendingReservation', JSON.stringify({
-            venue: props.venue,
-            cancelSecret: result.cancelSecret,
-            confirmationCode: result.confirmationCode,
-          }))
-        } catch { /* sessionStorage may be blocked in 3rd-party iframes — non-fatal */ }
+        savePendingReservation(props.venue, result)
         window.location.href = result.checkoutUrl
         return
       }
@@ -1462,10 +1546,15 @@ export function BookingFlow({ props }: BookingFlowProps) {
         if (!(await releaseHoldBefore(continueAfterSlotConflict))) return
         continueAfterSlotConflict()
       } else {
-        showToast(err.data?.message ?? t('errors.generic'), 'error')
+        const message = err.data?.message ?? t('errors.generic')
+        setSubmissionError(message)
+        showToast(message, 'error')
+        expireAfterError = holdHasExpired()
       }
     } finally {
+      reservationSubmittingRef.current = false
       isLoading.value = false
+      if (expireAfterError) await expireSelectedSlot()
     }
   }
 
@@ -1628,7 +1717,11 @@ export function BookingFlow({ props }: BookingFlowProps) {
         {/* My Account link */}
         <button
           type="button"
-          onClick={() => { showPortal.value = true }}
+          disabled={reservationSubmittingRef.current || Boolean(expiryTransition.value)}
+          onClick={() => {
+            if (reservationSubmittingRef.current || expiryTransition.value) return
+            showPortal.value = true
+          }}
           style={{
             display: 'inline-flex', alignItems: 'center', gap: '4px',
             background: 'none', border: 'none', cursor: 'pointer',
@@ -1695,6 +1788,9 @@ export function BookingFlow({ props }: BookingFlowProps) {
         </div>
       )}
 
+      {submissionError && <p role="alert">{submissionError}</p>}
+      {reservationSubmittingRef.current && <p role="status">{t('form.submitting')}</p>}
+
       {/* Step indicator — hidden for:
           - the class flow (the list IS the selector)
           - the unified landing (no concept of "steps" yet)
@@ -1711,6 +1807,7 @@ export function BookingFlow({ props }: BookingFlowProps) {
       {showBack && (
         <button
           type="button"
+          disabled={reservationSubmittingRef.current || Boolean(expiryTransition.value)}
           onClick={handleBack}
           style={{
             display: 'flex', alignItems: 'center', gap: '4px',
@@ -2220,6 +2317,7 @@ export function BookingFlow({ props }: BookingFlowProps) {
                       isSubmitting={isLoading.value}
                       t={t}
                       initialData={guestDraft}
+                      registerDraft={read => { guestDraftReader.current = read }}
                       loggedInCustomer={customerInfo.value}
                       /* On the Square /appointments wizard the submit lives in
                        * the sticky sidebar as "Reserva cita" — hide the inline
@@ -2409,21 +2507,7 @@ export function BookingFlow({ props }: BookingFlowProps) {
                 <PaymentStepHeader
                   locale={props.locale}
                   kind={flowType.value === 'classes' ? 'class' : 'appointment'}
-                  onExpired={async () => {
-                    // Hold TTL hit zero. The slot is no longer guaranteed —
-                    // someone else could grab it. Send the customer back to
-                    // the time picker, clear the stale slot + hold state,
-                    // refresh availability so they see the current truth, and
-                    // surface a toast explaining why we moved them.
-                    const continueAfterExpiry = () => {
-                      selectedSlot.value = null
-                      step.value = config.timeStep
-                      void fetchSlots()
-                      showToast(t('errors.slotExpired'), 'error')
-                    }
-                    if (!(await releaseHoldBefore(continueAfterExpiry))) return
-                    continueAfterExpiry()
-                  }}
+                  onExpired={() => { void expireSelectedSlot() }}
                 />
                 {formStepBody}
               </div>
@@ -2463,7 +2547,7 @@ export function BookingFlow({ props }: BookingFlowProps) {
                   nextLabel={flowType.value === 'classes'
                     ? (props.locale === 'en' ? 'Book class' : 'Reservar clase')
                     : t('summary.reserveAppointment')}
-                  nextDisabled={isLoading.value || !formSubmitFn || (paymentPickerVisible && !inlinePayment)}
+                  nextDisabled={isLoading.value || holdHasExpired() || !formSubmitFn || (paymentPickerVisible && !inlinePayment)}
                   title={flowType.value === 'classes'
                     ? (props.locale === 'en' ? 'Class summary' : 'Resumen de la clase')
                     : undefined}
@@ -2502,12 +2586,10 @@ export function BookingFlow({ props }: BookingFlowProps) {
             venueInfo={info}
             selectedProducts={selectedProducts.value.length > 0 ? selectedProducts.value : (selectedProduct.value ? [selectedProduct.value] : [])}
             onReschedule={() => {
-              manageSecret.value = bookingResult.value!.cancelSecret
-              step.value = MANAGE_STEP
+              openManage(bookingResult.value!.cancelSecret)
             }}
             onCancel={() => {
-              manageSecret.value = bookingResult.value!.cancelSecret
-              step.value = MANAGE_STEP
+              openManage(bookingResult.value!.cancelSecret)
             }}
             onBookAgain={() => resetBooking(info)}
             locale={props.locale}
@@ -2520,8 +2602,7 @@ export function BookingFlow({ props }: BookingFlowProps) {
             booking={bookingResult.value}
             venueInfo={info}
             onManageBooking={() => {
-              manageSecret.value = bookingResult.value!.cancelSecret
-              step.value = MANAGE_STEP
+              openManage(bookingResult.value!.cancelSecret)
             }}
             onNewBooking={() => resetBooking(info)}
             t={t}

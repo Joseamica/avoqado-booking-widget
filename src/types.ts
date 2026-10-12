@@ -242,7 +242,7 @@ export interface PublicCreateReservationRequest {
   endsAt: string
   duration: number
   guestName: string
-  guestPhone: string
+  guestPhone?: string
   guestEmail?: string
   partySize?: number
   productId?: string

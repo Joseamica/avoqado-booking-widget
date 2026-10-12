@@ -160,8 +160,8 @@ export function holdReleaseUrl(slug: string, holdId: string): string {
   return `${BASE}/venues/${encodeURIComponent(slug)}/reservations/hold/${encodeURIComponent(holdId)}`
 }
 
-export function getReservation(slug: string, cancelSecret: string): Promise<PublicReservationDetail> {
-  return request(`${BASE}/venues/${slug}/reservations/${cancelSecret}`)
+export function getReservation(slug: string, cancelSecret: string, signal?: AbortSignal): Promise<PublicReservationDetail> {
+  return request(`${BASE}/venues/${slug}/reservations/${cancelSecret}`, { signal })
 }
 
 export function cancelReservation(slug: string, cancelSecret: string, reason?: string): Promise<{ confirmationCode: string; status: string; cancelledAt: string }> {

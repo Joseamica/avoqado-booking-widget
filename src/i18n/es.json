@@ -98,6 +98,7 @@
   "manage": {
     "title": "Tu Reservación",
     "cancelButton": "Cancelar Reservación",
+    "cancelDisabledTooltip": "Solo puedes cancelar hasta {{hours}}h antes del inicio.",
     "cancelTitle": "Cancelar Reservación",
     "cancelDescription": "¿Estás seguro de que deseas cancelar esta reservación? Esta acción no se puede deshacer.",
     "cancelReasonLabel": "Motivo (opcional)",
@@ -113,7 +114,8 @@
     "noRefund": "Si cancelas ahora pierdes los {{count}} créditos de esta reserva.",
     "refundedSuccess": "Te devolvimos {{count}} crédito(s) a tu cuenta.",
     "rescheduleButton": "Cambiar horario",
-    "rescheduleDisabledTooltip": "Solo puedes cambiar el horario hasta {{hours}}h antes del inicio."
+    "rescheduleDisabledTooltip": "Solo puedes cambiar el horario hasta {{hours}}h antes del inicio.",
+    "checkAgain": "Consultar de nuevo"
   },
   "reschedule": {
     "title": "Cambiar horario",
@@ -146,7 +148,19 @@
     "title": "Se Requiere Depósito",
     "description": "Se requiere un depósito para confirmar esta reservación.",
     "atVenueNote": "El pago se realizará en el establecimiento.",
-    "acknowledge": "Entendido"
+    "acknowledge": "Entendido",
+    "confirming": "Estamos confirmando el depósito",
+    "pending": "Aún no se confirma",
+    "paid": "Pago recibido",
+    "refunded": "Depósito reembolsado",
+    "cardHold": "Retención de tarjeta; el pago no está confirmado",
+    "forfeited": "Depósito retenido",
+    "expired": "El plazo del depósito expiró",
+    "disputed": "Depósito en disputa",
+    "returnUnverified": "Volviste del pago; aún no pudimos consultar su resultado",
+    "unknown": "Aún no pudimos confirmar el estado del depósito",
+    "missingReference": "No pudimos recuperar esta reserva en este navegador. Consulta tu confirmación o contacta al negocio",
+    "close": "Cerrar aviso"
   },
   "seats": {
     "title": "Elige tu lugar",
@@ -173,7 +187,8 @@
     "slotExpired": "Tu reservación temporal expiró. Por favor elige tu horario de nuevo.",
     "holdReleaseFailed": "No pudimos liberar el horario reservado. Reintenta antes de continuar.",
     "appointmentWindowChanged": "La duración cambió. Revisa los servicios y elige un horario nuevo.",
-    "generic": "Algo salió mal. Por favor intenta de nuevo."
+    "generic": "Algo salió mal. Por favor intenta de nuevo.",
+    "reservationQueryFailed": "No pudimos consultar la reserva"
   },
   "actions": {
     "goBack": "Atrás",
