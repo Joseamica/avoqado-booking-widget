@@ -309,7 +309,11 @@ export function requestOtp(slug: string, data: { phone?: string; email?: string 
   return request(`${BASE}/venues/${slug}/auth/otp/request`, { method: 'POST', body: JSON.stringify(data) })
 }
 
-export function verifyOtp(slug: string, data: { phone?: string; email?: string; code: string }): Promise<AuthResponse> {
+/**
+ * `firstName` (14-oct-2026): lo que la persona escribió en «¿Cómo te llamas?». El servidor lo pone sólo si el cliente
+ * no tenía nombre (nunca pisa uno existente). Un servidor viejo lo ignora: su zod de verify no es estricto.
+ */
+export function verifyOtp(slug: string, data: { phone?: string; email?: string; code: string; firstName?: string }): Promise<AuthResponse> {
   return request(`${BASE}/venues/${slug}/auth/otp/verify`, { method: 'POST', body: JSON.stringify(data) })
 }
 
