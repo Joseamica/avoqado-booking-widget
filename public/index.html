@@ -761,6 +761,10 @@
 
         var negocio = { name: '', logo: null, reward: '', required: 0 }
         var telefono = ''
+        // Lo que la persona escribió en el paso 1. Va aparte de `telefono` (lo que se manda) para que un error o
+        // «Usar otro teléfono» vuelvan a pintar el paso SIN borrar lo escrito.
+        var telefonoEscrito = ''
+        var nombre = ''
 
         function esc(t) {
           return String(t == null ? '' : t).replace(/[&<>"']/g, function (c) {
@@ -790,20 +794,33 @@
         var estiloInput = 'width:100%;box-sizing:border-box;padding:14px;font-size:17px;border:1px solid #d1d5db;border-radius:12px;margin-bottom:12px;text-align:center'
         var estiloBoton = 'width:100%;box-sizing:border-box;padding:14px;font-size:16px;font-weight:600;border:0;border-radius:12px;background:#111827;color:#fff;cursor:pointer'
 
-        // ----- Paso 1: el teléfono -----
+        // ----- Paso 1: el nombre y el teléfono -----
+        //
+        // 🔴 El nombre es obligatorio (founder, 14-oct-2026): de 41 clientes que bajaron su tarjeta en Testarudo, la
+        // tablet del mostrador no sabía cómo se llamaba ninguno. Viaja como `firstName` en el verify; el servidor sólo
+        // lo pone si el cliente no tenía nombre (nunca pisa uno existente).
         function pedirTelefono(errorTexto) {
           marco(
-            '<p style="font-size:16px;color:#374151;margin:0 0 20px">Escribe tu teléfono y te mandamos un código para guardar tu tarjeta.</p>' +
+            '<p style="font-size:16px;color:#374151;margin:0 0 20px">Escribe tu nombre y tu teléfono y te mandamos un código para guardar tu tarjeta.</p>' +
+            '<label for="avq-nombre" style="display:block;font-size:15px;font-weight:600;color:#111827;margin:0 0 8px">¿Cómo te llamas?</label>' +
+            '<input id="avq-nombre" type="text" autocomplete="given-name" maxlength="60" placeholder="Tu nombre" style="' + estiloInput + '">' +
             '<input id="avq-tel" type="tel" inputmode="numeric" autocomplete="tel" placeholder="10 dígitos" style="' + estiloInput + '">' +
             (errorTexto ? '<p style="font-size:14px;color:#b91c1c;margin:0 0 12px">' + esc(errorTexto) + '</p>' : '') +
             '<button id="avq-enviar" style="' + estiloBoton + '">Mandarme el código</button>'
           )
+          var inputNombre = document.getElementById('avq-nombre')
           var input = document.getElementById('avq-tel')
           var boton = document.getElementById('avq-enviar')
-          input.value = telefono
-          input.focus()
+          inputNombre.value = nombre
+          input.value = telefonoEscrito
+          if (nombre) input.focus()
+          else inputNombre.focus()
           function enviar() {
-            var valor = (input.value || '').replace(/\D/g, '')
+            // Lo escrito se guarda ANTES de validar: un error vuelve a pintar el paso y no debe borrar nada.
+            nombre = (inputNombre.value || '').trim()
+            telefonoEscrito = input.value || ''
+            var valor = telefonoEscrito.replace(/\D/g, '')
+            if (!nombre) { pedirTelefono('Escribe tu nombre.'); return }
             // Se valida ANTES de salir a la red: un número corto no merece un viaje
             // ni un error genérico del servidor delante del cliente.
             if (valor.length < 10) { pedirTelefono('Escribe los 10 dígitos de tu teléfono.'); return }
@@ -823,6 +840,7 @@
               .catch(function () { pedirTelefono('No hay conexión. Revisa tu internet e inténtalo otra vez.') })
           }
           boton.addEventListener('click', enviar)
+          inputNombre.addEventListener('keydown', function (e) { if (e.key === 'Enter') enviar() })
           input.addEventListener('keydown', function (e) { if (e.key === 'Enter') enviar() })
         }
 
@@ -847,7 +865,7 @@
             fetch(api + '/auth/otp/verify', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ phone: telefono, code: codigo }),
+              body: JSON.stringify({ phone: telefono, code: codigo, firstName: nombre }),
             })
               .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, body: j } }) })
               .then(function (out) {
