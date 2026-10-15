@@ -108,3 +108,27 @@ describe('página del cartel: «¿Cómo te llamas?» es obligatorio', () => {
     expect(el<HTMLInputElement>('avq-nombre').value).toBe('Ana')
   })
 })
+
+describe('página del cartel: el teléfono viaja con lada (antes llegaba como "+" + 10 dígitos)', () => {
+  it.each([
+    ['5544422262', '+525544422262'],
+    ['55 4442 2262', '+525544422262'],
+    ['(55) 4442-2262', '+525544422262'],
+    ['525544422262', '+525544422262'],
+    ['+52 55 4442 2262', '+525544422262'],
+    ['5215544422262', '+525544422262'],
+    ['+52 1 55 4442 2262', '+525544422262'],
+  ])('escrito «%s» ⇒ %s, en request y en verify', async (escrito, esperado) => {
+    await abrirPagina()
+    await pedirCodigo('Ana', escrito)
+    expect(llamadas('/auth/otp/request').map(l => l.body)).toEqual([{ phone: esperado }])
+    await verificar()
+    expect(llamadas('/auth/otp/verify')[0].body.phone).toBe(esperado)
+  })
+
+  it('un número de otro país escrito con su lada completa no se toca', async () => {
+    await abrirPagina()
+    await pedirCodigo('John', '+1 512 555 1234')
+    expect(llamadas('/auth/otp/request')[0].body).toEqual({ phone: '+15125551234' })
+  })
+})

@@ -772,6 +772,18 @@
           })
         }
 
+        // 🔴 Lada mexicana por defecto (14-oct-2026). Esta página mandaba sólo los 10 dígitos y el servidor les ponía
+        // '+' delante: 40 de 41 altas de Testarudo quedaron como '+5544422262', sin el 52, y un cliente que volvía ya no
+        // empataba con su ficha. Es la misma regla que `normalizarTelefonoMx` del servidor (src/utils/phone.ts) y que
+        // `phoneE164` del widget (src/data/countries.ts): 10 dígitos ⇒ +52; 52 + 10 ⇒ +52…; 521 + 10 (celular viejo)
+        // ⇒ +52 + los 10; cualquier otro ⇒ '+' + dígitos (quien escribió su lada completa de otro país).
+        function telefonoMx(digitos) {
+          if (digitos.length === 10) return '+52' + digitos
+          if (digitos.length === 12 && digitos.indexOf('52') === 0) return '+' + digitos
+          if (digitos.length === 13 && digitos.indexOf('521') === 0) return '+52' + digitos.slice(3)
+          return '+' + digitos
+        }
+
         function marco(cuerpo) {
           var logo = negocio.logo
             ? '<img src="' + esc(negocio.logo) + '" alt="" style="width:64px;height:64px;border-radius:16px;object-fit:cover;margin:0 auto 14px;display:block">'
@@ -824,13 +836,13 @@
             // Se valida ANTES de salir a la red: un número corto no merece un viaje
             // ni un error genérico del servidor delante del cliente.
             if (valor.length < 10) { pedirTelefono('Escribe los 10 dígitos de tu teléfono.'); return }
-            telefono = valor
+            telefono = telefonoMx(valor)
             boton.disabled = true
             boton.textContent = 'Mandando…'
             fetch(api + '/auth/otp/request', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ phone: valor }),
+              body: JSON.stringify({ phone: telefono }),
             })
               .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, body: j } }) })
               .then(function (out) {
