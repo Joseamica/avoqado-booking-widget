@@ -7,7 +7,7 @@ import { Button } from './ui/Button'
 import { Input } from './ui/Input'
 import { CountryPhoneInput } from './ui/CountryPhoneInput'
 import { OtpInput } from './ui/OtpInput'
-import { DEFAULT_DIAL } from '../data/countries'
+import { DEFAULT_DIAL, phoneE164 } from '../data/countries'
 import * as api from '../api/booking'
 import { portalData, portalLoading, customerToken, customerInfo, setCustomerSession, clearCustomerSession, bookingAccess } from '../state/booking'
 
@@ -143,7 +143,7 @@ export function CustomerPortal({ venueSlug, timezone, venuePhone, t, onBack, onM
   /** Build the { phone } | { email } payload from the active OTP channel. */
   function otpDestination(): { phone?: string; email?: string } {
     return otpChannel === 'phone'
-      ? { phone: `+${otpDialCode}${otpPhone.replace(/\D/g, '')}` }
+      ? { phone: phoneE164(otpDialCode, otpPhone) }
       : { email: otpEmail.trim() }
   }
 

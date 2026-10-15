@@ -81,3 +81,13 @@ describe('CustomerPortal: «¿Cómo te llamas?» en el alta por código', () => 
     expect(campo.maxLength).toBe(60)
   })
 })
+
+describe('CustomerPortal: el teléfono siempre sale con lada', () => {
+  it('quita el 52 que la persona repitió en el número (antes salía +52525544422262)', async () => {
+    renderPortal()
+    escribir(screen.getByLabelText('¿Cómo te llamas?'), 'Ana')
+    escribir(screen.getByPlaceholderText('Tu número de teléfono'), '52 55 4442 2262')
+    fireEvent.click(screen.getByRole('button', { name: 'Enviar código' }))
+    await waitFor(() => expect(api.requestOtp).toHaveBeenCalledWith('testarudo', { phone: '+525544422262' }))
+  })
+})
