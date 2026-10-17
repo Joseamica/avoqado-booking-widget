@@ -18,7 +18,8 @@ export type Cart = CartLine[]
 
 /** `MAX_LINE_QUANTITY` del servidor (online-ordering/constants.ts). */
 const MAX_QTY = 20
-const clampQty = (n: number) => Math.min(Math.max(Math.trunc(n), 0), MAX_QTY)
+/** `NaN`/`Infinity` ⇒ 0 (sin esto, `Math.max(NaN, 0)` deja NaN: «$NaN» en pantalla y `quantity:null` en el POST). */
+const clampQty = (n: number) => (Number.isFinite(n) ? Math.min(Math.max(Math.trunc(n), 0), MAX_QTY) : 0)
 
 const newLineId = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 10)
 
@@ -65,12 +66,24 @@ export const toQuoteItems = (cart: Cart): QuoteItem[] =>
 const memory = new Map<string, Cart>()
 const storageKey = (slug: string) => `avq_order_cart:${slug}`
 
+const isInt = (n: unknown, min: number, max = Infinity) => Number.isInteger(n) && (n as number) >= min && (n as number) <= max
+/** Lo guardado se revisa renglón por renglón: uno malo (otra versión, editado a mano) se descarta y no tumba el total. */
+const isValidLine = (l: any): l is CartLine =>
+  !!l &&
+  typeof l.lineId === 'string' &&
+  typeof l.productId === 'string' &&
+  Number.isFinite(l.unitPrice) &&
+  isInt(l.quantity, 1, MAX_QTY) &&
+  (l.note === null || typeof l.note === 'string') &&
+  Array.isArray(l.modifiers) &&
+  l.modifiers.every((m: any) => !!m && typeof m.modifierId === 'string' && isInt(m.quantity, 1) && Number.isFinite(m.price))
+
 export function loadCart(slug: string): Cart {
   const inMemory = memory.get(slug)
   if (inMemory) return inMemory
   try {
     const parsed = JSON.parse(sessionStorage.getItem(storageKey(slug)) ?? '[]')
-    return Array.isArray(parsed) ? parsed : []
+    return Array.isArray(parsed) ? parsed.filter(isValidLine) : []
   } catch {
     return []
   }

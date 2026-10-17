@@ -59,6 +59,12 @@ describe('addLine', () => {
     expect(addLine([], flauta({ quantity: 0 }))).toEqual([])
   })
 
+  it('una cantidad NaN no agrega renglón (nunca «$NaN» ni quantity:null)', () => {
+    expect(addLine([], flauta({ quantity: NaN }))).toEqual([])
+    const cart = addLine([], flauta({ quantity: 2 }))
+    expect(addLine(cart, flauta({ quantity: NaN }))).toEqual(cart)
+  })
+
   it('no muta el carrito que recibe', () => {
     const before = addLine([], flauta())
     const snapshot = JSON.stringify(before)
@@ -74,6 +80,11 @@ describe('setQuantity y removeLine', () => {
     const id = cart[0].lineId
     expect(setQuantity(cart, id, 3)[0].quantity).toBe(3)
     expect(setQuantity(cart, id, 25)[0].quantity).toBe(20)
+  })
+
+  it('setQuantity(…, NaN) quita el renglón', () => {
+    const cart = addLine([], flauta())
+    expect(setQuantity(cart, cart[0].lineId, NaN)).toEqual([])
   })
 
   it('setQuantity(…, 0) quita el renglón', () => {
@@ -138,6 +149,27 @@ describe('loadCart y saveCart', () => {
     expect(loadCart('roto')).toEqual([])
     sessionStorage.setItem('avq_order_cart:roto2', '{"a":1}')
     expect(loadCart('roto2')).toEqual([])
+  })
+
+  it('un renglón mal formado en sessionStorage se descarta; los válidos quedan y el total no se rompe', () => {
+    const valido = addLine([], flauta({ modifiers: [salsa], quantity: 2 }))[0]
+    const malos = [
+      { ...valido, lineId: 'b1', productId: undefined },
+      { ...valido, lineId: 'b2', quantity: null }, // un NaN guardado llega como null
+      { ...valido, lineId: 'b3', quantity: 25 },
+      { ...valido, lineId: 'b4', quantity: 1.5 },
+      { ...valido, lineId: 'b5', unitPrice: '85.9' },
+      { ...valido, lineId: 'b6', modifiers: 'salsa' },
+      { ...valido, lineId: 'b7', modifiers: [{ ...salsa, price: null }] },
+      { ...valido, lineId: 'b8', modifiers: [{ ...salsa, quantity: 0 }] },
+      { ...valido, lineId: 'b9', modifiers: [{ ...salsa, modifierId: 7 }] },
+      null,
+      'flauta',
+    ]
+    sessionStorage.setItem('avq_order_cart:sembrado', JSON.stringify([malos[0], valido, ...malos.slice(1)]))
+    const cart = loadCart('sembrado')
+    expect(cart).toEqual([valido])
+    expect(estimateCents(cart)).toBe((8590 + 1250 * 2) * 2)
   })
 
   it('si sessionStorage lanza, el carrito funciona en memoria', async () => {

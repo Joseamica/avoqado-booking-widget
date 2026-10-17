@@ -21,8 +21,9 @@ export function newAttemptKey(): string {
 export function beginAttempt(slug: string, body: CreateOrderBody): PendingAttempt | null {
   const pending = pendingAttempt(slug)
   if (pending) return pending
-  const attempt: PendingAttempt = { key: newAttemptKey(), body, startedAt: Date.now() }
   try {
+    // Dentro del try: sin `crypto` tampoco hay llave, y sin llave no se envía.
+    const attempt: PendingAttempt = { key: newAttemptKey(), body, startedAt: Date.now() }
     sessionStorage.setItem(storageKey(slug), JSON.stringify(attempt))
     return attempt
   } catch {

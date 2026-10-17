@@ -87,6 +87,12 @@ describe('beginAttempt / pendingAttempt / settleAttempt', () => {
     expect(() => settleAttempt('flautas-coyoacan')).not.toThrow()
   })
 
+  it('sin `crypto` no hay llave: beginAttempt devuelve null y no guarda nada', () => {
+    vi.stubGlobal('crypto', undefined)
+    expect(beginAttempt('flautas-coyoacan', body())).toBeNull()
+    expect(sessionStorage.getItem('avq_order_attempt:flautas-coyoacan')).toBeNull()
+  })
+
   it('si guardar lanza (cuota llena, modo privado), beginAttempt devuelve null', () => {
     vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
       throw new DOMException('lleno', 'QuotaExceededError')
