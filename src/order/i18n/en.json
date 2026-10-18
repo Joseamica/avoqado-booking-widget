@@ -94,7 +94,8 @@
     "resend": "Resend code",
     "resendIn": "Resend code in {{s}} s",
     "change": "Change number",
-    "verifying": "Verifying…"
+    "verifying": "Verifying…",
+    "notUsable": "We could not use your verification in this browser. Check your number or open it outside private mode."
   },
   "checkout": {
     "pending": "Your previous order was not confirmed because of the connection. Retry to find out if it went through.",
@@ -104,6 +105,40 @@
     "rateLimited": "Too many attempts. Wait a minute.",
     "noStorage": "Your browser does not let this page save data. Open it in another browser or outside private mode to order.",
     "serverError": "Something went wrong on our side. Try again.",
-    "failed": "We could not send your order. Try again."
+    "failed": "We could not send your order. Try again.",
+    "inactive": "Your account is deactivated at this restaurant."
+  },
+  "tracking": {
+    "folio": "Order {{n}}",
+    "waiting": "Waiting for the restaurant to accept your order (until {{time}}).",
+    "preparing": "Being prepared.",
+    "preparingEta": "Being prepared. Ready around {{time}}.",
+    "ready": "Ready for pickup!",
+    "completed": "Picked up. Thank you!",
+    "rejected": "The restaurant could not accept your order: {{reason}}. You were not charged.",
+    "rejectedNoReason": "The restaurant could not accept your order. You were not charged.",
+    "expired": "The restaurant did not answer in time. You were not charged.",
+    "cancelledByCustomer": "You cancelled your order.",
+    "cancelledByStaff": "The restaurant cancelled your order.",
+    "reason": {
+      "OUT_OF_ITEMS": "Out of ingredients",
+      "CLOSED": "Closed",
+      "TOO_BUSY": "Too busy",
+      "OTHER": "Other"
+    },
+    "payAtPickup": "Pay at pickup",
+    "paid": "Paid",
+    "cancel": "Cancel order",
+    "cancelAsk": "Cancel your order?",
+    "cancelYes": "Yes, cancel",
+    "cancelNo": "No",
+    "cancelling": "Cancelling…",
+    "stateChanged": "Your order can no longer be cancelled.",
+    "hasPayments": "This order already has a payment; call the restaurant.",
+    "notFound": "We could not find that order.",
+    "restaurant": "Restaurant",
+    "loading": "Loading your order…",
+    "inProgress": "You have an order in progress",
+    "view": "View"
   }
 }

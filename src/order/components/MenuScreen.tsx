@@ -1,7 +1,10 @@
 import { h } from 'preact'
 import { useContext, useEffect, useState } from 'preact/hooks'
 import { OrderStoreContext } from '../store'
+import { ApiError, getTracking } from '../api'
 import { createOrderT } from '../i18n'
+import { clearLastOrder, loadLastOrder } from '../session'
+import { isFinalStatus } from './TrackingScreen'
 import { formatMXN } from '../money'
 import { StoreStatusBanner } from './StoreStatusBanner'
 import { ProductSheet } from './ProductSheet'
@@ -16,6 +19,26 @@ export function MenuScreen() {
   const t = createOrderT(store.locale)
   const [query, setQuery] = useState('')
   const [categoryId, setCategoryId] = useState<string | null>(null)
+  const [active, setActive] = useState<string | null>(null)
+  // Al abrir la tienda: ¿queda un pedido en curso de este comensal? Final o 404 ⇒ se olvida (y el 404 se avisa).
+  useEffect(() => {
+    const last = loadLastOrder(store.slug)
+    if (!last) return
+    let off = false
+    getTracking(store.slug, last.trackingToken).then(
+      r => {
+        if (off) return
+        if (isFinalStatus(r.status)) clearLastOrder(store.slug)
+        else setActive(last.trackingToken)
+      },
+      e => {
+        if (off || !(e instanceof ApiError) || e.status !== 404) return
+        clearLastOrder(store.slug)
+        store.notice.value = t('tracking.notFound')
+      },
+    )
+    return () => { off = true }
+  }, [store])
   const info = store.info.value
   const err = store.infoError.value
   const menu = store.menu.value
@@ -47,6 +70,12 @@ export function MenuScreen() {
 
   return (
     <div>
+      {active && (
+        <p role="status" style={{ ...banner, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px' }}>
+          <span>{t('tracking.inProgress')}</span>
+          <button type="button" style={btn()} onClick={() => { store.trackingToken.value = active; store.go('tracking') }}>{t('tracking.view')}</button>
+        </p>
+      )}
       {err && <p role="status" style={{ ...muted, margin: '0 0 8px' }}>{err.network ? t('store.reconnecting') : err.message || t('store.reconnecting')}</p>}
       <StoreStatusBanner />
       {menu.truncated && <p style={banner}>{t('menu.truncated')}</p>}

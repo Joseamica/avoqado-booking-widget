@@ -94,7 +94,8 @@
     "resend": "Reenviar código",
     "resendIn": "Reenviar código en {{s}} s",
     "change": "Cambiar número",
-    "verifying": "Verificando…"
+    "verifying": "Verificando…",
+    "notUsable": "No pudimos usar tu verificación en este navegador. Revisa tu número o ábrelo fuera del modo privado."
   },
   "checkout": {
     "pending": "Tu pedido anterior no se confirmó por la conexión. Reintenta para saber si llegó.",
@@ -104,6 +105,40 @@
     "rateLimited": "Demasiados intentos. Espera un minuto.",
     "noStorage": "Tu navegador no deja guardar datos de esta página. Ábrela en otro navegador o fuera del modo privado para pedir.",
     "serverError": "Algo falló de nuestro lado. Intenta de nuevo.",
-    "failed": "No pudimos enviar tu pedido. Intenta de nuevo."
+    "failed": "No pudimos enviar tu pedido. Intenta de nuevo.",
+    "inactive": "Tu cuenta está desactivada en este restaurante."
+  },
+  "tracking": {
+    "folio": "Folio {{n}}",
+    "waiting": "Esperando que el restaurante acepte tu pedido (hasta las {{time}}).",
+    "preparing": "En preparación.",
+    "preparingEta": "En preparación. Listo aprox. a las {{time}}.",
+    "ready": "¡Listo para recoger!",
+    "completed": "Entregado. ¡Gracias!",
+    "rejected": "El restaurante no pudo aceptar tu pedido: {{reason}}. No se te cobró nada.",
+    "rejectedNoReason": "El restaurante no pudo aceptar tu pedido. No se te cobró nada.",
+    "expired": "El restaurante no contestó a tiempo. No se te cobró nada.",
+    "cancelledByCustomer": "Cancelaste tu pedido.",
+    "cancelledByStaff": "El restaurante canceló tu pedido.",
+    "reason": {
+      "OUT_OF_ITEMS": "Sin ingredientes",
+      "CLOSED": "Cerrado",
+      "TOO_BUSY": "Muy ocupados",
+      "OTHER": "Otro"
+    },
+    "payAtPickup": "Pagas al recoger",
+    "paid": "Pagado",
+    "cancel": "Cancelar pedido",
+    "cancelAsk": "¿Cancelar tu pedido?",
+    "cancelYes": "Sí, cancelar",
+    "cancelNo": "No",
+    "cancelling": "Cancelando…",
+    "stateChanged": "Tu pedido ya no se puede cancelar.",
+    "hasPayments": "Este pedido ya tiene un pago; llama al restaurante.",
+    "notFound": "No encontramos ese pedido.",
+    "restaurant": "Restaurante",
+    "loading": "Cargando tu pedido…",
+    "inProgress": "Tienes un pedido en curso",
+    "view": "Ver"
   }
 }

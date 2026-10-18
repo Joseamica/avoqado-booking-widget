@@ -7,6 +7,7 @@ import { CartScreen } from './CartScreen'
 import { DetailsScreen } from './DetailsScreen'
 import { OtpScreen } from './OtpScreen'
 import { CheckoutStatus } from './CheckoutStatus'
+import { TrackingScreen } from './TrackingScreen'
 import { banner, btn } from './ui'
 
 /** Raíz de la tienda. La marca sale de `/info` (no de reservas); `accentColor` es el respaldo del atributo `accent-color`. */
@@ -25,12 +26,13 @@ export function OrderApp({ accentColor }: { accentColor?: string }) {
           <button type="button" style={btn()} onClick={() => { store.notice.value = null }}>{t('common.close')}</button>
         </div>
       )}
-      {/* Datos y código pintan el estado del envío junto a su botón; las demás, arriba. El seguimiento llega en la tarea 10. */}
+      {/* Datos y código pintan el estado del envío junto a su botón; las demás, arriba. */}
       {(screen === 'menu' || screen === 'product' || screen === 'cart') && <CheckoutStatus />}
       {(screen === 'menu' || screen === 'product') && <MenuScreen />}
       {screen === 'cart' && <CartScreen />}
       {screen === 'details' && <DetailsScreen />}
       {screen === 'otp' && <OtpScreen />}
+      {screen === 'tracking' && <TrackingScreen />}
     </div>
   )
 }
