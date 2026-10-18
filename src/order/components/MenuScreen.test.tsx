@@ -109,6 +109,15 @@ describe('refresco fallido con la carta ya cargada', () => {
     expect(screen.getByText('Servidor ocupado')).toBeTruthy()
     expect(screen.getByText('Flautas de pollo')).toBeTruthy()
   })
+  it('/info falló pero /menu cargó: pantalla de error con Reintentar (no en blanco)', async () => {
+    vi.mocked(getInfo).mockResolvedValue(infoOf()); vi.mocked(getMenu).mockResolvedValue(menuOf(product()))
+    const s = makeStore(null, menuOf(product())); s.infoError.value = new ApiError('Servidor ocupado', 503)
+    show(s)
+    expect(screen.getByText('Servidor ocupado')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Reintentar' }))
+    await flush()
+    expect(getInfo).toHaveBeenCalled()
+  })
   it('un 404 que no es VENUE_NOT_FOUND cae en el genérico con Reintentar', () => {
     const s = makeStore(null, null); s.infoError.value = new ApiError('', 404, 'OTRA')
     show(s)

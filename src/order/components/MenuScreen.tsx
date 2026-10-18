@@ -33,7 +33,7 @@ export function MenuScreen() {
   if (err?.status === 403 && err.code === 'PLAN_REQUIRED') return text(t('store.disabled'))
   if (err?.status === 404 && err.code === 'VENUE_NOT_FOUND') return text(t('store.notFound'))
   // Con la carta ya cargada, un refresco fallido no la reemplaza: sólo un aviso chico.
-  if (err && !menu) return <div>{text(err.network ? t('common.offline') : err.message || t('store.loadFailed'))}{retry()}</div>
+  if (err && (!menu || !info)) return <div>{text(err.network ? t('common.offline') : err.message || t('store.loadFailed'))}{retry()}</div>
   if (info?.status === 'DISABLED') return text(t('store.disabled'))
   if (!info || !menu) return null
 
