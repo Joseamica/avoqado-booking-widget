@@ -6,12 +6,10 @@ import { createOrderT } from '../i18n'
 import { formatMXN } from '../money'
 import { clearLastOrder } from '../session'
 import { OrderStoreContext } from '../store'
-import type { OnlineOrderStatus, Tracking } from '../types'
+import { isFinalStatus, type Tracking } from '../types'
 import { banner, btn, muted } from './ui'
 
 const POLL_MS = 10_000
-const FINAL: OnlineOrderStatus[] = ['COMPLETED', 'REJECTED', 'EXPIRED', 'CANCELLED_BY_CUSTOMER', 'CANCELLED_BY_STAFF']
-export const isFinalStatus = (s: OnlineOrderStatus) => FINAL.includes(s)
 
 /** Seguimiento del pedido. No usa `/info` ni `/menu` (el plan puede haber vencido): todo sale de la respuesta del seguimiento. */
 export function TrackingScreen() {
@@ -19,7 +17,8 @@ export function TrackingScreen() {
   const t = createOrderT(store.locale)
   const token = store.trackingToken.value
   const [tracking, setTracking] = useState<Tracking | null>(null)
-  const [offline, setOffline] = useState(false)
+  /** Llave del aviso de la última consulta fallida: sin red, o el servidor falló (no es lo mismo). */
+  const [problem, setProblem] = useState<string | null>(null)
   const [gone, setGone] = useState(false)
   const [asking, setAsking] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -42,7 +41,7 @@ export function TrackingScreen() {
         const r = await getTracking(store.slug, token)
         if (stopped) return
         setTracking(r)
-        setOffline(false)
+        setProblem(null)
         if (isFinalStatus(r.status)) finished = true
       } catch (e) {
         if (stopped) return
@@ -50,7 +49,7 @@ export function TrackingScreen() {
           finished = true
           setGone(true)
           clearLastOrder(store.slug)
-        } else setOffline(true)
+        } else setProblem(e instanceof ApiError && e.network ? 'store.reconnecting' : 'tracking.updateFailed')
       } finally {
         inflight = false
       }
@@ -68,7 +67,7 @@ export function TrackingScreen() {
   }, [store, token])
 
   if (gone) return <p role="status" style={{ margin: '16px 0' }}>{t('tracking.notFound')}</p>
-  if (!tracking) return <p role="status" style={{ margin: '16px 0' }}>{offline ? t('store.reconnecting') : t('tracking.loading')}</p>
+  if (!tracking) return <p role="status" style={{ margin: '16px 0' }}>{t(problem ?? 'tracking.loading')}</p>
 
   const tz = tracking.venueTimezone ?? store.info.value?.venue.timezone ?? 'America/Mexico_City'
   const time = (iso: string) => formatTime(iso, tz, store.locale)
@@ -110,7 +109,7 @@ export function TrackingScreen() {
   const contact = tracking.venueContact
   return (
     <div>
-      {offline && <p role="status" style={{ ...muted, margin: '0 0 8px' }}>{t('store.reconnecting')}</p>}
+      {problem && <p role="status" style={{ ...muted, margin: '0 0 8px' }}>{t(problem)}</p>}
       <h2 style={{ margin: '0 0 4px' }}>{tracking.venueName}</h2>
       <p style={{ ...muted, margin: '0 0 12px' }}>{t('tracking.folio', { n: tracking.orderNumber })}</p>
       <p role="status" style={banner}>{status()}</p>

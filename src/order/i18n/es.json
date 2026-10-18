@@ -138,6 +138,7 @@
     "notFound": "No encontramos ese pedido.",
     "restaurant": "Restaurante",
     "loading": "Cargando tu pedido…",
+    "updateFailed": "No pudimos actualizar tu pedido; reintentando…",
     "inProgress": "Tienes un pedido en curso",
     "view": "Ver"
   }

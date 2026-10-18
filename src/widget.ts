@@ -4,6 +4,8 @@ import { PortalApp } from './components/PortalApp'
 import { BookButtonApp } from './components/BookButtonApp'
 import type { WidgetProps } from './types'
 import { createShadowContainer, readCommonAttrs } from './shared-styles'
+import { OrderApp } from './order/components/OrderApp'
+import { OrderStoreContext, createOrderStore, type OrderStore } from './order/store'
 
 // ==================== <avoqado-booking> ====================
 // Full all-in-one widget (booking flow + portal + credit packs)
@@ -141,6 +143,57 @@ class AvoqadoBookButton extends HTMLElement {
   }
 }
 
+// ==================== <avoqado-order> ====================
+// Tienda de pedidos en línea. Lee sus atributos SIN `readCommonAttrs`: ésa reapunta la sesión de reservas al venue y una
+// tienda junto a un <avoqado-booking> de otro negocio se la movería. Cada elemento tiene su propio OrderStore.
+
+class AvoqadoOrderWidget extends HTMLElement {
+  private _container: HTMLDivElement | null = null
+  private store: OrderStore | null = null
+  private storeKey = ''
+
+  static get observedAttributes() {
+    return ['venue', 'locale', 'theme', 'accent-color', 'tracking']
+  }
+
+  connectedCallback() {
+    // Moverlo de lugar lo desconecta y lo vuelve a conectar: la sombra ya existe.
+    if (!this._container) this._container = createShadowContainer(this).container
+    this._render()
+  }
+
+  disconnectedCallback() {
+    if (this._container) render(null, this._container)
+    this.store?.dispose()
+    this.store = null
+  }
+
+  attributeChangedCallback() {
+    if (this._container && this.isConnected) this._render()
+  }
+
+  private _render() {
+    const container = this._container
+    if (!container) return
+    const venue = this.getAttribute('venue') ?? ''
+    const locale = this.getAttribute('locale') === 'en' ? 'en' : 'es'
+    const tracking = this.getAttribute('tracking') || null
+    // Otro negocio, idioma o pedido = otra tienda (el carrito sigue guardado por negocio).
+    const key = `${venue}|${locale}|${tracking ?? ''}`
+    if (!this.store || key !== this.storeKey) {
+      this.store?.dispose()
+      this.store = venue ? createOrderStore(venue, { locale, trackingToken: tracking, host: this }) : null
+      this.storeKey = key
+    }
+    if (!this.store) return void render(null, container)
+    container.setAttribute('data-avq-theme', this.getAttribute('theme') ?? 'light')
+    render(
+      h(OrderStoreContext.Provider, { value: this.store }, h(OrderApp, { key, accentColor: this.getAttribute('accent-color') ?? undefined })),
+      container,
+    )
+  }
+}
+
 // ==================== Register custom elements ====================
 
 if (!customElements.get('avoqado-booking')) {
@@ -152,6 +205,9 @@ if (!customElements.get('avoqado-portal')) {
 if (!customElements.get('avoqado-book-button')) {
   customElements.define('avoqado-book-button', AvoqadoBookButton)
 }
+if (!customElements.get('avoqado-order')) {
+  customElements.define('avoqado-order', AvoqadoOrderWidget)
+}
 
 // ==================== Auto-discovery ====================
 // Scan for [data-avoqado] elements and mount the corresponding widget.
@@ -161,6 +217,7 @@ const COMPONENT_MAP: Record<string, string> = {
   booking: 'avoqado-booking',
   portal: 'avoqado-portal',
   'book-button': 'avoqado-book-button',
+  order: 'avoqado-order',
 }
 
 // Transfer data-* attributes to the custom element

@@ -11,6 +11,8 @@ export type Screen = 'menu' | 'product' | 'cart' | 'details' | 'otp' | 'tracking
 export interface OrderStore {
   slug: string
   locale: 'es' | 'en'
+  /** El elemento `<avoqado-order>`: de ahí salen sus eventos públicos (`events.ts`). */
+  host: EventTarget | null
   screen: Signal<Screen>
   info: Signal<StoreInfo | null>
   infoError: Signal<ApiError | null>
@@ -30,7 +32,7 @@ export interface OrderStore {
 const POLL_MS = 60_000
 const asApiError = (e: unknown) => (e instanceof ApiError ? e : new ApiError(String((e as Error)?.message ?? e), 0, undefined, undefined, true))
 
-export function createOrderStore(slug: string, opts: { locale: 'es' | 'en'; trackingToken?: string | null }): OrderStore {
+export function createOrderStore(slug: string, opts: { locale: 'es' | 'en'; trackingToken?: string | null; host?: EventTarget }): OrderStore {
   const trackingToken = signal<string | null>(opts.trackingToken ?? null)
   const info = signal<StoreInfo | null>(null)
   const infoError = signal<ApiError | null>(null)
@@ -58,6 +60,7 @@ export function createOrderStore(slug: string, opts: { locale: 'es' | 'en'; trac
   const store: OrderStore = {
     slug,
     locale: opts.locale,
+    host: opts.host ?? null,
     screen,
     info,
     infoError,

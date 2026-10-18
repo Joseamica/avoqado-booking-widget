@@ -75,6 +75,18 @@ describe('sondeo', () => {
     await tick(10_000)
     expect(screen.queryByText('Sin conexión; reintentando…')).toBeNull()
   })
+  it('un 500 no es «Sin conexión»: «No pudimos actualizar tu pedido; reintentando…» y sigue sondeando', async () => {
+    await show(new ApiError('x', 500))
+    expect(screen.getByText('No pudimos actualizar tu pedido; reintentando…')).toBeTruthy()
+    expect(screen.queryByText('Sin conexión; reintentando…')).toBeNull()
+    vi.mocked(getTracking).mockResolvedValue(tr())
+    await tick(10_000)
+    expect(getTracking).toHaveBeenCalledTimes(2)
+    vi.mocked(getTracking).mockRejectedValue(new ApiError('x', 503))
+    await tick(10_000)
+    expect(screen.getByText('No pudimos actualizar tu pedido; reintentando…')).toBeTruthy()
+    expect(screen.getByText(/Esperando que el restaurante acepte/)).toBeTruthy()
+  })
   it('404: «No encontramos ese pedido.» y no sigue sondeando', async () => {
     await show(new ApiError('x', 404))
     expect(screen.getByText('No encontramos ese pedido.')).toBeTruthy()

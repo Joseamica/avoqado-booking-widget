@@ -669,6 +669,44 @@
         return
       }
 
+      // ----- pedidos.avoqado.io/:venueSlug[/pedido/:token]  (tienda) --------
+      //
+      // 🔴 Carril propio de la tienda de pedidos en línea: monta <avoqado-order> y
+      // NO el widget de reservas. Lo decide el host (`pedidos.`); para probar en
+      // local, `?app=order`, sólo en localhost (en book.avoqado.io la tienda no
+      // tendría el `frame-ancestors` que `_headers` pone sólo a pedidos.).
+      // `/<slug>` = la carta; `/<slug>/pedido/<token>` = el seguimiento (la liga
+      // de los avisos). Al crear un pedido la barra pasa a la de su seguimiento,
+      // así recargar o compartir la liga abre ese pedido.
+      var orderHost = window.location.hostname
+      var orderParams = new URLSearchParams(window.location.search)
+      var isOrderPage = orderHost.indexOf('pedidos.') === 0 ||
+        ((orderHost === 'localhost' || orderHost === '127.0.0.1') && orderParams.get('app') === 'order')
+      if (isOrderPage && slug) {
+        var orderName = slug.charAt(0).toUpperCase() + slug.slice(1).replace(/[-_]/g, ' ')
+        document.title = 'Pedidos en línea · ' + orderName
+        // El chat y el pie son de reservas: la tienda no los lleva.
+        ;['textus-fab', 'footer'].forEach(function (id) {
+          var node = document.getElementById(id)
+          if (node) node.style.display = 'none'
+        })
+        var orderEl = document.createElement('avoqado-order')
+        orderEl.setAttribute('venue', slug)
+        if (flowType === 'pedido' && parts[2]) orderEl.setAttribute('tracking', parts[2])
+        if (orderParams.get('locale')) orderEl.setAttribute('locale', orderParams.get('locale'))
+        orderEl.addEventListener('avoqado:pedido-creado', function (e) {
+          var token = e && e.detail && e.detail.trackingToken
+          if (!token) return
+          try {
+            history.replaceState(null, '', '/' + slug + '/pedido/' + encodeURIComponent(token) + window.location.search)
+          } catch (err) { /* sin historial: la liga sigue en el aviso */ }
+        })
+        var orderMount = document.getElementById('mount')
+        orderMount.innerHTML = ''
+        orderMount.appendChild(orderEl)
+        return
+      }
+
       // ----- /:venueSlug/tarjeta  (cartel del mostrador) --------------------
       //
       // 🔴 Carril propio, y NO el widget de reservas. Ese pide `/info`, que responde

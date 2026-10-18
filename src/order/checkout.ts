@@ -9,6 +9,7 @@ import { clearSession, loadSession, samePhone, saveLastOrder, saveSession } from
 import { toQuoteItems } from './cart'
 import { expectedTotalFromQuote } from './money'
 import { createOrderT } from './i18n'
+import { emitOrderCreated } from './events'
 import type { OrderStore } from './store'
 import type { CreateOrderBody, CreatedOrder, Quote, QuoteIssue, StoreReason, StoreStatus } from './types'
 
@@ -184,6 +185,8 @@ async function doSubmit(store: OrderStore, body: CreateOrderBody): Promise<Submi
   // Primero el pedido guardado y luego borrar el intento: si algo muere en medio, el reintento recupera el mismo pedido.
   saveLastOrder(slug, { trackingToken: order.trackingToken, orderNumber: order.orderNumber })
   settleAttempt(slug)
+  // Aquí (una vez por respuesta del servidor) y no en `send`: un doble toque comparte esta petición y no repite el evento.
+  if (store.host) emitOrderCreated(store.host, slug, order)
   return { kind: 'created', order }
 }
 

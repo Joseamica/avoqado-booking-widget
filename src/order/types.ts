@@ -112,6 +112,9 @@ export type OnlineOrderStatus =
   | 'EXPIRED'
   | 'CANCELLED_BY_CUSTOMER'
   | 'CANCELLED_BY_STAFF'
+const FINAL_STATUSES: OnlineOrderStatus[] = ['COMPLETED', 'REJECTED', 'EXPIRED', 'CANCELLED_BY_CUSTOMER', 'CANCELLED_BY_STAFF']
+/** El pedido ya no cambia: el seguimiento deja de sondear y la tienda olvida «el pedido en curso». */
+export const isFinalStatus = (s: OnlineOrderStatus): boolean => FINAL_STATUSES.includes(s)
 export type RejectReason = 'OUT_OF_ITEMS' | 'CLOSED' | 'TOO_BUSY' | 'OTHER'
 
 export interface CreatedOrder {

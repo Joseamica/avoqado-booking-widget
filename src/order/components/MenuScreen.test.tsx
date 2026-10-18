@@ -193,13 +193,29 @@ describe('OrderApp', () => {
   })
 })
 
-describe('pedido en curso', () => {
-  const trk = (status: string) => ({ status }) as any
+describe('pedido en curso (lo pinta OrderApp: se ve en TODAS las ramas)', () => {
+  const trk = (status: string) => ({
+    orderNumber: '7', status, paymentMode: 'PAY_AT_PICKUP', venueName: 'Flautas', venueSlug: 'a', items: [], total: 0, paid: false,
+    estimatedReadyAt: null, acceptDeadlineAt: '2026-10-17T19:05:00Z', rejectReason: null, createdAt: '', canCancel: false,
+  }) as any
   const withLast = (s: ReturnType<typeof makeStore>) => saveLastOrder(s.slug, { trackingToken: 'T'.repeat(32), orderNumber: '7' })
+  const app = (s: ReturnType<typeof makeStore>) => render(withStore(s, <OrderApp />))
   it('no final: «Tienes un pedido en curso · Ver» lleva al seguimiento', async () => {
     const s = makeStore(infoOf(), menuOf(product())); withLast(s)
     vi.mocked(getTracking).mockResolvedValue(trk('ACCEPTED'))
-    show(s); await flush()
+    app(s); await flush()
+    expect(screen.getByText('Tienes un pedido en curso')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Ver' }))
+    expect(s.screen.value).toBe('tracking')
+    expect(s.trackingToken.value).toBe('T'.repeat(32))
+  })
+  it('con el plan vencido (/info 403 PLAN_REQUIRED) igual se ve y lleva al seguimiento', async () => {
+    const plan = new ApiError('x', 403, 'PLAN_REQUIRED')
+    vi.mocked(getInfo).mockRejectedValue(plan); vi.mocked(getMenu).mockRejectedValue(plan)
+    vi.mocked(getTracking).mockResolvedValue(trk('PENDING_ACCEPTANCE'))
+    const s = makeStore(null, null); withLast(s)
+    app(s); await flush()
+    expect(screen.getByText('Este restaurante no recibe pedidos en línea por el momento.')).toBeTruthy()
     expect(screen.getByText('Tienes un pedido en curso')).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: 'Ver' }))
     expect(s.screen.value).toBe('tracking')
@@ -208,15 +224,16 @@ describe('pedido en curso', () => {
   it('final: se olvida sin aviso', async () => {
     const s = makeStore(infoOf(), menuOf(product())); withLast(s)
     vi.mocked(getTracking).mockResolvedValue(trk('COMPLETED'))
-    show(s); await flush()
+    app(s); await flush()
     expect(screen.queryByText('Tienes un pedido en curso')).toBeNull()
     expect(loadLastOrder(s.slug)).toBeNull()
   })
   it('404: se olvida y avisa «No encontramos ese pedido.»', async () => {
     const s = makeStore(infoOf(), menuOf(product())); withLast(s)
     vi.mocked(getTracking).mockRejectedValue(new ApiError('x', 404))
-    show(s); await flush()
+    app(s); await flush()
     expect(loadLastOrder(s.slug)).toBeNull()
     expect(s.notice.value).toBe('No encontramos ese pedido.')
+    expect(screen.getByText('No encontramos ese pedido.')).toBeTruthy()
   })
 })

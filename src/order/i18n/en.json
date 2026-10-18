@@ -138,6 +138,7 @@
     "notFound": "We could not find that order.",
     "restaurant": "Restaurant",
     "loading": "Loading your order…",
+    "updateFailed": "We could not update your order; retrying…",
     "inProgress": "You have an order in progress",
     "view": "View"
   }

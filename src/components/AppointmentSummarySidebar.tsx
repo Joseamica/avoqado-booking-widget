@@ -248,7 +248,8 @@ export function AppointmentSummarySidebar({
           display: 'flex', flexDirection: 'column', gap: '10px',
         }}>
           <TotalRow label={t('summary.subtotal')} value={subtotal != null ? formatPriceMXN(subtotal) : '—'} />
-          <TotalRow label={t('summary.taxes')} value={taxes != null ? formatPriceMXN(taxes) : formatPriceMXN(0)} />
+          {/* En México el precio ya incluye el IVA: «Impuestos $0» confunde, así que sólo sale con un impuesto de verdad. */}
+          {!!taxes && <TotalRow label={t('summary.taxes')} value={formatPriceMXN(taxes)} />}
           <TotalRow
             label={t('summary.total')}
             value={subtotal != null ? `${hasVariable ? '+' : ''}${formatPriceMXN(subtotal + (taxes ?? 0))}` : '—'}
