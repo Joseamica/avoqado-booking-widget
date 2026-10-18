@@ -8,6 +8,7 @@ vi.mock('../api', async () => {
 })
 import { API_BASE, createOrder } from '../api'
 import { saveSession } from '../session'
+import { beginAttempt } from '../attempt'
 import { DetailsScreen } from './DetailsScreen'
 import { infoOf, makeStore, menuOf, withStore } from './testKit'
 
@@ -18,11 +19,12 @@ beforeEach(() => {
 afterEach(cleanup)
 const flush = () => act(async () => { for (let i = 0; i < 6; i++) await Promise.resolve() })
 
-function show() {
+function show(over: Parameters<typeof infoOf>[0] = {}, before?: (slug: string) => void) {
   const s = makeStore(
-    infoOf({ contact: { address: 'Av. Universidad 123, Coyoacán', phone: '55 1234 5678' }, privacyNoticePath: '/venues/v1/privacy-notice' }),
+    infoOf({ contact: { address: 'Av. Universidad 123, Coyoacán', phone: '55 1234 5678' }, privacyNoticePath: '/venues/v1/privacy-notice', ...over }),
     menuOf(),
   )
+  before?.(s.slug)
   s.cart.value = [{ lineId: 'a', productId: 'p1', name: 'Flautas', unitPrice: 85, quantity: 2, note: null, modifiers: [] }]
   s.quote.value = { ok: true, lines: [], subtotal: 170, total: 170, minOrderAmount: 0, issues: [] }
   s.go('details')
@@ -96,5 +98,27 @@ describe('tus datos y aviso de privacidad', () => {
     await flush()
     expect(s.screen.value).toBe('otp')
     expect(createOrder).not.toHaveBeenCalled()
+  })
+
+  it('con un intento pendiente (y el carrito ya editado) «Confirmar pedido» está deshabilitado: sólo se puede «Reintentar» el anterior', () => {
+    show({}, slug => {
+      saveSession(slug, { token: 'tok', phone: '+525544422262', name: 'Ana', savedAt: Date.now() })
+      beginAttempt(slug, {
+        items: [{ productId: 'p-viejo', quantity: 1, modifiers: [] }], paymentMode: 'PAY_AT_PICKUP', expectedTotal: '50.00',
+        customer: { name: 'Ana', phone: '+525544422262' },
+      })
+    })
+    fill()
+    accept()
+    expect(confirmBtn().disabled).toBe(true)
+    expect(screen.getByText('Tu pedido anterior no se confirmó por la conexión. Reintenta para saber si llegó.')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Reintentar' })).toBeTruthy()
+  })
+
+  it('con la tienda no abierta «Confirmar pedido» está deshabilitado (igual que «Continuar» del carrito)', () => {
+    show({ status: 'PAUSED', reason: 'MANUAL_PAUSE' })
+    fill()
+    accept()
+    expect(confirmBtn().disabled).toBe(true)
   })
 })

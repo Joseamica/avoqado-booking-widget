@@ -55,7 +55,8 @@ export function OtpScreen() {
       return
     }
     setVerifying(false)
-    await send(store, body)
+    // Verificado y aun así el pedido pide código (sesión que no se guardó, 401 otra vez): se dice, no se queda callado.
+    if ((await send(store, body)).kind === 'needsOtp') setError(t('otp.notUsable'))
   }
 
   if (!phone)

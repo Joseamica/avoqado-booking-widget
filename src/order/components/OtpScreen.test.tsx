@@ -80,4 +80,15 @@ describe('código de WhatsApp', () => {
     expect(screen.getByText('Código incorrecto.')).toBeTruthy()
     expect(createOrder).not.toHaveBeenCalled()
   })
+
+  it('si tras verificar bien el pedido vuelve a pedir código, lo dice claro (no se queda callado en esta pantalla)', async () => {
+    const s = show()
+    vi.mocked(verifyOrderingOtp).mockResolvedValue({ token: 'tok-otp', customer: { id: 'c1' } } as any)
+    vi.mocked(createOrder).mockRejectedValue(new ApiError('Verifica tu teléfono', 401, 'PHONE_VERIFICATION_REQUIRED'))
+    await flush()
+    fireEvent.input(screen.getAllByRole('textbox')[0], { target: { value: '123456' } })
+    await flush()
+    expect(s.screen.value).toBe('otp')
+    expect(screen.getByText('No pudimos usar tu verificación en este navegador. Revisa tu número o ábrelo fuera del modo privado.')).toBeTruthy()
+  })
 })

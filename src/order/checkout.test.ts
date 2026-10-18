@@ -12,7 +12,7 @@ const api = vi.hoisted(() => ({
 vi.mock('./api', async () => ({ ...(await vi.importActual<typeof import('./api')>('./api')), ...api }))
 
 import { ApiError } from './api'
-import { buildOrderBody, checkoutOf, isDefinitive, phoneToVerify, retry, send, submitOrder, verifyPhone } from './checkout'
+import { buildOrderBody, checkoutOf, isDefinitive, phoneToVerify, retry, send, storageWorks, submitOrder, verifyPhone } from './checkout'
 import { createOrderStore, type OrderStore } from './store'
 import { loadLastOrder, loadSession, saveSession } from './session'
 import { pendingAttempt } from './attempt'
@@ -57,6 +57,8 @@ const sent = (i = 0) => {
 beforeEach(() => {
   sessionStorage.clear()
   localStorage.clear()
+  // `clearMocks` no vacía las colas de mockResolvedValueOnce: una que sobre no debe pasar a la prueba siguiente.
+  for (const f of Object.values(api)) f.mockReset()
 })
 afterEach(() => vi.restoreAllMocks())
 
@@ -336,5 +338,74 @@ describe('send (lo que ve la tienda)', () => {
     const { store } = setup()
     await retry(store)
     expect(api.createOrder).not.toHaveBeenCalled()
+  })
+})
+
+describe('ronda 1 de arreglos', () => {
+  const NO_STORAGE = 'Tu navegador no deja guardar datos de esta página. Ábrela en otro navegador o fuera del modo privado para pedir.'
+
+  it('almacenamiento bloqueado desde el inicio y sin sesión ⇒ aviso del navegador, sin pedir código ni crear pedido', async () => {
+    const { store, body } = setup({ sessionPhone: null })
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new DOMException('bloqueado', 'SecurityError')
+    })
+    expect(await send(store, body)).toEqual({ kind: 'error', message: NO_STORAGE, retryable: false })
+    expect(store.screen.value).not.toBe('otp')
+    expect(api.requestOrderingOtp).not.toHaveBeenCalled()
+    expect(api.createOrder).not.toHaveBeenCalled()
+  })
+
+  it('storageWorks prueba sessionStorage Y localStorage', () => {
+    expect(storageWorks()).toBe(true)
+    vi.spyOn(globalThis, 'localStorage', 'get').mockImplementation(() => {
+      throw new DOMException('bloqueado', 'SecurityError')
+    })
+    expect(storageWorks()).toBe(false)
+  })
+
+  it('teléfono de menos de 10 dígitos con sesión del MISMO texto ⇒ crea sin pedir código', async () => {
+    const { store } = setup({ sessionPhone: '+298123456' })
+    const body = buildOrderBody(store, { customer: { name: 'Jón', phone: '+298123456' }, note: null })
+    api.createOrder.mockResolvedValueOnce(created())
+    expect((await submitOrder(store, body)).kind).toBe('created')
+  })
+
+  it('401 CUSTOMER_INACTIVE ⇒ «Tu cuenta está desactivada…», sin pedir código, y el intento queda', async () => {
+    const { store, body } = setup()
+    api.createOrder.mockRejectedValueOnce(new ApiError('Cuenta desactivada', 401, 'CUSTOMER_INACTIVE'))
+    expect(await submitOrder(store, body)).toEqual({
+      kind: 'error', message: 'Tu cuenta está desactivada en este restaurante.', retryable: false,
+    })
+    expect(pendingAttempt(store.slug)?.key).toBe(sent(0).key)
+  })
+
+  it('created de un intento viejo con el carrito ya editado ⇒ el carrito nuevo NO se vacía', async () => {
+    const { store, body } = setup()
+    api.createOrder.mockRejectedValueOnce(offline())
+    await send(store, body)
+    const edited = [line({ productId: 'p-taco', quantity: 4 })]
+    store.cart.value = edited
+    api.createOrder.mockResolvedValueOnce(created({ replay: true }))
+    await retry(store)
+    expect(store.screen.value).toBe('tracking')
+    expect(store.cart.value).toEqual(edited)
+  })
+
+  it('PRICE_CHANGED de un intento viejo con el carrito ya editado ⇒ store.quote queda en null (no es la de este carrito)', async () => {
+    const { store, body } = setup()
+    api.createOrder.mockRejectedValueOnce(offline())
+    await send(store, body)
+    store.cart.value = [line({ productId: 'p-taco', quantity: 4 })]
+    store.quote.value = quoteOf(400)
+    api.createOrder.mockRejectedValueOnce(new ApiError('x', 409, 'PRICE_CHANGED', { quote: quoteOf(190) }))
+    await retry(store)
+    expect(checkoutOf(store).feedback.value).toMatchObject({ kind: 'priceChanged', total: 190 })
+    expect(store.quote.value).toBeNull()
+  })
+
+  it('send deja busy en false aunque algo lance', async () => {
+    const { store } = setup()
+    await expect(send(store, null as any)).rejects.toThrow()
+    expect(checkoutOf(store).busy.value).toBe(false)
   })
 })

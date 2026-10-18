@@ -13,9 +13,16 @@ import { infoOf, makeStore, menuOf, withStore } from './testKit'
 import type { CartLine } from '../cart'
 import type { Quote, QuoteLine, StoreInfo } from '../types'
 
-beforeEach(() => sessionStorage.clear())
-afterEach(cleanup)
-const flush = () => act(async () => { for (let i = 0; i < 6; i++) await Promise.resolve() })
+beforeEach(() => {
+  sessionStorage.clear()
+  vi.useFakeTimers()
+})
+afterEach(() => {
+  cleanup()
+  vi.useRealTimers()
+})
+/** La cotización espera ~300 ms (debounce): se adelanta el reloj falso y se dejan correr las promesas. */
+const flush = () => act(async () => { await vi.advanceTimersByTimeAsync(300) })
 
 const flautas: CartLine = { lineId: 'a', productId: 'p1', name: 'Flautas', unitPrice: 85, quantity: 2, note: null, modifiers: [] }
 const tacos: CartLine = { lineId: 'b', productId: 'p2', name: 'Tacos', unitPrice: 30, quantity: 1, note: 'Sin cebolla', modifiers: [] }
@@ -108,5 +115,18 @@ describe('carrito cotizado por el servidor', () => {
     expect(note.maxLength).toBe(300)
     fireEvent.input(note, { target: { value: 'Paso a las 2' } })
     expect(checkoutOf(s).draft.value.note).toBe('Paso a las 2')
+  })
+
+  it('toques seguidos ⇒ UNA cotización nueva (~300 ms después del último): el límite es 60/min por IP', async () => {
+    await show([{ ...flautas, quantity: 1 }], quoteOf(85))
+    expect(quote).toHaveBeenCalledTimes(1)
+    for (let i = 0; i < 3; i++) {
+      fireEvent.click(within(screen.getByRole('listitem', { name: 'Flautas' })).getByRole('button', { name: 'Más' }))
+      await act(async () => { await vi.advanceTimersByTimeAsync(100) })
+    }
+    expect(quote).toHaveBeenCalledTimes(1)
+    await flush()
+    expect(quote).toHaveBeenCalledTimes(2)
+    expect(vi.mocked(quote).mock.lastCall![1]).toEqual([{ productId: 'p1', quantity: 4, modifiers: [] }])
   })
 })

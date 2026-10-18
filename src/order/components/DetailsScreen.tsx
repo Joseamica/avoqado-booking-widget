@@ -34,7 +34,9 @@ export function DetailsScreen() {
     : !d.accepted ? t('details.needAccept')
     : null
   const busy = c.busy.value
-  const canSend = !missing && !!q?.ok && !busy
+  const open = info?.status === 'OPEN'
+  // Con un intento pendiente se manda ESE (el pedido anterior), no lo que hay en pantalla: el único camino es su «Reintentar».
+  const canSend = !missing && !!q?.ok && !busy && open && !c.pending.value
 
   const confirm = () => {
     if (!canSend) return

@@ -102,6 +102,21 @@ export async function verifyPhone(store: OrderStore, phone: string, code: string
   saveSession(store.slug, { token: r.token, phone, name: checkoutOf(store).draft.value.name.trim() || null, savedAt: Date.now() })
 }
 
+/** ¿Se puede guardar? Sin sessionStorage no hay intento y sin localStorage no hay sesión: pedir código sería en balde. */
+export function storageWorks(): boolean {
+  try {
+    for (const s of [sessionStorage, localStorage]) {
+      s.setItem('avq_order_probe', '1')
+      s.removeItem('avq_order_probe')
+    }
+    return true
+  } catch {
+    return false
+  }
+}
+
+const sameItems = (a: CreateOrderBody['items'], b: CreateOrderBody['items']) => JSON.stringify(a) === JSON.stringify(b)
+
 // Una petición a la vez por negocio (el intento guardado también es por negocio).
 const inflight = new Map<string, Promise<SubmitResult>>()
 
@@ -117,8 +132,12 @@ async function doSubmit(store: OrderStore, body: CreateOrderBody): Promise<Submi
   const { slug } = store
   const t = createOrderT(store.locale)
   const pending = pendingAttempt(slug)
+  // Con el almacenamiento bloqueado la sesión no se guardaría: se pediría un código tras otro sin poder pedir nunca.
+  if (!pending && !storageWorks()) return { kind: 'error', message: t('checkout.noStorage'), retryable: false }
   const session = loadSession(slug)
-  if (!session || !samePhone(session.phone, (pending?.body ?? body).customer.phone)) return { kind: 'needsOtp' }
+  const phone = (pending?.body ?? body).customer.phone
+  // El mismo texto que se verificó cuenta siempre (samePhone pide 10 dígitos y no reconoce números más cortos).
+  if (!session || (session.phone !== phone && !samePhone(session.phone, phone))) return { kind: 'needsOtp' }
   const attempt = pending ?? beginAttempt(slug, body)
   if (!attempt) return { kind: 'error', message: t('checkout.noStorage'), retryable: false }
 
@@ -129,6 +148,10 @@ async function doSubmit(store: OrderStore, body: CreateOrderBody): Promise<Submi
   } catch (e) {
     if (!(e instanceof ApiError) || !isDefinitive(e)) {
       // Desenlace desconocido: el intento queda tal cual.
+      // 401 CUSTOMER_INACTIVE: volver a verificar no sirve (el servidor contesta lo mismo). El intento NO se resuelve: queda
+      // hasta que se cierre la pestaña (sessionStorage); sólo una respuesta definitiva lo borra.
+      if (e instanceof ApiError && e.code === 'CUSTOMER_INACTIVE')
+        return { kind: 'error', message: t('checkout.inactive'), retryable: false }
       if (e instanceof ApiError && e.status === 401) {
         clearSession(slug)
         return { kind: 'needsOtp' }
@@ -170,12 +193,20 @@ export async function send(store: OrderStore, body: CreateOrderBody): Promise<Su
   c.busy.value = true
   c.feedback.value = null
   c.lastBody.value = body
-  const r = await submitOrder(store, body)
-  c.busy.value = false
-  c.pending.value = !!pendingAttempt(store.slug)
+  let r: SubmitResult
+  // Lo que de verdad se manda: el intento pendiente si existe (submitOrder hace lo mismo).
+  const sentItems = (pendingAttempt(store.slug)?.body ?? body)?.items
+  try {
+    r = await submitOrder(store, body)
+  } finally {
+    c.busy.value = false
+    c.pending.value = !!pendingAttempt(store.slug)
+  }
+  // ¿El carrito de la pantalla es el que se mandó? Con un intento viejo (p. ej. tras recargar) puede no serlo.
+  const isSentCart = () => sameItems(toQuoteItems(store.cart.value), sentItems)
   switch (r.kind) {
     case 'created':
-      store.cart.value = []
+      if (isSentCart()) store.cart.value = []
       store.quote.value = null
       c.draft.value = { ...c.draft.value, note: '' }
       store.trackingToken.value = r.order.trackingToken
@@ -185,7 +216,7 @@ export async function send(store: OrderStore, body: CreateOrderBody): Promise<Su
       store.go('otp')
       break
     case 'priceChanged':
-      store.quote.value = r.quote
+      store.quote.value = isSentCart() ? r.quote : null
       c.feedback.value = { kind: 'priceChanged', total: r.quote.total, body: r.body }
       break
     case 'cartInvalid':

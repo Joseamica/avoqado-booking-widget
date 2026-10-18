@@ -10,6 +10,7 @@ import { StoreStatusBanner } from './StoreStatusBanner'
 import { banner, btn, muted } from './ui'
 
 const MAX_QTY = 20
+const QUOTE_DEBOUNCE_MS = 300
 const issueStyle = { color: 'var(--avq-danger, #b91c1c)', fontSize: '13px', margin: '4px 0 0' }
 
 /** Carrito: la tienda pinta SUS renglones; el total (y lo que se manda) es el de la cotización del servidor. */
@@ -22,18 +23,23 @@ export function CartScreen() {
   const [error, setError] = useState<string | null>(null)
   const [attempt, setAttempt] = useState(0)
 
-  // Cada cambio del carrito vuelve a cotizar; una respuesta vieja no pisa a la nueva.
-  // ponytail: sin debounce; si los toques rápidos topan el límite de 60/min, agregar uno de ~300 ms.
+  // Cada cambio del carrito vuelve a cotizar, ~300 ms después del último toque (el límite de /quote es 60/min por IP, y con
+  // CGNAT muchos comparten IP); una respuesta vieja no pisa a la nueva.
   useEffect(() => {
     store.quote.value = null
     setError(null)
     if (cart.length === 0) return
     let live = true
-    fetchQuote(store.slug, toQuoteItems(cart)).then(
-      r => { if (live) store.quote.value = r },
-      e => { if (live) setError(errorText(t, e)) },
-    )
-    return () => { live = false }
+    const timer = setTimeout(() => {
+      fetchQuote(store.slug, toQuoteItems(cart)).then(
+        r => { if (live) store.quote.value = r },
+        e => { if (live) setError(errorText(t, e)) },
+      )
+    }, QUOTE_DEBOUNCE_MS)
+    return () => {
+      live = false
+      clearTimeout(timer)
+    }
   }, [cart, attempt])
 
   const open = store.info.value?.status === 'OPEN'
