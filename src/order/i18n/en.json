@@ -33,7 +33,8 @@
     "overnightRange": "{{open}}–{{close}} the next day",
     "manualPause": "We are not taking online orders today.",
     "tooBusy": "Lots of orders right now. Try again in a few minutes.",
-    "offline": "The restaurant is not connected. Try again in a few minutes."
+    "offline": "The restaurant is not connected. Try again in a few minutes.",
+    "reconnecting": "No connection; retrying…"
   },
   "menu": {
     "empty": "There are no online products yet.",

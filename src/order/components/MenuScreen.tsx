@@ -1,5 +1,5 @@
 import { h } from 'preact'
-import { useContext, useState } from 'preact/hooks'
+import { useContext, useEffect, useState } from 'preact/hooks'
 import { OrderStoreContext } from '../store'
 import { createOrderT } from '../i18n'
 import { formatMXN } from '../money'
@@ -20,14 +20,20 @@ export function MenuScreen() {
   const err = store.infoError.value
   const menu = store.menu.value
 
+  const pid = store.productId.value
+  const stale = !!pid && !!menu && !menu.categories.some(c => c.products.some(p => p.id === pid))
+  // La carta se recargó y el producto de la ficha ya no está: de vuelta a la carta.
+  useEffect(() => { if (stale) store.productId.value = null }, [stale])
+
   const retry = () => (
     <button type="button" style={btn()} onClick={() => void store.load()}>{t('common.retry')}</button>
   )
   const text = (s: string) => <p role="status" style={{ margin: '16px 0' }}>{s}</p>
 
   if (err?.status === 403 && err.code === 'PLAN_REQUIRED') return text(t('store.disabled'))
-  if (err?.status === 404) return text(t('store.notFound'))
-  if (err) return <div>{text(err.network ? t('common.offline') : err.message || t('store.loadFailed'))}{retry()}</div>
+  if (err?.status === 404 && err.code === 'VENUE_NOT_FOUND') return text(t('store.notFound'))
+  // Con la carta ya cargada, un refresco fallido no la reemplaza: sólo un aviso chico.
+  if (err && !menu) return <div>{text(err.network ? t('common.offline') : err.message || t('store.loadFailed'))}{retry()}</div>
   if (info?.status === 'DISABLED') return text(t('store.disabled'))
   if (!info || !menu) return null
 
@@ -41,6 +47,7 @@ export function MenuScreen() {
 
   return (
     <div>
+      {err && <p role="status" style={{ ...muted, margin: '0 0 8px' }}>{err.network ? t('store.reconnecting') : err.message || t('store.reconnecting')}</p>}
       <StoreStatusBanner />
       {menu.truncated && <p style={banner}>{t('menu.truncated')}</p>}
       {menu.categories.length === 0 ? text(t('menu.empty')) : product ? (

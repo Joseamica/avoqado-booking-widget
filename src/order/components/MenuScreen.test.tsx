@@ -95,6 +95,39 @@ describe('errores de carga', () => {
   })
 })
 
+describe('refresco fallido con la carta ya cargada', () => {
+  it('la carta sigue visible con un aviso chico; sin carta, la pantalla de error', () => {
+    const s = makeStore(infoOf({ status: 'CLOSED' }), menuOf(product()))
+    s.infoError.value = new ApiError('Sin conexión', 0, undefined, undefined, true)
+    show(s)
+    expect(screen.getByText('Flautas de pollo')).toBeTruthy()
+    expect(screen.getByText('Sin conexión; reintentando…')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Reintentar' })).toBeNull()
+    cleanup()
+    const t = makeStore(infoOf(), menuOf(product())); t.infoError.value = new ApiError('Servidor ocupado', 503)
+    show(t)
+    expect(screen.getByText('Servidor ocupado')).toBeTruthy()
+    expect(screen.getByText('Flautas de pollo')).toBeTruthy()
+  })
+  it('un 404 que no es VENUE_NOT_FOUND cae en el genérico con Reintentar', () => {
+    const s = makeStore(null, null); s.infoError.value = new ApiError('', 404, 'OTRA')
+    show(s)
+    expect(screen.queryByText('No encontramos este restaurante.')).toBeNull()
+    expect(screen.getByText('No pudimos cargar la tienda.')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Reintentar' })).toBeTruthy()
+  })
+  it('si el producto de la ficha ya no está en la carta recargada, se cierra', async () => {
+    const s = makeStore(infoOf(), menuOf(product()))
+    s.productId.value = 'p1'
+    show(s)
+    expect(screen.getByRole('dialog')).toBeTruthy()
+    await act(async () => { s.menu.value = menuOf(product({ id: 'p2', name: 'Agua' })) })
+    expect(s.productId.value).toBeNull()
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(screen.getByText('Agua')).toBeTruthy()
+  })
+})
+
 describe('carta', () => {
   it('sin categorías y truncada', () => {
     const empty = makeStore(infoOf(), { generatedAt: '', truncated: false, categories: [] })
