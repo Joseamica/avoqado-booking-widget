@@ -14,7 +14,7 @@ vi.mock('./api', async () => {
 })
 import '../widget'
 import * as booking from '../state/booking'
-import { createOrder, getInfo, getMenu, getTracking } from './api'
+import { ApiError, createOrder, getInfo, getMenu, getTracking } from './api'
 import { buildOrderBody, send } from './checkout'
 import { saveSession } from './session'
 import type { OrderStore } from './store'
@@ -93,6 +93,20 @@ describe('<avoqado-order>', () => {
     expect(getMenu).not.toHaveBeenCalled()
     expect(getTracking).toHaveBeenCalledWith('a', 'T'.repeat(32))
     expect(text(el)).toContain('Folio 42')
+  })
+
+  it('tracking: pide /info UNA vez (la marca), sin /menu ni sondeo; y si /info falla el seguimiento se pinta', async () => {
+    vi.useFakeTimers()
+    vi.mocked(getInfo).mockResolvedValue(infoOf({ status: 'CLOSED', brand: { logo: null, logoFull: null, primaryColor: '#112233', secondaryColor: null } }))
+    const el = await mount({ venue: 'a', tracking: 'T'.repeat(32) })
+    await act(async () => { await vi.advanceTimersByTimeAsync(61_000) })
+    expect(getInfo).toHaveBeenCalledTimes(1)
+    expect(getMenu).not.toHaveBeenCalled()
+    expect(text(el)).toContain('Folio 42')
+    await act(async () => { el.remove() })
+    vi.mocked(getInfo).mockRejectedValue(new ApiError('x', 403))
+    const el2 = await mount({ venue: 'b', tracking: 'T'.repeat(32) })
+    expect(text(el2)).toContain('Folio 42')
   })
 
   it('crear un pedido emite avoqado:pedido-creado UNA vez (también con doble toque), desde el elemento', async () => {

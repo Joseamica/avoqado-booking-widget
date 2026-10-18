@@ -17,7 +17,7 @@ import { banner, btn } from './ui'
 export function OrderApp({ accentColor }: { accentColor?: string }) {
   const store = useContext(OrderStoreContext)!
   const t = createOrderT(store.locale)
-  useEffect(() => { if (!store.menu.value && !store.trackingToken.value) void store.load() }, [store])
+  useEffect(() => { if (!store.menu.value) void store.load() }, [store])
   // ¿Queda un pedido en curso de este comensal? Aquí y no en la carta: con el plan vencido, la tienda apagada o `/info`
   // caído también tiene que poder volver a su pedido. Final o 404 ⇒ se olvida (y el 404 se avisa).
   const [active, setActive] = useState<string | null>(null)
