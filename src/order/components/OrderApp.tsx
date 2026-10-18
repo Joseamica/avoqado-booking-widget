@@ -3,6 +3,10 @@ import { useContext, useEffect } from 'preact/hooks'
 import { OrderStoreContext } from '../store'
 import { createOrderT } from '../i18n'
 import { MenuScreen } from './MenuScreen'
+import { CartScreen } from './CartScreen'
+import { DetailsScreen } from './DetailsScreen'
+import { OtpScreen } from './OtpScreen'
+import { CheckoutStatus } from './CheckoutStatus'
 import { banner, btn } from './ui'
 
 /** Raíz de la tienda. La marca sale de `/info` (no de reservas); `accentColor` es el respaldo del atributo `accent-color`. */
@@ -12,6 +16,7 @@ export function OrderApp({ accentColor }: { accentColor?: string }) {
   useEffect(() => { if (!store.menu.value && !store.trackingToken.value) void store.load() }, [store])
   const accent = store.info.value?.brand.primaryColor || accentColor
   const notice = store.notice.value
+  const screen = store.screen.value
   return (
     <div style={accent ? { ['--avq-accent' as any]: accent } : undefined}>
       {notice && (
@@ -20,8 +25,12 @@ export function OrderApp({ accentColor }: { accentColor?: string }) {
           <button type="button" style={btn()} onClick={() => { store.notice.value = null }}>{t('common.close')}</button>
         </div>
       )}
-      {/* Carrito, datos, verificación y seguimiento llegan en las tareas 9 y 10. */}
-      {(store.screen.value === 'menu' || store.screen.value === 'product') && <MenuScreen />}
+      {/* Datos y código pintan el estado del envío junto a su botón; las demás, arriba. El seguimiento llega en la tarea 10. */}
+      {(screen === 'menu' || screen === 'product' || screen === 'cart') && <CheckoutStatus />}
+      {(screen === 'menu' || screen === 'product') && <MenuScreen />}
+      {screen === 'cart' && <CartScreen />}
+      {screen === 'details' && <DetailsScreen />}
+      {screen === 'otp' && <OtpScreen />}
     </div>
   )
 }

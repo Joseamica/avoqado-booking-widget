@@ -54,5 +54,56 @@
     "maxQty": "Maximum 20 per product",
     "maxLines": "Your order reached the maximum of 50 different products",
     "maxOptions": "Maximum 30 options per dish"
+  },
+  "cart": {
+    "title": "Your order",
+    "empty": "Your order is empty.",
+    "keepOrdering": "Keep ordering",
+    "remove": "Remove",
+    "total": "Total (VAT included)",
+    "quoting": "Calculating the total…",
+    "payAtPickup": "You pay when you pick up at the restaurant.",
+    "note": "Order note",
+    "continue": "Continue"
+  },
+  "details": {
+    "title": "Your details",
+    "name": "Name",
+    "phone": "Phone (WhatsApp)",
+    "phonePlaceholder": "10 digits",
+    "countrySearch": "Search country",
+    "countryNoResults": "No results",
+    "email": "Email (optional)",
+    "privacy": "{{venue}} will use your name and phone to prepare your order, verify your number over WhatsApp, keep you posted and contact you about this order. Avoqado processes this data on behalf of the restaurant.",
+    "theRestaurant": "The restaurant",
+    "privacyLink": "Privacy notice",
+    "accept": "I accept the privacy notice",
+    "cancelPolicy": "You can cancel while the restaurant has not accepted your order; after that, call the restaurant.",
+    "updates": "We will keep you posted on your order page (and by email if you gave one).",
+    "needName": "Enter your name (2 to 80 characters).",
+    "needPhone": "Enter a valid phone number.",
+    "needEmail": "Check your email.",
+    "needAccept": "Accept the privacy notice to continue.",
+    "confirm": "Place order",
+    "sending": "Sending…",
+    "back": "Back to your order"
+  },
+  "otp": {
+    "title": "Verify your number",
+    "sent": "We sent a code over WhatsApp to {{phone}}.",
+    "resend": "Resend code",
+    "resendIn": "Resend code in {{s}} s",
+    "change": "Change number",
+    "verifying": "Verifying…"
+  },
+  "checkout": {
+    "pending": "Your previous order was not confirmed because of the connection. Retry to find out if it went through.",
+    "priceChanged": "The price changed: the new total is {{total}}. Do you confirm?",
+    "confirmNewTotal": "Confirm",
+    "tooManyPending": "You already have 3 orders waiting for a reply at this restaurant.",
+    "rateLimited": "Too many attempts. Wait a minute.",
+    "noStorage": "Your browser does not let this page save data. Open it in another browser or outside private mode to order.",
+    "serverError": "Something went wrong on our side. Try again.",
+    "failed": "We could not send your order. Try again."
   }
 }

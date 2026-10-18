@@ -54,5 +54,56 @@
     "maxQty": "Máximo 20 por producto",
     "maxLines": "Tu pedido llegó al máximo de 50 productos distintos",
     "maxOptions": "Máximo 30 opciones por platillo"
+  },
+  "cart": {
+    "title": "Tu pedido",
+    "empty": "Tu pedido está vacío.",
+    "keepOrdering": "Seguir pidiendo",
+    "remove": "Quitar",
+    "total": "Total (IVA incluido)",
+    "quoting": "Calculando el total…",
+    "payAtPickup": "Pagas al recoger en el restaurante.",
+    "note": "Nota del pedido",
+    "continue": "Continuar"
+  },
+  "details": {
+    "title": "Tus datos",
+    "name": "Nombre",
+    "phone": "Teléfono (WhatsApp)",
+    "phonePlaceholder": "10 dígitos",
+    "countrySearch": "Buscar país",
+    "countryNoResults": "Sin resultados",
+    "email": "Correo (opcional)",
+    "privacy": "{{venue}} usará tu nombre y teléfono para preparar tu pedido, verificar tu número por WhatsApp, avisarte cómo va y contactarte sobre este pedido. Avoqado procesa estos datos por cuenta del restaurante.",
+    "theRestaurant": "El restaurante",
+    "privacyLink": "Aviso de privacidad",
+    "accept": "Acepto el aviso de privacidad",
+    "cancelPolicy": "Puedes cancelar mientras el restaurante no acepte tu pedido; después, llama al restaurante.",
+    "updates": "Te avisaremos en la página de tu pedido (y por correo si lo diste).",
+    "needName": "Escribe tu nombre (de 2 a 80 caracteres).",
+    "needPhone": "Escribe un teléfono válido.",
+    "needEmail": "Revisa tu correo.",
+    "needAccept": "Acepta el aviso de privacidad para continuar.",
+    "confirm": "Confirmar pedido",
+    "sending": "Enviando…",
+    "back": "Volver al pedido"
+  },
+  "otp": {
+    "title": "Verifica tu número",
+    "sent": "Te mandamos un código por WhatsApp al {{phone}}.",
+    "resend": "Reenviar código",
+    "resendIn": "Reenviar código en {{s}} s",
+    "change": "Cambiar número",
+    "verifying": "Verificando…"
+  },
+  "checkout": {
+    "pending": "Tu pedido anterior no se confirmó por la conexión. Reintenta para saber si llegó.",
+    "priceChanged": "El precio cambió: el nuevo total es {{total}}. ¿Confirmas?",
+    "confirmNewTotal": "Confirmar",
+    "tooManyPending": "Ya tienes 3 pedidos esperando respuesta en este restaurante.",
+    "rateLimited": "Demasiados intentos. Espera un minuto.",
+    "noStorage": "Tu navegador no deja guardar datos de esta página. Ábrela en otro navegador o fuera del modo privado para pedir.",
+    "serverError": "Algo falló de nuestro lado. Intenta de nuevo.",
+    "failed": "No pudimos enviar tu pedido. Intenta de nuevo."
   }
 }
