@@ -391,16 +391,40 @@ describe('ronda 1 de arreglos', () => {
     expect(store.cart.value).toEqual(edited)
   })
 
-  it('PRICE_CHANGED de un intento viejo con el carrito ya editado ⇒ store.quote queda en null (no es la de este carrito)', async () => {
+  it('W8: PRICE_CHANGED de un intento viejo con el carrito ya editado ⇒ no ofrece «Confirmar» lo viejo: «revisa tu pedido» y al carrito', async () => {
     const { store, body } = setup()
     api.createOrder.mockRejectedValueOnce(offline())
     await send(store, body)
-    store.cart.value = [line({ productId: 'p-taco', quantity: 4 })]
+    const edited = [line({ productId: 'p-taco', quantity: 4 })]
+    store.cart.value = edited
     store.quote.value = quoteOf(400)
+    store.go('details')
     api.createOrder.mockRejectedValueOnce(new ApiError('x', 409, 'PRICE_CHANGED', { quote: quoteOf(190) }))
     await retry(store)
-    expect(checkoutOf(store).feedback.value).toMatchObject({ kind: 'priceChanged', total: 190 })
+    expect(checkoutOf(store).feedback.value).toEqual({ kind: 'error', message: 'El precio cambió; revisa tu pedido.', retryable: false })
+    expect(store.screen.value).toBe('cart')
     expect(store.quote.value).toBeNull()
+    expect(store.cart.value).toEqual(edited)
+    // El intento viejo quedó resuelto (el servidor no creó nada) y nadie lo vuelve a mandar.
+    expect(pendingAttempt(store.slug)).toBeNull()
+    await flush()
+    expect(api.createOrder).toHaveBeenCalledTimes(2)
+  })
+
+  it('W3: 409 ORDERING_PAUSED después de verificar el código ⇒ vuelve al carrito, intacto, con el estado nuevo de la tienda', async () => {
+    const { store, body } = setup({ sessionPhone: null })
+    await send(store, body)
+    expect(store.screen.value).toBe('otp')
+    api.verifyOrderingOtp.mockResolvedValueOnce({ token: 'tok-otp', customer: { id: 'c1' } })
+    await verifyPhone(store, phoneToVerify(store)!, '123456')
+    api.getInfo.mockResolvedValueOnce({ ...info, status: 'PAUSED', reason: 'MANUAL_PAUSE' })
+    api.createOrder.mockRejectedValueOnce(new ApiError('Pausado', 409, 'ORDERING_PAUSED', { status: 'PAUSED', reason: 'MANUAL_PAUSE' }))
+    await send(store, body)
+    expect(store.screen.value).toBe('cart')
+    expect(store.cart.value).toEqual([line()])
+    expect(store.info.value).toMatchObject({ status: 'PAUSED', reason: 'MANUAL_PAUSE' })
+    expect(pendingAttempt(store.slug)).toBeNull()
+    store.dispose()
   })
 
   it('send deja busy en false aunque algo lance', async () => {

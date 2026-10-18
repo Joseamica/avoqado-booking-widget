@@ -86,6 +86,12 @@ describe('carrito cotizado por el servidor', () => {
     expect(continueBtn().disabled).toBe(true)
   })
 
+  it('W3: con la tienda DISABLED (p. ej. tras un 409 ORDERING_DISABLED) el carrito dice por qué y no deja continuar', async () => {
+    await show([flautas], quoteOf(170), infoOf({ status: 'DISABLED', reason: 'NOT_ENABLED' }))
+    expect(screen.getByText('Este restaurante no recibe pedidos en línea por el momento.')).toBeTruthy()
+    expect(continueBtn().disabled).toBe(true)
+  })
+
   it('sin red al cotizar ⇒ «Sin conexión…», nada de total, «Continuar» deshabilitado y el carrito intacto; «Reintentar» cotiza otra vez', async () => {
     const s = await show([flautas], new ApiError('Sin conexión', 0, undefined, undefined, true))
     expect(screen.getByText('Sin conexión. Revisa tu internet y vuelve a intentar.')).toBeTruthy()

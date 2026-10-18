@@ -115,6 +115,7 @@
     "pending": "Tu pedido anterior no se confirmó por la conexión. Reintenta para saber si llegó.",
     "priceChanged": "El precio cambió: el nuevo total es {{total}}. ¿Confirmas?",
     "confirmNewTotal": "Confirmar",
+    "priceChangedReview": "El precio cambió; revisa tu pedido.",
     "tooManyPending": "Ya tienes 3 pedidos esperando respuesta en este restaurante.",
     "rateLimited": "Demasiados intentos. Espera un minuto.",
     "noStorage": "Tu navegador no deja guardar datos de esta página. Ábrela en otro navegador o fuera del modo privado para pedir.",

@@ -66,6 +66,8 @@ export interface Checkout {
   /** El último cuerpo que se pidió mandar: el que se manda tras verificar el código. */
   lastBody: Signal<CreateOrderBody | null>
   draft: Signal<CheckoutDraft>
+  /** Hora (ms) del último código de WhatsApp pedido por teléfono: volver a la pantalla del código no manda otro antes de 30 s. */
+  otpSentAt: Map<string, number>
 }
 const checkouts = new WeakMap<OrderStore, Checkout>()
 export function checkoutOf(store: OrderStore): Checkout {
@@ -78,6 +80,7 @@ export function checkoutOf(store: OrderStore): Checkout {
       pending: signal(!!pendingAttempt(store.slug)),
       lastBody: signal(null),
       draft: signal({ note: '', name: '', dial: '52', national: '', email: '', accepted: false }),
+      otpSentAt: new Map(),
     }
     // La cotización y la pregunta de «el precio cambió» valen sólo para el carrito que se cotizó: si cambia (también desde
     // la carta), ya no valen y «Continuar» espera la cotización nueva. OrderApp crea esto en su primer pintado.
@@ -219,8 +222,16 @@ export async function send(store: OrderStore, body: CreateOrderBody): Promise<Su
       store.go('otp')
       break
     case 'priceChanged':
-      store.quote.value = isSentCart() ? r.quote : null
-      c.feedback.value = { kind: 'priceChanged', total: r.quote.total, body: r.body }
+      if (isSentCart()) {
+        store.quote.value = r.quote
+        c.feedback.value = { kind: 'priceChanged', total: r.quote.total, body: r.body }
+      } else {
+        // Se reintentó un intento viejo (otro carrito): «Confirmar» mandaría lo que ya no está en pantalla. Al carrito, que
+        // se cotiza solo; el intento viejo ya se resolvió (el servidor no creó nada).
+        store.quote.value = null
+        c.feedback.value = { kind: 'error', message: createOrderT(store.locale)('checkout.priceChangedReview'), retryable: false }
+        store.go('cart')
+      }
       break
     case 'cartInvalid':
       // El carrito vuelve a cotizar al entrar y cuelga los issues de cada renglón.
@@ -229,6 +240,8 @@ export async function send(store: OrderStore, body: CreateOrderBody): Promise<Su
     case 'storeUnavailable':
       if (store.info.value) store.info.value = { ...store.info.value, status: r.status, reason: r.reason }
       void store.refreshInfo()
+      // Al carrito, que conserva lo pedido y dice el motivo (la pantalla del código no tiene ese aviso).
+      store.go('cart')
       break
     case 'error':
       c.feedback.value = { kind: 'error', message: r.message, retryable: r.retryable }

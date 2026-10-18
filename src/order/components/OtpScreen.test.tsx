@@ -53,6 +53,31 @@ describe('código de WhatsApp', () => {
     expect(resend().disabled).toBe(true)
   })
 
+  it('W9: salir («Cambiar número») y volver antes de 30 s no manda otro código; la cuenta sigue con lo que falta', async () => {
+    const s = show()
+    await flush()
+    expect(requestOrderingOtp).toHaveBeenCalledTimes(1)
+    await act(async () => { await vi.advanceTimersByTimeAsync(10_000) })
+    fireEvent.click(screen.getByRole('button', { name: 'Cambiar número' }))
+    expect(s.screen.value).toBe('details')
+    cleanup()
+    render(withStore(s, <OtpScreen />))
+    await flush()
+    expect(requestOrderingOtp).toHaveBeenCalledTimes(1)
+    expect(resend().textContent).toBe('Reenviar código en 20 s')
+    expect(resend().disabled).toBe(true)
+    // Pasados los 30 s, volver a entrar sí lo pide (y otra tienda lleva su propia cuenta).
+    cleanup()
+    await act(async () => { await vi.advanceTimersByTimeAsync(20_000) })
+    render(withStore(s, <OtpScreen />))
+    await flush()
+    expect(requestOrderingOtp).toHaveBeenCalledTimes(2)
+    cleanup()
+    show()
+    await flush()
+    expect(requestOrderingOtp).toHaveBeenCalledTimes(3)
+  })
+
   it('al completar el código verifica, guarda la sesión con ESE teléfono y manda el pedido', async () => {
     const s = show()
     vi.mocked(verifyOrderingOtp).mockResolvedValue({ token: 'tok-otp', customer: { id: 'c1' } } as any)

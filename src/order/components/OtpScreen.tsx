@@ -20,8 +20,11 @@ export function OtpScreen() {
   const [code, setCode] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [verifying, setVerifying] = useState(false)
+  // La hora del último envío vive en el Checkout de la tienda: salir y volver a esta pantalla no manda otro WhatsApp.
+  const lastSent = () => (phone ? c.otpSentAt.get(phone) : undefined)
+  const recent = () => { const at = lastSent(); return at !== undefined && Date.now() - at < RESEND_S * 1000 }
   // Hora límite (no un contador que se encadena): no se atrasa aunque el navegador demore los re-pintados.
-  const [until, setUntil] = useState(() => Date.now() + RESEND_S * 1000)
+  const [until, setUntil] = useState(() => (recent() ? lastSent()! : Date.now()) + RESEND_S * 1000)
   const [, tick] = useState(0)
   useEffect(() => {
     const id = setInterval(() => tick(n => n + 1), 1000)
@@ -32,14 +35,19 @@ export function OtpScreen() {
   const request = async () => {
     if (!phone) return
     setError(null)
-    setUntil(Date.now() + RESEND_S * 1000)
+    const now = Date.now()
+    c.otpSentAt.set(phone, now)
+    setUntil(now + RESEND_S * 1000)
     try {
       await requestOrderingOtp(store.slug, phone)
     } catch (e) {
       setError(errorText(t, e))
     }
   }
-  useEffect(() => { void request() }, [phone])
+  useEffect(() => {
+    if (recent()) setUntil(lastSent()! + RESEND_S * 1000)
+    else void request()
+  }, [phone])
 
   const verify = async (value: string) => {
     const body = pendingAttempt(store.slug)?.body ?? c.lastBody.value

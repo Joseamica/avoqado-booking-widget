@@ -9,7 +9,7 @@ import { banner } from './ui'
 export function StoreStatusBanner() {
   const store = useContext(OrderStoreContext)!
   const info = store.info.value
-  if (!info || info.status === 'OPEN' || info.status === 'DISABLED') return null
+  if (!info || info.status === 'OPEN') return null
   const t = createOrderT(store.locale)
   const tz = info.venue.timezone ?? 'America/Mexico_City'
   let text: string
@@ -27,6 +27,9 @@ export function StoreStatusBanner() {
       info.reason === 'TOO_BUSY' ? t('store.tooBusy')
       : info.reason === 'MANUAL_PAUSE' && info.pausedUntil ? t('store.pausedUntil', { time: formatTime(info.pausedUntil, tz, store.locale) })
       : t('store.manualPause')
+  } else if (info.status === 'DISABLED') {
+    // La carta ya lo dice en lugar de los platillos; aquí sirve en el carrito y en tus datos (p. ej. tras un 409).
+    text = t('store.disabled')
   } else text = t('store.offline')
   return <div role="status" style={banner}>{text}</div>
 }

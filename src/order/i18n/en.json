@@ -115,6 +115,7 @@
     "pending": "Your previous order was not confirmed because of the connection. Retry to find out if it went through.",
     "priceChanged": "The price changed: the new total is {{total}}. Do you confirm?",
     "confirmNewTotal": "Confirm",
+    "priceChangedReview": "The price changed; review your order.",
     "tooManyPending": "You already have 3 orders waiting for a reply at this restaurant.",
     "rateLimited": "Too many attempts. Wait a minute.",
     "noStorage": "Your browser does not let this page save data. Open it in another browser or outside private mode to order.",
