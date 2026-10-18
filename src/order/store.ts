@@ -25,11 +25,14 @@ export interface OrderStore {
   load(): Promise<void>
   refreshInfo(): Promise<void>
   go(screen: Screen): void
-  /** Detiene el sondeo de `/info` (al quitar el elemento de la página). */
+  /** Detiene el sondeo de `/info` y de la carta (al quitar el elemento de la página). */
   dispose(): void
 }
 
 const POLL_MS = 60_000
+// Una carta cargada pero sin un solo producto (la copia de caché de antes de abrir, o una categoría que abre más tarde).
+// `null` (no cargó) no cuenta: eso lo resuelve «Reintentar».
+const noProducts = (m: Menu | null) => !!m && !m.categories.some(c => c.products.length > 0)
 const asApiError = (e: unknown) => (e instanceof ApiError ? e : new ApiError(String((e as Error)?.message ?? e), 0, undefined, undefined, true))
 
 export function createOrderStore(slug: string, opts: { locale: 'es' | 'en'; trackingToken?: string | null; host?: EventTarget }): OrderStore {
@@ -43,13 +46,14 @@ export function createOrderStore(slug: string, opts: { locale: 'es' | 'en'; trac
   let disposed = false
 
   const unsubscribeCart = cart.subscribe(c => saveCart(slug, c))
-  // ¿Hay que preguntar otra vez por la tienda? Con el seguimiento no (sondea lo suyo); abierta, tampoco.
-  const waiting = () => !disposed && !trackingToken.value && !!info.value && info.value.status !== 'OPEN'
-  // Volver a la pestaña con la tienda no abierta pregunta en el acto: el comensal no espera hasta un minuto más a que abra.
+  // ¿Hay que preguntar otra vez? Con el seguimiento no (sondea lo suyo). Abierta tampoco, salvo con la carta sin productos.
+  // ponytail: una tienda abierta de verdad sin productos sondea /info + /menu cada 60 s mientras se vea la pestaña (la caché del servidor es de 60 s).
+  const waiting = () => !disposed && !trackingToken.value && !!info.value && (info.value.status !== 'OPEN' || noProducts(menu.value))
+  // Volver a la pestaña con la tienda no abierta (o sin carta) pregunta en el acto: el comensal no espera hasta un minuto más.
   const onVisible = () => { if (document.visibilityState === 'visible' && waiting()) void store.refreshInfo() }
   document.addEventListener('visibilitychange', onVisible)
 
-  // Con la tienda no abierta se vuelve a preguntar cada 60 s, pero sólo si la pestaña se ve (una oculta no gasta red).
+  // UN solo temporizador (el de /info también pide la carta cuando le toca): cada 60 s, pero sólo si la pestaña se ve (una oculta no gasta red).
   function schedule() {
     if (timer) clearTimeout(timer)
     timer = null
@@ -85,11 +89,13 @@ export function createOrderStore(slug: string, opts: { locale: 'es' | 'en'; trac
         infoError.value = null
         // Acaba de abrir: la carta que se cargó cerrada pudo venir vacía (categorías con horario que aún no empezaba).
         // Si no se puede recargar, sin carta y con el error: la pantalla ofrece «Reintentar» (nunca una carta vacía muda).
-        if (!wasOpen && info.value.status === 'OPEN' && !trackingToken.value) {
+        // Abierta y con la carta aún sin productos (la copia de caché de antes de abrir) se vuelve a pedir en cada vuelta;
+        // si ese sondeo falla se conserva la carta vacía con el aviso, para que el siguiente intento ocurra.
+        if (info.value.status === 'OPEN' && !trackingToken.value && (!wasOpen || noProducts(menu.value))) {
           try {
             menu.value = await getMenu(slug)
           } catch (e) {
-            menu.value = null
+            if (!wasOpen) menu.value = null
             infoError.value = asApiError(e)
           }
         }

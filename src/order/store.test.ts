@@ -10,13 +10,17 @@ import type { StoreInfo } from './types'
 
 const info = (status: StoreInfo['status']) => ({ status, reason: null, venue: { slug: 'a' } }) as unknown as StoreInfo
 const setVisibility = (v: 'visible' | 'hidden') => Object.defineProperty(document, 'visibilityState', { value: v, configurable: true })
+const product = { id: 'p1', name: 'Flauta', description: null, price: 10, imageUrl: null, soldOut: false, modifierGroups: [] }
+// Una carta con un producto («trae productos») y una vacía (la copia de caché de antes de abrir).
+const fullMenu = { generatedAt: 'x', truncated: false, categories: [{ id: 'c', name: 'Antojitos', productCount: 1, products: [product] }] }
+const emptyMenu = { generatedAt: '', truncated: false, categories: [] }
 
 beforeEach(() => {
   sessionStorage.clear()
   vi.useFakeTimers()
   setVisibility('visible')
   vi.mocked(getInfo).mockResolvedValue(info('OPEN'))
-  vi.mocked(getMenu).mockResolvedValue({ generatedAt: '', truncated: false, categories: [] })
+  vi.mocked(getMenu).mockResolvedValue(fullMenu)
 })
 afterEach(() => vi.useRealTimers())
 
@@ -131,9 +135,9 @@ describe('createOrderStore', () => {
     expect(getInfo).toHaveBeenCalledTimes(1)
   })
   it('W2: al pasar a OPEN vuelve a pedir la carta (la que cargó cerrada pudo venir vacía)', async () => {
-    const full = { generatedAt: 'x', truncated: false, categories: [{ id: 'c', name: 'Antojitos', productCount: 1, products: [] }] }
+    const full = fullMenu
     vi.mocked(getInfo).mockResolvedValueOnce(info('CLOSED')).mockResolvedValue(info('OPEN'))
-    vi.mocked(getMenu).mockResolvedValueOnce({ generatedAt: '', truncated: false, categories: [] }).mockResolvedValue(full as any)
+    vi.mocked(getMenu).mockResolvedValueOnce(emptyMenu).mockResolvedValue(full)
     const s = createOrderStore('a', { locale: 'es' })
     await s.load()
     expect(getMenu).toHaveBeenCalledTimes(1)
@@ -147,7 +151,7 @@ describe('createOrderStore', () => {
   })
   it('W2: si esa carga falla, la tienda queda sin carta y con el error (la pantalla ofrece «Reintentar»), nunca vacía y muda', async () => {
     vi.mocked(getInfo).mockResolvedValueOnce(info('PAUSED')).mockResolvedValue(info('OPEN'))
-    vi.mocked(getMenu).mockResolvedValueOnce({ generatedAt: '', truncated: false, categories: [] }).mockRejectedValue(new ApiError('boom', 500))
+    vi.mocked(getMenu).mockResolvedValueOnce(emptyMenu).mockRejectedValue(new ApiError('boom', 500))
     const s = createOrderStore('a', { locale: 'es' })
     await s.load()
     await vi.advanceTimersByTimeAsync(60_000)
@@ -192,6 +196,123 @@ describe('createOrderStore', () => {
     await vi.advanceTimersByTimeAsync(0)
     expect(vi.mocked(getInfo).mock.calls.map(c => c[0])).toEqual(['c'])
     for (const x of [open, tracking, hidden]) x.dispose()
+  })
+  // Codex r3 #2: el servidor guarda la carta 60 s. Si el comensal entró poco antes de abrir, al pasar a OPEN la tienda puede
+  // recibir la copia de antes (vacía); abierta ya no sondeaba y la carta se quedaba vacía hasta recargar.
+  it('r3: abre y la carta llega vacía (copia vieja de la caché): sigue pidiéndola cada 60 s y aparece sin recargar', async () => {
+    vi.mocked(getInfo).mockResolvedValueOnce(info('CLOSED')).mockResolvedValue(info('OPEN'))
+    vi.mocked(getMenu).mockResolvedValueOnce(emptyMenu).mockResolvedValueOnce(emptyMenu).mockResolvedValue(fullMenu)
+    const s = createOrderStore('a', { locale: 'es' })
+    await s.load()
+    await vi.advanceTimersByTimeAsync(60_000) // pasa a OPEN y pide la carta: todavía la copia vieja
+    expect(s.info.value?.status).toBe('OPEN')
+    expect(getMenu).toHaveBeenCalledTimes(2)
+    expect(s.menu.value).toEqual(emptyMenu)
+    await vi.advanceTimersByTimeAsync(60_000) // el mismo temporizador: /info y /menu una vez, no dos sondeos
+    expect(getMenu).toHaveBeenCalledTimes(3)
+    expect(getInfo).toHaveBeenCalledTimes(3)
+    expect(s.menu.value).toEqual(fullMenu)
+    await vi.advanceTimersByTimeAsync(300_000) // ya trae productos: se para
+    expect(getMenu).toHaveBeenCalledTimes(3)
+    expect(getInfo).toHaveBeenCalledTimes(3)
+    s.dispose()
+  })
+  it('r3: ya abierta desde el inicio y con la carta vacía (una categoría que abre más tarde que la tienda): también sigue pidiéndola', async () => {
+    vi.mocked(getMenu).mockResolvedValueOnce(emptyMenu).mockResolvedValue(fullMenu)
+    const s = createOrderStore('a', { locale: 'es' })
+    await s.load()
+    expect(getMenu).toHaveBeenCalledTimes(1)
+    await vi.advanceTimersByTimeAsync(59_000)
+    expect(getMenu).toHaveBeenCalledTimes(1)
+    await vi.advanceTimersByTimeAsync(1_000)
+    expect(getMenu).toHaveBeenCalledTimes(2)
+    expect(s.menu.value).toEqual(fullMenu)
+    s.dispose()
+  })
+  it('r3: una carta con categorías pero sin un solo producto cuenta como vacía', async () => {
+    const hollow = { generatedAt: '', truncated: false, categories: [{ id: 'c', name: 'Antojitos', productCount: 0, products: [] }] }
+    vi.mocked(getMenu).mockResolvedValueOnce(hollow).mockResolvedValue(fullMenu)
+    const s = createOrderStore('a', { locale: 'es' })
+    await s.load()
+    await vi.advanceTimersByTimeAsync(60_000)
+    expect(s.menu.value).toEqual(fullMenu)
+    s.dispose()
+  })
+  it('r3: con productos desde el inicio no hay sondeo extra (ni de /info ni de /menu)', async () => {
+    const s = createOrderStore('a', { locale: 'es' })
+    await s.load()
+    await vi.advanceTimersByTimeAsync(300_000)
+    expect(getInfo).toHaveBeenCalledTimes(1)
+    expect(getMenu).toHaveBeenCalledTimes(1)
+    s.dispose()
+  })
+  it('r3: dispose con la carta vacía y la tienda abierta: ninguna llamada más', async () => {
+    vi.mocked(getMenu).mockResolvedValue(emptyMenu)
+    const s = createOrderStore('a', { locale: 'es' })
+    await s.load()
+    s.dispose()
+    await vi.advanceTimersByTimeAsync(300_000)
+    expect(getInfo).toHaveBeenCalledTimes(1)
+    expect(getMenu).toHaveBeenCalledTimes(1)
+  })
+  it('r3: dispose mientras esperaba la carta de un sondeo: no vuelve a programar nada', async () => {
+    vi.mocked(getMenu).mockResolvedValue(emptyMenu)
+    const s = createOrderStore('a', { locale: 'es' })
+    await s.load()
+    await vi.advanceTimersByTimeAsync(60_000)
+    expect(getMenu).toHaveBeenCalledTimes(2)
+    s.dispose()
+    await vi.advanceTimersByTimeAsync(300_000)
+    expect(getMenu).toHaveBeenCalledTimes(2)
+  })
+  it('r3: si la tienda deja de estar abierta, no se pide la carta (sólo /info, como siempre)', async () => {
+    vi.mocked(getInfo).mockResolvedValueOnce(info('OPEN')).mockResolvedValue(info('PAUSED'))
+    vi.mocked(getMenu).mockResolvedValue(emptyMenu)
+    const s = createOrderStore('a', { locale: 'es' })
+    await s.load()
+    await vi.advanceTimersByTimeAsync(60_000)
+    expect(getInfo).toHaveBeenCalledTimes(2)
+    expect(getMenu).toHaveBeenCalledTimes(1)
+    s.dispose()
+  })
+  it('r3: un sondeo de la carta que falla no borra la carta vacía ni detiene la recuperación', async () => {
+    vi.mocked(getMenu).mockResolvedValueOnce(emptyMenu).mockRejectedValueOnce(new ApiError('boom', 500)).mockResolvedValue(fullMenu)
+    const s = createOrderStore('a', { locale: 'es' })
+    await s.load()
+    await vi.advanceTimersByTimeAsync(60_000)
+    expect(s.menu.value).toEqual(emptyMenu)
+    expect(s.infoError.value?.status).toBe(500)
+    await vi.advanceTimersByTimeAsync(60_000)
+    expect(s.menu.value).toEqual(fullMenu)
+    expect(s.infoError.value).toBeNull()
+    s.dispose()
+  })
+  it('r3: volver a la pestaña con la tienda abierta y la carta vacía la pide en el acto', async () => {
+    vi.mocked(getMenu).mockResolvedValueOnce(emptyMenu).mockResolvedValue(fullMenu)
+    const s = createOrderStore('a', { locale: 'es' })
+    await s.load()
+    setVisibility('hidden')
+    await vi.advanceTimersByTimeAsync(60_000)
+    expect(getMenu).toHaveBeenCalledTimes(1)
+    setVisibility('visible')
+    document.dispatchEvent(new Event('visibilitychange'))
+    await vi.advanceTimersByTimeAsync(0)
+    expect(getMenu).toHaveBeenCalledTimes(2)
+    expect(s.menu.value).toEqual(fullMenu)
+    s.dispose()
+  })
+  it('r3: dos tiendas en la página no se cruzan: sólo la de la carta vacía sondea, y quitar una no para a la otra', async () => {
+    vi.mocked(getMenu).mockImplementation(async (slug: string) => (slug === 'vacia' ? emptyMenu : fullMenu))
+    const a = createOrderStore('vacia', { locale: 'es' })
+    const b = createOrderStore('llena', { locale: 'es' })
+    await Promise.all([a.load(), b.load()])
+    vi.mocked(getMenu).mockClear()
+    await vi.advanceTimersByTimeAsync(60_000)
+    expect(vi.mocked(getMenu).mock.calls.map(c => c[0])).toEqual(['vacia'])
+    b.dispose()
+    await vi.advanceTimersByTimeAsync(60_000)
+    expect(vi.mocked(getMenu).mock.calls.map(c => c[0])).toEqual(['vacia', 'vacia'])
+    a.dispose()
   })
   it('sin token con /menu rechazado: infoError refleja el error del menú', async () => {
     vi.mocked(getMenu).mockRejectedValue(new ApiError('boom', 500))
