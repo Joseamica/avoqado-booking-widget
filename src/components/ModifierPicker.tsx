@@ -1,22 +1,36 @@
 import { h } from 'preact'
-import type { ModifierGroup, ModifierSelection } from '../types'
+import type { ModifierSelection } from '../types'
 import type { TFunction } from '../i18n'
 
+// Sólo los campos que el picker lee: `ModifierGroup` de reservas y `MenuModifierGroup` de la tienda caben los dos.
+export interface PickerGroup {
+  id: string
+  name: string
+  description?: string | null
+  required: boolean
+  allowMultiple: boolean
+  maxSelections: number | null
+  modifiers: { id: string; name: string; price: number }[]
+}
+
+// Enteros sin centavos ($15); con centavos si no es entero ($12.50).
 function formatPriceMXN(amount: number): string {
+  const digits = Number.isInteger(amount) ? 0 : 2
   try {
     return new Intl.NumberFormat('es-MX', {
       style: 'currency',
       currency: 'MXN',
-      maximumFractionDigits: 0,
+      minimumFractionDigits: digits,
+      maximumFractionDigits: digits,
     }).format(amount)
   } catch {
-    return `$${Math.round(amount).toLocaleString('es-MX')}`
+    return `$${amount.toLocaleString('es-MX', { minimumFractionDigits: digits, maximumFractionDigits: digits })}`
   }
 }
 
 interface ModifierPickerProps {
   productId: string
-  group: ModifierGroup
+  group: PickerGroup
   selections: ModifierSelection[]
   onChange: (next: ModifierSelection[]) => void
   t: TFunction

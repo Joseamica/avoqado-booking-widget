@@ -1,11 +1,18 @@
-import type { ModifierGroup, ModifierSelection } from '../types'
+import type { ModifierSelection } from '../types'
+
+/** Sólo lo que se lee: `ModifierGroup` de reservas y `MenuModifierGroup` de la tienda caben los dos. */
+interface RequiredCheckGroup {
+  required: boolean
+  minSelections: number
+  modifiers: { id: string }[]
+}
 
 /** True when every required (or min-bounded) ModifierGroup for the given product
  *  has enough selections. Single source of truth used by:
  *   - ServiceDetailView to disable the Añadir/Actualizar CTA
  *   - eventual server validator (already enforced in resolveModifierSelections) */
 export function areRequiredModifiersSatisfied(
-  groups: ModifierGroup[] | undefined,
+  groups: RequiredCheckGroup[] | undefined,
   productId: string,
   selections: ModifierSelection[],
 ): boolean {

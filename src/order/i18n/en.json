@@ -7,7 +7,8 @@
   },
   "common": {
     "offline": "No connection. Check your internet and try again.",
-    "retry": "Retry"
+    "retry": "Retry",
+    "close": "Close"
   },
   "status": {
     "OPEN": "Open",
@@ -21,5 +22,36 @@
     "closedToday": "Closed today",
     "overnight": "{{open}} to {{close}} (closes after midnight)",
     "range": "{{open}} to {{close}}"
+  },
+  "store": {
+    "disabled": "This restaurant is not taking online orders right now.",
+    "notFound": "We could not find this restaurant.",
+    "loadFailed": "We could not load the store.",
+    "closedNow": "Closed now.",
+    "todayHours": "Today: {{ranges}}",
+    "noOpenToday": "Not open today",
+    "overnightRange": "{{open}}–{{close}} the next day",
+    "manualPause": "We are not taking online orders today.",
+    "tooBusy": "Lots of orders right now. Try again in a few minutes.",
+    "offline": "The restaurant is not connected. Try again in a few minutes."
+  },
+  "menu": {
+    "empty": "There are no online products yet.",
+    "truncated": "This menu is very large; some products are not shown here.",
+    "search": "Search the menu",
+    "all": "All",
+    "noResults": "No products match your search.",
+    "soldOut": "Sold out",
+    "viewOrder": "View order · {{n}} · {{total}}"
+  },
+  "sheet": {
+    "add": "Add · {{total}}",
+    "qty": "Quantity",
+    "more": "More",
+    "less": "Less",
+    "note": "Note for the kitchen",
+    "maxQty": "Maximum 20 per product",
+    "maxLines": "Your order reached the maximum of 50 different products",
+    "maxOptions": "Maximum 30 options per dish"
   }
 }

@@ -32,6 +32,7 @@ export interface MenuModifier { id: string; name: string; price: number }
 export interface MenuModifierGroup {
   id: string
   name: string
+  description?: string | null
   required: boolean
   allowMultiple: boolean
   minSelections: number

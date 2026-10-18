@@ -1,0 +1,151 @@
+import { h } from 'preact'
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/preact'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+
+vi.mock('../api', async () => {
+  const actual = await vi.importActual<typeof import('../api')>('../api')
+  return { ...actual, getInfo: vi.fn(), getMenu: vi.fn() }
+})
+import { ApiError, getInfo, getMenu } from '../api'
+import { MenuScreen } from './MenuScreen'
+import { OrderApp } from './OrderApp'
+import { infoOf, makeStore, menuOf, product, withStore } from './testKit'
+
+beforeEach(() => sessionStorage.clear())
+afterEach(cleanup)
+const flush = () => act(async () => { for (let i = 0; i < 6; i++) await Promise.resolve() })
+const show = (store: ReturnType<typeof makeStore>) => render(withStore(store, <MenuScreen />))
+
+describe('estado de la tienda', () => {
+  it('DISABLED: sin carta', () => {
+    show(makeStore(infoOf({ status: 'DISABLED' }), menuOf(product())))
+    expect(screen.getByText('Este restaurante no recibe pedidos en línea por el momento.')).toBeTruthy()
+    expect(screen.queryByText('Flautas de pollo')).toBeNull()
+  })
+  it('403 PLAN_REQUIRED: igual que DISABLED', () => {
+    const s = makeStore(null, null)
+    s.infoError.value = new ApiError('x', 403, 'PLAN_REQUIRED')
+    show(s)
+    expect(screen.getByText('Este restaurante no recibe pedidos en línea por el momento.')).toBeTruthy()
+  })
+  it('CLOSED con horario de hoy, sin horario hoy y nocturno', () => {
+    const day = (ranges: { open: string; close: string }[]) => ({ enabled: ranges.length > 0, ranges })
+    const week = (d: ReturnType<typeof day>) => Object.fromEntries(['monday','tuesday','wednesday','thursday','friday','saturday','sunday'].map(k => [k, d])) as any
+    const closed = (d: ReturnType<typeof day>) => makeStore(infoOf({ status: 'CLOSED', reason: 'OUTSIDE_HOURS', hours: week(d) }), menuOf(product()))
+    show(closed(day([{ open: '13:00', close: '17:00' }])))
+    expect(screen.getByText('Cerrado ahora. Hoy: 13:00–17:00')).toBeTruthy()
+    cleanup()
+    show(closed(day([])))
+    expect(screen.getByText('Cerrado ahora. Hoy no abre')).toBeTruthy()
+    cleanup()
+    show(closed(day([{ open: '22:00', close: '02:00' }])))
+    expect(screen.getByText('Cerrado ahora. Hoy: 22:00–2:00 del día siguiente')).toBeTruthy()
+  })
+  it('PAUSED MANUAL_PAUSE / TOO_BUSY y OFFLINE', () => {
+    show(makeStore(infoOf({ status: 'PAUSED', reason: 'MANUAL_PAUSE' }), menuOf(product())))
+    expect(screen.getByText('Hoy no estamos recibiendo pedidos en línea.')).toBeTruthy()
+    cleanup()
+    show(makeStore(infoOf({ status: 'PAUSED', reason: 'TOO_BUSY' }), menuOf(product())))
+    expect(screen.getByText('Muchos pedidos en este momento. Intenta en unos minutos.')).toBeTruthy()
+    cleanup()
+    show(makeStore(infoOf({ status: 'OFFLINE', reason: 'NO_DEVICE' }), menuOf(product())))
+    expect(screen.getByText('El restaurante no está conectado. Intenta en unos minutos.')).toBeTruthy()
+  })
+  it('con la tienda no abierta se ve la carta pero no se puede agregar', () => {
+    const s = makeStore(infoOf({ status: 'CLOSED' }), menuOf(product()))
+    show(s)
+    const btn = screen.getByRole('button', { name: /Flautas de pollo/ }) as HTMLButtonElement
+    expect(btn.disabled).toBe(true)
+    fireEvent.click(btn)
+    expect(s.productId.value).toBeNull()
+  })
+})
+
+describe('errores de carga', () => {
+  it('404 VENUE_NOT_FOUND', () => {
+    const s = makeStore(null, null); s.infoError.value = new ApiError('no', 404, 'VENUE_NOT_FOUND')
+    show(s)
+    expect(screen.getByText('No encontramos este restaurante.')).toBeTruthy()
+  })
+  it('5xx: mensaje del servidor (o genérico) + Reintentar que llama a load()', async () => {
+    vi.mocked(getInfo).mockResolvedValue(infoOf()); vi.mocked(getMenu).mockResolvedValue(menuOf(product()))
+    const s = makeStore(infoOf(), null); s.infoError.value = new ApiError('Servidor ocupado', 503)
+    show(s)
+    expect(screen.getByText('Servidor ocupado')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Reintentar' }))
+    await flush()
+    expect(getMenu).toHaveBeenCalled()
+    expect(screen.getByText('Flautas de pollo')).toBeTruthy()
+    cleanup()
+    const g = makeStore(null, null); g.infoError.value = new ApiError('', 500)
+    show(g)
+    expect(screen.getByText('No pudimos cargar la tienda.')).toBeTruthy()
+  })
+  it('sin red', () => {
+    const s = makeStore(null, null); s.infoError.value = new ApiError('Sin conexión', 0, undefined, undefined, true)
+    show(s)
+    expect(screen.getByText('Sin conexión. Revisa tu internet y vuelve a intentar.')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Reintentar' })).toBeTruthy()
+  })
+  it('/info bien pero /menu falló: aviso con Reintentar, no el banner', () => {
+    const s = makeStore(infoOf({ status: 'CLOSED' }), null); s.infoError.value = new ApiError('', 500)
+    show(s)
+    expect(screen.getByRole('button', { name: 'Reintentar' })).toBeTruthy()
+    expect(screen.queryByText(/Cerrado ahora/)).toBeNull()
+  })
+})
+
+describe('carta', () => {
+  it('sin categorías y truncada', () => {
+    const empty = makeStore(infoOf(), { generatedAt: '', truncated: false, categories: [] })
+    show(empty)
+    expect(screen.getByText('Todavía no hay productos en línea.')).toBeTruthy()
+    cleanup()
+    show(makeStore(infoOf(), { ...menuOf(product()), truncated: true }))
+    expect(screen.getByText('Esta carta es muy grande; algunos productos no se muestran aquí.')).toBeTruthy()
+  })
+  it('producto con nombre, descripción, precio e imagen si hay', () => {
+    show(makeStore(infoOf(), menuOf(product({ imageUrl: 'https://x/y.png' }), product({ id: 'p2', name: 'Agua', description: null, price: 25.5 }))))
+    expect(screen.getByText('Con crema')).toBeTruthy()
+    expect(screen.getByText('$85')).toBeTruthy()
+    expect(screen.getByText('$25.50')).toBeTruthy()
+    expect(document.querySelectorAll('img').length).toBe(1)
+  })
+  it('buscar «flauta» sin acentos ni mayúsculas', () => {
+    show(makeStore(infoOf(), menuOf(product(), product({ id: 'p2', name: 'FLÁUTA dorada' }), product({ id: 'p3', name: 'Agua' }))))
+    fireEvent.input(screen.getByRole('searchbox'), { target: { value: 'flauta' } })
+    expect(screen.getByText('Flautas de pollo')).toBeTruthy()
+    expect(screen.getByText('FLÁUTA dorada')).toBeTruthy()
+    expect(screen.queryByText('Agua')).toBeNull()
+  })
+  it('las categorías son pastillas que filtran', () => {
+    const m = menuOf(product())
+    m.categories.push({ id: 'c2', name: 'Bebidas', productCount: 1, products: [product({ id: 'p9', name: 'Agua' })] })
+    show(makeStore(infoOf(), m))
+    fireEvent.click(screen.getByRole('button', { name: 'Bebidas' }))
+    expect(screen.getByText('Agua')).toBeTruthy()
+    expect(screen.queryByText('Flautas de pollo')).toBeNull()
+  })
+  it('abrir un producto abre su ficha; CartBar refleja el carrito', () => {
+    const s = makeStore(infoOf(), menuOf(product()))
+    s.cart.value = [{ lineId: 'l', productId: 'p1', name: 'Flautas', unitPrice: 85, quantity: 2, modifiers: [], note: null }]
+    show(s)
+    expect(screen.getByRole('button', { name: 'Ver pedido · 2 · $170' })).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: /Flautas de pollo/ }))
+    expect(s.productId.value).toBe('p1')
+  })
+})
+
+describe('OrderApp', () => {
+  it('pone --avq-accent desde la marca, con el atributo de respaldo, y muestra el aviso', () => {
+    const s = makeStore(infoOf({ brand: { logo: null, logoFull: null, primaryColor: '#112233', secondaryColor: null } }), menuOf(product()))
+    s.notice.value = 'Aviso de prueba'
+    const { container } = render(withStore(s, <OrderApp accentColor="#abcdef" />))
+    expect((container.firstElementChild as HTMLElement).style.getPropertyValue('--avq-accent')).toBe('#112233')
+    expect(screen.getByText('Aviso de prueba')).toBeTruthy()
+    cleanup()
+    const s2 = makeStore(infoOf(), menuOf(product()))
+    const r = render(withStore(s2, <OrderApp accentColor="#abcdef" />))
+    expect((r.container.firstElementChild as HTMLElement).style.getPropertyValue('--avq-accent')).toBe('#abcdef')
+  })
+})

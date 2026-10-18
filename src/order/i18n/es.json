@@ -7,7 +7,8 @@
   },
   "common": {
     "offline": "Sin conexión. Revisa tu internet y vuelve a intentar.",
-    "retry": "Reintentar"
+    "retry": "Reintentar",
+    "close": "Cerrar"
   },
   "status": {
     "OPEN": "Abierto",
@@ -21,5 +22,36 @@
     "closedToday": "Hoy no abrimos",
     "overnight": "{{open}} a {{close}} (cierra después de medianoche)",
     "range": "{{open}} a {{close}}"
+  },
+  "store": {
+    "disabled": "Este restaurante no recibe pedidos en línea por el momento.",
+    "notFound": "No encontramos este restaurante.",
+    "loadFailed": "No pudimos cargar la tienda.",
+    "closedNow": "Cerrado ahora.",
+    "todayHours": "Hoy: {{ranges}}",
+    "noOpenToday": "Hoy no abre",
+    "overnightRange": "{{open}}–{{close}} del día siguiente",
+    "manualPause": "Hoy no estamos recibiendo pedidos en línea.",
+    "tooBusy": "Muchos pedidos en este momento. Intenta en unos minutos.",
+    "offline": "El restaurante no está conectado. Intenta en unos minutos."
+  },
+  "menu": {
+    "empty": "Todavía no hay productos en línea.",
+    "truncated": "Esta carta es muy grande; algunos productos no se muestran aquí.",
+    "search": "Buscar en la carta",
+    "all": "Todo",
+    "noResults": "No encontramos productos con esa búsqueda.",
+    "soldOut": "Agotado",
+    "viewOrder": "Ver pedido · {{n}} · {{total}}"
+  },
+  "sheet": {
+    "add": "Agregar · {{total}}",
+    "qty": "Cantidad",
+    "more": "Más",
+    "less": "Menos",
+    "note": "Nota para la cocina",
+    "maxQty": "Máximo 20 por producto",
+    "maxLines": "Tu pedido llegó al máximo de 50 productos distintos",
+    "maxOptions": "Máximo 30 opciones por platillo"
   }
 }
