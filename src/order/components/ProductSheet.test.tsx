@@ -105,6 +105,18 @@ describe('ficha del producto', () => {
     fireEvent.click(addBtn())
     expect(s.cart.value[0].modifiers).toEqual([{ modifierId: 'm9', name: 'Maíz', price: 0, quantity: 20 }])
   })
+  it('M5: la cantidad de una opción se trunca a entero (2.7 ⇒ 2)', () => {
+    const s = open(product({
+      modifierGroups: [{
+        id: 'g2', name: 'Tortillas', required: true, allowMultiple: true, minSelections: 2, maxSelections: null,
+        modifiers: [{ id: 'm9', name: 'Maíz', price: 0 }],
+      }],
+    }))
+    fireEvent.click(screen.getByRole('checkbox'))
+    fireEvent.input(screen.getByRole('spinbutton'), { target: { value: '2.7' } })
+    fireEvent.click(addBtn())
+    expect(s.cart.value[0].modifiers[0].quantity).toBe(2)
+  })
   it('Cerrar regresa a la carta', () => {
     const s = open(product())
     fireEvent.click(screen.getByRole('button', { name: 'Cerrar' }))

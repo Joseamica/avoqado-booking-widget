@@ -28,6 +28,18 @@ describe('página de pedidos (carril de la tienda en index.html)', () => {
   })
 })
 
+describe('página de pedidos en inglés', () => {
+  it('M6: con ?locale=en el título dice «Online ordering · …», antes y después de conocer el nombre', () => {
+    window.history.replaceState({}, '', '/flautas-coyoacan?app=order&locale=en')
+    new Function(script())()
+    const el = document.querySelector('avoqado-order')!
+    expect(el.getAttribute('locale')).toBe('en')
+    expect(document.title).toBe('Online ordering · Flautas coyoacan')
+    el.dispatchEvent(new CustomEvent('avoqado:tienda-cargada', { detail: { slug: 'flautas-coyoacan', name: 'Flautas Coyoacán' }, bubbles: true }))
+    expect(document.title).toBe('Online ordering · Flautas Coyoacán')
+  })
+})
+
 describe('public/_headers', () => {
   it('W11: la tienda se deja enmarcar desde los cuatro orígenes del panel; book.avoqado.io no lleva la cabecera', () => {
     const rule = /^https:\/\/pedidos\.avoqado\.io\/\*\n\s+Content-Security-Policy: frame-ancestors (.+)$/m.exec(headers)

@@ -684,7 +684,9 @@
         ((orderHost === 'localhost' || orderHost === '127.0.0.1') && orderParams.get('app') === 'order')
       if (isOrderPage && slug) {
         var orderName = slug.charAt(0).toUpperCase() + slug.slice(1).replace(/[-_]/g, ' ')
-        document.title = 'Pedidos en línea · ' + orderName
+        // Mismo idioma que la tienda (sólo `en` cambia; lo demás es español).
+        var orderTitle = orderParams.get('locale') === 'en' ? 'Online ordering · ' : 'Pedidos en línea · '
+        document.title = orderTitle + orderName
         // La barra de arriba, el chat y el pie son de reservas: la tienda no los lleva (la tienda pinta su propia
         // cabecera con el nombre y el logo). `display` y no `hidden`: `.topnav { display: flex }` le gana a `hidden`.
         ;['topnav', 'textus-fab', 'footer'].forEach(function (id) {
@@ -698,7 +700,7 @@
         // Cuando llega `/info`, el título lleva el nombre real del restaurante (el del slug es sólo un adelanto).
         orderEl.addEventListener('avoqado:tienda-cargada', function (e) {
           var realName = e && e.detail && e.detail.name
-          if (realName) document.title = 'Pedidos en línea · ' + realName
+          if (realName) document.title = orderTitle + realName
         })
         orderEl.addEventListener('avoqado:pedido-creado', function (e) {
           var token = e && e.detail && e.detail.trackingToken

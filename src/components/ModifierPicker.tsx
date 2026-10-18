@@ -78,6 +78,8 @@ export function ModifierPicker({ productId, group, selections, onChange, t, maxP
   }
 
   const setQuantity = (modifierId: string, qty: number) => {
+    // La tienda sólo acepta enteros por opción (2.7 ⇒ 2; vacío o inválido ⇒ quitar). Reservas no pasa `maxPerOption`: igual que antes.
+    if (maxPerOption != null) qty = Math.trunc(qty) || 0
     if (qty < 1) {
       onChange(selections.filter(s => !(s.productId === productId && s.modifierId === modifierId)))
       return

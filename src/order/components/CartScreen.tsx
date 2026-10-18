@@ -125,7 +125,12 @@ export function CartScreen() {
       <div style={{ display: 'flex', gap: '8px' }}>
         <button type="button" style={btn()} onClick={() => store.go('menu')}>{t('cart.keepOrdering')}</button>
         <button type="button" style={{ ...btn(true), flex: 1, opacity: q?.ok && open ? 1 : 0.5 }} disabled={!q?.ok || !open}
-          onClick={() => store.go('details')}>{t('cart.continue')}</button>
+          onClick={() => {
+            // El aviso del envío anterior (p. ej. «El precio cambió; revisa tu pedido.») ya se atendió aquí, con la cotización
+            // nueva: no lo arrastra a «Tus datos». Un intento pendiente se sigue viendo allá por `pending`.
+            checkoutOf(store).feedback.value = null
+            store.go('details')
+          }}>{t('cart.continue')}</button>
       </div>
     </div>
   )

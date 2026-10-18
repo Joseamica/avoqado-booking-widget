@@ -2,7 +2,7 @@ import { h } from 'preact'
 import { useContext, useEffect, useState } from 'preact/hooks'
 import { OrderStoreContext } from '../store'
 import { createOrderT } from '../i18n'
-import { requestOrderingOtp } from '../api'
+import { ApiError, requestOrderingOtp } from '../api'
 import { pendingAttempt } from '../attempt'
 import { checkoutOf, errorText, phoneToVerify, send, verifyPhone } from '../checkout'
 import { OtpInput } from '../../components/ui/OtpInput'
@@ -41,6 +41,8 @@ export function OtpScreen() {
     try {
       await requestOrderingOtp(store.slug, phone)
     } catch (e) {
+      // Sin red el código no salió: volver a esta pantalla lo pide otra vez (no hereda una espera de un envío que no fue).
+      if (!(e instanceof ApiError) || e.network) c.otpSentAt.delete(phone)
       setError(errorText(t, e))
     }
   }
@@ -62,6 +64,8 @@ export function OtpScreen() {
       setVerifying(false)
       return
     }
+    // Ese código ya se usó: si un 401 regresa aquí, toca uno nuevo sin esperar.
+    c.otpSentAt.delete(phone)
     setVerifying(false)
     // Verificado y aun así el pedido pide código (sesión que no se guardó, 401 otra vez): se dice, no se queda callado.
     if ((await send(store, body)).kind === 'needsOtp') setError(t('otp.notUsable'))

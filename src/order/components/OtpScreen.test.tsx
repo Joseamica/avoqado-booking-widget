@@ -78,6 +78,33 @@ describe('código de WhatsApp', () => {
     expect(requestOrderingOtp).toHaveBeenCalledTimes(3)
   })
 
+  it('M1: tras verificar bien, si un 401 regresa a esta pantalla antes de 30 s, sí se pide un código nuevo', async () => {
+    const s = show()
+    vi.mocked(verifyOrderingOtp).mockResolvedValue({ token: 'tok-otp', customer: { id: 'c1' } } as any)
+    vi.mocked(createOrder).mockRejectedValue(new ApiError('Token inválido', 401, 'CUSTOMER_TOKEN_INVALID'))
+    await flush()
+    expect(requestOrderingOtp).toHaveBeenCalledTimes(1)
+    fireEvent.input(screen.getAllByRole('textbox')[0], { target: { value: '123456' } })
+    await flush()
+    cleanup()
+    await act(async () => { await vi.advanceTimersByTimeAsync(5_000) })
+    render(withStore(s, <OtpScreen />))
+    await flush()
+    expect(requestOrderingOtp).toHaveBeenCalledTimes(2)
+  })
+
+  it('M1: si el envío del código falla por red, salir y volver lo pide otra vez (sin una cuenta regresiva muda)', async () => {
+    vi.mocked(requestOrderingOtp).mockRejectedValueOnce(new ApiError('Sin conexión', 0, undefined, undefined, true))
+    const s = show()
+    await flush()
+    expect(screen.getByText('Sin conexión. Revisa tu internet y vuelve a intentar.')).toBeTruthy()
+    cleanup()
+    render(withStore(s, <OtpScreen />))
+    await flush()
+    expect(requestOrderingOtp).toHaveBeenCalledTimes(2)
+    expect(screen.queryByText('Sin conexión. Revisa tu internet y vuelve a intentar.')).toBeNull()
+  })
+
   it('al completar el código verifica, guarda la sesión con ESE teléfono y manda el pedido', async () => {
     const s = show()
     vi.mocked(verifyOrderingOtp).mockResolvedValue({ token: 'tok-otp', customer: { id: 'c1' } } as any)

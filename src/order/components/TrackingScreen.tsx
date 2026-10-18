@@ -73,7 +73,7 @@ export function TrackingScreen() {
     </button>
   )
   if (gone) return <div><p role="status" style={{ margin: '16px 0' }}>{t('tracking.notFound')}</p>{orderMore}</div>
-  if (!tracking) return <p role="status" style={{ margin: '16px 0' }}>{t(problem ?? 'tracking.loading')}</p>
+  if (!tracking) return <div><p role="status" style={{ margin: '16px 0' }}>{t(problem ?? 'tracking.loading')}</p>{problem && orderMore}</div>
 
   const tz = tracking.venueTimezone ?? store.info.value?.venue.timezone ?? 'America/Mexico_City'
   const time = (iso: string) => formatTime(iso, tz, store.locale)

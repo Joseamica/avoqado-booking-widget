@@ -81,6 +81,19 @@ describe('carrito cotizado por el servidor', () => {
     expect(s.screen.value).toBe('details')
   })
 
+  it('M2: «Continuar» limpia el aviso «El precio cambió; revisa tu pedido.» (no reaparece en «Tus datos»)', async () => {
+    const s = makeStore(infoOf(), menuOf())
+    s.cart.value = [flautas]
+    vi.mocked(quote).mockResolvedValue(quoteOf(190))
+    checkoutOf(s).feedback.value = { kind: 'error', message: 'El precio cambió; revisa tu pedido.', retryable: false }
+    s.go('cart')
+    render(withStore(s, <CartScreen />))
+    await flush()
+    fireEvent.click(continueBtn())
+    expect(s.screen.value).toBe('details')
+    expect(checkoutOf(s).feedback.value).toBeNull()
+  })
+
   it('con la tienda no abierta «Continuar» está deshabilitado aunque la cotización sea buena', async () => {
     await show([flautas], quoteOf(170), infoOf({ status: 'CLOSED' }))
     expect(continueBtn().disabled).toBe(true)

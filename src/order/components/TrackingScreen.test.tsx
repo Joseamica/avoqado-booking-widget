@@ -152,6 +152,13 @@ describe('volver a la carta', () => {
     expect(s.trackingToken.value).toBeNull()
     expect(s.screen.value).toBe('menu')
   })
+  it('M3: si el seguimiento nunca carga (falla el servidor), también ofrece «Pedir algo más»', async () => {
+    const s = await show(new ApiError('x', 500))
+    expect(screen.getByText('No pudimos actualizar tu pedido; reintentando…')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Pedir algo más' }))
+    expect(s.trackingToken.value).toBeNull()
+    expect(s.screen.value).toBe('menu')
+  })
 })
 
 describe('cancelar', () => {
