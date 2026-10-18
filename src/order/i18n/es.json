@@ -1,0 +1,25 @@
+{
+  "modifiers": {
+    "required": "Requerido",
+    "optional": "Opcional",
+    "pickOne": "Elige una opción",
+    "pickUpTo": "Elige hasta {{n}}"
+  },
+  "common": {
+    "offline": "Sin conexión. Revisa tu internet y vuelve a intentar.",
+    "retry": "Reintentar"
+  },
+  "status": {
+    "OPEN": "Abierto",
+    "CLOSED": "Cerrado",
+    "PAUSED": "Pausado",
+    "OFFLINE": "No está recibiendo pedidos ahora",
+    "DISABLED": "Hoy no estamos recibiendo pedidos en línea"
+  },
+  "hours": {
+    "today": "Horario de hoy",
+    "closedToday": "Hoy no abrimos",
+    "overnight": "{{open}} a {{close}} (cierra después de medianoche)",
+    "range": "{{open}} a {{close}}"
+  }
+}

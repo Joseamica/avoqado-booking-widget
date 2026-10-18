@@ -1,0 +1,25 @@
+{
+  "modifiers": {
+    "required": "Required",
+    "optional": "Optional",
+    "pickOne": "Pick one",
+    "pickUpTo": "Pick up to {{n}}"
+  },
+  "common": {
+    "offline": "No connection. Check your internet and try again.",
+    "retry": "Retry"
+  },
+  "status": {
+    "OPEN": "Open",
+    "CLOSED": "Closed",
+    "PAUSED": "Paused",
+    "OFFLINE": "Not taking orders right now",
+    "DISABLED": "We are not taking online orders today"
+  },
+  "hours": {
+    "today": "Today's hours",
+    "closedToday": "Closed today",
+    "overnight": "{{open}} to {{close}} (closes after midnight)",
+    "range": "{{open}} to {{close}}"
+  }
+}
