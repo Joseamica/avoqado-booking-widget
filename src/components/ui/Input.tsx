@@ -14,9 +14,11 @@ interface InputProps {
   rows?: number
   class?: string
   error?: string
+  maxLength?: number
+  autoComplete?: string
 }
 
-export function Input({ id, type = 'text', value, placeholder, onInput, onChange, required, min, max, class: cls, error }: InputProps) {
+export function Input({ id, type = 'text', value, placeholder, onInput, onChange, required, min, max, class: cls, error, maxLength, autoComplete }: InputProps) {
   const [focused, setFocused] = useState(false)
 
   return (
@@ -30,6 +32,8 @@ export function Input({ id, type = 'text', value, placeholder, onInput, onChange
       required={required}
       min={min as any}
       max={max as any}
+      maxLength={maxLength}
+      autoComplete={autoComplete}
       onFocus={() => setFocused(true)}
       onBlur={() => setFocused(false)}
       style={{

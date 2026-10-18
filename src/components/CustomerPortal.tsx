@@ -7,7 +7,7 @@ import { Button } from './ui/Button'
 import { Input } from './ui/Input'
 import { CountryPhoneInput } from './ui/CountryPhoneInput'
 import { OtpInput } from './ui/OtpInput'
-import { DEFAULT_DIAL } from '../data/countries'
+import { DEFAULT_DIAL, phoneE164 } from '../data/countries'
 import * as api from '../api/booking'
 import { portalData, portalLoading, customerToken, customerInfo, setCustomerSession, clearCustomerSession, bookingAccess } from '../state/booking'
 
@@ -52,6 +52,9 @@ export function CustomerPortal({ venueSlug, timezone, venuePhone, t, onBack, onM
   const [otpPhone, setOtpPhone] = useState('')
   const [otpDialCode, setOtpDialCode] = useState(DEFAULT_DIAL)
   const [otpEmail, setOtpEmail] = useState('')
+  // «¿Cómo te llamas?» — obligatorio en el alta por código, por WhatsApp o por correo (founder, 14-oct-2026): sin
+  // nombre, la tablet del mostrador encuentra a «+52 55…» y nadie sabe quién es. Viaja como `firstName` en el verify.
+  const [otpName, setOtpName] = useState('')
   const [otpCode, setOtpCode] = useState('')
   const [cooldown, setCooldown] = useState(0)
   const [otpError, setOtpError] = useState<string | null>(null)
@@ -140,7 +143,7 @@ export function CustomerPortal({ venueSlug, timezone, venuePhone, t, onBack, onM
   /** Build the { phone } | { email } payload from the active OTP channel. */
   function otpDestination(): { phone?: string; email?: string } {
     return otpChannel === 'phone'
-      ? { phone: `+${otpDialCode}${otpPhone.replace(/\D/g, '')}` }
+      ? { phone: phoneE164(otpDialCode, otpPhone) }
       : { email: otpEmail.trim() }
   }
 
@@ -151,6 +154,7 @@ export function CustomerPortal({ venueSlug, timezone, venuePhone, t, onBack, onM
   async function handleSendOtp(e?: Event) {
     if (e) e.preventDefault()
     if (!otpDestinationFilled()) return
+    if (!otpName.trim()) { setOtpError(t('otp.nameRequired')); return }
     setOtpSubmitting(true)
     setOtpError(null)
     try {
@@ -186,7 +190,7 @@ export function CustomerPortal({ venueSlug, timezone, venuePhone, t, onBack, onM
     setOtpSubmitting(true)
     setOtpError(null)
     try {
-      const result = await api.verifyOtp(venueSlug, { ...otpDestination(), code })
+      const result = await api.verifyOtp(venueSlug, { ...otpDestination(), code, firstName: otpName.trim() })
       // Reuse the EXACT success path the email login uses (identical AuthResponse).
       setCustomerSession(venueSlug, result.token, result.customer, result.bookingAccess ?? null)
       await loadPortal(result.token)
@@ -210,6 +214,7 @@ export function CustomerPortal({ venueSlug, timezone, venuePhone, t, onBack, onM
     setOtpPhone('')
     setOtpDialCode(DEFAULT_DIAL)
     setOtpEmail('')
+    setOtpName('')
     setOtpCode('')
     setCooldown(0)
     setOtpError(null)
@@ -326,6 +331,17 @@ export function CustomerPortal({ venueSlug, timezone, venuePhone, t, onBack, onM
 
           {otpStep === 'phone' ? (
             <form onSubmit={handleSendOtp} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <div>
+                <label for="avq-otp-name" style={labelStyle}>{t('otp.nameLabel')}</label>
+                <Input
+                  id="avq-otp-name"
+                  value={otpName}
+                  maxLength={60}
+                  autoComplete="given-name"
+                  placeholder={t('otp.namePlaceholder')}
+                  onInput={(e) => setOtpName((e.target as HTMLInputElement).value)}
+                />
+              </div>
               {otpChannel === 'phone' ? (
                 <div>
                   <label style={labelStyle}>{t('otp.phoneLabel')}</label>

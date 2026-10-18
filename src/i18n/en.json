@@ -369,7 +369,10 @@
     "countrySearchPlaceholder": "Search country or code",
     "countryNoResults": "No results",
     "titleEmail": "Sign in with an email code",
-    "sentEmail": "We sent you a code by email"
+    "sentEmail": "We sent you a code by email",
+    "nameLabel": "What's your name?",
+    "namePlaceholder": "Your name",
+    "nameRequired": "Please enter your name."
   },
   "modifiers": {
     "required": "Required",

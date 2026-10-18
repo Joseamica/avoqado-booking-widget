@@ -369,7 +369,10 @@
     "countrySearchPlaceholder": "Buscar país o lada",
     "countryNoResults": "Sin resultados",
     "titleEmail": "Entrar con código por correo",
-    "sentEmail": "Te enviamos un código a tu correo"
+    "sentEmail": "Te enviamos un código a tu correo",
+    "nameLabel": "¿Cómo te llamas?",
+    "namePlaceholder": "Tu nombre",
+    "nameRequired": "Escribe tu nombre."
   },
   "modifiers": {
     "required": "Requerido",
