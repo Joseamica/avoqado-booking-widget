@@ -17,8 +17,8 @@ export const infoOf = (over: Partial<StoreInfo> = {}): StoreInfo => ({
   ...over,
 })
 /** Una tienda nueva por prueba (el carrito se guarda por slug en memoria). */
-export function makeStore(info: StoreInfo | null, menu: Menu | null): OrderStore {
-  const s = createOrderStore(`t${++n}`, { locale: 'es' })
+export function makeStore(info: StoreInfo | null, menu: Menu | null, locale: 'es' | 'en' = 'es'): OrderStore {
+  const s = createOrderStore(`t${++n}`, { locale })
   s.info.value = info
   s.menu.value = menu
   return s

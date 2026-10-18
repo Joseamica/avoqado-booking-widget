@@ -125,7 +125,10 @@ export function TrackingScreen() {
       <p style={{ display: 'flex', justifyContent: 'space-between', margin: '0 0 4px' }}>
         <strong>{t('cart.total')}</strong><strong>{formatMXN(tracking.total, store.locale)}</strong>
       </p>
-      <p style={{ ...muted, margin: '0 0 12px' }}>{tracking.paid ? t('tracking.paid') : t('tracking.payAtPickup')}</p>
+      {/* Cancelado, rechazado o vencido sin cobro: no hay nada que pagar al recoger. */}
+      {(tracking.paid || !isFinalStatus(tracking.status) || tracking.status === 'COMPLETED') && (
+        <p style={{ ...muted, margin: '0 0 12px' }}>{tracking.paid ? t('tracking.paid') : t('tracking.payAtPickup')}</p>
+      )}
       {(contact?.address || contact?.phone) && (
         <div style={{ margin: '0 0 12px' }}>
           {contact.address && <div>{contact.address}</div>}

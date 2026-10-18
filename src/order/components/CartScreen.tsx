@@ -8,10 +8,32 @@ import { checkoutOf, errorText } from '../checkout'
 import { formatMXN } from '../money'
 import { StoreStatusBanner } from './StoreStatusBanner'
 import { banner, btn, muted } from './ui'
+import type { Menu, Quote, QuoteIssue } from '../types'
 
 const MAX_QTY = 20
+/** `MAX_CART_LINES` del servidor. */
+const MAX_LINES = 50
 const QUOTE_DEBOUNCE_MS = 300
 const issueStyle = { color: 'var(--avq-danger, #b91c1c)', fontSize: '13px', margin: '4px 0 0' }
+
+/**
+ * El motivo en el idioma de la tienda, por CÓDIGO (el `message` del servidor siempre viene en español): el monto sale de la
+ * cotización y el nombre y los límites del grupo, de la carta. Un código que la tienda no conoce usa el `message` tal cual.
+ */
+function issueText(t: ReturnType<typeof createOrderT>, x: QuoteIssue, q: Quote, menu: Menu | null, locale: 'es' | 'en'): string {
+  let key = `cart.issues.${x.code}`
+  if (t(key) === key) return x.message
+  let vars: Record<string, string | number> = { n: x.code === 'TOO_MANY_LINES' ? MAX_LINES : MAX_QTY, amount: formatMXN(q.minOrderAmount, locale) }
+  if (x.groupId) {
+    const g = menu?.categories.flatMap(c => c.products).find(p => p.id === x.productId)?.modifierGroups.find(gr => gr.id === x.groupId)
+    if (!g) return t('cart.issues.checkOptions')
+    // La misma cuenta que el cotizador (quote.service.ts): obligatorio = al menos 1.
+    const min = g.required ? Math.max(1, g.minSelections) : g.minSelections
+    vars = { group: g.name, n: x.code === 'MODIFIER_GROUP_REQUIRED' ? min : g.maxSelections ?? '' }
+    if (x.code === 'MODIFIER_GROUP_REQUIRED' && min > 1) key += '_MANY'
+  }
+  return t(key, vars)
+}
 
 /** Carrito: la tienda pinta SUS renglones; el total (y lo que se manda) es el de la cotización del servidor. */
 export function CartScreen() {
@@ -69,7 +91,7 @@ export function CartScreen() {
             </div>
             {l.modifiers.length > 0 && <div style={muted}>{l.modifiers.map(m => (m.quantity > 1 ? `${m.name} ×${m.quantity}` : m.name)).join(', ')}</div>}
             {l.note && <div style={muted}>{l.note}</div>}
-            {lineIssues(i).map((x, j) => <p key={j} role="alert" style={issueStyle}>{x.message}</p>)}
+            {lineIssues(i).map((x, j) => <p key={j} role="alert" style={issueStyle}>{issueText(t, x, q!, store.menu.value, store.locale)}</p>)}
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '6px' }}>
               <button type="button" style={btn()} aria-label={t('sheet.less')} disabled={l.quantity <= 1}
                 onClick={() => { store.cart.value = setQuantity(cart, l.lineId, l.quantity - 1) }}>−</button>
@@ -82,7 +104,7 @@ export function CartScreen() {
           </li>
         ))}
       </ul>
-      {q?.issues.filter(x => x.lineIndex === undefined).map((x, j) => <p key={j} role="alert" style={issueStyle}>{x.message}</p>)}
+      {q?.issues.filter(x => x.lineIndex === undefined).map((x, j) => <p key={j} role="alert" style={issueStyle}>{issueText(t, x, q, store.menu.value, store.locale)}</p>)}
       <p style={{ display: 'flex', justifyContent: 'space-between', margin: '12px 0 4px', fontSize: '16px' }}>
         <span>{t('cart.total')}</span>
         <strong>{q ? formatMXN(q.total, store.locale) : error ? '' : t('cart.quoting')}</strong>

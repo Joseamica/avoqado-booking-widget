@@ -52,6 +52,18 @@ describe('estado de la tienda', () => {
     show(makeStore(infoOf({ status: 'OFFLINE', reason: 'NO_DEVICE' }), menuOf(product())))
     expect(screen.getByText('El restaurante no está conectado. Intenta en unos minutos.')).toBeTruthy()
   })
+  it('W6: pausa con hora (pausedUntil) dice a qué hora vuelve, en la zona del negocio; sin hora, el texto de siempre', () => {
+    const paused = (pausedUntil: string | null, locale: 'es' | 'en' = 'es') =>
+      makeStore(infoOf({ status: 'PAUSED', reason: 'MANUAL_PAUSE', pausedUntil }), menuOf(product()), locale)
+    show(paused('2026-10-17T19:30:00Z'))
+    expect(screen.getByText('En este momento no estamos recibiendo pedidos. Volvemos a recibirlos a las 13:30.')).toBeTruthy()
+    cleanup()
+    show(paused('2026-10-17T19:30:00Z', 'en'))
+    expect(screen.getByText(/^We're not taking orders right now\. We'll be back at 1:30\sPM\.$/)).toBeTruthy()
+    cleanup()
+    show(paused(null))
+    expect(screen.getByText('Hoy no estamos recibiendo pedidos en línea.')).toBeTruthy()
+  })
   it('con la tienda no abierta se ve la carta pero no se puede agregar', () => {
     const s = makeStore(infoOf({ status: 'CLOSED' }), menuOf(product()))
     show(s)
@@ -190,6 +202,29 @@ describe('OrderApp', () => {
     const s2 = makeStore(infoOf(), menuOf(product()))
     const r = render(withStore(s2, <OrderApp accentColor="#abcdef" />))
     expect((r.container.firstElementChild as HTMLElement).style.getPropertyValue('--avq-accent')).toBe('#abcdef')
+  })
+  it('W1: cabecera con el nombre y el logo del restaurante en la carta, el carrito y los datos; no en el seguimiento', async () => {
+    vi.mocked(getTracking).mockResolvedValue({
+      orderNumber: '7', status: 'ACCEPTED', paymentMode: 'PAY_AT_PICKUP', venueName: 'Flautas Coyoacán', venueSlug: 'a', items: [],
+      total: 0, paid: false, estimatedReadyAt: null, acceptDeadlineAt: '2026-10-17T19:05:00Z', rejectReason: null, createdAt: '', canCancel: false,
+    })
+    const venue = { slug: 'a', name: 'Flautas Coyoacán', timezone: 'America/Mexico_City', currency: 'MXN' }
+    const s = makeStore(infoOf({ venue, brand: { logo: 'https://x/logo.png', logoFull: 'https://x/full.png', primaryColor: null, secondaryColor: null } }), menuOf(product()))
+    render(withStore(s, <OrderApp />))
+    const header = () => screen.getByRole('banner')
+    expect(header().textContent).toBe('Flautas Coyoacán')
+    expect(header().querySelector('img')!.getAttribute('src')).toBe('https://x/logo.png')
+    for (const sc of ['cart', 'details'] as const) {
+      await act(async () => { s.go(sc) })
+      expect(header().textContent).toBe('Flautas Coyoacán')
+    }
+    await act(async () => { s.trackingToken.value = 'T'.repeat(32); s.go('tracking') })
+    await flush()
+    expect(screen.queryByRole('banner')).toBeNull()
+    cleanup()
+    // Sólo el logo ancho: también sirve.
+    render(withStore(makeStore(infoOf({ venue, brand: { logo: null, logoFull: 'https://x/full.png', primaryColor: null, secondaryColor: null } }), menuOf(product())), <OrderApp />))
+    expect(header().querySelector('img')!.getAttribute('src')).toBe('https://x/full.png')
   })
 })
 

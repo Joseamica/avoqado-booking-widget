@@ -21,6 +21,12 @@ describe('textos de la tienda', () => {
         expect(t(`modifiers.${k}`)).toBe((booking as any).modifiers[k])
     }
   })
+  it('es y en tienen exactamente las mismas llaves', async () => {
+    const keys = (o: any, p = ''): string[] =>
+      Object.entries(o).flatMap(([k, v]) => (v && typeof v === 'object' ? keys(v, `${p}${k}.`) : [`${p}${k}`])).sort()
+    const [tes, ten] = await Promise.all([import('./i18n/es.json'), import('./i18n/en.json')])
+    expect(keys(ten.default)).toEqual(keys(tes.default))
+  })
   it('idioma desconocido cae a es', () => {
     expect(createOrderT('fr')('modifiers.required')).toBe('Requerido')
   })

@@ -32,6 +32,7 @@
     "noOpenToday": "Not open today",
     "overnightRange": "{{open}}–{{close}} the next day",
     "manualPause": "We are not taking online orders today.",
+    "pausedUntil": "We're not taking orders right now. We'll be back at {{time}}.",
     "tooBusy": "Lots of orders right now. Try again in a few minutes.",
     "offline": "The restaurant is not connected. Try again in a few minutes.",
     "reconnecting": "No connection; retrying…"
@@ -64,7 +65,20 @@
     "quoting": "Calculating the total…",
     "payAtPickup": "You pay when you pick up at the restaurant.",
     "note": "Order note",
-    "continue": "Continue"
+    "continue": "Continue",
+    "issues": {
+      "EMPTY_CART": "Your cart is empty.",
+      "TOO_MANY_LINES": "Maximum {{n}} lines per order.",
+      "QUANTITY_INVALID": "The quantity must be a whole number from 1 to {{n}}.",
+      "PRODUCT_UNAVAILABLE": "A dish in your order is no longer available.",
+      "MODIFIER_INVALID": "An option in your order is no longer valid.",
+      "MODIFIER_GROUP_REQUIRED": "Choose an option from “{{group}}”.",
+      "MODIFIER_GROUP_REQUIRED_MANY": "In “{{group}}” choose at least {{n}} options.",
+      "MODIFIER_GROUP_SINGLE": "In “{{group}}” you can choose only one option.",
+      "MODIFIER_GROUP_MAX": "In “{{group}}” you can choose up to {{n}}.",
+      "BELOW_MINIMUM": "The minimum order is {{amount}}.",
+      "checkOptions": "Check the options for this dish."
+    }
   },
   "details": {
     "title": "Your details",

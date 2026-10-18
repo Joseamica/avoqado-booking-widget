@@ -685,8 +685,9 @@
       if (isOrderPage && slug) {
         var orderName = slug.charAt(0).toUpperCase() + slug.slice(1).replace(/[-_]/g, ' ')
         document.title = 'Pedidos en línea · ' + orderName
-        // El chat y el pie son de reservas: la tienda no los lleva.
-        ;['textus-fab', 'footer'].forEach(function (id) {
+        // La barra de arriba, el chat y el pie son de reservas: la tienda no los lleva (la tienda pinta su propia
+        // cabecera con el nombre y el logo). `display` y no `hidden`: `.topnav { display: flex }` le gana a `hidden`.
+        ;['topnav', 'textus-fab', 'footer'].forEach(function (id) {
           var node = document.getElementById(id)
           if (node) node.style.display = 'none'
         })
@@ -694,6 +695,11 @@
         orderEl.setAttribute('venue', slug)
         if (flowType === 'pedido' && parts[2]) orderEl.setAttribute('tracking', parts[2])
         if (orderParams.get('locale')) orderEl.setAttribute('locale', orderParams.get('locale'))
+        // Cuando llega `/info`, el título lleva el nombre real del restaurante (el del slug es sólo un adelanto).
+        orderEl.addEventListener('avoqado:tienda-cargada', function (e) {
+          var realName = e && e.detail && e.detail.name
+          if (realName) document.title = 'Pedidos en línea · ' + realName
+        })
         orderEl.addEventListener('avoqado:pedido-creado', function (e) {
           var token = e && e.detail && e.detail.trackingToken
           if (!token) return

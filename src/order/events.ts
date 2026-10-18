@@ -15,3 +15,11 @@ export function emitOrderCreated(target: EventTarget, slug: string, order: Pick<
   }
   target.dispatchEvent(new CustomEvent(ORDER_CREATED, { detail, bubbles: true, composed: true }))
 }
+
+/** La tienda ya sabe el nombre real del restaurante (llegó `/info`): la página hospedada lo pone en su título. */
+export const STORE_LOADED = 'avoqado:tienda-cargada'
+export interface StoreLoadedDetail { slug: string; name: string }
+
+export function emitStoreLoaded(target: EventTarget, detail: StoreLoadedDetail): void {
+  target.dispatchEvent(new CustomEvent(STORE_LOADED, { detail, bubbles: true, composed: true }))
+}

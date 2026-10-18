@@ -18,6 +18,8 @@ export interface StoreInfo {
   brand: { logo: string | null; logoFull: string | null; primaryColor: string | null; secondaryColor: string | null }
   status: StoreStatus
   reason: StoreReason
+  /** ISO; sólo en una pausa con hora vigente que NO es la del gerente. Aditivo: un servidor viejo no lo manda. */
+  pausedUntil?: string | null
   hours: WeeklyHours | null
   paymentModes: { payAtPickup: boolean }
   minOrderAmount: number

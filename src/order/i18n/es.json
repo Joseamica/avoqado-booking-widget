@@ -32,6 +32,7 @@
     "noOpenToday": "Hoy no abre",
     "overnightRange": "{{open}}–{{close}} del día siguiente",
     "manualPause": "Hoy no estamos recibiendo pedidos en línea.",
+    "pausedUntil": "En este momento no estamos recibiendo pedidos. Volvemos a recibirlos a las {{time}}.",
     "tooBusy": "Muchos pedidos en este momento. Intenta en unos minutos.",
     "offline": "El restaurante no está conectado. Intenta en unos minutos.",
     "reconnecting": "Sin conexión; reintentando…"
@@ -64,7 +65,20 @@
     "quoting": "Calculando el total…",
     "payAtPickup": "Pagas al recoger en el restaurante.",
     "note": "Nota del pedido",
-    "continue": "Continuar"
+    "continue": "Continuar",
+    "issues": {
+      "EMPTY_CART": "Tu carrito está vacío.",
+      "TOO_MANY_LINES": "Máximo {{n}} renglones por pedido.",
+      "QUANTITY_INVALID": "La cantidad debe ser un entero entre 1 y {{n}}.",
+      "PRODUCT_UNAVAILABLE": "Un platillo de tu pedido ya no está disponible.",
+      "MODIFIER_INVALID": "Una opción de tu pedido ya no es válida.",
+      "MODIFIER_GROUP_REQUIRED": "Elige una opción de «{{group}}».",
+      "MODIFIER_GROUP_REQUIRED_MANY": "En «{{group}}» elige al menos {{n}} opciones.",
+      "MODIFIER_GROUP_SINGLE": "En «{{group}}» sólo puedes elegir una opción.",
+      "MODIFIER_GROUP_MAX": "En «{{group}}» puedes elegir hasta {{n}}.",
+      "BELOW_MINIMUM": "El pedido mínimo es de {{amount}}.",
+      "checkOptions": "Revisa las opciones de este platillo."
+    }
   },
   "details": {
     "title": "Tus datos",

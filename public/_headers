@@ -1,2 +1,2 @@
 https://pedidos.avoqado.io/*
-  Content-Security-Policy: frame-ancestors 'self' https://dashboard.avoqado.io
+  Content-Security-Policy: frame-ancestors 'self' https://dashboard.avoqado.io https://dashboardv2.avoqado.io https://demo.dashboard.avoqado.io https://staging.dashboard.avoqado.io

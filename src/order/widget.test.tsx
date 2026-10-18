@@ -139,6 +139,25 @@ describe('<avoqado-order>', () => {
     expect(seen[0].target).toBe(el)
   })
 
+  it('W1: avisa a la página el nombre real del restaurante cuando llega /info (avoqado:tienda-cargada), una vez', async () => {
+    vi.mocked(getInfo).mockResolvedValue(infoOf({ venue: { slug: 'flautas', name: 'Flautas Coyoacán', timezone: 'America/Mexico_City', currency: 'MXN' } }))
+    const seen: CustomEvent[] = []
+    const onLoaded = (e: Event) => seen.push(e as CustomEvent)
+    document.addEventListener('avoqado:tienda-cargada', onLoaded)
+    let el: Element
+    try {
+      el = await mount({ venue: 'flautas' })
+      // Un cambio que no toca el nombre no repite el aviso.
+      await act(async () => { storeOf(el).notice.value = 'x' })
+    } finally {
+      document.removeEventListener('avoqado:tienda-cargada', onLoaded)
+    }
+    expect(seen).toHaveLength(1)
+    expect(seen[0].detail).toEqual({ slug: 'flautas', name: 'Flautas Coyoacán' })
+    expect(seen[0].target).toBe(el!)
+    expect(seen[0].composed).toBe(true)
+  })
+
   it('al quitarlo de la página deja de sondear /info (dispose)', async () => {
     vi.useFakeTimers()
     vi.mocked(getInfo).mockImplementation(async slug => infoOf({ venue: { slug, name: slug, timezone: null, currency: 'MXN' }, status: 'CLOSED' }))

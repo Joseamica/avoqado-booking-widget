@@ -123,6 +123,14 @@ describe('textos por estado', () => {
     expect(screen.getByText('Calle 1, Coyoacán')).toBeTruthy()
     expect(screen.getByText('555 123 4567')).toBeTruthy()
   })
+  it('W12: cancelado, rechazado o vencido sin cobro no dice «Pagas al recoger»', async () => {
+    for (const status of ['CANCELLED_BY_CUSTOMER', 'CANCELLED_BY_STAFF', 'REJECTED', 'EXPIRED'] as const) {
+      await show(tr({ status, canCancel: false }))
+      expect(screen.getByText('Folio 42')).toBeTruthy()
+      expect(screen.queryByText('Pagas al recoger')).toBeNull()
+      cleanup()
+    }
+  })
   it('pagado dice «Pagado»', async () => {
     await show(tr({ paid: true, status: 'READY', canCancel: false }))
     expect(screen.getByText('Pagado')).toBeTruthy()

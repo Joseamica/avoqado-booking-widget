@@ -9,7 +9,7 @@ vi.mock('../api', async () => {
 import { ApiError, quote } from '../api'
 import { checkoutOf } from '../checkout'
 import { CartScreen } from './CartScreen'
-import { infoOf, makeStore, menuOf, withStore } from './testKit'
+import { infoOf, makeStore, menuOf, product, withStore } from './testKit'
 import type { CartLine } from '../cart'
 import type { Quote, QuoteLine, StoreInfo } from '../types'
 
@@ -56,6 +56,7 @@ describe('carrito cotizado por el servidor', () => {
   it('cada issue cuelga del renglón de su lineIndex; BELOW_MINIMUM va arriba del total', async () => {
     await show([flautas, tacos], quoteOf(170, {
       ok: false,
+      minOrderAmount: 200,
       issues: [
         { code: 'PRODUCT_UNAVAILABLE', productId: 'p2', lineIndex: 1, message: 'Un platillo de tu pedido ya no está disponible.' },
         { code: 'BELOW_MINIMUM', message: 'El pedido mínimo es de $200.00.' },
@@ -64,7 +65,8 @@ describe('carrito cotizado por el servidor', () => {
     const tacosRow = screen.getByRole('listitem', { name: 'Tacos' })
     expect(within(tacosRow).getByText('Un platillo de tu pedido ya no está disponible.')).toBeTruthy()
     expect(within(screen.getByRole('listitem', { name: 'Flautas' })).queryByText('Un platillo de tu pedido ya no está disponible.')).toBeNull()
-    const minimum = screen.getByText('El pedido mínimo es de $200.00.')
+    // El monto sale de la cotización y con el formato de la tienda (no el texto del servidor).
+    const minimum = screen.getByText('El pedido mínimo es de $200.')
     expect(tacosRow.contains(minimum)).toBe(false)
     expect(minimum.compareDocumentPosition(screen.getByText('Total (IVA incluido)')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
@@ -115,6 +117,41 @@ describe('carrito cotizado por el servidor', () => {
     expect(note.maxLength).toBe(300)
     fireEvent.input(note, { target: { value: 'Paso a las 2' } })
     expect(checkoutOf(s).draft.value.note).toBe('Paso a las 2')
+  })
+
+  it('W5: en inglés los motivos salen por código, con los valores de la respuesta; un código desconocido usa el message', async () => {
+    const withGroup = product({
+      modifierGroups: [{
+        id: 'g1', name: 'Salsa', required: true, allowMultiple: true, minSelections: 2, maxSelections: 3,
+        modifiers: [{ id: 'm1', name: 'Verde', price: 0 }],
+      }],
+    })
+    const s = makeStore(infoOf(), menuOf(withGroup), 'en')
+    s.cart.value = [flautas, tacos]
+    vi.mocked(quote).mockResolvedValue(quoteOf(170, {
+      ok: false,
+      minOrderAmount: 100,
+      issues: [
+        { code: 'MODIFIER_GROUP_REQUIRED', productId: 'p1', groupId: 'g1', lineIndex: 0, message: 'En «Salsa» elige al menos 2 opciones.' },
+        { code: 'MODIFIER_GROUP_MAX', productId: 'p1', groupId: 'g1', lineIndex: 0, message: 'En «Salsa» puedes elegir hasta 3.' },
+        { code: 'PRODUCT_UNAVAILABLE', productId: 'p2', lineIndex: 1, message: 'Un platillo de tu pedido ya no está disponible.' },
+        { code: 'QUANTITY_INVALID', productId: 'p2', lineIndex: 1, message: 'La cantidad debe ser un entero entre 1 y 20.' },
+        { code: 'BELOW_MINIMUM', message: 'El pedido mínimo es de $100.00.' },
+        { code: 'ALGO_NUEVO', message: 'Aviso nuevo del servidor.' } as any,
+      ],
+    }))
+    s.go('cart')
+    render(withStore(s, <CartScreen />))
+    await flush()
+    const flautasRow = screen.getByRole('listitem', { name: 'Flautas' })
+    expect(within(flautasRow).getByText('In “Salsa” choose at least 2 options.')).toBeTruthy()
+    expect(within(flautasRow).getByText('In “Salsa” you can choose up to 3.')).toBeTruthy()
+    const tacosRow = screen.getByRole('listitem', { name: 'Tacos' })
+    expect(within(tacosRow).getByText('A dish in your order is no longer available.')).toBeTruthy()
+    expect(within(tacosRow).getByText('The quantity must be a whole number from 1 to 20.')).toBeTruthy()
+    expect(screen.getByText('The minimum order is $100.')).toBeTruthy()
+    expect(screen.getByText('Aviso nuevo del servidor.')).toBeTruthy()
+    expect(document.body.textContent).not.toMatch(/elige|platillo|pedido mínimo|cart\.issues/)
   })
 
   it('toques seguidos ⇒ UNA cotización nueva (~300 ms después del último): el límite es 60/min por IP', async () => {

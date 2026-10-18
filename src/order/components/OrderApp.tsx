@@ -5,6 +5,7 @@ import { ApiError, getTracking } from '../api'
 import { createOrderT } from '../i18n'
 import { clearLastOrder, loadLastOrder } from '../session'
 import { isFinalStatus } from '../types'
+import { emitStoreLoaded } from '../events'
 import { MenuScreen } from './MenuScreen'
 import { CartScreen } from './CartScreen'
 import { DetailsScreen } from './DetailsScreen'
@@ -39,11 +40,24 @@ export function OrderApp({ accentColor }: { accentColor?: string }) {
     )
     return () => { off = true }
   }, [store])
-  const accent = store.info.value?.brand.primaryColor || accentColor
+  const info = store.info.value
+  const name = info?.venue.name || null
+  // La página hospedada pone el nombre real en su título (no el que adivina del slug).
+  useEffect(() => { if (name && store.host) emitStoreLoaded(store.host, { slug: store.slug, name }) }, [store, name])
+  const accent = info?.brand.primaryColor || accentColor
+  const logo = info?.brand.logo || info?.brand.logoFull
   const notice = store.notice.value
   const screen = store.screen.value
   return (
     <div style={accent ? { ['--avq-accent' as any]: accent } : undefined}>
+      {/* De quién es la tienda, arriba de todo; el seguimiento ya trae el nombre en su título. */}
+      {screen !== 'tracking' && (name || logo) && (
+        <header style={{ display: 'flex', alignItems: 'center', gap: '10px', margin: '0 0 12px' }}>
+          {logo && <img src={logo} alt="" style={{ height: '40px', maxWidth: '160px', objectFit: 'contain', borderRadius: '8px' }}
+            onError={(e: any) => { e.currentTarget.style.display = 'none' }} />}
+          {name && <strong style={{ fontSize: '18px' }}>{name}</strong>}
+        </header>
+      )}
       {notice && (
         <div role="status" style={{ ...banner, display: 'flex', justifyContent: 'space-between', gap: '8px' }}>
           <span>{notice}</span>
