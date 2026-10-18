@@ -40,13 +40,14 @@ export function createOrderStore(slug: string, opts: { locale: 'es' | 'en'; trac
   let timer: ReturnType<typeof setTimeout> | null = null
   let disposed = false
 
-  cart.subscribe(c => saveCart(slug, c))
+  const unsubscribeCart = cart.subscribe(c => saveCart(slug, c))
 
   // Con la tienda no abierta se vuelve a preguntar cada 60 s, pero sólo si la pestaña se ve (una oculta no gasta red).
   function schedule() {
     if (timer) clearTimeout(timer)
     timer = null
-    if (disposed || !info.value || info.value.status === 'OPEN') return
+    // Con trackingToken no se sondea: el seguimiento (tarea 10) sondea su propio estado.
+    if (disposed || trackingToken.value || !info.value || info.value.status === 'OPEN') return
     timer = setTimeout(() => {
       timer = null
       if (document.visibilityState === 'visible') void store.refreshInfo()
@@ -95,6 +96,7 @@ export function createOrderStore(slug: string, opts: { locale: 'es' | 'en'; trac
     },
     dispose() {
       disposed = true
+      unsubscribeCart()
       if (timer) clearTimeout(timer)
       timer = null
     },

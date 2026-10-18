@@ -46,4 +46,13 @@ describe('sesión de pedidos', () => {
     clearLastOrder('a')
     expect(loadLastOrder('a')).toBeNull()
   })
+  it('getItem que lanza o forma inválida ⇒ null', () => {
+    localStorage.setItem('avq_order_last:a', JSON.stringify({ trackingToken: 1 }))
+    expect(loadLastOrder('a')).toBeNull()
+    vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+      throw new Error('bloqueado')
+    })
+    expect(loadSession('a')).toBeNull()
+    expect(loadLastOrder('a')).toBeNull()
+  })
 })

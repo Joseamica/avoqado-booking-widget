@@ -21,4 +21,7 @@ describe('textos de la tienda', () => {
         expect(t(`modifiers.${k}`)).toBe((booking as any).modifiers[k])
     }
   })
+  it('idioma desconocido cae a es', () => {
+    expect(createOrderT('fr')('modifiers.required')).toBe('Requerido')
+  })
 })

@@ -29,4 +29,12 @@ describe('horario', () => {
     expect(formatTime('2026-10-17T19:30:00Z', TZ, 'es')).toBe('13:30')
     expect(formatTime('2026-10-17T19:30:00Z', TZ, 'en')).toMatch(/1:30\s?PM/)
   })
+  it('formatTime con hora de un dígito', () => {
+    expect(formatTime('2026-10-17T15:05:00Z', TZ, 'es')).toBe('09:05')
+    expect(formatTime('2026-10-17T15:05:00Z', TZ, 'en')).toMatch(/^9:05\s?AM$/)
+  })
+  it('formatTime usa la zona pedida, no la de la máquina', () => {
+    expect(formatTime('2026-10-17T19:30:00Z', 'Asia/Tokyo', 'es')).toBe('04:30')
+    expect(formatTime('2026-10-17T19:30:00Z', 'UTC', 'es')).toBe('19:30')
+  })
 })
