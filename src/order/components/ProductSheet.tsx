@@ -56,7 +56,7 @@ export function ProductSheet({ product }: { product: MenuProduct }) {
       {product.imageUrl && <img src={product.imageUrl} alt="" style={{ width: '100%', maxHeight: '200px', objectFit: 'cover', borderRadius: '10px', margin: '10px 0' }} />}
       {product.description && <p style={muted}>{product.description}</p>}
       {product.modifierGroups.map(g => (
-        <ModifierPicker key={g.id} productId={product.id} group={g} selections={selections} onChange={setSelections} t={t} />
+        <ModifierPicker key={g.id} productId={product.id} group={g} selections={selections} onChange={setSelections} t={t} maxPerOption={MAX_QTY} />
       ))}
       <label style={{ display: 'block', margin: '8px 0' }}>
         <span style={muted}>{t('sheet.note')}</span>

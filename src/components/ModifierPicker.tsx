@@ -34,9 +34,14 @@ interface ModifierPickerProps {
   selections: ModifierSelection[]
   onChange: (next: ModifierSelection[]) => void
   t: TFunction
+  /**
+   * Tope de unidades por opción (la tienda: 20, `MAX_LINE_QUANTITY` del servidor). Con él, un grupo de varias SIN máximo
+   * también deja pedir cantidad (p. ej. mínimo 2 con una sola opción). Sin él (reservas), igual que siempre.
+   */
+  maxPerOption?: number
 }
 
-export function ModifierPicker({ productId, group, selections, onChange, t }: ModifierPickerProps) {
+export function ModifierPicker({ productId, group, selections, onChange, t, maxPerOption }: ModifierPickerProps) {
   const inputName = `avq-mg-${productId}-${group.id}`
   const groupModifierIds = new Set(group.modifiers.map(m => m.id))
 
@@ -44,6 +49,8 @@ export function ModifierPicker({ productId, group, selections, onChange, t }: Mo
     s => s.productId === productId && groupModifierIds.has(s.modifierId),
   )
   const totalSelectedQty = selectionsForGroup.reduce((acc, s) => acc + s.quantity, 0)
+  // Unidades que admite UNA opción: el máximo del grupo y, si se dio, el tope por opción. Sin ninguno: sin cantidad.
+  const optionCap = Math.min(group.maxSelections ?? Infinity, maxPerOption ?? Infinity)
 
   const selectedFor = (modifierId: string) =>
     selections.find(s => s.productId === productId && s.modifierId === modifierId)
@@ -81,6 +88,7 @@ export function ModifierPicker({ productId, group, selections, onChange, t }: Mo
       const cap = group.maxSelections - others
       if (qty > cap) qty = cap
     }
+    if (maxPerOption != null && qty > maxPerOption) qty = maxPerOption
     const exists = selectedFor(modifierId)
     if (exists) {
       onChange(
@@ -129,8 +137,7 @@ export function ModifierPicker({ productId, group, selections, onChange, t }: Mo
       <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: '6px' }}>
         {group.modifiers.map(m => {
           const selected = selectedFor(m.id)
-          const isQuantityVisible =
-            group.allowMultiple && group.maxSelections != null && group.maxSelections > 1 && !!selected
+          const isQuantityVisible = group.allowMultiple && Number.isFinite(optionCap) && optionCap > 1 && !!selected
           return (
             <li key={m.id}>
               <label
@@ -162,7 +169,7 @@ export function ModifierPicker({ productId, group, selections, onChange, t }: Mo
                     <input
                       type="number"
                       min={1}
-                      max={group.maxSelections ?? undefined}
+                      max={optionCap}
                       value={selected?.quantity ?? 1}
                       onClick={(e: any) => e.stopPropagation()}
                       onInput={(e: any) => setQuantity(m.id, Number(e.currentTarget.value))}

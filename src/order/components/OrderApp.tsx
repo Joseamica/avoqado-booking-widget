@@ -18,28 +18,35 @@ import { banner, btn } from './ui'
 export function OrderApp({ accentColor }: { accentColor?: string }) {
   const store = useContext(OrderStoreContext)!
   const t = createOrderT(store.locale)
-  useEffect(() => { if (!store.menu.value) void store.load() }, [store])
+  const token = store.trackingToken.value
+  // También al salir del seguimiento («Pedir algo más»): ahí todavía no se había pedido la carta.
+  useEffect(() => { if (!store.menu.value) void store.load() }, [store, token])
   // ¿Queda un pedido en curso de este comensal? Aquí y no en la carta: con el plan vencido, la tienda apagada o `/info`
-  // caído también tiene que poder volver a su pedido. Final o 404 ⇒ se olvida (y el 404 se avisa).
+  // caído también tiene que poder volver a su pedido. Final o 404 ⇒ se olvida (y el 404 se avisa). Se vuelve a mirar al
+  // salir del seguimiento: el pedido que se acaba de hacer también es «el pedido en curso».
   const [active, setActive] = useState<string | null>(null)
   useEffect(() => {
     const last = loadLastOrder(store.slug)
-    if (!last || last.trackingToken === store.trackingToken.value) return
+    if (!last) return void setActive(null)
+    if (last.trackingToken === token) return
     let off = false
     getTracking(store.slug, last.trackingToken).then(
       r => {
         if (off) return
-        if (isFinalStatus(r.status)) clearLastOrder(store.slug)
-        else setActive(last.trackingToken)
+        if (isFinalStatus(r.status)) {
+          clearLastOrder(store.slug)
+          setActive(null)
+        } else setActive(last.trackingToken)
       },
       e => {
         if (off || !(e instanceof ApiError) || e.status !== 404) return
         clearLastOrder(store.slug)
+        setActive(null)
         store.notice.value = t('tracking.notFound')
       },
     )
     return () => { off = true }
-  }, [store])
+  }, [store, token])
   const info = store.info.value
   const name = info?.venue.name || null
   // La página hospedada pone el nombre real en su título (no el que adivina del slug).

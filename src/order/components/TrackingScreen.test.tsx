@@ -145,6 +145,15 @@ describe('textos por estado', () => {
   })
 })
 
+describe('volver a la carta', () => {
+  it('W7: «Pedir algo más» deja el seguimiento y va a la carta', async () => {
+    const s = await show(tr({ status: 'ACCEPTED', canCancel: false }))
+    fireEvent.click(screen.getByRole('button', { name: 'Pedir algo más' }))
+    expect(s.trackingToken.value).toBeNull()
+    expect(s.screen.value).toBe('menu')
+  })
+})
+
 describe('cancelar', () => {
   it('sin canCancel no hay botón', async () => {
     await show(tr({ canCancel: false }))

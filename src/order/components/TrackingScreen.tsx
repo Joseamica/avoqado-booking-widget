@@ -66,7 +66,13 @@ export function TrackingScreen() {
     }
   }, [store, token])
 
-  if (gone) return <p role="status" style={{ margin: '16px 0' }}>{t('tracking.notFound')}</p>
+  // De vuelta a la carta (el aviso «Tienes un pedido en curso · Ver» de OrderApp regresa aquí).
+  const orderMore = (
+    <button type="button" style={{ ...btn(), display: 'block', marginTop: '12px' }} onClick={() => { store.trackingToken.value = null; store.go('menu') }}>
+      {t('tracking.orderMore')}
+    </button>
+  )
+  if (gone) return <div><p role="status" style={{ margin: '16px 0' }}>{t('tracking.notFound')}</p>{orderMore}</div>
   if (!tracking) return <p role="status" style={{ margin: '16px 0' }}>{t(problem ?? 'tracking.loading')}</p>
 
   const tz = tracking.venueTimezone ?? store.info.value?.venue.timezone ?? 'America/Mexico_City'
@@ -146,6 +152,7 @@ export function TrackingScreen() {
           <button type="button" style={btn()} disabled={busy} onClick={() => setAsking(false)}>{t('tracking.cancelNo')}</button>
         </div>
       )}
+      {orderMore}
     </div>
   )
 }

@@ -43,13 +43,18 @@ export function createOrderStore(slug: string, opts: { locale: 'es' | 'en'; trac
   let disposed = false
 
   const unsubscribeCart = cart.subscribe(c => saveCart(slug, c))
+  // ¿Hay que preguntar otra vez por la tienda? Con el seguimiento no (sondea lo suyo); abierta, tampoco.
+  const waiting = () => !disposed && !trackingToken.value && !!info.value && info.value.status !== 'OPEN'
+  // Volver a la pestaña con la tienda no abierta pregunta en el acto: el comensal no espera hasta un minuto más a que abra.
+  const onVisible = () => { if (document.visibilityState === 'visible' && waiting()) void store.refreshInfo() }
+  document.addEventListener('visibilitychange', onVisible)
 
   // Con la tienda no abierta se vuelve a preguntar cada 60 s, pero sólo si la pestaña se ve (una oculta no gasta red).
   function schedule() {
     if (timer) clearTimeout(timer)
     timer = null
     // Con trackingToken no se sondea: el seguimiento (tarea 10) sondea su propio estado.
-    if (disposed || trackingToken.value || !info.value || info.value.status === 'OPEN') return
+    if (!waiting()) return
     timer = setTimeout(() => {
       timer = null
       if (document.visibilityState === 'visible') void store.refreshInfo()
@@ -75,8 +80,19 @@ export function createOrderStore(slug: string, opts: { locale: 'es' | 'en'; trac
     },
     async refreshInfo() {
       try {
+        const wasOpen = info.value?.status === 'OPEN'
         info.value = await getInfo(slug)
         infoError.value = null
+        // Acaba de abrir: la carta que se cargó cerrada pudo venir vacía (categorías con horario que aún no empezaba).
+        // Si no se puede recargar, sin carta y con el error: la pantalla ofrece «Reintentar» (nunca una carta vacía muda).
+        if (!wasOpen && info.value.status === 'OPEN' && !trackingToken.value) {
+          try {
+            menu.value = await getMenu(slug)
+          } catch (e) {
+            menu.value = null
+            infoError.value = asApiError(e)
+          }
+        }
       } catch (e) {
         infoError.value = asApiError(e)
       }
@@ -100,6 +116,7 @@ export function createOrderStore(slug: string, opts: { locale: 'es' | 'en'; trac
     dispose() {
       disposed = true
       unsubscribeCart()
+      document.removeEventListener('visibilitychange', onVisible)
       if (timer) clearTimeout(timer)
       timer = null
     },

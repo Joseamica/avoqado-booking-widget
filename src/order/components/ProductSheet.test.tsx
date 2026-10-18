@@ -88,6 +88,23 @@ describe('ficha del producto', () => {
     open(product({ soldOut: true }))
     expect(addBtn().disabled).toBe(true)
   })
+  it('W4: grupo de varias con mínimo 2 y sin máximo, con una sola opción: se piden 2 de esa opción (tope 20 por opción)', () => {
+    const s = open(product({
+      modifierGroups: [{
+        id: 'g2', name: 'Tortillas', required: true, allowMultiple: true, minSelections: 2, maxSelections: null,
+        modifiers: [{ id: 'm9', name: 'Maíz', price: 0 }],
+      }],
+    }))
+    fireEvent.click(screen.getByRole('checkbox'))
+    expect(addBtn().disabled).toBe(true)
+    const qty = screen.getByRole('spinbutton') as HTMLInputElement
+    expect(qty.max).toBe('20')
+    fireEvent.input(qty, { target: { value: '2' } })
+    expect(addBtn().disabled).toBe(false)
+    fireEvent.input(qty, { target: { value: '25' } })
+    fireEvent.click(addBtn())
+    expect(s.cart.value[0].modifiers).toEqual([{ modifierId: 'm9', name: 'Maíz', price: 0, quantity: 20 }])
+  })
   it('Cerrar regresa a la carta', () => {
     const s = open(product())
     fireEvent.click(screen.getByRole('button', { name: 'Cerrar' }))
