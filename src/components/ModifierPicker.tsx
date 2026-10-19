@@ -1,17 +1,10 @@
 import { h } from 'preact'
 import type { ModifierSelection } from '../types'
 import type { TFunction } from '../i18n'
+import { optionCap as optionCapFor, setModifierQuantity, toggleModifier, type PickerGroup } from '../state/modifierSelection'
 
-// Sólo los campos que el picker lee: `ModifierGroup` de reservas y `MenuModifierGroup` de la tienda caben los dos.
-export interface PickerGroup {
-  id: string
-  name: string
-  description?: string | null
-  required: boolean
-  allowMultiple: boolean
-  maxSelections: number | null
-  modifiers: { id: string; name: string; price: number }[]
-}
+// `PickerGroup` vive con las reglas de selección; se reexporta para que `import { PickerGroup } from './ModifierPicker'` siga valiendo.
+export type { PickerGroup }
 
 // Enteros sin centavos ($15); con centavos si no es entero ($12.50).
 function formatPriceMXN(amount: number): string {
@@ -43,65 +36,20 @@ interface ModifierPickerProps {
 
 export function ModifierPicker({ productId, group, selections, onChange, t, maxPerOption }: ModifierPickerProps) {
   const inputName = `avq-mg-${productId}-${group.id}`
-  const groupModifierIds = new Set(group.modifiers.map(m => m.id))
-
-  const selectionsForGroup = selections.filter(
-    s => s.productId === productId && groupModifierIds.has(s.modifierId),
-  )
-  const totalSelectedQty = selectionsForGroup.reduce((acc, s) => acc + s.quantity, 0)
   // Unidades que admite UNA opción: el máximo del grupo y, si se dio, el tope por opción. Sin ninguno: sin cantidad.
-  const optionCap = Math.min(group.maxSelections ?? Infinity, maxPerOption ?? Infinity)
+  const optionCap = optionCapFor(group, maxPerOption)
 
   const selectedFor = (modifierId: string) =>
     selections.find(s => s.productId === productId && s.modifierId === modifierId)
 
+  // Las reglas viven en `state/modifierSelection`. Con el grupo lleno devuelve la MISMA lista: nada cambió, no se avisa.
   const toggle = (modifierId: string) => {
-    const existing = selectedFor(modifierId)
-    if (group.allowMultiple) {
-      if (existing) {
-        onChange(selections.filter(s => !(s.productId === productId && s.modifierId === modifierId)))
-      } else {
-        if (group.maxSelections != null && totalSelectedQty >= group.maxSelections) return
-        onChange([...selections, { productId, modifierId, quantity: 1 }])
-      }
-    } else {
-      // single-select: replace any existing pick in this group
-      const filtered = selections.filter(
-        s => !(s.productId === productId && groupModifierIds.has(s.modifierId)),
-      )
-      if (existing) {
-        onChange(filtered)
-      } else {
-        onChange([...filtered, { productId, modifierId, quantity: 1 }])
-      }
-    }
+    const next = toggleModifier(selections, productId, group, modifierId)
+    if (next !== selections) onChange(next)
   }
 
-  const setQuantity = (modifierId: string, qty: number) => {
-    // La tienda sólo acepta enteros por opción (2.7 ⇒ 2; vacío o inválido ⇒ quitar). Reservas no pasa `maxPerOption`: igual que antes.
-    if (maxPerOption != null) qty = Math.trunc(qty) || 0
-    if (qty < 1) {
-      onChange(selections.filter(s => !(s.productId === productId && s.modifierId === modifierId)))
-      return
-    }
-    if (group.maxSelections != null) {
-      // Account for other selected modifiers in the same group
-      const others = totalSelectedQty - (selectedFor(modifierId)?.quantity ?? 0)
-      const cap = group.maxSelections - others
-      if (qty > cap) qty = cap
-    }
-    if (maxPerOption != null && qty > maxPerOption) qty = maxPerOption
-    const exists = selectedFor(modifierId)
-    if (exists) {
-      onChange(
-        selections.map(s =>
-          s.productId === productId && s.modifierId === modifierId ? { ...s, quantity: qty } : s,
-        ),
-      )
-    } else {
-      onChange([...selections, { productId, modifierId, quantity: qty }])
-    }
-  }
+  const setQuantity = (modifierId: string, qty: number) =>
+    onChange(setModifierQuantity(selections, productId, group, modifierId, qty, maxPerOption))
 
   const subtitle = group.required
     ? t('modifiers.required')
