@@ -173,6 +173,15 @@ describe('errores', () => {
     expect(e).toMatchObject({ status: 409, code: 'PRICE_CHANGED', details, network: false, message: 'El precio de tu pedido cambió.' })
   })
 
+  it('W1: la marca `final: true` del cuerpo llega en ApiError.final; sin ella (o con otro valor) es false', async () => {
+    fetchMock.mockResolvedValueOnce(json(404, { success: false, code: 'VENUE_NOT_FOUND', error: 'x', final: true }))
+    expect((await caught(createOrder('flautas', BODY, { idempotencyKey: KEY, token: 't' }))).final).toBe(true)
+    fetchMock.mockResolvedValueOnce(json(404, { success: false, code: 'VENUE_NOT_FOUND', error: 'x' }))
+    expect((await caught(createOrder('flautas', BODY, { idempotencyKey: KEY, token: 't' }))).final).toBe(false)
+    fetchMock.mockResolvedValueOnce(json(404, { success: false, code: 'VENUE_NOT_FOUND', error: 'x', final: 'true' }))
+    expect((await caught(createOrder('flautas', BODY, { idempotencyKey: KEY, token: 't' }))).final).toBe(false)
+  })
+
   it('error global {message} ⇒ ApiError 400 sin code y con el mensaje del servidor', async () => {
     fetchMock.mockResolvedValue(json(400, { message: 'Código incorrecto.' }))
 

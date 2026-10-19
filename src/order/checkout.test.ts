@@ -36,6 +36,8 @@ const created = (over: Partial<CreatedOrder> = {}): CreatedOrder => ({
   total: '170.00', acceptDeadlineAt: '2026-10-17T19:00:00Z', replay: false, ...over,
 })
 const offline = () => new ApiError('Sin conexión', 0, undefined, undefined, true)
+/** Un rechazo con la marca `final: true` que el servidor pone a lo que dejó guardado. */
+const fin = (status: number, code: string, details?: unknown) => new ApiError('x', status, code, details, false, true)
 const flush = async () => { for (let i = 0; i < 10; i++) await Promise.resolve() }
 
 let n = 0
@@ -91,8 +93,10 @@ describe('isDefinitive', () => {
     ['400 CART_INVALID', new ApiError('x', 400, 'CART_INVALID'), true],
     ['400 de validación', new ApiError('Error de validación: …', 400), true],
     ['403', new ApiError('x', 403, 'PLAN_REQUIRED'), true],
-    ['404', new ApiError('x', 404, 'VENUE_NOT_FOUND'), true],
+    ['404 VENUE_NOT_FOUND sin marca final (el slug pudo cambiar: el pedido aún puede crearse)', new ApiError('x', 404, 'VENUE_NOT_FOUND'), false],
+    ['404 con final:true (rechazo que el servidor dejó guardado)', fin(404, 'VENUE_NOT_FOUND'), true],
     ['409 PRICE_CHANGED', new ApiError('x', 409, 'PRICE_CHANGED'), true],
+    ['409 PRICE_CHANGED con final:true', fin(409, 'PRICE_CHANGED'), true],
     ['409 IDEMPOTENCY_KEY_CONFLICT', new ApiError('x', 409, 'IDEMPOTENCY_KEY_CONFLICT'), true],
   ])('%s ⇒ %s', (_, e, expected) => {
     expect(isDefinitive(e)).toBe(expected)
@@ -240,6 +244,49 @@ describe('submitOrder', () => {
     expect(pendingAttempt(store.slug)).toBeNull()
   })
 
+  it('W1: 404 VENUE_NOT_FOUND SIN marca final ⇒ el intento NO se resuelve (misma llave), error con «Reintentar» y el texto del restaurante', async () => {
+    const { store, body } = setup()
+    api.createOrder.mockRejectedValueOnce(new ApiError('Negocio no encontrado', 404, 'VENUE_NOT_FOUND'))
+    const r = await submitOrder(store, body)
+    expect(r).toEqual({ kind: 'error', message: 'No encontramos este restaurante.', retryable: true })
+    expect(pendingAttempt(store.slug)?.key).toBe(sent(0).key)
+    expect(loadLastOrder(store.slug)).toBeNull()
+  })
+
+  it('W1: tras un 404 sin marca, el reintento (aunque vuelva el slug) lleva la MISMA llave y el MISMO cuerpo, y recupera el pedido', async () => {
+    const { store, body } = setup()
+    api.createOrder.mockRejectedValueOnce(new ApiError('x', 404, 'VENUE_NOT_FOUND')).mockResolvedValueOnce(created({ replay: true }))
+    await submitOrder(store, body)
+    const r = await submitOrder(store, { ...body, expectedTotal: '999.00' })
+    expect(r.kind).toBe('created')
+    expect(sent(1).key).toBe(sent(0).key)
+    expect(sent(1).body).toEqual(sent(0).body)
+    expect(pendingAttempt(store.slug)).toBeNull()
+  })
+
+  it('W1: 404 con final:true ⇒ el intento SÍ se resuelve (el rechazo quedó guardado) y no hay «Reintentar»', async () => {
+    const { store, body } = setup()
+    api.createOrder.mockRejectedValueOnce(fin(404, 'VENUE_NOT_FOUND'))
+    expect(await submitOrder(store, body)).toEqual({ kind: 'error', message: 'No encontramos este restaurante.', retryable: false })
+    expect(pendingAttempt(store.slug)).toBeNull()
+  })
+
+  it('W1: compatibilidad con un servidor viejo ⇒ los 409/400 sin marca siguen resolviendo el intento como hoy', async () => {
+    for (const [status, code, extra] of [
+      [409, 'PRICE_CHANGED', { quote: quoteOf(190) }],
+      [409, 'ORDERING_CLOSED', { status: 'CLOSED', reason: 'OUTSIDE_HOURS' }],
+      [409, 'TOO_MANY_PENDING_ORDERS', undefined],
+      [400, 'CART_INVALID', { issues: [] }],
+      [403, 'PLAN_REQUIRED', undefined],
+    ] as const) {
+      sessionStorage.clear()
+      const { store, body } = setup()
+      api.createOrder.mockRejectedValueOnce(new ApiError('x', status, code, extra))
+      await submitOrder(store, body)
+      expect(pendingAttempt(store.slug), `${status} ${code}`).toBeNull()
+    }
+  })
+
   it('una petición a la vez: dos envíos simultáneos ⇒ una sola llamada', async () => {
     const { store, body } = setup()
     let resolve!: (o: CreatedOrder) => void
@@ -332,6 +379,19 @@ describe('send (lo que ve la tienda)', () => {
     await fresh.retry(reloaded)
     expect(sent(1).key).toBe(sent(0).key)
     expect(fresh.checkoutOf(reloaded).pending.value).toBe(false)
+  })
+
+  it('W1: 404 sin marca ⇒ la tienda muestra el error con «Reintentar», el intento sigue pendiente y reintentar manda la misma llave', async () => {
+    const { store, body } = setup()
+    api.createOrder.mockRejectedValueOnce(new ApiError('x', 404, 'VENUE_NOT_FOUND'))
+    await send(store, body)
+    expect(checkoutOf(store).feedback.value).toEqual({ kind: 'error', message: 'No encontramos este restaurante.', retryable: true })
+    expect(checkoutOf(store).pending.value).toBe(true)
+    api.createOrder.mockResolvedValueOnce(created({ replay: true }))
+    await retry(store)
+    expect(sent(1).key).toBe(sent(0).key)
+    expect(store.screen.value).toBe('tracking')
+    expect(checkoutOf(store).pending.value).toBe(false)
   })
 
   it('«Reintentar» sin intento pendiente no inventa uno nuevo', async () => {

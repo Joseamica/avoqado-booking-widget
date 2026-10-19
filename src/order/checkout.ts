@@ -1,6 +1,6 @@
 // Envío del pedido sin duplicados. Reglas (spec §5.3 y notas de las tareas 5 y 6):
 // - Un intento = una llave. Si hay un intento pendiente se manda ESE cuerpo con ESA llave (beginAttempt lo devuelve).
-// - Sólo una respuesta DEFINITIVA lo borra; red, 5xx, 408, 429 y 401 lo conservan y se reintenta igual.
+// - Sólo una respuesta DEFINITIVA lo borra; red, 5xx, 408, 429, 401 y un 404 sin la marca `final` lo conservan y se reintenta igual.
 // - El teléfono que se verifica es el del cuerpo que se va a mandar (el del intento pendiente, si lo hay).
 import { signal, type Signal } from '@preact/signals'
 import { ApiError, createOrder, verifyOrderingOtp } from './api'
@@ -24,9 +24,13 @@ export type SubmitResult =
 
 type T = ReturnType<typeof createOrderT>
 
-/** ¿El servidor dio un desenlace? Sin red, 5xx (también un 502/504 de proxy con HTML), 408, 429 y 401 no lo dan. */
+/**
+ * ¿El servidor dio un desenlace? Sin red, 5xx (también un 502/504 de proxy con HTML), 408, 429 y 401 no lo dan. Un 404 tampoco,
+ * salvo que traiga `final: true`: el 404 del resolver (el slug cambió un rato) llega ANTES de cualquier decisión guardada, y un
+ * envío anterior con esa llave todavía puede crear el pedido. Un servidor que aún no manda `final` deja el 404 pendiente (seguro).
+ */
 export const isDefinitive = (e: ApiError): boolean =>
-  !e.network && e.status >= 400 && e.status < 500 && ![401, 408, 429].includes(e.status)
+  !e.network && e.status >= 400 && e.status < 500 && ![401, 408, 429].includes(e.status) && (e.status !== 404 || e.final)
 
 /** Texto para una falla de la API. El 429 en texto plano llega con message «HTTP 429»: se elige por `code`. */
 export function errorText(t: T, e: unknown): string {
@@ -160,7 +164,8 @@ async function doSubmit(store: OrderStore, body: CreateOrderBody): Promise<Submi
         clearSession(slug)
         return { kind: 'needsOtp' }
       }
-      return { kind: 'error', message: errorText(t, e), retryable: true }
+      const message = e instanceof ApiError && e.code === 'VENUE_NOT_FOUND' ? t('store.notFound') : errorText(t, e)
+      return { kind: 'error', message, retryable: true }
     }
     settleAttempt(slug)
     const details = (e.details ?? {}) as any

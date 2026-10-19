@@ -8,20 +8,24 @@ const TIMEOUT_MS = 15_000
 /**
  * Un error de la API con las dos formas del servidor unidas: la pública `{success:false, code, error, details}` y la global
  * `{message, code?, details?}`. `network` = no hubo respuesta usable (sin red, 15 s sin respuesta): el desenlace es desconocido.
+ * `final` = el servidor dejó GUARDADO ese rechazo (`final: true` en el cuerpo): con esa llave nunca cambiará. Sin la marca, un 404
+ * (p. ej. el slug cambió un rato) no dice nada del pedido: la llave se conserva.
  */
 export class ApiError extends Error {
   status: number
   code?: string
   details?: unknown
   network: boolean
+  final: boolean
 
-  constructor(message: string, status: number, code?: string, details?: unknown, network = false) {
+  constructor(message: string, status: number, code?: string, details?: unknown, network = false, final = false) {
     super(message)
     this.name = 'ApiError'
     this.status = status
     this.code = code
     this.details = details
     this.network = network
+    this.final = final
   }
 }
 
@@ -53,7 +57,7 @@ async function send<T>(path: string, opts: { method?: 'POST'; body?: unknown; he
       return body as T
     }
     const code = body?.code ?? (res.status === 429 ? 'RATE_LIMIT_EXCEEDED' : undefined)
-    throw new ApiError(body?.error ?? body?.message ?? `HTTP ${res.status}`, res.status, code, body?.details)
+    throw new ApiError(body?.error ?? body?.message ?? `HTTP ${res.status}`, res.status, code, body?.details, false, body?.final === true)
   } finally {
     clearTimeout(timer)
   }
