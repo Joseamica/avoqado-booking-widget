@@ -87,6 +87,13 @@ describe('setModifierQuantity', () => {
     expect(setModifierQuantity([sel('a')], 'p', tope3, 'a', 2.5)).toEqual([sel('a', 2.5)])
   })
 
+  it('el límite es 1: de 2 a 1 la opción se queda (con y sin maxPerOption); por debajo de 1 se quita', () => {
+    const dos = [sel('a', 2)]
+    expect(setModifierQuantity(dos, 'p', group(), 'a', 1, 20)).toEqual([sel('a', 1)])
+    expect(setModifierQuantity(dos, 'p', group(), 'a', 1)).toEqual([sel('a', 1)]) // reservas: sin maxPerOption
+    expect(setModifierQuantity(dos, 'p', group(), 'a', 0.9)).toEqual([]) // reservas no trunca, pero 0.9 sigue siendo menos de 1
+  })
+
   it('actualiza su línea en su sitio, agrega la opción si no estaba y no toca las demás', () => {
     const otras = [sel('b'), sel('a', 7, 'q')]
     expect(setModifierQuantity([sel('a'), ...otras], 'p', group(), 'a', 4, 20)).toEqual([sel('a', 4), ...otras])

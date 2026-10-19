@@ -14,7 +14,7 @@ export interface PickerGroup {
 const isOption = (s: ModifierSelection, productId: string, modifierId: string) =>
   s.productId === productId && s.modifierId === modifierId
 
-// Las líneas de ESTE producto que son opciones del grupo.
+// Devuelve el filtro que deja pasar las líneas de ESTE producto que son opciones del grupo.
 const inGroup = (productId: string, group: PickerGroup) => {
   const ids = new Set(group.modifiers.map(m => m.id))
   return (s: ModifierSelection) => s.productId === productId && ids.has(s.modifierId)
