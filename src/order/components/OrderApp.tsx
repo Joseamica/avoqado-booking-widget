@@ -13,12 +13,17 @@ import { OtpScreen } from './OtpScreen'
 import { CheckoutStatus } from './CheckoutStatus'
 import { TrackingScreen } from './TrackingScreen'
 import { banner, btn } from './ui'
+import { STORE_CSS, accentFor, loadStoreFonts } from './theme'
 
-/** Raíz de la tienda. La marca sale de `/info` (no de reservas); `accentColor` es el respaldo del atributo `accent-color`. */
+/**
+ * Raíz de la tienda. La marca sale de `/info` (no de reservas); `accentColor` es el respaldo del atributo `accent-color`.
+ * Pinta la hoja de estilos de la tienda (`STORE_CSS`) dentro de su raíz y pide las tipografías una sola vez.
+ */
 export function OrderApp({ accentColor }: { accentColor?: string }) {
   const store = useContext(OrderStoreContext)!
   const t = createOrderT(store.locale)
   const token = store.trackingToken.value
+  useEffect(() => { loadStoreFonts() }, [])
   // También al salir del seguimiento («Pedir algo más»): ahí todavía no se había pedido la carta.
   useEffect(() => { if (!store.menu.value) void store.load() }, [store, token])
   // ¿Queda un pedido en curso de este comensal? Aquí y no en la carta: con el plan vencido, la tienda apagada o `/info`
@@ -51,12 +56,14 @@ export function OrderApp({ accentColor }: { accentColor?: string }) {
   const name = info?.venue.name || null
   // La página hospedada pone el nombre real en su título (no el que adivina del slug).
   useEffect(() => { if (name && store.host) emitStoreLoaded(store.host, { slug: store.slug, name }) }, [store, name])
-  const accent = info?.brand.primaryColor || accentColor
+  // El color de la marca (o del atributo) sólo se usa si da 4.5:1 con el texto blanco del botón; si no, negro.
+  const accent = accentFor(info?.brand.primaryColor || accentColor)
   const logo = info?.brand.logo || info?.brand.logoFull
   const notice = store.notice.value
   const screen = store.screen.value
   return (
-    <div style={accent ? { ['--avq-accent' as any]: accent } : undefined}>
+    <div class="avq-o-root" style={{ ['--avq-accent' as any]: accent }}>
+      <style>{STORE_CSS}</style>
       {/* De quién es la tienda, arriba de todo; el seguimiento ya trae el nombre en su título. */}
       {screen !== 'tracking' && (name || logo) && (
         <header style={{ display: 'flex', alignItems: 'center', gap: '10px', margin: '0 0 12px' }}>

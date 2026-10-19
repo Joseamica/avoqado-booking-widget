@@ -199,9 +199,14 @@ describe('OrderApp', () => {
     expect((container.firstElementChild as HTMLElement).style.getPropertyValue('--avq-accent')).toBe('#112233')
     expect(screen.getByText('Aviso de prueba')).toBeTruthy()
     cleanup()
+    // Sin marca, manda el atributo de respaldo; si no da 4.5:1 con texto blanco (#abcdef), el botón se queda en negro…
     const s2 = makeStore(infoOf(), menuOf(product()))
     const r = render(withStore(s2, <OrderApp accentColor="#abcdef" />))
-    expect((r.container.firstElementChild as HTMLElement).style.getPropertyValue('--avq-accent')).toBe('#abcdef')
+    expect((r.container.firstElementChild as HTMLElement).style.getPropertyValue('--avq-accent')).toBe('#000000')
+    cleanup()
+    // …y uno legible (#1E3A8A) se respeta.
+    const r2 = render(withStore(makeStore(infoOf(), menuOf(product())), <OrderApp accentColor="#1E3A8A" />))
+    expect((r2.container.firstElementChild as HTMLElement).style.getPropertyValue('--avq-accent')).toBe('#1E3A8A')
   })
   it('W1: cabecera con el nombre y el logo del restaurante en la carta, el carrito y los datos; no en el seguimiento', async () => {
     vi.mocked(getTracking).mockResolvedValue({
