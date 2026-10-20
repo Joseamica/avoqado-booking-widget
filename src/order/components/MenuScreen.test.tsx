@@ -514,6 +514,23 @@ describe('carta al estilo de las apps de comida: pestañas, filas y barra del ca
       show(closed(null)) // sin horario no hay hora que prometer
       expect(within(bar()).getByText('Cerrado ahora.')).toBeTruthy()
     })
+    it('«Puedes pedir desde las…» se lee igual cerrada que en pausa: la hora de apertura pasa por el mismo formato (es y en)', () => {
+      vi.useFakeTimers({ toFake: ['Date'] })
+      vi.setSystemTime(new Date('2026-10-19T14:00:00Z')) // lunes 08:00 en CDMX
+      const note = () => document.querySelector('.avq-o-bar__note')!.textContent
+      const seen: Record<string, string | null> = {}
+      for (const locale of ['es', 'en'] as const) {
+        // Cerrada, abre hoy a las 09:05; en pausa, vuelve a las 09:05 (15:05Z).
+        show(withCart(makeStore(infoOf({ status: 'CLOSED', reason: 'OUTSIDE_HOURS', hours: everyDay('09:05', '17:00') }), menuOf(product()), locale)))
+        seen[locale] = note()
+        cleanup()
+        show(withCart(makeStore(infoOf({ status: 'PAUSED', reason: 'MANUAL_PAUSE', pausedUntil: '2026-10-19T15:05:00Z' }), menuOf(product()), locale)))
+        expect(seen[locale], locale).toBe(note())
+        cleanup()
+      }
+      expect(seen.es).toBe('Puedes pedir desde las 09:05')
+      expect(seen.en).toMatch(/^You can order from 9:05\sAM$/) // antes, «from 09:05» cerrada y «from 9:05 AM» en pausa
+    })
     it('pausa sin hora, pausa por mucha demanda y restaurante desconectado: la frase del estado, y la barra sigue abriendo el carrito', () => {
       const cases: [Partial<StoreInfo>, string][] = [
         [{ status: 'PAUSED', reason: 'MANUAL_PAUSE', pausedUntil: null }, 'Hoy no estamos recibiendo pedidos en línea.'],
@@ -852,6 +869,10 @@ describe('pedido en curso (lo pinta OrderApp: se ve en TODAS las ramas)', () => 
   }) as any
   const withLast = (s: ReturnType<typeof makeStore>) => saveLastOrder(s.slug, { trackingToken: 'T'.repeat(32), orderNumber: '7' })
   const app = (s: ReturnType<typeof makeStore>) => render(withStore(s, <OrderApp />))
+  // Tras cambiar de pantalla, la tienda ignora los toques de 400 ms (OrderApp): el reloj de `performance` es falso y la prueba dice cuándo
+  // pasó ese tiempo, el que tarda una persona en leer la pantalla nueva antes de tocarla.
+  const readsTheScreen = () => act(() => { vi.advanceTimersByTime(400) })
+  afterEach(() => { vi.useRealTimers() })
   it('no final: «Tienes un pedido en curso · Ver» lleva al seguimiento', async () => {
     const s = makeStore(infoOf(), menuOf(product())); withLast(s)
     vi.mocked(getTracking).mockResolvedValue(trk('ACCEPTED'))
@@ -874,6 +895,7 @@ describe('pedido en curso (lo pinta OrderApp: se ve en TODAS las ramas)', () => 
     expect(s.trackingToken.value).toBe('T'.repeat(32))
   })
   it('W7: desde el seguimiento, «Pedir algo más» carga la carta y deja el aviso «Tienes un pedido en curso · Ver»', async () => {
+    vi.useFakeTimers({ toFake: ['performance'] })
     vi.mocked(getInfo).mockResolvedValue(infoOf()); vi.mocked(getMenu).mockResolvedValue(menuOf(product()))
     vi.mocked(getTracking).mockResolvedValue(trk('ACCEPTED'))
     const s = makeStore(null, null); withLast(s)
@@ -885,12 +907,14 @@ describe('pedido en curso (lo pinta OrderApp: se ve en TODAS las ramas)', () => 
     expect(getMenu).toHaveBeenCalledTimes(1)
     expect(screen.getByText('Flautas de pollo')).toBeTruthy()
     expect(screen.getByText('Tienes un pedido en curso')).toBeTruthy()
+    await readsTheScreen()
     fireEvent.click(screen.getByRole('button', { name: 'Ver' }))
     expect(s.screen.value).toBe('tracking')
     expect(s.trackingToken.value).toBe('T'.repeat(32))
     s.dispose()
   })
   it('W7: si ese pedido ya terminó, al volver a la carta no queda el aviso', async () => {
+    vi.useFakeTimers({ toFake: ['performance'] })
     vi.mocked(getInfo).mockResolvedValue(infoOf()); vi.mocked(getMenu).mockResolvedValue(menuOf(product()))
     vi.mocked(getTracking).mockResolvedValue(trk('ACCEPTED'))
     const s = makeStore(infoOf(), menuOf(product())); withLast(s)
@@ -898,6 +922,7 @@ describe('pedido en curso (lo pinta OrderApp: se ve en TODAS las ramas)', () => 
     fireEvent.click(screen.getByRole('button', { name: 'Ver' }))
     await flush()
     vi.mocked(getTracking).mockResolvedValue(trk('CANCELLED_BY_STAFF'))
+    await readsTheScreen()
     fireEvent.click(screen.getByRole('button', { name: 'Pedir algo más' }))
     await flush()
     expect(s.screen.value).toBe('menu')
@@ -1095,5 +1120,26 @@ describe('ficha de producto: foco y desplazamiento al abrir y al cerrar (spec §
     fireEvent.click(row('Tostadas'))
     closeX()
     expect(scrollIntoView.mock.contexts).toEqual([row('Tostadas')])
+  })
+  it('al cerrar, una fila que acaba debajo del borde de arriba de la barra del carrito (que vuelve al cerrar) no está a la vista: se centra', () => {
+    const barTop = innerHeight - 82 // la barra pegajosa: 24 px del borde de abajo, 58 de alto
+    let rowTop = 0
+    place(el => (el.matches('.avq-o-bar') ? barTop : (el as HTMLElement).dataset?.productId === 'p2' ? rowTop : undefined))
+    show(makeStore(infoOf(), two()))
+    // «Agregar» cierra la ficha y aparece la barra: la fila (40 px) termina 18 px debajo del borde de arriba de la barra, con su
+    // anillo de foco tapado aunque quede dentro de la ventana.
+    rowTop = barTop - 22
+    fireEvent.click(row('Tostadas'))
+    fireEvent.click(screen.getByRole('button', { name: /^Agregar/ }))
+    expect(document.activeElement).toBe(row('Tostadas'))
+    expect(scrollIntoView.mock.contexts).toEqual([row('Tostadas')])
+    expect(scrollIntoView.mock.calls[0][0]).toEqual({ block: 'center' })
+    // Terminando justo en el borde de la barra sí se ve completa: no se mueve nada.
+    rowTop = barTop - 40
+    scrollIntoView.mockClear()
+    fireEvent.click(row('Tostadas'))
+    closeX()
+    expect(document.activeElement).toBe(row('Tostadas'))
+    expect(scrollIntoView).not.toHaveBeenCalled()
   })
 })

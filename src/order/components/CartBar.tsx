@@ -4,19 +4,20 @@ import { OrderStoreContext } from '../store'
 import { createOrderT } from '../i18n'
 import { estimateCents } from '../cart'
 import { formatMXN } from '../money'
-import { formatTime, opensAt } from '../hours'
+import { formatClock, formatTime, opensAt } from '../hours'
 import type { StoreInfo } from '../types'
 import { storeStatus } from './StoreStatusBanner'
 
 /**
  * Por qué hoy no se puede pedir: «Puedes pedir desde las 15:37» cuando se conoce la hora (la pausa con hora, o la próxima apertura
- * de HOY de un negocio cerrado) y, si no, la frase del estado, la misma del aviso de arriba.
+ * de HOY de un negocio cerrado; las dos con el formato de `formatTime`) y, si no, la frase del estado, la misma del aviso de arriba.
  */
 function reasonOf(info: StoreInfo, locale: 'es' | 'en', t: ReturnType<typeof createOrderT>): string {
   const tz = info.venue.timezone ?? 'America/Mexico_City'
+  const opens = info.status === 'CLOSED' ? opensAt(info.hours, new Date(), tz) : null
   const time =
     info.status === 'PAUSED' && info.reason === 'MANUAL_PAUSE' && info.pausedUntil ? formatTime(info.pausedUntil, tz, locale)
-    : info.status === 'CLOSED' ? opensAt(info.hours, new Date(), tz)
+    : opens ? formatClock(opens, locale)
     : null
   return time ? t('menu.orderFrom', { time }) : storeStatus(info, t, locale).text
 }

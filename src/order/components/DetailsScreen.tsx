@@ -10,6 +10,7 @@ import { CountryPhoneInput } from '../../components/ui/CountryPhoneInput'
 import { StoreStatusBanner } from './StoreStatusBanner'
 import { CheckoutStatus } from './CheckoutStatus'
 import { Back } from './icons'
+import { tapTime } from './focus'
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 /** Durante cuánto, al aparecer la pantalla, «Confirmar pedido» ignora los toques (ver `confirm`). */
@@ -47,15 +48,10 @@ export function DetailsScreen() {
 
   const confirm = (e: Event) => {
     // Al aparecer, «Confirmar pedido» queda donde estaba «Continuar» del carrito: con la sesión verificada y los datos ya completos,
-    // el segundo toque de un doble toque crearía el pedido sin que la persona viera esta pantalla. Lo de los primeros 400 ms se ignora.
-    // Cuenta la hora del TOQUE (`timeStamp`, el mismo reloj que `performance.now()`), no la de atenderlo: si el hilo se traba tras
-    // «Continuar», el segundo toque espera en la cola y llegaría ya «tarde».
-    // ponytail: donde el `timeStamp` no es la hora del toque, cuenta la de atenderlo, y un toque encolado tras un hilo trabado 400 ms o
-    // más todavía pasa (nunca más que sin esto). Pasa en iOS WebKit (Safari y los WKWebView de otras apps), que sintetiza el click del
-    // toque en el proceso web con la hora en que lo procesa, y con un `timeStamp` en 0 o de otro reloj (jsdom: Date.now()), que cae
-    // a la hora de ahora. Falta confirmarlo en un iPhone real (tarea 10).
-    const at = e.timeStamp > 0 && e.timeStamp <= performance.now() ? e.timeStamp : performance.now()
-    if (!canSend || at - shownAt < ENTRY_GUARD_MS) return
+    // el segundo toque de un doble toque crearía el pedido sin que la persona viera esta pantalla. Lo de los primeros 400 ms se ignora,
+    // contando la hora del TOQUE (`tapTime`), no la de atenderlo. La raíz de la tienda (OrderApp) ya descarta los toques de los 400 ms que
+    // siguen a un cambio de pantalla; ésta es la guarda propia del botón, medida desde que se pinta esta pantalla.
+    if (!canSend || tapTime(e) - shownAt < ENTRY_GUARD_MS) return
     void send(store, buildOrderBody(store, { customer: { name, phone, ...(email ? { email } : {}) }, note: d.note || null }))
   }
   const venue = info?.venue.name || t('details.theRestaurant')

@@ -1,7 +1,7 @@
 // Al cambiar de pantalla hacia adelante (carrito, datos, código, seguimiento): la tienda sube a su inicio SÓLO si su borde de arriba
 // quedó sobre la ventana, y el foco va al titular de la pantalla nueva (en el código, a su primera caja).
 import { h } from 'preact'
-import { act, cleanup, render, screen, within } from '@testing-library/preact'
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/preact'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('../api', async () => {
@@ -131,7 +131,7 @@ describe('cambio de pantalla hacia adelante: el foco va al titular de la pantall
       expect(h.getAttribute('tabindex'), name).toBe('-1')
       expect(focusedWith(h), name).toEqual({ preventScroll: true })
     }
-    // El código: el foco va a la primera caja (ahí se escribe; en el celular abre el teclado), no al titular.
+    // El código: el foco va a la primera caja (ahí se escribe), no al titular.
     await go(s, 'otp')
     const boxes = screen.getAllByRole('textbox') as HTMLInputElement[]
     expect(document.activeElement).toBe(boxes[0])
@@ -144,6 +144,17 @@ describe('cambio de pantalla hacia adelante: el foco va al titular de la pantall
     expect(document.activeElement).toBe(h)
     expect(h.getAttribute('tabindex')).toBe('-1')
     expect(focusedWith(h)).toEqual({ preventScroll: true })
+  })
+  it('en el código, si la primera caja no puede tomar el foco (deshabilitada mientras algo se manda), lo toma su titular (tabindex -1), como en las demás', async () => {
+    const s = setup()
+    render(withStore(s, <OrderApp />))
+    await go(s, 'details')
+    await act(() => { checkoutOf(s).busy.value = true })
+    await go(s, 'otp')
+    expect((screen.getAllByRole('textbox') as HTMLInputElement[])[0].disabled).toBe(true)
+    const h = heading('Escribe tu código')
+    expect(h.getAttribute('tabindex')).toBe('-1')
+    expect(document.activeElement).toBe(h)
   })
   it('también al regresar a una pantalla de adelante (de «Tus datos» al carrito)', async () => {
     const s = setup()
@@ -198,5 +209,83 @@ describe('cambio de pantalla hacia adelante: el foco va al titular de la pantall
     expect(mount.contains(scrollIntoView.mock.contexts[0] as Node)).toBe(true)
     expect(scrollIntoView.mock.contexts).not.toContain(host)
     host.remove()
+  })
+})
+
+describe('un doble toque no cae en lo que aparece: tras cambiar la vista, la tienda ignora los clics de 400 ms', () => {
+  // Salsa obligatoria, de una. «Queso extra» (+$12.50) es la opción que quedaría bajo el segundo toque de la fila.
+  const withSalsa = () => product({
+    modifierGroups: [{
+      id: 'g1', name: 'Salsa', required: true, allowMultiple: false, minSelections: 1, maxSelections: 1,
+      modifiers: [{ id: 'm1', name: 'Verde', price: 0 }, { id: 'm2', name: 'Queso extra', price: 12.5 }],
+    }],
+  })
+  /** El reloj falso no avanza solo: la prueba dice cuánto tarda la persona entre un toque y otro. */
+  const later = (ms: number) => act(() => { vi.advanceTimersByTime(ms) })
+  const rowBtn = () => screen.getByRole('button', { name: 'Agregar Flautas de pollo' })
+  const queso = () => screen.getByLabelText(/Queso extra/) as HTMLInputElement
+  const addBtn = () => screen.getByRole('button', { name: /^Agregar \$/ }) as HTMLButtonElement
+  const bar = () => screen.getByRole('button', { name: /^Ver pedido/ })
+
+  it('fila → ficha: el primer toque abre la ficha y el segundo, que cae en una opción, no la marca; a los 401 ms sí', async () => {
+    const s = makeStore(infoOf(), menuOf(withSalsa()))
+    render(withStore(s, <OrderApp />))
+    fireEvent.click(rowBtn()) // el primer toque pasa: antes no cambió nada
+    expect(s.productId.value).toBe('p1')
+    fireEvent.click(queso()) // el segundo, en el mismo instante
+    expect(queso().checked).toBe(false)
+    expect(addBtn().textContent).toBe('Agregar $85') // sin el sobreprecio que nadie eligió
+    await later(399)
+    fireEvent.click(queso()) // (cada toque se mira solo: dos toques en el radio lo marcarían y lo quitarían)
+    expect(queso().checked).toBe(false)
+    await later(2)
+    fireEvent.click(queso()) // a los 401 ms ya es un toque de verdad
+    expect(queso().checked).toBe(true)
+    expect(addBtn().textContent).toBe('Agregar $97.50')
+  })
+  it('«Agregar» → «Ver pedido»: el segundo toque, que cae en la barra que aparece al cerrar, no abre el carrito; a los 401 ms sí', async () => {
+    const s = makeStore(infoOf(), menuOf(product()))
+    render(withStore(s, <OrderApp />))
+    fireEvent.click(rowBtn())
+    await later(1000) // la persona mira la ficha
+    fireEvent.click(addBtn()) // el primer toque de «Agregar» pasa: agrega y cierra
+    expect(s.cart.value).toHaveLength(1)
+    expect(s.productId.value).toBeNull()
+    fireEvent.click(bar())
+    await later(399)
+    fireEvent.click(bar())
+    expect(s.screen.value).toBe('menu')
+    await later(2)
+    fireEvent.click(bar())
+    expect(s.screen.value).toBe('cart')
+  })
+  it('cuenta la hora del TOQUE (timeStamp), no la de atenderlo: un segundo toque sellado a los 100 ms y atendido a los 600 (hilo trabado) tampoco pasa', async () => {
+    const s = makeStore(infoOf(), menuOf(withSalsa()))
+    render(withStore(s, <OrderApp />))
+    const opened = performance.now()
+    fireEvent.click(rowBtn())
+    await later(600)
+    const tap = new MouseEvent('click', { bubbles: true, cancelable: true })
+    Object.defineProperty(tap, 'timeStamp', { value: opened + 100 })
+    fireEvent(queso(), tap)
+    expect(queso().checked).toBe(false)
+    expect(s.productId.value).toBe('p1')
+  })
+  it('con teclado (Enter y Espacio dan clics con detail 0) también vale la regla, y dos teclas a más de 400 ms una de otra funcionan', async () => {
+    const s = makeStore(infoOf(), menuOf(withSalsa()))
+    render(withStore(s, <OrderApp />))
+    fireEvent.click(rowBtn(), { detail: 0 }) // Enter en la fila
+    expect(s.productId.value).toBe('p1')
+    fireEvent.click(queso(), { detail: 0 }) // una tecla repetida al instante, no
+    expect(queso().checked).toBe(false)
+    await later(450)
+    fireEvent.click(queso(), { detail: 0 }) // Espacio en la opción
+    expect(queso().checked).toBe(true)
+    await later(450)
+    fireEvent.click(addBtn(), { detail: 0 }) // Enter en «Agregar»
+    expect(s.cart.value).toHaveLength(1)
+    await later(450)
+    fireEvent.click(bar(), { detail: 0 }) // Enter en «Ver pedido»
+    expect(s.screen.value).toBe('cart')
   })
 })

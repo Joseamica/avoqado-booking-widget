@@ -16,10 +16,12 @@ import { TrackingScreen } from './TrackingScreen'
 import { Notice } from './StoreStatusBanner'
 import { STORE_CSS, accentFor, loadStoreFonts } from './theme'
 import { VenueMark, logoOf } from './VenueMark'
-import { focusLost } from './focus'
+import { focusLost, tapTime } from './focus'
 
 /** Las pantallas a las que se llega «hacia adelante»: al cambiar a una de ellas la tienda sube a su inicio y se enfoca su titular. */
 const ARRIVALS: ReadonlySet<string> = new Set(['cart', 'details', 'otp', 'tracking'])
+/** Durante cuánto, tras cambiar la vista (la pantalla, o abrir o cerrar la ficha), la tienda ignora los toques: el segundo de un doble toque. */
+const TAP_GUARD_MS = 400
 
 /**
  * Raíz de la tienda. La marca sale de `/info` (no de reservas); `accentColor` es el respaldo del atributo `accent-color`.
@@ -31,6 +33,7 @@ const ARRIVALS: ReadonlySet<string> = new Set(['cart', 'details', 'otp', 'tracki
  * ventana conserva el scroll de la anterior y la nueva podría abrir a media página: si el borde de arriba de la tienda quedó sobre
  * la ventana, sube SÓLO la raíz de la tienda a su inicio (nunca el host ni nada del sitio; el mismo principio mínimo de la ficha, §12.2);
  * y el foco va al titular de la pantalla, sin mover la página, sólo si nadie lo tiene (el código lleva el suyo a su primera caja).
+ * Tras cambiar la vista, los clics de los primeros 400 ms no llegan a nada (ver `dropEarly`).
  */
 export function OrderApp({ accentColor }: { accentColor?: string }) {
   const store = useContext(OrderStoreContext)!
@@ -118,11 +121,28 @@ export function OrderApp({ accentColor }: { accentColor?: string }) {
     watch.observe(el, { childList: true, subtree: true })
     return () => watch.disconnect()
   }, [screen])
+  // Un doble toque: el primero cambia la vista (la fila abre la ficha, «Agregar» la cierra, «Continuar» lleva a los datos…) y el segundo
+  // caería en lo que apareció debajo (una opción con sobreprecio, «Ver pedido»…). Se anota cuándo cambió la pantalla o la ficha (al montar
+  // la tienda no cambió nada) y la raíz, en la fase de captura, descarta los clics de los 400 ms siguientes, a la hora del TOQUE (`tapTime`):
+  // ni el botón ni el navegador (una casilla, un enlace) los ven. El primer toque siempre pasa, porque llega antes del cambio que provoca;
+  // un toque o una tecla de verdad, más lentos que eso, también.
+  const pid = store.productId.value
+  const changedAt = useRef(-Infinity)
+  const mounted = useRef(false)
+  useLayoutEffect(() => {
+    if (mounted.current) changedAt.current = performance.now()
+    mounted.current = true
+  }, [screen, pid])
+  const dropEarly = (e: Event) => {
+    if (tapTime(e) - changedAt.current >= TAP_GUARD_MS) return
+    e.preventDefault()
+    e.stopPropagation()
+  }
   const hasBrand = !!(name || logo)
-  const hero = hasBrand && (screen === 'menu' || screen === 'product') && !store.productId.value
+  const hero = hasBrand && (screen === 'menu' || screen === 'product') && !pid
   const compact = hasBrand && (screen === 'details' || screen === 'otp')
   return (
-    <div ref={root} class="avq-o-root" style={{ ['--avq-accent' as any]: accent }}>
+    <div ref={root} class="avq-o-root" style={{ ['--avq-accent' as any]: accent }} onClickCapture={dropEarly}>
       <style>{STORE_CSS}</style>
       {/* De quién es la tienda, arriba de todo; el seguimiento pinta su propia cabecera chica (TrackingScreen). */}
       {hero && (

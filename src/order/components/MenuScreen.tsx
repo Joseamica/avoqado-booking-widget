@@ -167,8 +167,9 @@ export function MenuScreen() {
 
   // Al cerrar la ficha (X, Escape, «Agregar» o porque el producto ya no está), y SÓLO si el foco estaba dentro de ella, el foco
   // vuelve a la fila de ESE producto (si ya no existe, al buscador; sin buscador, nada) sin mover la página; sólo si no está a la
-  // vista se centra (spec §12.2 y §12.3). Si la cerró el sistema con la persona en otra parte de la página, no se mueve nada.
-  // Antes de pintar: sin salto.
+  // vista se centra (spec §12.2 y §12.3). «A la vista» acaba en el borde de arriba de la barra del carrito, que vuelve al cerrar y
+  // tapa lo que queda debajo (como el pie del carrito en CartScreen). Si la cerró el sistema con la persona en otra parte de la
+  // página, no se mueve nada. Antes de pintar: sin salto.
   const menuEl = useRef<HTMLDivElement>(null)
   const shown = useRef<string | null>(null)
   const sheetHadFocus = useRef(false)
@@ -182,7 +183,8 @@ export function MenuScreen() {
     if (!target) return
     target.focus({ preventScroll: true })
     const r = target.getBoundingClientRect()
-    if (r.top < 0 || r.bottom > innerHeight) target.scrollIntoView({ block: 'center' })
+    const bar = menuEl.current?.querySelector('.avq-o-bar')
+    if (r.top < 0 || r.bottom > Math.min(innerHeight, bar?.getBoundingClientRect().top ?? innerHeight)) target.scrollIntoView({ block: 'center' })
   }, [pid])
 
   const retry = () => (

@@ -160,7 +160,7 @@ describe('código de WhatsApp', () => {
     expect(resend().compareDocumentPosition(screen.getByText('Si no te llega, revisa que el número sea el de tu WhatsApp.')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 
-  it('al llegar, el cursor ya está en la primera caja (con preventScroll): lleva el borde de acento y, en el celular, abre el teclado', async () => {
+  it('al llegar, con el foco libre, el cursor ya está en la primera caja (con preventScroll) y lleva el borde de acento (el teclado no se promete: iOS no lo abre con un foco asíncrono)', async () => {
     const focus = vi.spyOn(HTMLElement.prototype, 'focus')
     try {
       show()
@@ -178,6 +178,58 @@ describe('código de WhatsApp', () => {
       expect(boxes[1].style.border).toBe('2px solid var(--avq-accent, #000)')
     } finally {
       focus.mockRestore()
+    }
+  })
+
+  it('al llegar no le quita el foco a nadie: si la persona (o el sitio) ya está en otro elemento, ahí se queda', async () => {
+    const elsewhere = document.body.appendChild(document.createElement('input'))
+    elsewhere.focus()
+    try {
+      show()
+      await flush()
+      expect(document.activeElement).toBe(elsewhere)
+    } finally {
+      elsewhere.remove()
+    }
+  })
+
+  it('tras un código equivocado las cajas se vacían y, si el foco se perdió, el cursor vuelve a la primera (sin mover la página); si la persona ya está en otro lado, no', async () => {
+    const focus = vi.spyOn(HTMLElement.prototype, 'focus')
+    const boxes = () => within(screen.getByRole('group', { name: 'Escribe tu código' })).getAllByRole('textbox') as HTMLInputElement[]
+    let fail!: (e: unknown) => void
+    vi.mocked(verifyOrderingOtp).mockImplementation(() => new Promise((_, reject) => { fail = reject }))
+    const wrong = async (meanwhile: () => void) => {
+      fireEvent.input(boxes()[0], { target: { value: '000000' } })
+      await flush()
+      expect(boxes().every(b => b.disabled)).toBe(true) // verificando
+      meanwhile()
+      await act(async () => { fail(new ApiError('Código incorrecto.', 400)); await vi.advanceTimersByTimeAsync(0) })
+      expect(screen.getByText('Código incorrecto.')).toBeTruthy()
+      expect(boxes().map(b => b.value)).toEqual(['', '', '', '', '', ''])
+      expect(boxes().some(b => b.disabled)).toBe(false)
+    }
+    const elsewhere = document.createElement('button')
+    try {
+      show()
+      await flush()
+      // La caja que se deshabilita pierde el foco: el navegador lo hace solo (en Android se cierra el teclado). jsdom no (y su blur() no
+      // actúa sobre un campo deshabilitado): el foco se pierde a mano, pasándolo a un botón de paso que luego se quita.
+      await wrong(() => {
+        const stopover = document.body.appendChild(document.createElement('button'))
+        stopover.focus()
+        stopover.remove()
+        expect(document.activeElement).toBe(document.body)
+      })
+      expect(document.activeElement).toBe(boxes()[0])
+      expect(focus.mock.calls[focus.mock.contexts.lastIndexOf(boxes()[0])][0]).toEqual({ preventScroll: true })
+      // Mientras se verificaba, la persona se fue a otro elemento: ahí se queda.
+      document.body.appendChild(elsewhere)
+      await wrong(() => elsewhere.focus())
+      expect(document.activeElement).toBe(elsewhere)
+    } finally {
+      elsewhere.remove()
+      focus.mockRestore()
+      vi.mocked(verifyOrderingOtp).mockReset() // la verificación que nunca contesta no pasa a las demás pruebas
     }
   })
 

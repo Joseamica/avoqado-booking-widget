@@ -286,6 +286,21 @@ describe('ficha con grupos de opciones (maqueta Producto)', () => {
     expect(photo.getAttribute('src')).toBe('https://x/foto.jpg')
     expect(photo.getAttribute('alt')).toBe('')
   })
+  it('todo el contenido va en la envoltura .avq-o-sheet__in (la que entra subiendo): la sección, que se mide y se desplaza, no se mueve; el pie es el último hijo de la envoltura', () => {
+    const s = makeStore(infoOf(), menuOf(product({ imageUrl: 'https://x/foto.jpg' })))
+    s.productId.value = 'p1'
+    render(withStore(s, <OrderApp />))
+    const sheet = screen.getByRole('region', { name: 'Flautas de pollo' })
+    expect(sheet.children).toHaveLength(1)
+    const inner = sheet.firstElementChild as HTMLElement
+    expect(inner.className).toBe('avq-o-sheet__in')
+    expect(getComputedStyle(inner).position).toBe('relative') // la X con foto se acomoda contra ella, como antes contra la sección
+    for (const el of [sheet.querySelector('img')!, btn('Cerrar y volver a la carta'), screen.getByRole('heading', { name: 'Flautas de pollo' })]) {
+      expect(inner.contains(el)).toBe(true)
+    }
+    // Último hijo de una envoltura que ocupa toda la ficha: el pie se sigue pegando abajo a lo largo de toda ella.
+    expect(inner.lastElementChild).toBe(addBtn().closest('.avq-o-sheet__foot'))
+  })
   it('una foto que no carga se quita sin dejar hueco y la X sigue para volver', () => {
     open(product({ imageUrl: 'https://x/rota.jpg' }))
     const sheet = screen.getByRole('region', { name: 'Flautas de pollo' })

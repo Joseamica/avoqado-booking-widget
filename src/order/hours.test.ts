@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { closesAt, formatTime, opensAt, todayRanges, weekdayKey } from './hours'
+import { closesAt, formatClock, formatTime, opensAt, todayRanges, weekdayKey } from './hours'
 import type { WeeklyHours } from './types'
 
 const TZ = 'America/Mexico_City'
@@ -36,6 +36,19 @@ describe('horario', () => {
   it('formatTime usa la zona pedida, no la de la máquina', () => {
     expect(formatTime('2026-10-17T19:30:00Z', 'Asia/Tokyo', 'es')).toBe('04:30')
     expect(formatTime('2026-10-17T19:30:00Z', 'UTC', 'es')).toBe('19:30')
+  })
+  it('formatClock: una hora del horario («09:05», ya en la zona del negocio) sale con el formato de formatTime, en español y en inglés', () => {
+    // La misma hora, dicha como horario y como instante en CDMX (15:05Z = 09:05 y 19:30Z = 13:30): se leen igual.
+    for (const locale of ['es', 'en'] as const) {
+      expect(formatClock('09:05', locale), locale).toBe(formatTime('2026-10-17T15:05:00Z', TZ, locale))
+      expect(formatClock('13:30', locale), locale).toBe(formatTime('2026-10-17T19:30:00Z', TZ, locale))
+    }
+    expect(formatClock('09:05', 'es')).toBe('09:05')
+    expect(formatClock('13:30', 'es')).toBe('13:30')
+    expect(formatClock('09:05', 'en')).toMatch(/^9:05\sAM$/)
+    expect(formatClock('13:30', 'en')).toMatch(/^1:30\sPM$/)
+    expect(formatClock('00:15', 'en')).toMatch(/^12:15\sAM$/)
+    expect(formatClock('cerrado', 'en')).toBe('cerrado') // no es una hora: tal cual, sin lanzar
   })
 })
 

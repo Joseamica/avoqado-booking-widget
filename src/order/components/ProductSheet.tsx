@@ -96,37 +96,41 @@ export function ProductSheet({ product, onLeave }: { product: MenuProduct; onLea
         e.stopPropagation()
         close()
       }}>
-      {photo && <img class="avq-o-sheet__img" src={photo} alt="" onError={() => setBadImg(photo)} />}
-      <button type="button" class="avq-o-sheet__close" aria-label={t('sheet.closeAria')} onClick={close}><Close /></button>
-      <div class="avq-o-sheet__head">
-        <h2 ref={title} id={titleId} class="avq-o-sheet__title" tabIndex={-1}>{product.name}</h2>
-        <span class="avq-o-sheet__price">{formatMXN(product.price, store.locale)}</span>
-        {product.description && <p class="avq-o-sheet__desc">{product.description}</p>}
-      </div>
-      <div class="avq-o-sheet__gap" />
-      {product.modifierGroups.map(g => (
-        <OptionGroup key={g.id} productId={product.id} group={g} selections={selections} onChange={setSelections} t={t} maxPerOption={MAX_QTY} />
-      ))}
-      <div class="avq-o-sheet__note">
-        <label for={noteId}>{t('sheet.note')}</label>
-        <textarea id={noteId} class="avq-o-input" rows={3} maxLength={300} placeholder={t('sheet.notePlaceholder')} value={note}
-          onInput={(e: any) => setNote(e.currentTarget.value)} />
-      </div>
-      <div class="avq-o-sheet__foot">
-        {/* Arriba del botón, lo que impide agregar: un tope (alerta) o el primer grupo que falta («Elige Tamaño»). */}
-        {blocker ? <p key="b" role="alert" class="avq-o-sheet__msg avq-o-sheet__msg--error">{blocker}</p>
-          : missing && open && !product.soldOut && <p key="m" role="status" class="avq-o-sheet__msg">{t('sheet.missing', { group: missing.name })}</p>}
-        <div class="avq-o-sheet__actions">
-          <Stepper value={qty} label={t('sheet.qty')} lessLabel={t('sheet.less')} moreLabel={t('sheet.more')}
-            onLess={qty > 1 ? () => setQty(q => Math.max(1, q - 1)) : undefined}
-            onMore={qty < MAX_QTY ? () => setQty(q => Math.min(MAX_QTY, q + 1)) : undefined} />
-          <button type="button" class="avq-o-btn avq-o-btn--primary avq-o-sheet__add" disabled={!canAdd} onClick={add}>
-            {product.soldOut ? <span>{t('menu.soldOut')}</span> : (
-              <>
-                <span>{t('sheet.addLabel')}</span> <span>{formatMXN((unitCents * qty) / 100, store.locale)}</span>
-              </>
-            )}
-          </button>
+      {/* La que entra subiendo es esta envoltura, no la sección: la sección se mide y se pasa a `scrollIntoView` (arriba), y un
+          transform en marcha contaría en los dos (spec §11.1). Ocupa toda la ficha, así que el pie se sigue pegando abajo. */}
+      <div class="avq-o-sheet__in">
+        {photo && <img class="avq-o-sheet__img" src={photo} alt="" onError={() => setBadImg(photo)} />}
+        <button type="button" class="avq-o-sheet__close" aria-label={t('sheet.closeAria')} onClick={close}><Close /></button>
+        <div class="avq-o-sheet__head">
+          <h2 ref={title} id={titleId} class="avq-o-sheet__title" tabIndex={-1}>{product.name}</h2>
+          <span class="avq-o-sheet__price">{formatMXN(product.price, store.locale)}</span>
+          {product.description && <p class="avq-o-sheet__desc">{product.description}</p>}
+        </div>
+        <div class="avq-o-sheet__gap" />
+        {product.modifierGroups.map(g => (
+          <OptionGroup key={g.id} productId={product.id} group={g} selections={selections} onChange={setSelections} t={t} maxPerOption={MAX_QTY} />
+        ))}
+        <div class="avq-o-sheet__note">
+          <label for={noteId}>{t('sheet.note')}</label>
+          <textarea id={noteId} class="avq-o-input" rows={3} maxLength={300} placeholder={t('sheet.notePlaceholder')} value={note}
+            onInput={(e: any) => setNote(e.currentTarget.value)} />
+        </div>
+        <div class="avq-o-sheet__foot">
+          {/* Arriba del botón, lo que impide agregar: un tope (alerta) o el primer grupo que falta («Elige Tamaño»). */}
+          {blocker ? <p key="b" role="alert" class="avq-o-sheet__msg avq-o-sheet__msg--error">{blocker}</p>
+            : missing && open && !product.soldOut && <p key="m" role="status" class="avq-o-sheet__msg">{t('sheet.missing', { group: missing.name })}</p>}
+          <div class="avq-o-sheet__actions">
+            <Stepper value={qty} label={t('sheet.qty')} lessLabel={t('sheet.less')} moreLabel={t('sheet.more')}
+              onLess={qty > 1 ? () => setQty(q => Math.max(1, q - 1)) : undefined}
+              onMore={qty < MAX_QTY ? () => setQty(q => Math.min(MAX_QTY, q + 1)) : undefined} />
+            <button type="button" class="avq-o-btn avq-o-btn--primary avq-o-sheet__add" disabled={!canAdd} onClick={add}>
+              {product.soldOut ? <span>{t('menu.soldOut')}</span> : (
+                <>
+                  <span>{t('sheet.addLabel')}</span> <span>{formatMXN((unitCents * qty) / 100, store.locale)}</span>
+                </>
+              )}
+            </button>
+          </div>
         </div>
       </div>
     </section>

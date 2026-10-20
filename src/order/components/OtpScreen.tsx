@@ -9,6 +9,7 @@ import { OtpInput } from '../../components/ui/OtpInput'
 import { CheckoutStatus } from './CheckoutStatus'
 import { Notice } from './StoreStatusBanner'
 import { Back } from './icons'
+import { focusLost } from './focus'
 
 const RESEND_S = 30
 
@@ -37,14 +38,17 @@ export function OtpScreen() {
   }, [])
   const wait = Math.max(0, Math.ceil((until - Date.now()) / 1000))
 
-  // Al llegar, el cursor ya está en la primera caja vacía (spec §5.5): lleva el borde de acento y, en el celular, abre el teclado. Sin mover la
-  // página. Va en lugar del titular, que es a donde van las demás pantallas (OrderApp lo respeta: el foco ya está tomado); el grupo de abajo
-  // le da a las cajas el titular como nombre y «Te lo mandamos…» como descripción, para que un lector de pantalla no llegue a cajas sin contexto.
+  // Al llegar, el cursor ya está en la primera caja (spec §5.5) con el borde de acento, sin mover la página. El teclado no se promete: iOS no
+  // lo abre con un foco que no sale de un toque (aquí se llega tras una respuesta de la red), y ahí hay que tocar la caja. Va en lugar del
+  // titular, que es a donde van las demás pantallas (OrderApp lo respeta: el foco ya está tomado; si la caja no pudiera tomarlo, lo toma el
+  // titular); el grupo de abajo le da a las cajas el titular como nombre y «Te lo mandamos…» como descripción, para que un lector de pantalla no
+  // llegue a cajas sin contexto. Y otra vez cuando un código equivocado vacía las cajas: mientras se verificaba estaban deshabilitadas y el
+  // navegador les quitó el foco (en Android se cierra el teclado). Las dos veces, sólo si nadie tiene el foco: quien ya está en otro elemento,
+  // de la tienda o del sitio, se queda ahí.
   useLayoutEffect(() => {
-    const inputs = Array.from(boxes.current?.querySelectorAll('input') ?? [])
-    const first = inputs.find(i => !i.value) ?? inputs[0]
-    first?.focus({ preventScroll: true })
-  }, [])
+    const first = boxes.current?.querySelector('input')
+    if (!verifying && !code && first && focusLost(first)) first.focus({ preventScroll: true })
+  }, [verifying])
 
   const request = async () => {
     if (!phone) return
@@ -102,7 +106,7 @@ export function OtpScreen() {
     <div class="avq-o-otp">
       <button type="button" class="avq-o-btn avq-o-btn--quiet avq-o-otp__back" onClick={() => store.go('details')}><Back />{t('otp.change')}</button>
       <div class="avq-o-otp__intro">
-        <h2 id={titleId} class="avq-o-title">{t('otp.title')}</h2>
+        <h2 id={titleId} class="avq-o-title" tabIndex={-1}>{t('otp.title')}</h2>
         <p id={introId}>{t('otp.sent', { phone })}</p>
       </div>
       <div class="avq-o-otp__code">

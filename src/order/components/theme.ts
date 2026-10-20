@@ -78,7 +78,8 @@ export function loadStoreFonts(): void {
  * - `.avq-o-root` fija las variables `--avq-*` a sus valores claros: la tienda es clara aunque el contenedor diga
  *   `data-avq-theme="dark"` (spec §10.3). `--avq-o-display` es la tipografía de los títulos. Es un contexto de bloque
  *   (`display:flow-root`): el margen del primer o del último hijo se queda dentro de la tienda y no agranda el documento por encima de la
- *   ventana (la página se desplazaba sola unos píxeles en las pantallas cortas). `.avq-o-title` es el titular de cada pantalla de adelante:
+ *   ventana (la página se desplazaba sola unos píxeles en las pantallas cortas). Mide 600 px como máximo, centrada (spec §3): también
+ *   incrustada en el sitio de un restaurante es una columna, no se estira a todo el contenedor. `.avq-o-title` es el titular de cada pantalla de adelante:
  *   `tabindex -1` y sin contorno al enfocarlo, a donde va el foco al llegar a ella (`OrderApp`) y, en el seguimiento, tras cancelar.
  * - El acento llega en `--avq-accent` (lo pone `accentFor` en la raíz).
  * - Modificadores de uso: `.avq-o-btn` + `--primary|--neutral|--quiet`, `.avq-o-notice` + `--neutral|--warn|--error`,
@@ -92,7 +93,9 @@ export function loadStoreFonts(): void {
  *   `__text`, `__info`, `__name`, `__price`, `__desc`, `__tag` (Agotado), `__media`, `__img` y `__add` (el «+»), y `--bare` si no
  *   hay foto; `.avq-o-foot` la nota del final y `.avq-o-empty` los mensajes sueltos. La barra lleva `__count`, `__label`, `__note`
  *   y `__total`.
- * - Ficha de producto (tarea 6): `.avq-o-sheet` es la vista que reemplaza a la carta (+ `--media` si hay foto), con `__img`,
+ * - Ficha de producto (tarea 6): `.avq-o-sheet` es la vista que reemplaza a la carta (+ `--media` si hay foto). Todo va dentro de
+ *   `__in`, la envoltura que entra subiendo: la ficha misma no se anima ni se transforma, porque es lo que se mide y se pasa a
+ *   `scrollIntoView` (un transform en marcha cuenta en los dos y la dejaba 24 px arriba de la ventana). Sus partes: `__img`,
  *   `__close` (la X), `__head`, `__title`, `__price`, `__desc`, `__gap` (la franja gris), `__note`, `__foot` (el pie pegajoso),
  *   `__msg` (+ `--error`), `__actions` y `__add`. Cada grupo es `.avq-o-group` (`__head`, `__names`, `__title`, `__hint`, `__opts`)
  *   con su `.avq-o-pill` (+ `--required|--done`); cada opción, `.avq-o-opt` (`__main`, `__mark`, `__input`, `__check`, `__text`,
@@ -118,7 +121,7 @@ export function loadStoreFonts(): void {
  * Cada tarea puede AGREGAR clases; las que ya están no se cambian ni se quitan.
  */
 export const STORE_CSS = `
-.avq-o-root{--avq-bg:#FFFFFF;--avq-fg:${T.ink};--avq-muted:${T.surface};--avq-muted-fg:${T.muted};--avq-border:${T.fieldBorder};--avq-o-display:${DISPLAY};display:flow-root;box-sizing:border-box;background:#FFFFFF;color:${T.ink};font-family:${BODY};font-size:15px;font-variant-numeric:tabular-nums;color-scheme:light;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}
+.avq-o-root{--avq-bg:#FFFFFF;--avq-fg:${T.ink};--avq-muted:${T.surface};--avq-muted-fg:${T.muted};--avq-border:${T.fieldBorder};--avq-o-display:${DISPLAY};display:flow-root;box-sizing:border-box;max-width:600px;margin:0 auto;background:#FFFFFF;color:${T.ink};font-family:${BODY};font-size:15px;font-variant-numeric:tabular-nums;color-scheme:light;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}
 .avq-o-root *,.avq-o-root *::before,.avq-o-root *::after{box-sizing:border-box}
 .avq-o-root :focus-visible{outline:2px solid var(--avq-accent,${T.ink});outline-offset:2px}
 @media (prefers-reduced-motion:reduce){.avq-o-root *,.avq-o-root *::before,.avq-o-root *::after{animation:none!important;transition:none!important}}
@@ -209,7 +212,7 @@ textarea.avq-o-input{min-height:0;padding:12px 14px;resize:none}
 .avq-o-bar__note{font-size:13px;font-weight:400}
 .avq-o-bar__total{flex:none}
 .avq-o-menu--sheet{padding-bottom:0}
-.avq-o-sheet{position:relative;animation:avq-o-up .28s cubic-bezier(.2,.8,.2,1)}
+.avq-o-sheet__in{position:relative;animation:avq-o-up .28s cubic-bezier(.2,.8,.2,1)}
 .avq-o-root .avq-o-sheet:focus{outline:none}
 @keyframes avq-o-up{from{opacity:0;transform:translateY(24px)}to{opacity:1;transform:none}}
 .avq-o-sheet__img{display:block;width:100%;height:244px;object-fit:cover;background:#EDEDED}
@@ -295,7 +298,7 @@ textarea.avq-o-input{min-height:0;padding:12px 14px;resize:none}
 .avq-o-privacy>a{align-self:flex-start;display:inline-flex;align-items:center;min-height:44px;color:${T.ink};font-weight:600}
 .avq-o-check{display:flex;align-items:flex-start;gap:12px;min-height:44px;padding:11px 0;line-height:1.4;cursor:pointer}
 .avq-o-check>input{flex:none;width:20px;height:20px;margin:1px 0 0;accent-color:var(--avq-accent,${T.ink})}
-.avq-o-form input,.avq-o-form button,.avq-o-form a{scroll-margin-bottom:calc(170px + env(safe-area-inset-bottom,0px))}
+.avq-o-form input,.avq-o-form button,.avq-o-form a{scroll-margin-bottom:calc(260px + env(safe-area-inset-bottom,0px))}
 .avq-o-confirm{display:flex;flex-direction:column;gap:10px}
 .avq-o-confirm .avq-o-notice,.avq-o-otp__code .avq-o-notice{margin:0}
 .avq-o-confirm__sum{display:flex;justify-content:space-between;gap:12px;margin:0;color:${T.text2};font-size:14px}

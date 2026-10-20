@@ -84,3 +84,13 @@ export function formatTime(iso: string, timeZone: string, locale: 'es' | 'en'): 
     timeZone,
   }).format(new Date(iso))
 }
+
+/**
+ * Una hora del horario («09:05», que ya es la del negocio: la de `opensAt`) con el mismo formato que `formatTime`, el de una pausa:
+ * «Puedes pedir desde las…» se lee igual cerrada que en pausa («9:05 AM» en inglés). Algo que no es una hora sale tal cual (pinta la
+ * barra del carrito: nunca lanza).
+ */
+export function formatClock(hhmm: string, locale: 'es' | 'en'): string {
+  const m = minutes(hhmm)
+  return Number.isFinite(m) ? formatTime(new Date(m * 60_000).toISOString(), 'UTC', locale) : hhmm
+}

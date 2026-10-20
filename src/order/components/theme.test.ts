@@ -134,6 +134,32 @@ describe('STORE_CSS', () => {
   it('el titular de cada pantalla puede recibir el foco por programa (tabindex -1) y no dibuja contorno al tenerlo', () => {
     expect(STORE_CSS).toMatch(/\.avq-o-root \.avq-o-title:focus\{outline:none\}/)
   })
+  it('en computadora la tienda es una columna centrada de 600 px como máximo, también incrustada en el sitio de un restaurante (spec §3 y §9.5)', () => {
+    const root = STORE_CSS.match(/\.avq-o-root\s*\{([^}]*)\}/)?.[1] ?? ''
+    expect(root).toMatch(/max-width:600px(?![\w-])/)
+    expect(root).toMatch(/margin:0 auto(?![\w-])/)
+  })
+  it('la ficha (.avq-o-sheet: lo que se mide y se pasa a scrollIntoView) no lleva animación ni transform; la entrada vive en su envoltura .avq-o-sheet__in', () => {
+    // Un transform en marcha (el `from` de la entrada: +24 px) cuenta en getBoundingClientRect y en la caja de scrollIntoView: al abrir con
+    // desplazamiento, la ficha acababa 24 px arriba de la ventana (foto y X cortadas). Ninguna regla cuyo selector termina en la ficha (o en
+    // un modificador suyo, no en sus partes `__x`) la anima ni la transforma.
+    const onSheet = [...STORE_CSS.matchAll(/([^{}]+)\{([^{}]*)\}/g)]
+      .filter(([, sel]) => sel.split(',').some(s => /\.avq-o-sheet(--[\w-]+)?(:[\w-]+)*\s*$/.test(s.trim())))
+    expect(onSheet.length).toBeGreaterThan(0)
+    for (const [, sel, body] of onSheet) expect(body, sel.trim()).not.toMatch(/animation|transform/)
+    // La envoltura sí sube al entrar y es la referencia de la X (position:relative). No recorta ni se vuelve un área con scroll propio: el
+    // pie pegajoso de la ficha se sigue pegando a la ventana.
+    const inner = STORE_CSS.match(/(?:^|\n)\.avq-o-sheet__in\{([^}]*)\}/)?.[1] ?? ''
+    expect(inner).toMatch(/position:relative/)
+    expect(inner).toMatch(/animation:avq-o-up /)
+    expect(inner).not.toMatch(/overflow|contain/)
+    // Con «reducir movimiento», nada se anima: la regla de la raíz alcanza a la envoltura.
+    expect(STORE_CSS).toMatch(/@media \(prefers-reduced-motion:reduce\)\{\.avq-o-root \*[^{]*\{animation:none!important/)
+  })
+  it('«Tus datos»: el campo con foco no queda detrás del pie aunque éste lleve el aviso del envío y «falta…» (~240 px): scroll-margin-bottom de 260 px o más (WCAG 2.4.11)', () => {
+    const px = STORE_CSS.match(/\.avq-o-form input,\.avq-o-form button,\.avq-o-form a\{scroll-margin-bottom:calc\((\d+)px \+ env\(safe-area-inset-bottom,0px\)\)\}/)?.[1]
+    expect(Number(px)).toBeGreaterThanOrEqual(260)
+  })
   it('el carrito vacío no queda pegado arriba: bloque centrado, con aire arriba y entre el mensaje y «Ver la carta»', () => {
     const rule = (sel: string) => STORE_CSS.match(new RegExp(`(?:^|\\n)${sel.replace(/[.[\]>()]/g, '\\$&')}\\s*\\{([^}]*)\\}`))?.[1] ?? ''
     const empty = rule('.avq-o-cart__empty')
