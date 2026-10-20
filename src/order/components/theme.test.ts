@@ -133,6 +133,8 @@ describe('STORE_CSS', () => {
   })
   it('el titular de cada pantalla puede recibir el foco por programa (tabindex -1) y no dibuja contorno al tenerlo', () => {
     expect(STORE_CSS).toMatch(/\.avq-o-root \.avq-o-title:focus\{outline:none\}/)
+    // El título de la ficha también recibe el foco al abrirla (spec §12.2); con teclado se veía el anillo del acento (full-testing).
+    expect(STORE_CSS).toMatch(/\.avq-o-root \.avq-o-sheet__title:focus\{outline:none\}/)
   })
   it('en computadora la tienda es una columna centrada de 600 px como máximo, también incrustada en el sitio de un restaurante (spec §3 y §9.5)', () => {
     const root = STORE_CSS.match(/\.avq-o-root\s*\{([^}]*)\}/)?.[1] ?? ''
