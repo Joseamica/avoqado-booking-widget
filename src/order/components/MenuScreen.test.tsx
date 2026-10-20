@@ -606,7 +606,9 @@ describe('OrderApp', () => {
     expect(header().textContent).toBe('Flautas Coyoacán')
     await act(async () => { s.trackingToken.value = 'T'.repeat(32); s.go('tracking') })
     await flush()
-    expect(screen.queryByRole('banner')).toBeNull()
+    // El seguimiento trae su propia cabecera chica (spec §5.6): una sola, sin la de OrderApp encima.
+    expect(screen.getAllByRole('banner')).toHaveLength(1)
+    expect(header().textContent).toBe('Flautas Coyoacán')
     cleanup()
     // Sólo el logo ancho: también sirve.
     render(withStore(makeStore(infoOf({ venue, brand: { logo: null, logoFull: 'https://x/full.png', primaryColor: null, secondaryColor: null } }), menuOf(product())), <OrderApp />))

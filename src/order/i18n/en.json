@@ -88,7 +88,6 @@
   "cart": {
     "title": "Your order",
     "empty": "Your order is empty.",
-    "total": "Total (VAT included)",
     "quoting": "Calculating the total…",
     "payAtPickup": "You pay when you pick up at the restaurant.",
     "note": "Note for the restaurant",
@@ -164,12 +163,30 @@
     "inactive": "Your account is deactivated at this restaurant."
   },
   "tracking": {
-    "folio": "Order {{n}}",
-    "waiting": "Waiting for the restaurant to accept your order (until {{time}}).",
-    "preparing": "Being prepared.",
-    "preparingEta": "Being prepared. Ready around {{time}}.",
-    "ready": "Ready for pickup!",
-    "completed": "Picked up. Thank you!",
+    "head": {
+      "PENDING_ACCEPTANCE": "Waiting for the restaurant to accept",
+      "ACCEPTED": "They're preparing it",
+      "READY": "Ready for pickup!",
+      "COMPLETED": "Picked up"
+    },
+    "sub": {
+      "waiting": "It has until {{time}} to accept.",
+      "eta": "Ready around {{time}}.",
+      "ready": "Go to the counter with your order number.",
+      "completed": "Thank you!"
+    },
+    "steps": {
+      "received": "Received",
+      "preparing": "Preparing",
+      "ready": "Ready",
+      "completed": "Picked up"
+    },
+    "folioLabel": "Your order number",
+    "sayAtCounter": "Say it at the counter when you pick up.",
+    "whereTitle": "Where to pick up",
+    "directions": "Directions",
+    "call": "Call",
+    "progress": "Order progress",
     "rejected": "The restaurant could not accept your order: {{reason}}. You were not charged.",
     "rejectedNoReason": "The restaurant could not accept your order. You were not charged.",
     "expired": "The restaurant did not answer in time. You were not charged.",
@@ -181,7 +198,6 @@
       "TOO_BUSY": "Too busy",
       "OTHER": "Other"
     },
-    "payAtPickup": "Pay at pickup",
     "paid": "Paid",
     "cancel": "Cancel order",
     "cancelAsk": "Cancel your order?",

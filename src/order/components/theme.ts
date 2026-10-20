@@ -104,6 +104,12 @@ export function loadStoreFonts(): void {
  *   `.avq-o-cartfoot` del carrito + `.avq-o-confirm` (`__sum` el resumen, `__msg` lo que falta; el aviso del envío va dentro, sin margen).
  *   El código: `.avq-o-otp` con `__back` («‹ Cambiar número»), `__intro`, `__code` (las cajas, «Verificando…» y el error: sin red, el
  *   aviso ámbar sin margen; si no, el rojo) y `__more` (el reenvío y la ayuda).
+ * - Seguimiento (tarea 9): `.avq-o-track` es la pantalla (sin estilo propio; su encabezado reusa `.avq-o-head`), con `__intro` (titular
+ *   y línea de hora), `__cancel` (cancelar y su aviso), `__ask` (la confirmación de dos botones) y `__more` («Pedir algo más»). El
+ *   avance es `.avq-o-steps` > `.avq-o-step` (+ `--done` hasta el paso actual: la barra con el acento; el actual lleva `aria-current`).
+ *   El ticket es `.avq-o-ticket` con `__folio` (`__label`, `__n` el folio enorme, `__say`), `__tear` (la línea punteada y sus dos
+ *   muescas), `__body`, `__lines` (renglones sin importe, spec §11.2), `__sub` (opciones y nota) y `__sum` (el total, con
+ *   `.avq-o-total__row` y `.avq-o-total__tax`). «Dónde recoger» es `.avq-o-where` (`__title`, `__actions`: «Cómo llegar» y «Llamar»).
  * Cada tarea puede AGREGAR clases; las que ya están no se cambian ni se quitan.
  */
 export const STORE_CSS = `
@@ -291,4 +297,40 @@ textarea.avq-o-input{min-height:0;padding:12px 14px;resize:none}
 .avq-o-otp__code{display:flex;flex-direction:column;gap:12px;margin:28px 16px 0}
 .avq-o-otp__more{display:flex;flex-direction:column;align-items:flex-start;gap:4px;padding:20px 16px 0}
 .avq-o-otp__more>.avq-o-btn{padding:0}
+.avq-o-track__intro{display:flex;flex-direction:column;gap:6px;padding:8px 16px 0}
+.avq-o-track__intro>p{margin:0;color:${T.text2};line-height:1.4}
+.avq-o-steps{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;margin:18px 16px 0;padding:0;list-style:none}
+.avq-o-step{display:flex;flex-direction:column;gap:8px;min-width:0;color:${T.muted};font-size:13px;overflow-wrap:anywhere}
+.avq-o-step::before{content:'';height:6px;border-radius:3px;background:#E4E4E4}
+.avq-o-step--done{color:${T.text2}}
+.avq-o-step--done::before{background:var(--avq-accent,${T.ink})}
+.avq-o-step[aria-current]{color:${T.ink};font-weight:700}
+.avq-o-ticket{position:relative;margin:26px 16px 0;border-radius:20px;background:${T.card};overflow:hidden}
+.avq-o-ticket__folio{display:flex;flex-direction:column;align-items:center;gap:2px;padding:22px 20px 20px;text-align:center}
+.avq-o-ticket__label{color:${T.muted};font-size:14px}
+.avq-o-ticket__n{max-width:100%;font-family:var(--avq-o-display);font-weight:800;font-size:64px;line-height:1;letter-spacing:.05em;overflow-wrap:anywhere}
+.avq-o-ticket__say{margin-top:8px;color:${T.text2}}
+.avq-o-ticket__tear{position:relative;margin:0 18px;border-top:2px dashed #D6D6D6}
+.avq-o-ticket__tear::before,.avq-o-ticket__tear::after{content:'';position:absolute;top:-13px;width:24px;height:24px;border-radius:50%;background:#FFFFFF}
+.avq-o-ticket__tear::before{left:-30px}
+.avq-o-ticket__tear::after{right:-30px}
+.avq-o-ticket__body{display:flex;flex-direction:column;gap:10px;padding:18px 20px 20px}
+.avq-o-ticket__lines{display:flex;flex-direction:column;gap:10px;margin:0;padding:0;list-style:none}
+.avq-o-ticket__lines>li{display:flex;flex-direction:column;gap:2px;min-width:0;overflow-wrap:anywhere}
+.avq-o-ticket__sub{color:${T.muted};font-size:14px}
+.avq-o-ticket__sum{display:flex;flex-direction:column;gap:6px;padding-top:10px;border-top:1px solid #E2E2E2}
+.avq-o-where{display:flex;flex-direction:column;gap:8px;padding:26px 16px 0}
+.avq-o-where__title{margin:0;font-size:17px;font-weight:700}
+.avq-o-where>p{margin:0;color:${T.text2};line-height:1.4;overflow-wrap:anywhere}
+.avq-o-where__actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:6px}
+.avq-o-where__actions>a{display:inline-flex;align-items:center;gap:8px;min-height:44px;padding:0 16px;border-radius:999px;background:${T.surface};color:${T.ink};font-weight:600;text-decoration:none}
+.avq-o-where__actions>a>svg{flex:none}
+.avq-o-track__cancel{padding-top:20px}
+.avq-o-track__cancel>.avq-o-btn--quiet{margin:0 8px}
+.avq-o-track__ask{display:flex;flex-direction:column;gap:12px;margin:0 16px}
+.avq-o-track__ask>p{margin:0;font-weight:600}
+.avq-o-track__ask>div{display:flex;gap:8px}
+.avq-o-track__ask .avq-o-btn{flex:1;min-width:0}
+.avq-o-track__more{padding:28px 16px 24px}
+.avq-o-track__more>.avq-o-btn{width:100%}
 `

@@ -191,6 +191,30 @@ describe('STORE_CSS', () => {
       expect(ratio(accent, '#FFFFFF'), `dígito ${accent} sobre el círculo blanco`).toBeGreaterThanOrEqual(4.5)
     }
   })
+  it('seguimiento: ticket #F4F4F4 de radio 20 con línea punteada y muescas, folio Bricolage 800 de 64 px, barras del avance con el acento, sin sombras', () => {
+    const rule = (sel: string) => STORE_CSS.match(new RegExp(`(?:^|\\n)${sel.replace(/[.[\]>()]/g, '\\$&')}\\s*\\{([^}]*)\\}`))?.[1] ?? ''
+    const ticket = rule('.avq-o-ticket')
+    expect(ticket).toMatch(/border-radius:20px/)
+    expect(ticket).toMatch(/background:#F4F4F4/)
+    expect(ticket).toMatch(/overflow:hidden/) // recorta las muescas a medio círculo
+    const folio = rule('.avq-o-ticket__n')
+    expect(folio).toMatch(/font-family:var\(--avq-o-display\)/)
+    expect(folio).toMatch(/font-weight:800/)
+    expect(folio).toMatch(/font-size:64px/)
+    expect(folio).toMatch(/letter-spacing:\.05em/)
+    expect(folio).toMatch(/overflow-wrap:anywhere/)
+    expect(rule('.avq-o-ticket__tear')).toMatch(/border-top:2px dashed/)
+    // Las muescas son del blanco de la tienda, encimadas en las dos orillas de la línea.
+    expect(rule('.avq-o-ticket__tear::before,.avq-o-ticket__tear::after')).toMatch(/border-radius:50%;background:#FFFFFF/)
+    // El acento sólo en las barras ya recorridas; las demás, gris.
+    expect(rule('.avq-o-step--done::before')).toMatch(/background:var\(--avq-accent,#000000\)/)
+    expect(rule('.avq-o-step::before')).not.toMatch(/accent/)
+    // Toques de 44 px en «Cómo llegar» y «Llamar»; los nombres y direcciones largos envuelven.
+    expect(rule('.avq-o-where__actions>a')).toMatch(/min-height:44px/)
+    expect(rule('.avq-o-where>p')).toMatch(/overflow-wrap:anywhere/)
+    expect(rule('.avq-o-ticket__lines>li')).toMatch(/min-width:0;overflow-wrap:anywhere/)
+    for (const sel of ['.avq-o-ticket', '.avq-o-steps', '.avq-o-where__actions>a', '.avq-o-track__more']) expect(rule(sel), sel).not.toMatch(/shadow/)
+  })
   it('las fuentes: Figtree en el cuerpo y Bricolage Grotesque en los títulos, con respaldo del sistema', () => {
     expect(STORE_CSS).toMatch(/\.avq-o-root\s*\{[^}]*font-family:\s*'Figtree',\s*system-ui,\s*sans-serif/)
     expect(STORE_CSS).toContain("'Bricolage Grotesque',system-ui,sans-serif")

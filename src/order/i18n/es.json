@@ -88,7 +88,6 @@
   "cart": {
     "title": "Tu pedido",
     "empty": "Tu pedido está vacío.",
-    "total": "Total (IVA incluido)",
     "quoting": "Calculando el total…",
     "payAtPickup": "Pagas al recoger en el restaurante.",
     "note": "Nota para el restaurante",
@@ -164,12 +163,30 @@
     "inactive": "Tu cuenta está desactivada en este restaurante."
   },
   "tracking": {
-    "folio": "Folio {{n}}",
-    "waiting": "Esperando que el restaurante acepte tu pedido (hasta las {{time}}).",
-    "preparing": "En preparación.",
-    "preparingEta": "En preparación. Listo aprox. a las {{time}}.",
-    "ready": "¡Listo para recoger!",
-    "completed": "Entregado. ¡Gracias!",
+    "head": {
+      "PENDING_ACCEPTANCE": "Esperando que el restaurante acepte",
+      "ACCEPTED": "Lo están preparando",
+      "READY": "¡Listo para recoger!",
+      "COMPLETED": "Entregado"
+    },
+    "sub": {
+      "waiting": "Tiene hasta las {{time}} para aceptarlo.",
+      "eta": "Estará listo como a las {{time}}.",
+      "ready": "Pasa al mostrador con tu folio.",
+      "completed": "¡Gracias!"
+    },
+    "steps": {
+      "received": "Recibido",
+      "preparing": "Preparando",
+      "ready": "Listo",
+      "completed": "Entregado"
+    },
+    "folioLabel": "Tu folio",
+    "sayAtCounter": "Dilo en el mostrador al recoger.",
+    "whereTitle": "Dónde recoger",
+    "directions": "Cómo llegar",
+    "call": "Llamar",
+    "progress": "Avance del pedido",
     "rejected": "El restaurante no pudo aceptar tu pedido: {{reason}}. No se te cobró nada.",
     "rejectedNoReason": "El restaurante no pudo aceptar tu pedido. No se te cobró nada.",
     "expired": "El restaurante no contestó a tiempo. No se te cobró nada.",
@@ -181,7 +198,6 @@
       "TOO_BUSY": "Muy ocupados",
       "OTHER": "Otro"
     },
-    "payAtPickup": "Pagas al recoger",
     "paid": "Pagado",
     "cancel": "Cancelar pedido",
     "cancelAsk": "¿Cancelar tu pedido?",

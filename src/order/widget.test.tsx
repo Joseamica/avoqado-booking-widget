@@ -92,7 +92,7 @@ describe('<avoqado-order>', () => {
     const el = await mount({ venue: 'a', tracking: 'T'.repeat(32) })
     expect(getMenu).not.toHaveBeenCalled()
     expect(getTracking).toHaveBeenCalledWith('a', 'T'.repeat(32))
-    expect(text(el)).toContain('Folio 42')
+    expect(text(el)).toContain('Tu folio42')
   })
 
   it('tracking: pide /info UNA vez (la marca), sin /menu ni sondeo; y si /info falla el seguimiento se pinta', async () => {
@@ -102,11 +102,11 @@ describe('<avoqado-order>', () => {
     await act(async () => { await vi.advanceTimersByTimeAsync(61_000) })
     expect(getInfo).toHaveBeenCalledTimes(1)
     expect(getMenu).not.toHaveBeenCalled()
-    expect(text(el)).toContain('Folio 42')
+    expect(text(el)).toContain('Tu folio42')
     await act(async () => { el.remove() })
     vi.mocked(getInfo).mockRejectedValue(new ApiError('x', 403))
     const el2 = await mount({ venue: 'b', tracking: 'T'.repeat(32) })
-    expect(text(el2)).toContain('Folio 42')
+    expect(text(el2)).toContain('Tu folio42')
   })
 
   it('crear un pedido emite avoqado:pedido-creado UNA vez (también con doble toque), desde el elemento', async () => {
