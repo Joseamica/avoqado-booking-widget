@@ -6,19 +6,17 @@ import en from '../i18n/en.json'
 describe('textos de la tienda', () => {
   it('interpola y devuelve la llave cruda si falta', () => {
     const t = createOrderT('es')
-    expect(t('modifiers.pickUpTo', { n: 3 })).toBe('Elige hasta 3')
-    expect(t('modifiers.pickUpTo')).toBe('Elige hasta {{n}}')
+    expect(t('modifiers.chooseUpTo', { n: 3 })).toBe('Elige hasta 3')
+    expect(t('modifiers.chooseUpTo')).toBe('Elige hasta {{n}}')
     expect(t('no.existe')).toBe('no.existe')
     expect(t('modifiers')).toBe('modifiers')
   })
   it('en inglés', () => {
-    expect(createOrderT('en')('modifiers.required')).toBe('Required')
+    expect(createOrderT('en')('modifiers.mandatory')).toBe('Required')
   })
-  it('las llaves de opciones son las mismas que en reservas', () => {
+  it('«Opcional» (la única llave de opciones que la tienda comparte con reservas) dice lo mismo que en reservas', () => {
     for (const [lang, booking] of [['es', es], ['en', en]] as const) {
-      const t = createOrderT(lang)
-      for (const k of ['required', 'optional', 'pickOne', 'pickUpTo'])
-        expect(t(`modifiers.${k}`)).toBe((booking as any).modifiers[k])
+      expect(createOrderT(lang)('modifiers.optional')).toBe((booking as any).modifiers.optional)
     }
   })
   it('es y en tienen exactamente las mismas llaves', async () => {
@@ -28,6 +26,6 @@ describe('textos de la tienda', () => {
     expect(keys(ten.default)).toEqual(keys(tes.default))
   })
   it('idioma desconocido cae a es', () => {
-    expect(createOrderT('fr')('modifiers.required')).toBe('Requerido')
+    expect(createOrderT('fr')('modifiers.mandatory')).toBe('Obligatorio')
   })
 })

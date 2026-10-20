@@ -319,6 +319,12 @@
       max-width: var(--max);
       margin: 0 auto;
     }
+    /* Carril de PEDIDOS (pedidos.avoqado.io): aquí la tienda ES la página. Con menos de 600 px va de orilla a orilla —sin márgenes
+       laterales, para que la portada llegue al borde; sólo queda el área segura de un celular con muesca— y en computadora es una
+       columna centrada de 600 px. Todo cuelga de `body.flow-order`, que sólo pone el carril de pedidos (ver el script): reservas
+       se ve exactamente igual que siempre. */
+    body.flow-order .page { padding: 0 env(safe-area-inset-right, 0px) 0 env(safe-area-inset-left, 0px); }
+    body.flow-order .shell { max-width: 600px; }
     .footer {
       padding: 32px 24px 24px;
       display: flex;
@@ -683,6 +689,8 @@
       var isOrderPage = orderHost.indexOf('pedidos.') === 0 ||
         ((orderHost === 'localhost' || orderHost === '127.0.0.1') && orderParams.get('app') === 'order')
       if (isOrderPage && slug) {
+        // Sólo este carril: la página propia de la tienda (de orilla a orilla en el celular, columna de 600 px en computadora).
+        document.body.classList.add('flow-order')
         var orderName = slug.charAt(0).toUpperCase() + slug.slice(1).replace(/[-_]/g, ' ')
         // Mismo idioma que la tienda (sólo `en` cambia; lo demás es español).
         var orderTitle = orderParams.get('locale') === 'en' ? 'Online ordering · ' : 'Pedidos en línea · '

@@ -1,9 +1,6 @@
 {
   "modifiers": {
-    "required": "Requerido",
     "optional": "Opcional",
-    "pickOne": "Elige una opción",
-    "pickUpTo": "Elige hasta {{n}}",
     "mandatory": "Obligatorio",
     "done": "Listo",
     "chooseOne": "Elige 1",

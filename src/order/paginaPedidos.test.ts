@@ -8,6 +8,7 @@ const script = () => /<script>([\s\S]*?)<\/script>/.exec(pagina)![1]
 
 beforeEach(() => {
   document.title = ''
+  document.body.className = ''
   document.body.innerHTML =
     '<header class="topnav" id="topnav" hidden></header><button id="textus-fab"></button><main id="mount"></main><div id="footer"></div>'
   window.history.replaceState({}, '', '/flautas-coyoacan?app=order')
@@ -25,6 +26,28 @@ describe('página de pedidos (carril de la tienda en index.html)', () => {
     expect(document.title).toBe('Pedidos en línea · Flautas Coyoacán')
     // `.topnav { display: flex }` gana al atributo `hidden`: sin esto se veía «Reservas» y su menú arriba de la tienda.
     expect(document.getElementById('topnav')!.style.display).toBe('none')
+  })
+})
+
+describe('página propia de la tienda: de orilla a orilla en el celular y columna de 600 px en computadora', () => {
+  const css = /<style>([\s\S]*?)<\/style>/.exec(pagina)![1].replace(/\/\*[\s\S]*?\*\//g, '')
+  const rule = (selector: string) => css.match(new RegExp(`${selector.replace(/\./g, '\\.')}\\s*\\{([^}]*)\\}`))?.[1] ?? ''
+
+  it('sólo el carril de la tienda pone body.flow-order; el de reservas no', () => {
+    new Function(script())()
+    expect(document.body.classList.contains('flow-order')).toBe(true)
+    // Reservas: sin `?app=order` en localhost (en producción, book.avoqado.io) no hay carril de pedidos ni su clase.
+    document.body.className = ''
+    window.history.replaceState({}, '', '/')
+    new Function(script())()
+    expect(document.querySelector('avoqado-order')).toBeNull()
+    expect(document.body.classList.contains('flow-order')).toBe(false)
+  })
+  it('sus reglas: sin márgenes laterales (sólo el área segura del celular) y una columna de 600 px; ninguna otra regla habla de este carril', () => {
+    expect(rule('body.flow-order .page')).toMatch(/^\s*padding:\s*0 env\(safe-area-inset-right, 0px\) 0 env\(safe-area-inset-left, 0px\);?\s*$/)
+    expect(rule('body.flow-order .shell')).toMatch(/^\s*max-width:\s*600px;?\s*$/)
+    // Las dos cuelgan de `body.flow-order`: sin esa clase (reservas) ninguna regla de la página cambia.
+    expect((css.match(/[^{}]*flow-order[^{}]*(?=\{)/g) ?? []).map(r => r.trim())).toEqual(['body.flow-order .page', 'body.flow-order .shell'])
   })
 })
 
