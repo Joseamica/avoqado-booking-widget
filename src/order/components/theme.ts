@@ -102,8 +102,8 @@ export function loadStoreFonts(): void {
  *   título con su ayuda), cada `.avq-o-field` (`__label` cuando no es un `<label>`), `.avq-o-help` la ayuda en gris, `.avq-o-privacy` el
  *   aviso con su enlace y `.avq-o-check` la casilla; la letra chica (contacto, pago, cancelación) reusa `.avq-o-foot`. Su pie es el
  *   `.avq-o-cartfoot` del carrito + `.avq-o-confirm` (`__sum` el resumen, `__msg` lo que falta; el aviso del envío va dentro, sin margen).
- *   El código: `.avq-o-otp` con `__back` («‹ Cambiar número»), `__intro`, `__code` (las cajas, «Verificando…» y el error) y `__more`
- *   (el reenvío y la ayuda).
+ *   El código: `.avq-o-otp` con `__back` («‹ Cambiar número»), `__intro`, `__code` (las cajas, «Verificando…» y el error: sin red, el
+ *   aviso ámbar sin margen; si no, el rojo) y `__more` (el reenvío y la ayuda).
  * Cada tarea puede AGREGAR clases; las que ya están no se cambian ni se quitan.
  */
 export const STORE_CSS = `
@@ -277,11 +277,11 @@ textarea.avq-o-input{min-height:0;padding:12px 14px;resize:none}
 .avq-o-help{margin:0;color:${T.muted};font-size:14px;line-height:1.4;overflow-wrap:anywhere}
 .avq-o-privacy{display:flex;flex-direction:column;gap:4px}
 .avq-o-privacy>a{align-self:flex-start;display:inline-flex;align-items:center;min-height:44px;color:${T.ink};font-weight:600}
-.avq-o-check{display:flex;align-items:flex-start;gap:12px;padding:11px 0;line-height:1.4;cursor:pointer}
+.avq-o-check{display:flex;align-items:flex-start;gap:12px;min-height:44px;padding:11px 0;line-height:1.4;cursor:pointer}
 .avq-o-check>input{flex:none;width:20px;height:20px;margin:1px 0 0;accent-color:var(--avq-accent,${T.ink})}
 .avq-o-form input,.avq-o-form button,.avq-o-form a{scroll-margin-bottom:calc(170px + env(safe-area-inset-bottom,0px))}
 .avq-o-confirm{display:flex;flex-direction:column;gap:10px}
-.avq-o-confirm .avq-o-notice{margin:0}
+.avq-o-confirm .avq-o-notice,.avq-o-otp__code .avq-o-notice{margin:0}
 .avq-o-confirm__sum{display:flex;justify-content:space-between;gap:12px;margin:0;color:${T.text2};font-size:14px}
 .avq-o-confirm__msg{margin:0;color:${T.text2};font-size:14px;font-weight:600;overflow-wrap:anywhere}
 .avq-o-otp{padding-bottom:24px}

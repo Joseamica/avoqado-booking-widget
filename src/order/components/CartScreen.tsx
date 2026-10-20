@@ -9,24 +9,13 @@ import { formatMXN } from '../money'
 import { Notice, StoreStatusBanner } from './StoreStatusBanner'
 import { Stepper } from './Stepper'
 import { VenueMark } from './VenueMark'
+import { Back, Plus } from './icons'
 import type { Menu, Quote, QuoteIssue } from '../types'
 
 const MAX_QTY = 20
 /** `MAX_CART_LINES` del servidor. */
 const MAX_LINES = 50
 const QUOTE_DEBOUNCE_MS = 300
-
-/** La flecha de volver (también la de «Tus datos» y la del código). */
-export const Back = () => (
-  <svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M15 18l-6-6 6-6" />
-  </svg>
-)
-const Plus = () => (
-  <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round">
-    <path d="M12 5v14M5 12h14" />
-  </svg>
-)
 
 /**
  * El motivo en el idioma de la tienda, por CÓDIGO (el `message` del servidor siempre viene en español): el monto sale de la

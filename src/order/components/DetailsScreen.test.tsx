@@ -208,6 +208,49 @@ describe('«Confirmar pedido» en un pie fijo', () => {
     expect(confirmBtn().textContent).toBe('Enviando…')
   })
 
+  it('la guarda mide la hora del TOQUE (timeStamp), no la de atenderlo: un hilo trabado 500 ms no deja pasar el toque encolado', async () => {
+    vi.mocked(createOrder).mockReturnValue(new Promise(() => {}))
+    const armed = performance.now() // reloj falso: no avanza solo, así que la pantalla se arma en este instante
+    const { s } = ready()
+    // Justo después de «Continuar» el hilo se traba 500 ms: los toques ya ocurrieron (sellados dentro de la ventana) y se atienden ahora.
+    await act(() => { vi.advanceTimersByTime(500) })
+    const tap = (timeStamp: number) => {
+      const e = new MouseEvent('click', { bubbles: true, cancelable: true })
+      Object.defineProperty(e, 'timeStamp', { value: timeStamp })
+      fireEvent(confirmBtn(), e)
+    }
+    tap(armed + 100)
+    tap(armed + 399)
+    await flush()
+    expect(createOrder).not.toHaveBeenCalled()
+    expect(s.screen.value).toBe('details')
+    // Sin hora del toque (0) se usa la de ahora (500 ms después de armarse): pasa.
+    tap(0)
+    await flush()
+    expect(createOrder).toHaveBeenCalledTimes(1)
+  })
+
+  it('la fila de la casilla de privacidad mide al menos 44 px (toque mínimo)', () => {
+    ready()
+    expect(getComputedStyle(screen.getByLabelText('Acepto el aviso de privacidad').closest('label')!).minHeight).toBe('44px')
+  })
+
+  it('estado del envío: sin red en ámbar con «Reintentar»; un 5xx en rojo; «revisa tu pedido» en ámbar', async () => {
+    const s = show()
+    const box = () => within(confirmBtn().closest('.avq-o-cartfoot') as HTMLElement).getByRole('alert')
+    const feedback = (message: string, retryable: boolean) => act(() => { checkoutOf(s).feedback.value = { kind: 'error', message, retryable } })
+    await feedback('Sin conexión. Revisa tu internet y vuelve a intentar.', true)
+    expect(box().className).toBe('avq-o-notice avq-o-notice--warn')
+    expect(within(box()).getByRole('button', { name: 'Reintentar' })).toBeTruthy()
+    await feedback('Algo falló de nuestro lado. Intenta de nuevo.', true)
+    expect(box().className).toBe('avq-o-notice avq-o-notice--error')
+    expect(within(box()).getByRole('button', { name: 'Reintentar' })).toBeTruthy()
+    // «El precio cambió; revisa tu pedido.» (un intento viejo con otro carrito) tampoco es un fallo: ámbar, sin botón.
+    await feedback('El precio cambió; revisa tu pedido.', false)
+    expect(box().className).toBe('avq-o-notice avq-o-notice--warn')
+    expect(within(box()).queryByRole('button')).toBeNull()
+  })
+
   it('lo que falta y el aviso del envío van en el pie, arriba del botón; «Confirmar» del precio cambiado manda el total nuevo', async () => {
     const s = show()
     saveSession(s.slug, { token: 'tok', phone: '+525544422262', name: 'Ana', savedAt: Date.now() })

@@ -158,6 +158,27 @@ describe('código de WhatsApp', () => {
     expect(resend().compareDocumentPosition(screen.getByText('Si no te llega, revisa que el número sea el de tu WhatsApp.')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 
+  it('sin red no es un error en rojo: al pedir o al verificar el código sale el aviso ámbar; los demás errores siguen en rojo', async () => {
+    const OFFLINE = 'Sin conexión. Revisa tu internet y vuelve a intentar.'
+    const offline = () => screen.getByText(OFFLINE).closest('[role=alert]') as HTMLElement
+    vi.mocked(requestOrderingOtp).mockRejectedValueOnce(new ApiError('Sin conexión', 0, undefined, undefined, true))
+    show()
+    await flush()
+    expect(offline().className).toBe('avq-o-notice avq-o-notice--warn')
+    expect(document.querySelector('.avq-o-issue')).toBeNull()
+    // Al verificar sin red (el fetch ni siquiera llega: no es un ApiError), igual.
+    vi.mocked(verifyOrderingOtp).mockRejectedValueOnce(new TypeError('Failed to fetch'))
+    fireEvent.input(screen.getAllByRole('textbox')[0], { target: { value: '123456' } })
+    await flush()
+    expect(offline().className).toBe('avq-o-notice avq-o-notice--warn')
+    // Un código incorrecto sí es un error: rojo.
+    vi.mocked(verifyOrderingOtp).mockRejectedValueOnce(new ApiError('Código incorrecto.', 400))
+    fireEvent.input(screen.getAllByRole('textbox')[0], { target: { value: '000000' } })
+    await flush()
+    expect(screen.getByText('Código incorrecto.').className).toBe('avq-o-issue')
+    expect(screen.queryByText(OFFLINE)).toBeNull()
+  })
+
   it('en inglés: «Enter your code» y «We sent it by WhatsApp to …»', async () => {
     const s = makeStore(infoOf(), menuOf(), 'en')
     checkoutOf(s).lastBody.value = body

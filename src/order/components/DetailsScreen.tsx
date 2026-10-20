@@ -9,7 +9,7 @@ import { phoneE164 } from '../phone'
 import { CountryPhoneInput } from '../../components/ui/CountryPhoneInput'
 import { StoreStatusBanner } from './StoreStatusBanner'
 import { CheckoutStatus } from './CheckoutStatus'
-import { Back } from './CartScreen'
+import { Back } from './icons'
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 /** Durante cuánto, al aparecer la pantalla, «Confirmar pedido» ignora los toques (ver `confirm`). */
@@ -45,10 +45,15 @@ export function DetailsScreen() {
   // Con un intento pendiente se manda ESE (el pedido anterior), no lo que hay en pantalla: el único camino es su «Reintentar».
   const canSend = !missing && !!q?.ok && !busy && open && !c.pending.value
 
-  const confirm = () => {
+  const confirm = (e: Event) => {
     // Al aparecer, «Confirmar pedido» queda donde estaba «Continuar» del carrito: con la sesión verificada y los datos ya completos,
     // el segundo toque de un doble toque crearía el pedido sin que la persona viera esta pantalla. Lo de los primeros 400 ms se ignora.
-    if (!canSend || performance.now() - shownAt < ENTRY_GUARD_MS) return
+    // Cuenta la hora del TOQUE (`timeStamp`, el mismo reloj que `performance.now()`), no la de atenderlo: si el hilo se traba tras
+    // «Continuar», el segundo toque espera en la cola y llegaría ya «tarde».
+    // ponytail: un `timeStamp` en 0 o de otro reloj (navegadores viejos, jsdom: Date.now()) cae a la hora de ahora; ahí un hilo
+    // trabado 400 ms o más todavía lo dejaría pasar.
+    const at = e.timeStamp > 0 && e.timeStamp <= performance.now() ? e.timeStamp : performance.now()
+    if (!canSend || at - shownAt < ENTRY_GUARD_MS) return
     void send(store, buildOrderBody(store, { customer: { name, phone, ...(email ? { email } : {}) }, note: d.note || null }))
   }
   const venue = info?.venue.name || t('details.theRestaurant')

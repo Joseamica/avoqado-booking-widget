@@ -8,6 +8,7 @@ import { Notice, StoreStatusBanner } from './StoreStatusBanner'
 import { ProductSheet } from './ProductSheet'
 import { CartBar } from './CartBar'
 import { TABS_H } from './theme'
+import { Plus } from './icons'
 
 /** Sin acentos ni mayúsculas, para buscar «flauta» y encontrar «FLÁUTA». */
 const fold = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
@@ -18,11 +19,6 @@ let lists = 0
 /** Quien pidió «reducir movimiento» no recibe un desplazamiento suave. */
 const reduceMotion = () => typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches
 
-const Plus = () => (
-  <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round">
-    <path d="M12 5v14M5 12h14" />
-  </svg>
-)
 const Magnifier = () => (
   <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
     <circle cx="11" cy="11" r="7" />

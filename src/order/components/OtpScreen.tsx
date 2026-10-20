@@ -7,7 +7,8 @@ import { pendingAttempt } from '../attempt'
 import { checkoutOf, errorText, phoneToVerify, send, verifyPhone } from '../checkout'
 import { OtpInput } from '../../components/ui/OtpInput'
 import { CheckoutStatus } from './CheckoutStatus'
-import { Back } from './CartScreen'
+import { Notice } from './StoreStatusBanner'
+import { Back } from './icons'
 
 const RESEND_S = 30
 
@@ -18,7 +19,8 @@ export function OtpScreen() {
   const c = checkoutOf(store)
   const phone = phoneToVerify(store)
   const [code, setCode] = useState('')
-  const [error, setError] = useState<string | null>(null)
+  // `offline` = no hubo respuesta usable (sin red o ni un ApiError): es un estado normal, ámbar con la nube; lo demás va en rojo.
+  const [error, setError] = useState<{ text: string; offline: boolean } | null>(null)
   const [verifying, setVerifying] = useState(false)
   // La hora del último envío vive en el Checkout de la tienda: salir y volver a esta pantalla no manda otro WhatsApp.
   const lastSent = () => (phone ? c.otpSentAt.get(phone) : undefined)
@@ -41,9 +43,10 @@ export function OtpScreen() {
     try {
       await requestOrderingOtp(store.slug, phone)
     } catch (e) {
+      const offline = !(e instanceof ApiError) || e.network
       // Sin red el código no salió: volver a esta pantalla lo pide otra vez (no hereda una espera de un envío que no fue).
-      if (!(e instanceof ApiError) || e.network) c.otpSentAt.delete(phone)
-      setError(errorText(t, e))
+      if (offline) c.otpSentAt.delete(phone)
+      setError({ text: errorText(t, e), offline })
     }
   }
   useEffect(() => {
@@ -59,7 +62,7 @@ export function OtpScreen() {
     try {
       await verifyPhone(store, phone, value)
     } catch (e) {
-      setError(errorText(t, e))
+      setError({ text: errorText(t, e), offline: !(e instanceof ApiError) || e.network })
       setCode('')
       setVerifying(false)
       return
@@ -68,7 +71,7 @@ export function OtpScreen() {
     c.otpSentAt.delete(phone)
     setVerifying(false)
     // Verificado y aun así el pedido pide código (sesión que no se guardó, 401 otra vez): se dice, no se queda callado.
-    if ((await send(store, body)).kind === 'needsOtp') setError(t('otp.notUsable'))
+    if ((await send(store, body)).kind === 'needsOtp') setError({ text: t('otp.notUsable'), offline: false })
   }
 
   if (!phone)
@@ -89,7 +92,9 @@ export function OtpScreen() {
       <div class="avq-o-otp__code">
         <OtpInput look="tienda" value={code} onChange={setCode} onComplete={v => void verify(v)} disabled={busy} />
         {busy && <p role="status" class="avq-o-help">{t('otp.verifying')}</p>}
-        {error && <p role="alert" class="avq-o-issue">{error}</p>}
+        {error && (error.offline
+          ? <Notice role="alert" tone="warn" icon="cloudOff" text={error.text} />
+          : <p role="alert" class="avq-o-issue">{error.text}</p>)}
       </div>
       <CheckoutStatus />
       <div class="avq-o-otp__more">
