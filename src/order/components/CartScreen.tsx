@@ -1,5 +1,5 @@
 import { h } from 'preact'
-import { useContext, useEffect, useId, useState } from 'preact/hooks'
+import { useContext, useId, useLayoutEffect, useRef, useState } from 'preact/hooks'
 import { OrderStoreContext } from '../store'
 import { createOrderT } from '../i18n'
 import { ApiError, quote as fetchQuote } from '../api'
@@ -8,7 +8,7 @@ import { checkoutOf, errorText } from '../checkout'
 import { formatMXN } from '../money'
 import { Notice, StoreStatusBanner } from './StoreStatusBanner'
 import { Stepper } from './Stepper'
-import { initialsOf } from './theme'
+import { VenueMark } from './VenueMark'
 import type { Menu, Quote, QuoteIssue } from '../types'
 
 const MAX_QTY = 20
@@ -46,19 +46,6 @@ function issueText(t: ReturnType<typeof createOrderT>, x: QuoteIssue, q: Quote, 
   return t(key, vars)
 }
 
-/** El logo del restaurante en la tarjeta de recolección; sin logo (o con la liga rota), sus iniciales: nunca un hueco. */
-function PickupMark({ name, logo }: { name: string | null; logo: string | null }) {
-  const [bad, setBad] = useState<string | null>(null)
-  const showLogo = !!logo && bad !== logo
-  const initials = initialsOf(name)
-  if (!showLogo && !initials) return null
-  return (
-    <span class="avq-o-mark" aria-hidden={showLogo ? undefined : 'true'}>
-      {showLogo ? <img src={logo!} alt="" onError={() => setBad(logo)} /> : initials}
-    </span>
-  )
-}
-
 /**
  * Tu pedido: la tienda pinta SUS renglones; el total (y lo que se manda) es el de la cotización del servidor. Con la tienda no
  * abierta el carrito se ve, se edita y se vacía igual: sólo «Continuar» queda deshabilitado. «Continuar» y el total van en un pie
@@ -74,10 +61,18 @@ export function CartScreen() {
   // `offline` = no hubo respuesta usable: es un estado normal, no una falla (tarjeta ámbar con la nube tachada, como en la carta).
   const [error, setError] = useState<{ text: string; offline: boolean } | null>(null)
   const [attempt, setAttempt] = useState(0)
+  const root = useRef<HTMLDivElement>(null)
+  const addMore = useRef<HTMLButtonElement>(null)
+  const goMenu = useRef<HTMLButtonElement>(null)
+  // Índice del renglón que acaba de quitar el bote: pasado el repintado, el foco debe ir a otro lado (el botón que lo tenía ya no existe).
+  const removedAt = useRef<number | null>(null)
 
-  // Cada cambio del carrito vuelve a cotizar, ~300 ms después del último toque (el límite de /quote es 60/min por IP, y con
-  // CGNAT muchos comparten IP); una respuesta vieja no pisa a la nueva.
-  useEffect(() => {
+  // Cada cambio del carrito reinicia la cotización y vuelve a cotizar, ~300 ms después del último toque (el límite de /quote es
+  // 60/min por IP, y con CGNAT muchos comparten IP); una respuesta vieja no pisa a la nueva. Es un efecto de layout: el reinicio
+  // ocurre ANTES de pintar. (Al CAMBIAR el carrito, checkout.ts ya anula la cotización en el mismo lote, antes de repintar; lo que
+  // esto evita es el cuadro con la cotización que dejó la visita anterior al volver al carrito —un «Continuar $viejo» que enseguida
+  // desaparece— y con el aviso de error del carrito anterior.)
+  useLayoutEffect(() => {
     store.quote.value = null
     setError(null)
     if (cart.length === 0) return
@@ -94,6 +89,22 @@ export function CartScreen() {
     }
   }, [cart, attempt])
 
+  // Quitar un renglón con el bote destruye el botón que tenía el foco. El foco pasa al stepper del renglón que sube a ese lugar (el
+  // siguiente); si era el último, al anterior; y si no queda ninguno, a «Ver la carta» del carrito vacío («Agregar algo más» si por
+  // algo no hubiera stepper). Sin mover la página: sólo si el control queda arriba de la ventana, o bajo el pie pegajoso, se centra.
+  useLayoutEffect(() => {
+    const i = removedAt.current
+    if (i === null) return
+    removedAt.current = null
+    const rows = Array.from(root.current?.querySelectorAll<HTMLElement>('.avq-o-line') ?? [])
+    const target = rows[Math.min(i, rows.length - 1)]?.querySelector<HTMLElement>('.avq-o-stepper button') ?? addMore.current ?? goMenu.current
+    if (!target) return
+    target.focus({ preventScroll: true })
+    const r = target.getBoundingClientRect()
+    const foot = root.current?.querySelector('.avq-o-cartfoot')
+    if (r.top < 0 || r.bottom > Math.min(innerHeight, foot?.getBoundingClientRect().top ?? innerHeight)) target.scrollIntoView({ block: 'center' })
+  }, [cart])
+
   const info = store.info.value
   const open = info?.status === 'OPEN'
   const name = info?.venue.name || null
@@ -105,21 +116,21 @@ export function CartScreen() {
 
   if (cart.length === 0)
     return (
-      <div class="avq-o-empty">
+      <div ref={root} class="avq-o-empty">
         <p role="status">{t('cart.empty')}</p>
-        <button type="button" class="avq-o-btn avq-o-btn--primary" onClick={() => store.go('menu')}>{t('cart.goToMenu')}</button>
+        <button ref={goMenu} type="button" class="avq-o-btn avq-o-btn--primary" onClick={() => store.go('menu')}>{t('cart.goToMenu')}</button>
       </div>
     )
 
   return (
-    <div class="avq-o-cart">
+    <div ref={root} class="avq-o-cart">
       <StoreStatusBanner />
-      <button type="button" class="avq-o-back" aria-label={t('cart.goToMenu')} onClick={() => store.go('menu')}><Back /></button>
+      <button type="button" class="avq-o-back" aria-label={t('cart.backAria')} onClick={() => store.go('menu')}><Back /></button>
       <div class="avq-o-cart__intro">
         <h2 class="avq-o-title">{t('cart.title')}</h2>
         {(name || address) && (
           <div class="avq-o-pickup">
-            <PickupMark name={name} logo={info?.brand.logo || info?.brand.logoFull || null} />
+            <VenueMark />
             <div class="avq-o-pickup__text">
               {name && <span class="avq-o-pickup__name">{t('cart.pickupAt', { venue: name })}</span>}
               {address && <span class="avq-o-pickup__addr">{address}</span>}
@@ -140,17 +151,22 @@ export function CartScreen() {
                 {/* Sólo el importe de la cotización, cuando llega: nunca se calcula con los precios de la carta ni del carrito. */}
                 {lineTotals[i] !== undefined && <span class="avq-o-line__price">{formatMXN(lineTotals[i]!, store.locale)}</span>}
               </div>
-              {/* Con cantidad 1 el «−» es un bote de basura que quita el renglón; en 20 el «+» queda aria-disabled. */}
+              {/* Con cantidad 1 el «−» es un bote de basura que quita el renglón; en 20 el «+» queda aria-disabled. Los tres botones
+                  llevan el nombre del producto (el stepper es de ESE renglón). */}
               <Stepper line trash={last} value={l.quantity} label={t('sheet.qty')}
-                lessLabel={last ? t('cart.removeAria', { name: l.name }) : t('sheet.less')} moreLabel={t('sheet.more')}
-                onLess={() => { store.cart.value = last ? removeLine(cart, l.lineId) : setQuantity(cart, l.lineId, l.quantity - 1) }}
+                lessLabel={last ? t('cart.removeAria', { name: l.name }) : t('modifiers.less', { name: l.name })}
+                moreLabel={t('modifiers.more', { name: l.name })}
+                onLess={() => {
+                  if (last) removedAt.current = i
+                  store.cart.value = last ? removeLine(cart, l.lineId) : setQuantity(cart, l.lineId, l.quantity - 1)
+                }}
                 onMore={l.quantity < MAX_QTY ? () => { store.cart.value = setQuantity(cart, l.lineId, l.quantity + 1) } : undefined} />
               {lineIssues(i).map((x, j) => <p key={j} role="alert" class="avq-o-issue">{issueText(t, x, q!, store.menu.value, store.locale)}</p>)}
             </li>
           )
         })}
       </ul>
-      <button type="button" class="avq-o-btn avq-o-btn--quiet avq-o-more" onClick={() => store.go('menu')}><Plus />{t('cart.addMore')}</button>
+      <button ref={addMore} type="button" class="avq-o-btn avq-o-btn--quiet avq-o-more" onClick={() => store.go('menu')}><Plus />{t('cart.addMore')}</button>
       <div class="avq-o-cart__note">
         <label for={noteId}>{t('cart.note')}</label>
         <textarea id={noteId} class="avq-o-input" rows={2} maxLength={300} value={draft.value.note}

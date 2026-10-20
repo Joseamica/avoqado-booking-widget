@@ -1,4 +1,4 @@
-import { h } from 'preact'
+import { h, render as mount } from 'preact'
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/preact'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -18,6 +18,8 @@ import type { Quote, QuoteLine, StoreInfo } from '../types'
 beforeEach(() => {
   sessionStorage.clear()
   localStorage.clear()
+  // Ni la implementación ni los "una vez" de una prueba (p. ej. la de la respuesta vieja) pasan a la siguiente, aunque la anterior falle.
+  vi.mocked(quote).mockReset()
   vi.useFakeTimers()
 })
 afterEach(() => {
@@ -49,6 +51,10 @@ const continueBtn = () => screen.getByRole('button', { name: /^Continuar/ }) as 
 const totalText = () => screen.getByText('Total').parentElement!.textContent
 const rowOf = (name: string) => screen.getByRole('listitem', { name })
 const qtyOf = (s: { cart: { value: CartLine[] } }, lineId: string) => s.cart.value.find(l => l.lineId === lineId)?.quantity
+const flautas1: CartLine = { ...flautas, quantity: 1 }
+const refresco: CartLine = { lineId: 'c', productId: 'p3', name: 'Refresco', unitPrice: 25, quantity: 1, note: null, modifiers: [] }
+/** El bote de un renglón con cantidad 1: el «−» que lo quita. */
+const trashOf = (name: string) => within(rowOf(name)).getByRole('button', { name: `Quitar ${name}` }) as HTMLButtonElement
 
 describe('carrito cotizado por el servidor', () => {
   it('al entrar cotiza los renglones del carrito; el total que se muestra es el de la cotización, no la estimación', async () => {
@@ -69,10 +75,20 @@ describe('carrito cotizado por el servidor', () => {
       ],
     }))
     const tacosRow = rowOf('Tacos')
-    expect(within(tacosRow).getByText('Un platillo de tu pedido ya no está disponible.')).toBeTruthy()
+    const rowIssue = within(tacosRow).getByText('Un platillo de tu pedido ya no está disponible.')
     expect(within(rowOf('Flautas')).queryByText('Un platillo de tu pedido ya no está disponible.')).toBeNull()
+    // El de un renglón es un <p role="alert" class="avq-o-issue"> dentro del <li> (radio 12); el del pedido entero, el mismo <p>
+    // pero hijo directo de la pantalla, que es lo que la hoja de estilos usa para darle el radio de los avisos (16).
+    expect(rowIssue.tagName).toBe('P')
+    expect(rowIssue.classList.contains('avq-o-issue')).toBe(true)
+    expect(rowIssue.getAttribute('role')).toBe('alert')
+    expect(rowIssue.parentElement).toBe(tacosRow)
     // El monto sale de la cotización y con el formato de la tienda (no el texto del servidor).
     const minimum = screen.getByText('El pedido mínimo es de $200.')
+    expect(minimum.tagName).toBe('P')
+    expect(minimum.classList.contains('avq-o-issue')).toBe(true)
+    expect(minimum.getAttribute('role')).toBe('alert')
+    expect(minimum.parentElement!.classList.contains('avq-o-cart')).toBe(true)
     expect(tacosRow.contains(minimum)).toBe(false)
     expect(minimum.compareDocumentPosition(screen.getByText('Total')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     // El renglón con problema no trae importe (el servidor lo omite de `lines`); nada se calcula con los precios del carrito.
@@ -146,10 +162,10 @@ describe('carrito cotizado por el servidor', () => {
     // Ver y editar: la nota, «Más», «Menos» y el bote funcionan como con la tienda abierta.
     const note = screen.getByLabelText('Nota para el restaurante') as HTMLTextAreaElement
     expect(note.disabled).toBe(false)
-    fireEvent.click(within(rowOf('Flautas')).getByRole('button', { name: 'Más' }))
+    fireEvent.click(within(rowOf('Flautas')).getByRole('button', { name: 'Más Flautas' }))
     expect(qtyOf(s, 'a')).toBe(3)
-    fireEvent.click(within(rowOf('Flautas')).getByRole('button', { name: 'Menos' }))
-    fireEvent.click(within(rowOf('Flautas')).getByRole('button', { name: 'Menos' }))
+    fireEvent.click(within(rowOf('Flautas')).getByRole('button', { name: 'Menos Flautas' }))
+    fireEvent.click(within(rowOf('Flautas')).getByRole('button', { name: 'Menos Flautas' }))
     expect(qtyOf(s, 'a')).toBe(1)
     // Vaciar: el bote quita el último renglón y queda el carrito vacío.
     fireEvent.click(within(rowOf('Flautas')).getByRole('button', { name: 'Quitar Flautas' }))
@@ -187,11 +203,11 @@ describe('carrito cotizado por el servidor', () => {
 
   it('cambiar la cantidad vuelve a cotizar; con 1 el «−» es el bote que quita el renglón y no queda un «Quitar» aparte', async () => {
     const s = await show([{ ...flautas, quantity: 1 }], quoteOf(85))
-    expect(within(rowOf('Flautas')).queryByRole('button', { name: 'Menos' })).toBeNull()
-    fireEvent.click(within(rowOf('Flautas')).getByRole('button', { name: 'Más' }))
+    expect(within(rowOf('Flautas')).queryByRole('button', { name: 'Menos Flautas' })).toBeNull()
+    fireEvent.click(within(rowOf('Flautas')).getByRole('button', { name: 'Más Flautas' }))
     await flush()
     expect(vi.mocked(quote).mock.lastCall![1]).toEqual([{ productId: 'p1', quantity: 2, modifiers: [] }])
-    fireEvent.click(within(rowOf('Flautas')).getByRole('button', { name: 'Menos' }))
+    fireEvent.click(within(rowOf('Flautas')).getByRole('button', { name: 'Menos Flautas' }))
     await flush()
     expect(vi.mocked(quote).mock.lastCall![1]).toEqual([{ productId: 'p1', quantity: 1, modifiers: [] }])
     expect(screen.queryByRole('button', { name: 'Quitar' })).toBeNull()
@@ -204,9 +220,9 @@ describe('carrito cotizado por el servidor', () => {
     const s = await show([flautas, tacos], quoteOf(200))
     // Con 2: el «−» es «Menos», baja a 1 (no quita) y entonces pasa a ser «Quitar Flautas».
     expect(within(rowOf('Flautas')).queryByRole('button', { name: 'Quitar Flautas' })).toBeNull()
-    fireEvent.click(within(rowOf('Flautas')).getByRole('button', { name: 'Menos' }))
+    fireEvent.click(within(rowOf('Flautas')).getByRole('button', { name: 'Menos Flautas' }))
     expect(qtyOf(s, 'a')).toBe(1)
-    expect(within(rowOf('Flautas')).queryByRole('button', { name: 'Menos' })).toBeNull()
+    expect(within(rowOf('Flautas')).queryByRole('button', { name: 'Menos Flautas' })).toBeNull()
     expect(within(rowOf('Flautas')).getByRole('button', { name: 'Quitar Flautas' })).toBeTruthy()
     // Con 1 (Tacos): el «−» ya es el bote, un ícono sin texto, y quita SÓLO ese renglón.
     const trash = within(rowOf('Tacos')).getByRole('button', { name: 'Quitar Tacos' })
@@ -219,16 +235,16 @@ describe('carrito cotizado por el servidor', () => {
 
   it('en 20 el «+» queda aria-disabled (no disabled: el foco no se pierde) y ignora el toque; en 19 vuelve a estar activo', async () => {
     const s = await show([{ ...flautas, quantity: 20 }], quoteOf(1700))
-    const more = within(rowOf('Flautas')).getByRole('button', { name: 'Más' }) as HTMLButtonElement
+    const more = within(rowOf('Flautas')).getByRole('button', { name: 'Más Flautas' }) as HTMLButtonElement
     more.focus()
     expect(more.getAttribute('aria-disabled')).toBe('true')
     expect(more.disabled).toBe(false)
     fireEvent.click(more)
     expect(qtyOf(s, 'a')).toBe(20)
     expect(document.activeElement).toBe(more)
-    fireEvent.click(within(rowOf('Flautas')).getByRole('button', { name: 'Menos' }))
+    fireEvent.click(within(rowOf('Flautas')).getByRole('button', { name: 'Menos Flautas' }))
     expect(qtyOf(s, 'a')).toBe(19)
-    expect(within(rowOf('Flautas')).getByRole('button', { name: 'Más' }).getAttribute('aria-disabled')).toBeNull()
+    expect(within(rowOf('Flautas')).getByRole('button', { name: 'Más Flautas' }).getAttribute('aria-disabled')).toBeNull()
   })
 
   it('la cantidad de cada renglón es un grupo «Cantidad» con su valor, en el stepper de línea del carrito', async () => {
@@ -259,7 +275,7 @@ describe('carrito cotizado por el servidor', () => {
     render(withStore(s, <CartScreen />))
     await flush() // la primera cotización sale y queda esperando
     vi.mocked(quote).mockResolvedValueOnce(quoteOf(170))
-    fireEvent.click(within(rowOf('Flautas')).getByRole('button', { name: 'Más' }))
+    fireEvent.click(within(rowOf('Flautas')).getByRole('button', { name: 'Más Flautas' }))
     await flush() // la segunda sale y llega
     expect(s.quote.value?.total).toBe(170)
     await act(async () => { answerOld(quoteOf(85)) }) // la vieja llega tarde
@@ -302,13 +318,41 @@ describe('carrito cotizado por el servidor', () => {
     expect(document.body.textContent).not.toMatch(/Recoges en|cart\./)
   })
 
-  it('«Agregar algo más» y la flecha de volver llevan a la carta', async () => {
+  it('«Agregar algo más» y la flecha de volver llevan a la carta; la flecha tiene su propia etiqueta «Volver a la carta»', async () => {
     const s = await show([flautas], quoteOf(170))
     fireEvent.click(screen.getByRole('button', { name: 'Agregar algo más' }))
     expect(s.screen.value).toBe('menu')
     s.go('cart')
-    fireEvent.click(screen.getByRole('button', { name: 'Ver la carta' }))
+    // «Ver la carta» es del carrito vacío: con renglones, la flecha se llama «Volver a la carta» (como en la maqueta).
+    expect(screen.queryByRole('button', { name: 'Ver la carta' })).toBeNull()
+    const back = screen.getByRole('button', { name: 'Volver a la carta' })
+    expect(back.classList.contains('avq-o-back')).toBe(true)
+    expect(back.textContent).toBe('')
+    fireEvent.click(back)
     expect(s.screen.value).toBe('menu')
+  })
+
+  it('el «−» y el «+» de cada renglón llevan el nombre del producto («Menos Flautas»), en español y en inglés; el bote ya lo llevaba', async () => {
+    await show([flautas, tacos], quoteOf(200))
+    expect(within(rowOf('Flautas')).getByRole('button', { name: 'Menos Flautas' })).toBeTruthy()
+    expect(within(rowOf('Flautas')).getByRole('button', { name: 'Más Flautas' })).toBeTruthy()
+    expect(within(rowOf('Tacos')).getByRole('button', { name: 'Quitar Tacos' })).toBeTruthy()
+    expect(within(rowOf('Tacos')).getByRole('button', { name: 'Más Tacos' })).toBeTruthy()
+    // Ya no hay botones "Más" / "Menos" sueltos: cada uno dice de qué producto es.
+    expect(screen.queryByRole('button', { name: 'Más' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Menos' })).toBeNull()
+    cleanup()
+    const s = makeStore(infoOf(), menuOf(), 'en')
+    s.cart.value = [flautas, tacos]
+    vi.mocked(quote).mockResolvedValue(quoteOf(200))
+    s.go('cart')
+    render(withStore(s, <CartScreen />))
+    await flush()
+    expect(within(rowOf('Flautas')).getByRole('button', { name: 'Less Flautas' })).toBeTruthy()
+    expect(within(rowOf('Flautas')).getByRole('button', { name: 'More Flautas' })).toBeTruthy()
+    expect(within(rowOf('Tacos')).getByRole('button', { name: 'Remove Tacos' })).toBeTruthy()
+    expect(within(rowOf('Tacos')).getByRole('button', { name: 'More Tacos' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Back to the menu' })).toBeTruthy()
   })
 
   it('carrito vacío: el texto y «Ver la carta», que lleva a la carta (sin cotizar nada)', async () => {
@@ -364,8 +408,10 @@ describe('carrito cotizado por el servidor', () => {
     // Los textos nuevos de la pantalla también salen en inglés.
     expect(screen.getByText('Pickup at Flautas')).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Add something else' })).toBeTruthy()
-    expect(screen.getByRole('button', { name: 'See the menu' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Back to the menu' })).toBeTruthy()
     expect(within(tacosRow).getByRole('button', { name: 'Remove Tacos' })).toBeTruthy()
+    // «Continuar» también va en inglés y lleva el total de la cotización.
+    expect((screen.getByRole('button', { name: /^Continue/ }) as HTMLButtonElement).textContent).toBe('Continue $170')
     expect(screen.getByText('VAT included. Pay at pickup.')).toBeTruthy()
     expect(screen.getByLabelText('Note for the restaurant')).toBeTruthy()
     expect(screen.getByText('Total')).toBeTruthy()
@@ -376,7 +422,7 @@ describe('carrito cotizado por el servidor', () => {
     await show([{ ...flautas, quantity: 1 }], quoteOf(85))
     expect(quote).toHaveBeenCalledTimes(1)
     for (let i = 0; i < 3; i++) {
-      fireEvent.click(within(rowOf('Flautas')).getByRole('button', { name: 'Más' }))
+      fireEvent.click(within(rowOf('Flautas')).getByRole('button', { name: 'Más Flautas' }))
       await act(async () => { await vi.advanceTimersByTimeAsync(100) })
     }
     expect(quote).toHaveBeenCalledTimes(1)
@@ -418,5 +464,162 @@ describe('«Continuar» pegado abajo, dentro de la tienda', () => {
     expect(root).toBe(container.firstElementChild)
     expect(root.style.getPropertyValue('--avq-accent')).toBe('#14532D')
     expect(STORE_CSS).toMatch(/\.avq-o-btn--primary\{background:var\(--avq-accent/)
+  })
+})
+
+describe('al quitar un renglón con el bote', () => {
+  // El «−» de la primera posición de cada stepper: el control que se acaba de usar y el que hereda el foco.
+  const firstButton = (name: string) => within(rowOf(name)).getAllByRole('button')[0]
+
+  it('el foco pasa al stepper del renglón que sube a su lugar (el siguiente)', async () => {
+    const s = await show([flautas1, tacos, refresco], quoteOf(140))
+    trashOf('Tacos').focus()
+    fireEvent.click(trashOf('Tacos'))
+    expect(s.cart.value.map(l => l.name)).toEqual(['Flautas', 'Refresco'])
+    expect(document.activeElement).toBe(firstButton('Refresco'))
+    // Es el stepper del que sigue: su «−» (con cantidad 1, su bote).
+    expect(document.activeElement!.getAttribute('aria-label')).toBe('Quitar Refresco')
+  })
+
+  it('si era el último, el foco pasa al anterior', async () => {
+    const s = await show([flautas1, tacos, refresco], quoteOf(140))
+    fireEvent.click(trashOf('Refresco'))
+    expect(s.cart.value.map(l => l.name)).toEqual(['Flautas', 'Tacos'])
+    expect(document.activeElement).toBe(firstButton('Tacos'))
+  })
+
+  it('si era el único, el carrito queda vacío y el foco va a «Ver la carta»', async () => {
+    const s = await show([tacos], quoteOf(30))
+    fireEvent.click(trashOf('Tacos'))
+    expect(s.cart.value).toEqual([])
+    expect(screen.getByText('Tu pedido está vacío.')).toBeTruthy()
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Ver la carta' }))
+  })
+
+  it('bajar la cantidad (3 → 2) no mueve el foco: sigue en el mismo botón', async () => {
+    const s = await show([{ ...flautas, quantity: 3 }, tacos], quoteOf(285))
+    const less = within(rowOf('Flautas')).getByRole('button', { name: 'Menos Flautas' }) as HTMLButtonElement
+    less.focus()
+    fireEvent.click(less)
+    expect(qtyOf(s, 'a')).toBe(2)
+    expect(document.activeElement).toBe(less)
+  })
+
+  it('el foco llega sin mover la página (preventScroll); sólo se centra si el control queda arriba de la ventana o bajo el pie pegajoso', async () => {
+    const scrollIntoView = vi.fn()
+    Element.prototype.scrollIntoView = scrollIntoView
+    const focus = vi.spyOn(HTMLElement.prototype, 'focus')
+    const rect = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect')
+    const at = (top: number, bottom: number) => ({ top, bottom, left: 0, right: 0, width: 0, height: bottom - top, x: 0, y: top, toJSON() {} }) as DOMRect
+    // La ventana de jsdom mide 768; el pie, pegado abajo, empieza en 676. `where` es dónde queda el control que hereda el foco.
+    const where = (top: number, bottom: number) =>
+      rect.mockImplementation(function (this: HTMLElement) { return this.classList.contains('avq-o-cartfoot') ? at(676, 768) : at(top, bottom) })
+    const removeTacos = async () => {
+      await show([flautas1, tacos, refresco], quoteOf(140))
+      scrollIntoView.mockClear()
+      focus.mockClear()
+      fireEvent.click(trashOf('Tacos'))
+    }
+    try {
+      where(300, 344) // a la vista
+      await removeTacos()
+      expect(focus).toHaveBeenCalledWith({ preventScroll: true })
+      expect(document.activeElement).toBe(firstButton('Refresco'))
+      expect(scrollIntoView).not.toHaveBeenCalled()
+      cleanup()
+      where(-60, -16) // arriba de la ventana
+      await removeTacos()
+      expect(scrollIntoView).toHaveBeenCalledTimes(1)
+      expect(scrollIntoView).toHaveBeenCalledWith({ block: 'center' })
+      cleanup()
+      where(700, 744) // dentro de la ventana, pero TAPADO por el pie (empieza en 676)
+      await removeTacos()
+      expect(scrollIntoView).toHaveBeenCalledWith({ block: 'center' })
+    } finally {
+      focus.mockRestore()
+      rect.mockRestore()
+      delete (Element.prototype as any).scrollIntoView
+    }
+  })
+})
+
+describe('el logo que no cargó (nunca un hueco, ni se reintenta al cambiar de pantalla)', () => {
+  it('se recuerda en toda la tienda: la cabecera compacta de los datos y la tarjeta del carrito nacen ya con las iniciales', async () => {
+    const venue = { slug: 'a', name: 'Avoqado Full', timezone: 'America/Mexico_City', currency: 'MXN' }
+    const brand = (logo: string) => ({ logo, logoFull: null, primaryColor: null, secondaryColor: null })
+    const s = makeStore(infoOf({ venue, brand: brand('https://x/logo.png') }), menuOf())
+    s.cart.value = [flautas]
+    vi.mocked(quote).mockResolvedValue(quoteOf(170))
+    const { container } = render(withStore(s, <OrderApp />))
+    // La portada de la carta: el logo falla y cae a las iniciales.
+    fireEvent.error(container.querySelector('.avq-o-hero .avq-o-mark img')!)
+    expect(container.querySelector('.avq-o-hero .avq-o-mark')!.textContent).toBe('AF')
+    // Los datos: la cabecera compacta ni siquiera vuelve a pedir la imagen.
+    await act(async () => { s.go('details') })
+    expect(container.querySelector('.avq-o-head img')).toBeNull()
+    expect(container.querySelector('.avq-o-head .avq-o-mark--sm')!.textContent).toBe('AF')
+    // El carrito: la tarjeta «Recoges en» tampoco.
+    await act(async () => { s.go('cart') })
+    await flush()
+    expect(container.querySelector('.avq-o-pickup img')).toBeNull()
+    expect(container.querySelector('.avq-o-pickup .avq-o-mark')!.textContent).toBe('AF')
+    // Una liga NUEVA (otro /info) sí se intenta de nuevo.
+    await act(async () => { s.info.value = infoOf({ venue, brand: brand('https://x/otro.png') }) })
+    expect(container.querySelector('.avq-o-pickup img')!.getAttribute('src')).toBe('https://x/otro.png')
+  })
+})
+
+describe('la cotización vieja nunca se pinta', () => {
+  // El navegador pinta cuando se vacían las microtareas, antes de cualquier temporizador o cuadro de animación (aquí falsos: no
+  // avanzan). Preact repinta en microtareas; lo que quede en el DOM en ese punto es lo que alcanzaría a verse.
+  const untilPaint = async () => { for (let i = 0; i < 6; i++) await Promise.resolve() }
+
+  it('tras quitar un renglón no se ve ni un cuadro con los importes viejos: ni el del renglón que queda ni «Continuar $viejo»', async () => {
+    // $170 el primer renglón y $30 el segundo. Al quitar el primero, el que queda NO debe heredar los $170 (la cuenta por posición de
+    // `lines` se desfasa) ni «Continuar $200». Hoy lo garantiza el almacén: checkout.ts anula la cotización EN EL MISMO LOTE del cambio
+    // del carrito (store.cart.subscribe), antes de que la pantalla se repinte; esta prueba lo fija desde la pantalla.
+    const s = await show([flautas1, tacos], quoteOf(200, { lines: [qline('p1', 170), qline('p2', 30)] }))
+    expect(within(rowOf('Tacos')).getByText('$30')).toBeTruthy()
+    expect(continueBtn().textContent).toBe('Continuar $200')
+    trashOf('Flautas').click() // un toque "crudo", sin act: nada se vacía por nosotros
+    await untilPaint()
+    expect(s.cart.value.map(l => l.name)).toEqual(['Tacos'])
+    expect(within(rowOf('Tacos')).queryByText(/\$/)).toBeNull()
+    expect(document.body.textContent).not.toMatch(/\$170|\$200/)
+    expect(continueBtn().textContent).toBe('Continuar')
+    expect(continueBtn().disabled).toBe(true)
+    expect(s.quote.value).toBeNull()
+    // Cuando llega la cotización nueva, vuelve a pintarse con sus importes (se deja correr más de un debounce: el toque crudo no pasó
+    // por act, y los efectos normales esperan sus temporizadores).
+    vi.mocked(quote).mockResolvedValue(quoteOf(30, { lines: [qline('p2', 30)] }))
+    await act(async () => { await vi.advanceTimersByTimeAsync(1000) })
+    expect(within(rowOf('Tacos')).getByText('$30')).toBeTruthy()
+    expect(continueBtn().textContent).toBe('Continuar $30')
+  })
+
+  it('al entrar al carrito no se pinta ni un cuadro con la cotización que dejó la visita anterior: se reinicia antes de pintar', async () => {
+    // La cotización vive en el almacén y sobrevive a salir del carrito; el efecto de la pantalla la reinicia y pide otra. Si ese
+    // reinicio ocurre DESPUÉS de pintar, se ve un cuadro con «Continuar $999» que enseguida desaparece.
+    const s = makeStore(infoOf(), menuOf())
+    s.cart.value = [flautas1]
+    s.quote.value = quoteOf(999, { lines: [qline('p1', 999)] })
+    vi.mocked(quote).mockResolvedValue(quoteOf(85))
+    s.go('cart')
+    const host = document.createElement('div')
+    document.body.appendChild(host)
+    try {
+      mount(withStore(s, <CartScreen />), host) // directo, sin act: los efectos "normales" esperan al siguiente cuadro
+      await untilPaint()
+      expect(host.textContent).not.toMatch(/\$999/)
+      expect(host.textContent).toContain('Calculando el total…')
+      expect(host.querySelector('.avq-o-cartfoot button')!.textContent).toBe('Continuar')
+      expect(s.quote.value).toBeNull()
+      // Y la cotización nueva llega y se pinta.
+      await act(async () => { await vi.advanceTimersByTimeAsync(1000) })
+      expect(host.querySelector('.avq-o-cartfoot button')!.textContent).toBe('Continuar $85')
+    } finally {
+      mount(null, host)
+      host.remove()
+    }
   })
 })

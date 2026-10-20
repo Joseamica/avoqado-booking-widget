@@ -5,7 +5,7 @@
 /** Colores del spec §4. Cada texto sobre el fondo en que se usa da 4.5:1 o más (lo vigila theme.test.ts). */
 export const T = {
   ink: '#000000', // títulos, nombres, botón principal por omisión
-  text2: '#4A4A4A', // direcciones y subtítulos
+  text2: '#4A4A4A', // direcciones (la de la portada y la de «Recoges en»: el spec §4 manda sobre el #5E5E5E de la maqueta) y subtítulos
   muted: '#5E5E5E', // descripciones y ayudas
   divider: '#EEEEEE', // líneas entre productos y renglones
   fieldBorder: '#DADADA', // inputs y stepper del carrito
@@ -82,7 +82,7 @@ export function loadStoreFonts(): void {
  *   `.avq-o-chip` (+ `--ok`), `.avq-o-stepper` (+ `--line`, el del carrito; `--sm`, el de una opción) y `.avq-o-bar` (+ `--neutral`).
  * - Portada y encabezado (tarea 4): `.avq-o-hero` (+ `--cover`, con foto) con `__img`, `__id`, `__names`, `__name` y `__addr`;
  *   `.avq-o-chips` y `.avq-o-dot`; `.avq-o-mark` (+ `--sm`) es el círculo del logo o de las iniciales; `.avq-o-head` es la
- *   cabecera compacta de carrito, datos y código. Los avisos llevan `.avq-o-notice__body|__title|__action`.
+ *   cabecera compacta de datos y código (el carrito no la lleva: su tarjeta «Recoges en» ya dice quién es). Los avisos llevan `.avq-o-notice__body|__title|__action`.
  * - Carta (tarea 5): `.avq-o-menu` es la raíz de la carta (deja el relleno de abajo de la barra); `.avq-o-search` el buscador;
  *   `.avq-o-tabs` y `.avq-o-tab` las pestañas pegajosas; `.avq-o-section` cada categoría; la fila (`.avq-o-row`) lleva
  *   `__text`, `__info`, `__name`, `__price`, `__desc`, `__tag` (Agotado), `__media`, `__img` y `__add` (el «+»), y `--bare` si no
@@ -96,7 +96,7 @@ export function loadStoreFonts(): void {
  * - Tu pedido (tarea 7): `.avq-o-cart` es la pantalla y `.avq-o-cartfoot` su pie de «Continuar» (pegajoso abajo DENTRO de la tienda,
  *   como el de la ficha); `.avq-o-back` la flecha de volver; `.avq-o-cart__intro` el título con la tarjeta `.avq-o-pickup` («Recoges
  *   en…»: `__text`, `__name`, `__addr`); `.avq-o-lines` > `.avq-o-line` los renglones (`__info`, `__name`, `__sub`, `__price`), con su
- *   `.avq-o-stepper--line`; `.avq-o-issue` un problema (de un renglón o del pedido); `.avq-o-more` «Agregar algo más»;
+ *   `.avq-o-stepper--line`; `.avq-o-issue` un problema (el de un renglón, radio 12; el del pedido, hijo directo de la pantalla, radio 16 como un aviso); `.avq-o-more` «Agregar algo más»;
  *   `.avq-o-cart__note` la nota; `.avq-o-total` el total (`__row`, `__wait`, `__tax`).
  * Cada tarea puede AGREGAR clases; las que ya están no se cambian ni se quitan.
  */
@@ -242,7 +242,7 @@ textarea.avq-o-input{min-height:0;padding:12px 14px;resize:none}
 .avq-o-pickup .avq-o-mark{width:40px;height:40px;font-size:15px}
 .avq-o-pickup__text{display:flex;flex-direction:column;gap:2px;min-width:0;overflow-wrap:anywhere}
 .avq-o-pickup__name{font-weight:600}
-.avq-o-pickup__addr{color:${T.muted};font-size:14px}
+.avq-o-pickup__addr{color:${T.text2};font-size:14px}
 .avq-o-lines{list-style:none;margin:8px 0 0;padding:0 16px}
 .avq-o-line{display:flex;flex-wrap:wrap;align-items:center;column-gap:12px;padding:16px 0;border-bottom:1px solid ${T.divider}}
 .avq-o-line__info{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px;overflow-wrap:anywhere}
@@ -251,7 +251,7 @@ textarea.avq-o-input{min-height:0;padding:12px 14px;resize:none}
 .avq-o-line__price{margin-top:2px;font-weight:500}
 .avq-o-issue{margin:0;padding:8px 12px;border-radius:12px;background:${T.errBg};color:${T.errFg};font-size:14px;font-weight:600;line-height:1.4;overflow-wrap:anywhere}
 .avq-o-line>.avq-o-issue{flex:0 0 100%;margin-top:10px}
-.avq-o-cart>.avq-o-issue{margin:12px 16px 0}
+.avq-o-cart>.avq-o-issue{margin:12px 16px 0;border-radius:16px}
 .avq-o-more{margin:4px 0 0 8px}
 .avq-o-cart__note{display:flex;flex-direction:column;gap:8px;margin:12px 16px 0}
 .avq-o-cart__note>label{font-weight:600}

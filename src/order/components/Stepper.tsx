@@ -4,8 +4,8 @@ const MINUS = 'M5 12h14'
 const PLUS = 'M12 5v14M5 12h14'
 const TRASH = 'M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13'
 
-const Icon = ({ d, size, width = 2.4 }: { d: string; size: number; width?: number }) => (
-  <svg aria-hidden="true" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width={width} stroke-linecap="round" stroke-linejoin="round">
+const Icon = ({ d, size, stroke = 2.4 }: { d: string; size: number; stroke?: number }) => (
+  <svg aria-hidden="true" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width={stroke} stroke-linecap="round" stroke-linejoin="round">
     <path d={d} />
   </svg>
 )
@@ -24,7 +24,7 @@ export function Stepper({ value, label, lessLabel, moreLabel, onLess, onMore, sm
   return (
     <div class={small ? 'avq-o-stepper avq-o-stepper--sm' : line ? 'avq-o-stepper avq-o-stepper--line' : 'avq-o-stepper'} role={label ? 'group' : undefined} aria-label={label}>
       <button type="button" aria-label={lessLabel} aria-disabled={onLess ? undefined : 'true'} onClick={onLess}>
-        <Icon d={trash ? TRASH : MINUS} size={size} width={trash ? 2.2 : 2.4} />
+        <Icon d={trash ? TRASH : MINUS} size={size} stroke={trash ? 2.2 : 2.4} />
       </button>
       <span aria-live="polite">{value}</span>
       <button type="button" aria-label={moreLabel} aria-disabled={onMore ? undefined : 'true'} onClick={onMore}><Icon d={PLUS} size={size} /></button>

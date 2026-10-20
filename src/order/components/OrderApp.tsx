@@ -14,13 +14,15 @@ import { OtpScreen } from './OtpScreen'
 import { CheckoutStatus } from './CheckoutStatus'
 import { TrackingScreen } from './TrackingScreen'
 import { Notice } from './StoreStatusBanner'
-import { STORE_CSS, accentFor, initialsOf, loadStoreFonts } from './theme'
+import { STORE_CSS, accentFor, loadStoreFonts } from './theme'
+import { VenueMark, logoOf } from './VenueMark'
 
 /**
  * Raíz de la tienda. La marca sale de `/info` (no de reservas); `accentColor` es el respaldo del atributo `accent-color`.
  * Pinta la hoja de estilos de la tienda (`STORE_CSS`) dentro de su raíz y pide las tipografías una sola vez.
- * Encabezado: la portada completa (foto, logo, nombre, dirección y chips) sólo en la carta; en carrito, datos y código, una
- * cabecera compacta (logo y nombre); el seguimiento trae la suya, y la ficha de un producto ocupa el lugar de la tienda.
+ * Encabezado: la portada completa (foto, logo, nombre, dirección y chips) sólo en la carta; en datos y código, una cabecera compacta
+ * (logo y nombre); el carrito no lleva ninguna (su tarjeta «Recoges en» ya trae el logo y el nombre); el seguimiento trae la suya, y la
+ * ficha de un producto ocupa el lugar de la tienda.
  */
 export function OrderApp({ accentColor }: { accentColor?: string }) {
   const store = useContext(OrderStoreContext)!
@@ -61,22 +63,12 @@ export function OrderApp({ accentColor }: { accentColor?: string }) {
   useEffect(() => { if (name && store.host) emitStoreLoaded(store.host, { slug: store.slug, name }) }, [store, name])
   // El color de la marca (o del atributo) sólo se usa si da 4.5:1 con el texto blanco del botón; si no, negro.
   const accent = accentFor(info?.brand.primaryColor || accentColor)
-  const logo = info?.brand.logo || info?.brand.logoFull || null
+  const logo = logoOf(info)
   const cover = info?.brand.heroImageUrl || null
-  // Una imagen que no carga se quita, sin dejar un hueco gris: el logo cae a las iniciales y la portada, a la cabecera sin foto.
-  // Se guarda la LIGA que falló, así una liga nueva (otro /info) se intenta de nuevo.
-  const [badLogo, setBadLogo] = useState<string | null>(null)
+  // Una imagen que no carga se quita, sin dejar un hueco gris: la portada cae a la cabecera sin foto (el logo, a las iniciales: lo
+  // resuelve `VenueMark`). Se guarda la LIGA que falló, así una liga nueva (otro /info) se intenta de nuevo.
   const [badCover, setBadCover] = useState<string | null>(null)
-  const showLogo = !!logo && badLogo !== logo
   const showCover = !!cover && badCover !== cover
-  const initials = initialsOf(name)
-  // Las iniciales no se leen en voz alta (el nombre ya va al lado); el logo es una imagen sin texto alternativo.
-  const mark = (small = false) =>
-    showLogo || initials ? (
-      <span class={small ? 'avq-o-mark avq-o-mark--sm' : 'avq-o-mark'} aria-hidden={showLogo ? undefined : 'true'}>
-        {showLogo ? <img src={logo!} alt="" onError={() => setBadLogo(logo)} /> : initials}
-      </span>
-    ) : null
   // «Abierto hasta las 22:00» (el cierre de la franja de ahora); sin horario, o fuera de toda franja, «Abierto» a secas. Con la
   // tienda no abierta no hay chips: el aviso de abajo (pausa, cerrado…) ocupa su lugar.
   const chips = () => {
@@ -98,7 +90,7 @@ export function OrderApp({ accentColor }: { accentColor?: string }) {
   const screen = store.screen.value
   const hasBrand = !!(name || logo)
   const hero = hasBrand && (screen === 'menu' || screen === 'product') && !store.productId.value
-  const compact = hasBrand && (screen === 'cart' || screen === 'details' || screen === 'otp')
+  const compact = hasBrand && (screen === 'details' || screen === 'otp')
   return (
     <div class="avq-o-root" style={{ ['--avq-accent' as any]: accent }}>
       <style>{STORE_CSS}</style>
@@ -107,7 +99,7 @@ export function OrderApp({ accentColor }: { accentColor?: string }) {
         <header class={showCover ? 'avq-o-hero avq-o-hero--cover' : 'avq-o-hero'}>
           {showCover && <img class="avq-o-hero__img" src={cover!} alt="" onError={() => setBadCover(cover)} />}
           <div class="avq-o-hero__id">
-            {mark()}
+            <VenueMark />
             {(name || address) && (
               <div class="avq-o-hero__names">
                 {name && <h1 class="avq-o-hero__name">{name}</h1>}
@@ -120,7 +112,7 @@ export function OrderApp({ accentColor }: { accentColor?: string }) {
       )}
       {compact && (
         <header class="avq-o-head">
-          {mark(true)}
+          <VenueMark small />
           {name && <span class="avq-o-head__name">{name}</span>}
         </header>
       )}

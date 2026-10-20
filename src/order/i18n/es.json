@@ -99,6 +99,7 @@
     "totalShort": "Total",
     "taxPickup": "IVA incluido. Pagas al recoger.",
     "goToMenu": "Ver la carta",
+    "backAria": "Volver a la carta",
     "issues": {
       "EMPTY_CART": "Tu carrito está vacío.",
       "TOO_MANY_LINES": "Máximo {{n}} renglones por pedido.",

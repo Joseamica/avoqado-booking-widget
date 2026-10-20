@@ -587,7 +587,7 @@ describe('OrderApp', () => {
     const r2 = render(withStore(makeStore(infoOf(), menuOf(product())), <OrderApp accentColor="#1E3A8A" />))
     expect((r2.container.firstElementChild as HTMLElement).style.getPropertyValue('--avq-accent')).toBe('#1E3A8A')
   })
-  it('W1: cabecera con el nombre y el logo del restaurante en la carta, el carrito y los datos; no en el seguimiento', async () => {
+  it('W1: cabecera con el nombre y el logo del restaurante en la carta y los datos (el carrito lleva su tarjeta «Recoges en»); no en el seguimiento', async () => {
     vi.mocked(getTracking).mockResolvedValue({
       orderNumber: '7', status: 'ACCEPTED', paymentMode: 'PAY_AT_PICKUP', venueName: 'Flautas Coyoacán', venueSlug: 'a', items: [],
       total: 0, paid: false, estimatedReadyAt: null, acceptDeadlineAt: '2026-10-17T19:05:00Z', rejectReason: null, createdAt: '', canCancel: false,
@@ -596,13 +596,14 @@ describe('OrderApp', () => {
     const s = makeStore(infoOf({ venue, brand: { logo: 'https://x/logo.png', logoFull: 'https://x/full.png', primaryColor: null, secondaryColor: null } }), menuOf(product()))
     render(withStore(s, <OrderApp />))
     const header = () => screen.getByRole('banner')
-    // En la carta es la portada completa (nombre como título y chips); en el carrito y los datos, la cabecera compacta.
+    // En la carta es la portada completa (nombre como título y chips); en los datos, la cabecera compacta.
     expect(within(header()).getByRole('heading', { name: 'Flautas Coyoacán' })).toBeTruthy()
     expect(header().querySelector('img')!.getAttribute('src')).toBe('https://x/logo.png')
-    for (const sc of ['cart', 'details'] as const) {
-      await act(async () => { s.go(sc) })
-      expect(header().textContent).toBe('Flautas Coyoacán')
-    }
+    // El carrito no lleva cabecera: su tarjeta «Recoges en {nombre}» ya trae el logo y el nombre (spec §5.3).
+    await act(async () => { s.go('cart') })
+    expect(screen.queryByRole('banner')).toBeNull()
+    await act(async () => { s.go('details') })
+    expect(header().textContent).toBe('Flautas Coyoacán')
     await act(async () => { s.trackingToken.value = 'T'.repeat(32); s.go('tracking') })
     await flush()
     expect(screen.queryByRole('banner')).toBeNull()
@@ -771,7 +772,7 @@ describe('encabezado de la tienda: portada, logo, chips y avisos', () => {
     const { container } = render(withStore(store(), <StoreStatusBanner />))
     expect(container.querySelector('.avq-o-notice')).toBeNull()
   })
-  it('portada completa sólo en la carta; carrito, datos y código llevan la cabecera compacta; con la ficha abierta, ninguna', async () => {
+  it('portada completa sólo en la carta; datos y código llevan la cabecera compacta; el carrito, ninguna (su tarjeta «Recoges en» ya dice quién es); con la ficha abierta, ninguna', async () => {
     const s = store({ brand: brand({ logo: 'https://x/logo.png', heroImageUrl: 'https://x/portada.jpg' }), contact: { address: 'Av. Insurgentes Sur 1234', phone: null } })
     const { container } = app(s)
     expect(container.querySelector('.avq-o-hero__img')).not.toBeNull()
@@ -782,7 +783,13 @@ describe('encabezado de la tienda: portada, logo, chips y avisos', () => {
     expect(screen.queryByRole('banner')).toBeNull()
     await act(async () => { s.productId.value = null })
     expect(screen.getByRole('banner')).toBeTruthy()
-    for (const sc of ['cart', 'details', 'otp'] as const) {
+    // El carrito no repite arriba el logo y el nombre que ya trae su tarjeta «Recoges en»: ni portada ni cabecera compacta.
+    await act(async () => { s.go('cart') })
+    expect(container.querySelector('.avq-o-hero__img')).toBeNull()
+    expect(container.querySelector('.avq-o-head')).toBeNull()
+    expect(screen.queryByRole('banner')).toBeNull()
+    expect(screen.queryByRole('heading', { name: 'Avoqado Full' })).toBeNull()
+    for (const sc of ['details', 'otp'] as const) {
       await act(async () => { s.go(sc) })
       expect(container.querySelector('.avq-o-hero__img'), sc).toBeNull()
       expect(screen.queryByText(/Para recoger en/), sc).toBeNull()

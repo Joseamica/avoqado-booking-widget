@@ -99,6 +99,7 @@
     "totalShort": "Total",
     "taxPickup": "VAT included. Pay at pickup.",
     "goToMenu": "See the menu",
+    "backAria": "Back to the menu",
     "issues": {
       "EMPTY_CART": "Your cart is empty.",
       "TOO_MANY_LINES": "Maximum {{n}} lines per order.",

@@ -159,8 +159,16 @@ describe('STORE_CSS', () => {
     expect(foot).toMatch(/border-top:1px solid #EEEEEE/) // se separa con un divisor, no con sombra
     expect(foot).not.toMatch(/shadow/)
     expect(rule('.avq-o-pickup')).toMatch(/border-radius:16px;background:#F4F4F4/)
+    // La dirección de la tarjeta es "texto secundario" (#4A4A4A, spec §4: direcciones y subtítulos), no el #5E5E5E de la maqueta.
+    expect(rule('.avq-o-pickup__addr')).toMatch(/color:#4A4A4A/)
+    expect(rule('.avq-o-hero__addr')).toMatch(/color:#4A4A4A/)
     expect(rule('.avq-o-issue')).toMatch(/background:#FDECEA/)
     expect(rule('.avq-o-issue')).toMatch(/color:#B3261E/)
+    // Radios por jerarquía (spec §4): el problema DENTRO de un renglón es una caja chica (12); el del pedido entero, hijo directo de la
+    // pantalla, es un aviso (16).
+    expect(rule('.avq-o-issue')).toMatch(/border-radius:12px/)
+    expect(rule('.avq-o-line>.avq-o-issue')).not.toMatch(/border-radius/)
+    expect(rule('.avq-o-cart>.avq-o-issue')).toMatch(/border-radius:16px/)
     // Un nombre de 120 caracteres sin espacios no empuja el stepper fuera de la tienda.
     expect(rule('.avq-o-line__info')).toMatch(/min-width:0/)
     expect(rule('.avq-o-line__info')).toMatch(/overflow-wrap:anywhere/)
