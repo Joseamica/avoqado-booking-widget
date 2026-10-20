@@ -167,14 +167,18 @@ export function MenuScreen() {
   // La carta se recargó y el producto de la ficha ya no está: de vuelta a la carta.
   useEffect(() => { if (stale) store.productId.value = null }, [stale])
 
-  // Al cerrar la ficha (X, Escape, «Agregar» o porque el producto ya no está), el foco vuelve a la fila de ESE producto (si ya no
-  // existe, al buscador) sin mover la página; sólo si no está a la vista se centra (spec §12.2). Antes de pintar: sin salto.
+  // Al cerrar la ficha (X, Escape, «Agregar» o porque el producto ya no está), y SÓLO si el foco estaba dentro de ella, el foco
+  // vuelve a la fila de ESE producto (si ya no existe, al buscador; sin buscador, nada) sin mover la página; sólo si no está a la
+  // vista se centra (spec §12.2 y §12.3). Si la cerró el sistema con la persona en otra parte de la página, no se mueve nada.
+  // Antes de pintar: sin salto.
   const menuEl = useRef<HTMLDivElement>(null)
   const shown = useRef<string | null>(null)
+  const sheetHadFocus = useRef(false)
   useLayoutEffect(() => {
     const closed = shown.current
     shown.current = pid
-    if (pid || !closed) return
+    if (pid || !closed || !sheetHadFocus.current) return
+    sheetHadFocus.current = false
     const rows = Array.from(menuEl.current?.querySelectorAll<HTMLButtonElement>('[data-product-id]') ?? [])
     const target = rows.find(b => b.dataset.productId === closed && !b.disabled) ?? menuEl.current?.querySelector<HTMLElement>('.avq-o-search > input')
     if (!target) return
@@ -205,7 +209,7 @@ export function MenuScreen() {
       <StoreStatusBanner />
       {menu.truncated && <Notice tone="neutral" text={t('menu.truncated')} />}
       {menu.categories.length === 0 ? <p role="status" class="avq-o-empty">{t('menu.empty')}</p> : product ? (
-        <ProductSheet key={product.id} product={product} />
+        <ProductSheet key={product.id} product={product} onLeave={had => { sheetHadFocus.current = had }} />
       ) : (
         <MenuList menu={menu} open={info.status === 'OPEN'} query={query} onQuery={setQuery} />
       )}

@@ -7,6 +7,7 @@
     "mandatory": "Required",
     "done": "Done",
     "chooseOne": "Choose 1",
+    "chooseExactly": "Choose {{n}}",
     "chooseUpTo": "Choose up to {{n}}",
     "chooseAtLeast": "Choose at least {{n}}",
     "chooseAny": "Choose any",

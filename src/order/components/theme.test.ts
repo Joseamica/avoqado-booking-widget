@@ -32,7 +32,12 @@ describe('tokens', () => {
     expect(T).toEqual({
       ink: '#000000', text2: '#4A4A4A', muted: '#5E5E5E', divider: '#EEEEEE', fieldBorder: '#DADADA', surface: '#F3F3F3', card: '#F4F4F4',
       okBg: '#EAF6EE', okFg: '#0B6B36', okDot: '#12A150', warnBg: '#FFF4DE', warnFg: '#6B4300', errBg: '#FDECEA', errFg: '#B3261E',
+      control: '#8A8A8A',
     })
+  })
+  it('el gris de los controles (contorno de radios y casillas sin marcar) da 3:1 sobre blanco (WCAG 1.4.11; el #9A9A9A de la maqueta, 2.8:1)', () => {
+    expect(ratio(T.control, '#FFFFFF')).toBeGreaterThanOrEqual(3)
+    expect(ratio('#9A9A9A', '#FFFFFF')).toBeLessThan(3)
   })
   it('los textos de los tokens dan 4.5:1 sobre sus fondos (también los grises chicos)', () => {
     const white = '#FFFFFF'

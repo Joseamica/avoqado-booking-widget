@@ -7,6 +7,7 @@
     "mandatory": "Obligatorio",
     "done": "Listo",
     "chooseOne": "Elige 1",
+    "chooseExactly": "Elige {{n}}",
     "chooseUpTo": "Elige hasta {{n}}",
     "chooseAtLeast": "Elige al menos {{n}}",
     "chooseAny": "Elige los que quieras",

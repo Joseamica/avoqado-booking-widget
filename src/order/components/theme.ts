@@ -14,6 +14,7 @@ export const T = {
   okBg: '#EAF6EE', okFg: '#0B6B36', okDot: '#12A150', // abierto
   warnBg: '#FFF4DE', warnFg: '#6B4300', // pausa o cerrado
   errBg: '#FDECEA', errFg: '#B3261E', // problemas de un renglón y fallos
+  control: '#8A8A8A', // contorno de radios y casillas sin marcar (3:1 sobre blanco, WCAG 1.4.11) y botones deshabilitados
 } as const
 
 /** Alto (px) de las pestañas de categorías de la carta: el de la barra pegajosa, el `scroll-margin-top` de las secciones y el inicio de la franja del observador. */
@@ -108,14 +109,14 @@ export const STORE_CSS = `
 .avq-o-btn--primary{background:var(--avq-accent,${T.ink});color:#FFFFFF}
 .avq-o-btn--neutral{background:${T.surface};color:${T.ink}}
 .avq-o-btn--quiet{min-height:44px;padding:0 8px;background:transparent;color:${T.ink};font-weight:600}
-.avq-o-btn:disabled{color:#8A8A8A;cursor:not-allowed}
+.avq-o-btn:disabled{color:${T.control};cursor:not-allowed}
 .avq-o-btn--primary:disabled{background:#EDEDED}
 .avq-o-input{width:100%;min-height:52px;padding:0 14px;border:1px solid ${T.fieldBorder};border-radius:12px;background:#FFFFFF;color:${T.ink};font:inherit;font-size:16px}
 textarea.avq-o-input{min-height:0;padding:12px 14px;resize:none}
 .avq-o-input::placeholder{color:${T.muted};opacity:1}
 .avq-o-stepper{display:inline-flex;align-items:center;height:52px;border-radius:999px;background:${T.surface}}
 .avq-o-stepper button{display:flex;align-items:center;justify-content:center;width:48px;height:52px;padding:0;border:0;background:transparent;color:${T.ink};font:inherit;cursor:pointer}
-.avq-o-stepper button:disabled{color:#8A8A8A;cursor:not-allowed}
+.avq-o-stepper button:disabled,.avq-o-stepper button[aria-disabled=true]{color:${T.control};cursor:not-allowed}
 .avq-o-stepper>span{min-width:20px;text-align:center;font-size:16px;font-weight:700}
 .avq-o-stepper--line{height:40px;background:transparent;border:1px solid ${T.fieldBorder}}
 .avq-o-stepper--line button{width:44px;height:44px}
@@ -185,6 +186,7 @@ textarea.avq-o-input{min-height:0;padding:12px 14px;resize:none}
 .avq-o-bar__total{flex:none}
 .avq-o-menu--sheet{padding-bottom:0}
 .avq-o-sheet{position:relative;animation:avq-o-up .28s cubic-bezier(.2,.8,.2,1)}
+.avq-o-root .avq-o-sheet:focus{outline:none}
 @keyframes avq-o-up{from{opacity:0;transform:translateY(24px)}to{opacity:1;transform:none}}
 .avq-o-sheet__img{display:block;width:100%;height:244px;object-fit:cover;background:#EDEDED}
 .avq-o-sheet__close{display:flex;align-items:center;justify-content:center;width:44px;height:44px;margin:16px 16px 0;padding:0;border:0;border-radius:50%;background:${T.surface};color:${T.ink};cursor:pointer}
@@ -206,7 +208,7 @@ textarea.avq-o-input{min-height:0;padding:12px 14px;resize:none}
 .avq-o-opt{display:flex;align-items:center;gap:12px;min-height:56px;border-bottom:1px solid ${T.divider}}
 .avq-o-opt__main{flex:1;min-width:0;display:flex;align-items:center;gap:14px;min-height:56px;cursor:pointer}
 .avq-o-opt__mark{position:relative;flex:none;display:flex}
-.avq-o-opt__input{width:22px;height:22px;margin:0;border:2px solid #8A8A8A;background:#FFFFFF;-webkit-appearance:none;appearance:none;cursor:pointer}
+.avq-o-opt__input{width:22px;height:22px;margin:0;border:2px solid ${T.control};background:#FFFFFF;-webkit-appearance:none;appearance:none;cursor:pointer}
 .avq-o-opt__input[type=radio]{border-radius:50%}
 .avq-o-opt__input[type=checkbox]{border-radius:6px}
 .avq-o-opt__input[type=radio]:checked{border:7px solid var(--avq-accent,${T.ink})}

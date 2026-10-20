@@ -20,22 +20,26 @@ const Check = () => (
   </svg>
 )
 
-/** «− n +»: el de la ficha (52 px) y, con `small`, el de una opción (36 px dentro de 44 de toque). Sin `onLess`/`onMore`, su botón queda deshabilitado. */
+/**
+ * «− n +»: el de la ficha (52 px) y, con `small`, el de una opción (36 px dentro de 44 de toque). Sin `onLess`/`onMore` su botón
+ * está en el tope: `aria-disabled` e ignora el toque, pero NO `disabled`, que le quitaría el foco a quien llegó con el teclado.
+ */
 export function Stepper({ value, label, lessLabel, moreLabel, onLess, onMore, small }: {
   value: number; label?: string; lessLabel: string; moreLabel: string; onLess?: () => void; onMore?: () => void; small?: boolean
 }) {
   const size = small ? 16 : 18
   return (
     <div class={small ? 'avq-o-stepper avq-o-stepper--sm' : 'avq-o-stepper'} role={label ? 'group' : undefined} aria-label={label}>
-      <button type="button" aria-label={lessLabel} disabled={!onLess} onClick={onLess}><Icon d="M5 12h14" size={size} /></button>
+      <button type="button" aria-label={lessLabel} aria-disabled={onLess ? undefined : 'true'} onClick={onLess}><Icon d="M5 12h14" size={size} /></button>
       <span aria-live="polite">{value}</span>
-      <button type="button" aria-label={moreLabel} disabled={!onMore} onClick={onMore}><Icon d="M12 5v14M5 12h14" size={size} /></button>
+      <button type="button" aria-label={moreLabel} aria-disabled={onMore ? undefined : 'true'} onClick={onMore}><Icon d="M12 5v14M5 12h14" size={size} /></button>
     </div>
   )
 }
 
 /**
- * Un grupo de opciones de la ficha: título, ayuda («Elige 1», «Elige hasta N»…) y pastilla «Obligatorio» → «Listo», u «Opcional».
+ * Un grupo de opciones de la ficha: título, ayuda («Elige 1», «Elige N», «Elige hasta N»…) y pastilla «Obligatorio» → «Listo», u
+ * «Opcional»; la ayuda y la pastilla describen las opciones (`aria-describedby`).
  * Opciones de 56 px: radio si el grupo es de una, casilla si es de varias y, ya elegida una que admite cantidad, un stepper.
  * Las reglas son las de reservas (`state/modifierSelection` y `areRequiredModifiersSatisfied`); aquí sólo cambia la forma.
  */
@@ -46,6 +50,7 @@ export function OptionGroup({ productId, group, selections, onChange, t, maxPerO
   const id = useId() // ids y `name` de los radios propios: no dependen de cómo vengan los ids del servidor
   const min = Math.max(group.required ? 1 : 0, group.minSelections) // el mínimo de `areRequiredModifiersSatisfied`
   const hint = !group.allowMultiple ? t('modifiers.chooseOne')
+    : min > 1 && min === group.maxSelections ? t('modifiers.chooseExactly', { n: min })
     : min > 1 ? t('modifiers.chooseAtLeast', { n: min })
     : group.maxSelections ? t('modifiers.chooseUpTo', { n: group.maxSelections })
     : min === 1 ? t('modifiers.chooseAtLeast', { n: 1 })
@@ -65,9 +70,9 @@ export function OptionGroup({ productId, group, selections, onChange, t, maxPerO
           <span class="avq-o-group__hint" id={`${id}-h`}>{hint}</span>
           {group.description && <span class="avq-o-group__hint">{group.description}</span>}
         </div>
-        <span class={pill}>{pillText}</span>
+        <span class={pill} id={`${id}-p`}>{pillText}</span>
       </div>
-      <div class="avq-o-group__opts" role={group.allowMultiple ? 'group' : 'radiogroup'} aria-labelledby={`${id}-t`} aria-describedby={`${id}-h`}>
+      <div class="avq-o-group__opts" role={group.allowMultiple ? 'group' : 'radiogroup'} aria-labelledby={`${id}-t`} aria-describedby={`${id}-h ${id}-p`}>
         {group.modifiers.map(m => {
           const qty = qtyIn(selections, m.id)
           // Con cantidad, el stepper toma el lugar del sobreprecio y éste pasa debajo del nombre, en gris (spec §9.4).

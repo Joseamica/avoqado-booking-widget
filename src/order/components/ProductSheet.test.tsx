@@ -53,6 +53,8 @@ const btn = (name: string) => screen.getByRole('button', { name }) as HTMLButton
 const box = (name: RegExp | string) => screen.getByLabelText(name) as HTMLInputElement
 const groupOf = (name: string) => screen.getByRole('heading', { name }).closest('.avq-o-group') as HTMLElement
 const close = () => fireEvent.click(btn('Cerrar y volver a la carta'))
+// En su tope, el botón de un stepper NO se deshabilita (el foco se perdería): queda aria-disabled e ignora el toque.
+const capped = (b: HTMLButtonElement) => b.getAttribute('aria-disabled') === 'true' && !b.disabled
 
 describe('ficha del producto', () => {
   it('grupo obligatorio sin elegir deshabilita Agregar; al elegir se habilita', () => {
@@ -83,9 +85,9 @@ describe('ficha del producto', () => {
   })
   it('cantidad entre 1 y 20, nota con maxlength 300 y su ejemplo', () => {
     open(product())
-    expect(btn('Menos').disabled).toBe(true)
+    expect(capped(btn('Menos'))).toBe(true)
     for (let i = 0; i < 25; i++) fireEvent.click(btn('Más'))
-    expect(btn('Más').disabled).toBe(true)
+    expect(capped(btn('Más'))).toBe(true)
     expect(addBtn().textContent).toBe('Agregar $1,700')
     const note = screen.getByLabelText('Indicaciones para la cocina') as HTMLTextAreaElement
     expect(note.maxLength).toBe(300)
@@ -125,7 +127,7 @@ describe('ficha del producto', () => {
     fireEvent.click(btn('Más Maíz'))
     expect(addBtn().disabled).toBe(false)
     for (let i = 0; i < 25; i++) fireEvent.click(btn('Más Maíz'))
-    expect(btn('Más Maíz').disabled).toBe(true)
+    expect(capped(btn('Más Maíz'))).toBe(true)
     fireEvent.click(addBtn())
     expect(s.cart.value[0].modifiers).toEqual([{ modifierId: 'm9', name: 'Maíz', price: 0, quantity: 20 }])
   })
@@ -200,12 +202,12 @@ describe('ficha con grupos de opciones (maqueta Producto)', () => {
     const count = () => btn('Más Verde').parentElement!.textContent
     expect(count()).toBe('1')
     // El «−» no baja de 1: para quitarla se desmarca. El sobreprecio sigue a la vista (pasa debajo del nombre).
-    expect(btn('Menos Verde').disabled).toBe(true)
+    expect(capped(btn('Menos Verde'))).toBe(true)
     expect(screen.getByText('+$5')).toBeTruthy()
     fireEvent.click(btn('Más Verde'))
     fireEvent.click(btn('Más Verde'))
     expect(count()).toBe('3')
-    expect(btn('Más Verde').disabled).toBe(true)
+    expect(capped(btn('Más Verde'))).toBe(true)
     expect(addBtn().textContent).toBe('Agregar $100')
     // Con el grupo lleno, otra casilla no se marca (ni la marca el navegador): la selección no cambió.
     fireEvent.click(box('Roja'))
@@ -214,7 +216,7 @@ describe('ficha con grupos de opciones (maqueta Producto)', () => {
     fireEvent.click(btn('Menos Verde'))
     fireEvent.click(box('Roja'))
     expect(box('Roja').checked).toBe(true)
-    expect(btn('Más Verde').disabled).toBe(true) // 2 + 1 = 3, el máximo del grupo
+    expect(capped(btn('Más Verde'))).toBe(true) // 2 + 1 = 3, el máximo del grupo
   })
   it('la ayuda de cada grupo dice cuántas: «Elige al menos 2», y en inglés «Choose 1», «Required» y «Optional»', () => {
     open(product({ modifierGroups: [tortillas()] }))
@@ -248,7 +250,7 @@ describe('ficha con grupos de opciones (maqueta Producto)', () => {
     }))
     fireEvent.click(box('Verde'))
     for (let i = 0; i < 19; i++) fireEvent.click(btn('Más Verde'))
-    expect(btn('Más Verde').disabled).toBe(true)
+    expect(capped(btn('Más Verde'))).toBe(true)
     fireEvent.click(box('Queso'))
     for (let i = 0; i < 9; i++) fireEvent.click(btn('Más Queso'))
     expect(addBtn().disabled).toBe(false)
@@ -309,15 +311,82 @@ describe('ficha con grupos de opciones (maqueta Producto)', () => {
     expect(screen.getByText('+$15')).toBeTruthy()
     expect(screen.getByText(`Elige ${long}`)).toBeTruthy()
   })
-  it('Escape mientras se compone texto (teclado IME) no cierra la ficha ni pierde la nota; sin componer, sí cierra', () => {
+  it('Escape mientras se compone texto (teclado IME: isComposing o keyCode 229) no cierra la ficha ni pierde la nota; sin componer, sí cierra', () => {
     const s = open(product())
     const note = screen.getByLabelText('Indicaciones para la cocina')
     fireEvent.input(note, { target: { value: 'sin' } })
     fireEvent.keyDown(note, { key: 'Escape', isComposing: true })
     expect(s.productId.value).toBe('p1')
+    fireEvent.keyDown(note, { key: 'Escape', keyCode: 229 })
+    expect(s.productId.value).toBe('p1')
     expect((note as HTMLTextAreaElement).value).toBe('sin')
     fireEvent.keyDown(note, { key: 'Escape' })
     expect(s.productId.value).toBeNull()
+  })
+  it('cuando el mínimo y el máximo son iguales (más de 1), la ayuda dice «Elige 2» («Choose 2»)', () => {
+    const pair = () => product({
+      modifierGroups: [group({
+        id: 'dos', name: 'Salsas', required: true, allowMultiple: true, minSelections: 2, maxSelections: 2,
+        modifiers: [{ id: 'v', name: 'Verde', price: 0 }, { id: 'r', name: 'Roja', price: 0 }],
+      })],
+    })
+    open(pair())
+    expect(within(groupOf('Salsas')).getByText('Elige 2')).toBeTruthy()
+    cleanup()
+    const s = makeStore(infoOf(), menuOf(pair()), 'en')
+    s.productId.value = 'p1'
+    render(withStore(s, <MenuScreen />))
+    expect(within(groupOf('Salsas')).getByText('Choose 2')).toBeTruthy()
+  })
+  it('la pastilla («Obligatorio» → «Listo», u «Opcional») es parte de la descripción de las opciones (aria-describedby)', () => {
+    open(burger())
+    const desc = (el: HTMLElement) => el.getAttribute('aria-describedby')!.split(/\s+/).map(id => document.getElementById(id)!.textContent).join(' ')
+    const tam = screen.getByRole('radiogroup', { name: 'Tamaño' })
+    expect(desc(tam)).toBe('Elige 1 Obligatorio')
+    fireEvent.click(box(/Mediano/))
+    expect(desc(tam)).toBe('Elige 1 Listo')
+    expect(desc(screen.getByRole('group', { name: 'Aderezos' }))).toBe('Elige los que quieras Opcional')
+  })
+  it('con el teclado, al llegar al tope el foco se queda en el botón y otro toque no cambia nada (pie y opción)', () => {
+    open(product({
+      modifierGroups: [group({ id: 'sal', name: 'Salsas', allowMultiple: true, maxSelections: 2, modifiers: [{ id: 'v', name: 'Verde', price: 0 }] })],
+    }))
+    // Enter o Espacio sobre un botón con foco = su click. Un botón `disabled` perdería el foco al llegar al tope.
+    const more = btn('Más')
+    more.focus()
+    for (let i = 0; i < 19; i++) fireEvent.click(more)
+    expect(capped(more)).toBe(true)
+    expect(document.activeElement).toBe(more)
+    fireEvent.click(more)
+    expect(addBtn().textContent).toBe('Agregar $1,700')
+    const less = btn('Menos')
+    less.focus()
+    for (let i = 0; i < 25; i++) fireEvent.click(less)
+    expect(capped(less)).toBe(true)
+    expect(document.activeElement).toBe(less)
+    expect(addBtn().textContent).toBe('Agregar $85')
+    // El de una opción: el grupo admite 2.
+    fireEvent.click(box('Verde'))
+    const moreV = btn('Más Verde')
+    moreV.focus()
+    fireEvent.click(moreV)
+    expect(capped(moreV)).toBe(true)
+    expect(document.activeElement).toBe(moreV)
+    fireEvent.click(moreV)
+    expect(moreV.parentElement!.textContent).toBe('2')
+    expect(STORE_CSS).toMatch(/\.avq-o-stepper button\[aria-disabled=true\]/)
+  })
+  it('Escape sigue cerrando después de tocar la descripción: la sección toma el foco (tabindex -1, sin contorno propio)', () => {
+    const s = open(product())
+    const sheet = screen.getByRole('region', { name: 'Flautas de pollo' })
+    // Tocar algo que no recibe foco lleva el foco al ancestro enfocable más cercano (así lo hace el navegador): la sección.
+    const host = screen.getByText('Con crema').closest('[tabindex]') as HTMLElement | null
+    expect(host).toBe(sheet)
+    expect(sheet.getAttribute('tabindex')).toBe('-1')
+    sheet.focus()
+    fireEvent.keyDown(sheet, { key: 'Escape' })
+    expect(s.productId.value).toBeNull()
+    expect(STORE_CSS).toMatch(/\.avq-o-root \.avq-o-sheet:focus\{outline:none\}/)
   })
   it('el acento llega a «Agregar» (var(--avq-accent) dentro de la raíz de OrderApp)', () => {
     const s = makeStore(infoOf({ brand: { logo: null, logoFull: null, primaryColor: '#14532D', secondaryColor: null } }), menuOf(burger()))

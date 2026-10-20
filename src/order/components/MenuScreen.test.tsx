@@ -947,10 +947,11 @@ describe('ficha de producto: foco y desplazamiento al abrir y al cerrar (spec §
     expect(s.productId.value).toBeNull()
     expect(document.activeElement).toBe(screen.getByRole('searchbox'))
   })
-  it('al abrir: foco al título con preventScroll; scrollIntoView SÓLO si el título está fuera de la vista (getBoundingClientRect simulado), sobre la ficha y nunca sobre el host', () => {
+  it('al abrir: foco al título con preventScroll; scrollIntoView SÓLO si la ficha empieza arriba de la ventana o el título queda abajo (getBoundingClientRect simulado), sobre la ficha y nunca sobre el host', () => {
     const focus = vi.spyOn(HTMLElement.prototype, 'focus')
+    let sheetTop = 0
     let titleTop = 120
-    place(el => (el.matches('.avq-o-sheet__title') ? titleTop : undefined))
+    place(el => (el.matches('.avq-o-sheet') ? sheetTop : el.matches('.avq-o-sheet__title') ? titleTop : undefined))
     const host = document.body.appendChild(document.createElement('div'))
     render(withStore(makeStore(infoOf(), two()), <MenuScreen />), { container: host })
     const opened = () => {
@@ -965,20 +966,77 @@ describe('ficha de producto: foco y desplazamiento al abrir y al cerrar (spec §
     opened()
     expect(scrollIntoView).not.toHaveBeenCalled()
     closeX()
-    // Arriba de la ventana (la carta era larga y el comensal había bajado): sube SÓLO la ficha, a su inicio.
-    titleTop = -400
+    // La ficha empieza ARRIBA de la ventana aunque el título se vea (pasa tras un scroll corto, porque la portada se oculta
+    // al abrir): la X y la foto quedarían fuera, así que sube SÓLO la ficha, a su inicio.
+    sheetTop = -150
+    titleTop = 100
     fireEvent.click(row('Tostadas'))
     const sheet = opened()
     expect(scrollIntoView).toHaveBeenCalledTimes(1)
     expect(scrollIntoView.mock.contexts[0]).toBe(sheet)
     expect(scrollIntoView.mock.calls[0][0]).toEqual({ block: 'start' })
     closeX()
-    // Debajo de la ventana: igual.
+    // El título queda ABAJO de la ventana: igual.
+    sheetTop = innerHeight - 100
     titleTop = innerHeight + 10
     fireEvent.click(row('Tostadas'))
     expect(scrollIntoView).toHaveBeenCalledTimes(2)
     expect(scrollIntoView.mock.contexts[1]).toBe(opened())
     expect(scrollIntoView.mock.contexts).not.toContain(host)
+  })
+  it('si la ficha la cierra el sistema (el producto desapareció) con el foco fuera de ella, no se mueve nada', async () => {
+    const s = makeStore(infoOf(), two())
+    show(s)
+    fireEvent.click(row('Tostadas'))
+    const elsewhere = document.body.appendChild(document.createElement('input'))
+    elsewhere.focus()
+    await act(async () => { s.menu.value = menuOf(product()) })
+    expect(s.productId.value).toBeNull()
+    expect(document.activeElement).toBe(elsewhere)
+    expect(scrollIntoView).not.toHaveBeenCalled()
+    elsewhere.remove()
+  })
+  it('dentro de la sombra de <avoqado-order> («¿el foco estaba en la ficha?» se lee en shadowRoot.activeElement): vuelve a la fila', () => {
+    const host = document.body.appendChild(document.createElement('div'))
+    const mount = host.attachShadow({ mode: 'open' }).appendChild(document.createElement('div'))
+    render(withStore(makeStore(infoOf(), two()), <MenuScreen />), { container: mount })
+    const q = within(mount)
+    fireEvent.click(q.getByRole('button', { name: 'Agregar Tostadas' }))
+    // Desde el documento sólo se ve el host: document.activeElement no sirve para saber si el foco estaba en la ficha.
+    expect(document.activeElement).toBe(host)
+    fireEvent.click(q.getByRole('button', { name: 'Cerrar y volver a la carta' }))
+    expect(host.shadowRoot!.activeElement).toBe(q.getByRole('button', { name: 'Agregar Tostadas' }))
+    host.remove()
+  })
+  it('si la fila ya no existe, el buscador sigue la regla de la fila (foco sin desplazar; se centra sólo si no está a la vista); sin buscador, nada', async () => {
+    const focus = vi.spyOn(HTMLElement.prototype, 'focus')
+    let searchTop = 100
+    place(el => (el.matches('.avq-o-search > input') ? searchTop : undefined))
+    const s = makeStore(infoOf(), two())
+    show(s)
+    const reopenAndDrop = async (menu: ReturnType<typeof menuOf>) => {
+      await act(async () => { s.menu.value = two() })
+      fireEvent.click(row('Tostadas'))
+      await act(async () => { s.menu.value = menu })
+    }
+    // A la vista: foco sin desplazar.
+    await reopenAndDrop(menuOf(product()))
+    const search = screen.getByRole('searchbox')
+    expect(document.activeElement).toBe(search)
+    expect(focus.mock.calls[focus.mock.contexts.lastIndexOf(search)][0]).toEqual({ preventScroll: true })
+    expect(scrollIntoView).not.toHaveBeenCalled()
+    // Fuera de la vista: se centra el buscador, y nada más.
+    searchTop = -300
+    await reopenAndDrop(menuOf(product()))
+    expect(scrollIntoView.mock.contexts).toEqual([screen.getByRole('searchbox')])
+    expect(scrollIntoView.mock.calls[0][0]).toEqual({ block: 'center' })
+    // Sin buscador (la carta recargada quedó vacía): no se hace nada.
+    searchTop = 100
+    scrollIntoView.mockClear()
+    await reopenAndDrop({ generatedAt: '', truncated: false, categories: [] })
+    expect(s.productId.value).toBeNull()
+    expect(scrollIntoView).not.toHaveBeenCalled()
+    expect(document.activeElement).toBe(document.body)
   })
   it('al cerrar: foco a la fila con preventScroll; scrollIntoView({block:"center"}) sólo si la fila no está a la vista', () => {
     const focus = vi.spyOn(HTMLElement.prototype, 'focus')
