@@ -12,3 +12,5 @@ export function createOrderT(locale: string) {
     return text.replace(/\{\{(\w+)\}\}/g, (m, v) => (vars && v in vars ? String(vars[v]) : m))
   }
 }
+
+export type OrderT = ReturnType<typeof createOrderT>

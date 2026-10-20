@@ -1,5 +1,5 @@
 import { h } from 'preact'
-import { useContext, useEffect, useRef, useState } from 'preact/hooks'
+import { useContext, useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks'
 import { OrderStoreContext } from '../store'
 import { createOrderT } from '../i18n'
 import { formatMXN } from '../money'
@@ -119,7 +119,7 @@ function MenuList({ menu, open, query, onQuery }: { menu: Menu; open: boolean; q
               // Toda la fila es el botón que abre la ficha (también un agotado); el «+» es un adorno, no un segundo botón. Su precio,
               // descripción y «Agotado» se leen como descripción. Sólo la fila que invita a agregar (la del «+») se llama «Agregar»:
               // una agotada o con la tienda no abierta se llama como el producto.
-              <button key={p.id} type="button" class={photo ? 'avq-o-row' : 'avq-o-row avq-o-row--bare'} disabled={!open}
+              <button key={p.id} type="button" class={photo ? 'avq-o-row' : 'avq-o-row avq-o-row--bare'} disabled={!open} data-product-id={p.id}
                 aria-label={plus ? t('menu.addAria', { name: p.name }) : p.name} aria-describedby={infoId}
                 onClick={() => { if (open) store.productId.value = p.id }}>
                 <span class="avq-o-row__text">
@@ -167,6 +167,22 @@ export function MenuScreen() {
   // La carta se recargó y el producto de la ficha ya no está: de vuelta a la carta.
   useEffect(() => { if (stale) store.productId.value = null }, [stale])
 
+  // Al cerrar la ficha (X, Escape, «Agregar» o porque el producto ya no está), el foco vuelve a la fila de ESE producto (si ya no
+  // existe, al buscador) sin mover la página; sólo si no está a la vista se centra (spec §12.2). Antes de pintar: sin salto.
+  const menuEl = useRef<HTMLDivElement>(null)
+  const shown = useRef<string | null>(null)
+  useLayoutEffect(() => {
+    const closed = shown.current
+    shown.current = pid
+    if (pid || !closed) return
+    const rows = Array.from(menuEl.current?.querySelectorAll<HTMLButtonElement>('[data-product-id]') ?? [])
+    const target = rows.find(b => b.dataset.productId === closed && !b.disabled) ?? menuEl.current?.querySelector<HTMLElement>('.avq-o-search > input')
+    if (!target) return
+    target.focus({ preventScroll: true })
+    const r = target.getBoundingClientRect()
+    if (r.top < 0 || r.bottom > innerHeight) target.scrollIntoView({ block: 'center' })
+  }, [pid])
+
   const retry = () => (
     <button type="button" class="avq-o-btn avq-o-btn--neutral" style={{ margin: '0 16px' }} onClick={() => void store.load()}>{t('common.retry')}</button>
   )
@@ -183,7 +199,8 @@ export function MenuScreen() {
   const product = pid ? menu.categories.flatMap(c => c.products).find(p => p.id === pid) : undefined
 
   return (
-    <div class="avq-o-menu">
+    // Con la ficha abierta la carta no deja el relleno de la barra: el pie pegajoso de la ficha descansa en el borde real de la tienda.
+    <div ref={menuEl} class={product ? 'avq-o-menu avq-o-menu--sheet' : 'avq-o-menu'}>
       {err && problem(err.network ? t('store.reconnecting') : err.message || t('store.reconnecting'))}
       <StoreStatusBanner />
       {menu.truncated && <Notice tone="neutral" text={t('menu.truncated')} />}

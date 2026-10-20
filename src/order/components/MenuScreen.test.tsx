@@ -145,10 +145,10 @@ describe('refresco fallido con la carta ya cargada', () => {
     const s = makeStore(infoOf(), menuOf(product()))
     s.productId.value = 'p1'
     show(s)
-    expect(screen.getByRole('dialog')).toBeTruthy()
+    expect(screen.getByRole('region', { name: 'Flautas de pollo' })).toBeTruthy()
     await act(async () => { s.menu.value = menuOf(product({ id: 'p2', name: 'Agua' })) })
     expect(s.productId.value).toBeNull()
-    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(screen.queryByRole('region', { name: 'Flautas de pollo' })).toBeNull()
     expect(screen.getByText('Agua')).toBeTruthy()
   })
 })
@@ -778,7 +778,7 @@ describe('encabezado de la tienda: portada, logo, chips y avisos', () => {
     expect(screen.getByRole('heading', { name: 'Avoqado Full' })).toBeTruthy()
     // La ficha de un producto ocupa el lugar de la tienda: sin encabezado encima.
     await act(async () => { s.productId.value = 'p1' })
-    expect(screen.getByRole('dialog')).toBeTruthy()
+    expect(screen.getByRole('region', { name: 'Flautas de pollo' })).toBeTruthy()
     expect(screen.queryByRole('banner')).toBeNull()
     await act(async () => { s.productId.value = null })
     expect(screen.getByRole('banner')).toBeTruthy()
@@ -894,5 +894,124 @@ describe('pedido en curso (lo pinta OrderApp: se ve en TODAS las ramas)', () => 
     expect(loadLastOrder(s.slug)).toBeNull()
     expect(s.notice.value).toBe('No encontramos ese pedido.')
     expect(screen.getByText('No encontramos ese pedido.')).toBeTruthy()
+  })
+})
+
+describe('ficha de producto: foco y desplazamiento al abrir y al cerrar (spec §11.1 y §12.2)', () => {
+  const scrollIntoView = vi.fn()
+  beforeEach(() => { Element.prototype.scrollIntoView = scrollIntoView })
+  afterEach(() => { delete (Element.prototype as any).scrollIntoView; vi.restoreAllMocks() })
+
+  // Flautas de pollo (p1) y Tostadas (p2).
+  const two = () => menuOf(product(), product({ id: 'p2', name: 'Tostadas', description: null, price: 60 }))
+  const row = (name: string) => screen.getByRole('button', { name: `Agregar ${name}` }) as HTMLButtonElement
+  const closeX = () => fireEvent.click(screen.getByRole('button', { name: 'Cerrar y volver a la carta' }))
+  // jsdom no maqueta: la prueba decide el `top` de cada elemento en la ventana (0 si no dice nada).
+  const place = (topOf: (el: Element) => number | undefined) =>
+    vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (this: Element) {
+      const top = topOf(this) ?? 0
+      return { top, bottom: top + 40, left: 0, right: 0, width: 0, height: 40, x: 0, y: top, toJSON: () => ({}) } as DOMRect
+    })
+
+  it('al abrir, el foco va al título del producto; Escape o la X cierran y el foco vuelve a la fila del mismo producto', () => {
+    const s = makeStore(infoOf(), two())
+    show(s)
+    fireEvent.click(row('Tostadas'))
+    const title = screen.getByRole('heading', { name: 'Tostadas' })
+    expect(document.activeElement).toBe(title)
+    expect(title.getAttribute('tabindex')).toBe('-1')
+    // Escape dentro de la vista la cierra y no sigue de largo (no cierra también, por ejemplo, un <dialog> del sitio).
+    const outside = vi.fn()
+    document.addEventListener('keydown', outside)
+    expect(fireEvent.keyDown(title, { key: 'Escape' })).toBe(false)
+    document.removeEventListener('keydown', outside)
+    expect(outside).not.toHaveBeenCalled()
+    expect(s.productId.value).toBeNull()
+    expect(document.activeElement).toBe(row('Tostadas'))
+    expect(row('Tostadas').dataset.productId).toBe('p2')
+    // Con la X.
+    fireEvent.click(row('Flautas de pollo'))
+    closeX()
+    expect(document.activeElement).toBe(row('Flautas de pollo'))
+    // Y con «Agregar».
+    fireEvent.click(row('Tostadas'))
+    fireEvent.click(screen.getByRole('button', { name: /^Agregar/ }))
+    expect(s.cart.value).toHaveLength(1)
+    expect(document.activeElement).toBe(row('Tostadas'))
+  })
+  it('si la fila ya no existe (la carta recargada ya no trae el producto), el foco va al buscador', async () => {
+    const s = makeStore(infoOf(), two())
+    show(s)
+    fireEvent.click(row('Tostadas'))
+    await act(async () => { s.menu.value = menuOf(product()) })
+    expect(s.productId.value).toBeNull()
+    expect(document.activeElement).toBe(screen.getByRole('searchbox'))
+  })
+  it('al abrir: foco al título con preventScroll; scrollIntoView SÓLO si el título está fuera de la vista (getBoundingClientRect simulado), sobre la ficha y nunca sobre el host', () => {
+    const focus = vi.spyOn(HTMLElement.prototype, 'focus')
+    let titleTop = 120
+    place(el => (el.matches('.avq-o-sheet__title') ? titleTop : undefined))
+    const host = document.body.appendChild(document.createElement('div'))
+    render(withStore(makeStore(infoOf(), two()), <MenuScreen />), { container: host })
+    const opened = () => {
+      const title = screen.getByRole('heading', { name: 'Tostadas' })
+      const i = focus.mock.contexts.lastIndexOf(title)
+      expect(i).toBeGreaterThanOrEqual(0)
+      expect(focus.mock.calls[i][0]).toEqual({ preventScroll: true })
+      return screen.getByRole('region', { name: 'Tostadas' })
+    }
+    // A la vista: no se mueve nada.
+    fireEvent.click(row('Tostadas'))
+    opened()
+    expect(scrollIntoView).not.toHaveBeenCalled()
+    closeX()
+    // Arriba de la ventana (la carta era larga y el comensal había bajado): sube SÓLO la ficha, a su inicio.
+    titleTop = -400
+    fireEvent.click(row('Tostadas'))
+    const sheet = opened()
+    expect(scrollIntoView).toHaveBeenCalledTimes(1)
+    expect(scrollIntoView.mock.contexts[0]).toBe(sheet)
+    expect(scrollIntoView.mock.calls[0][0]).toEqual({ block: 'start' })
+    closeX()
+    // Debajo de la ventana: igual.
+    titleTop = innerHeight + 10
+    fireEvent.click(row('Tostadas'))
+    expect(scrollIntoView).toHaveBeenCalledTimes(2)
+    expect(scrollIntoView.mock.contexts[1]).toBe(opened())
+    expect(scrollIntoView.mock.contexts).not.toContain(host)
+  })
+  it('al cerrar: foco a la fila con preventScroll; scrollIntoView({block:"center"}) sólo si la fila no está a la vista', () => {
+    const focus = vi.spyOn(HTMLElement.prototype, 'focus')
+    let rowTop = 200
+    place(el => ((el as HTMLElement).dataset?.productId === 'p2' ? rowTop : undefined))
+    show(makeStore(infoOf(), two()))
+    const closed = () => {
+      const r = row('Tostadas')
+      expect(document.activeElement).toBe(r)
+      expect(focus.mock.calls[focus.mock.contexts.lastIndexOf(r)][0]).toEqual({ preventScroll: true })
+      return r
+    }
+    // A la vista: el foco vuelve sin desplazar nada.
+    fireEvent.click(row('Tostadas'))
+    closeX()
+    closed()
+    expect(scrollIntoView).not.toHaveBeenCalled()
+    // Fuera de la vista (abajo y arriba): se centra esa fila, y nada más.
+    for (const top of [innerHeight + 300, -500]) {
+      rowTop = top
+      scrollIntoView.mockClear()
+      fireEvent.click(row('Tostadas'))
+      closeX()
+      const r = closed()
+      expect(scrollIntoView).toHaveBeenCalledTimes(1)
+      expect(scrollIntoView.mock.contexts[0]).toBe(r)
+      expect(scrollIntoView.mock.calls[0][0]).toEqual({ block: 'center' })
+    }
+    // Asomada a medias por abajo: tampoco está a la vista (su foco quedaría cortado).
+    rowTop = innerHeight - 10
+    scrollIntoView.mockClear()
+    fireEvent.click(row('Tostadas'))
+    closeX()
+    expect(scrollIntoView.mock.contexts).toEqual([row('Tostadas')])
   })
 })

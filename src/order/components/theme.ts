@@ -72,14 +72,13 @@ export function loadStoreFonts(): void {
 }
 
 /**
- * Hoja de estilos de la tienda. `OrderApp` la pinta como primer hijo de su raíz y la ficha de producto, en su portal, trae una
- * copia: por eso todo cuelga de `.avq-o-root` o de una clase `avq-o-*` y no depende de nada de afuera.
+ * Hoja de estilos de la tienda. `OrderApp` la pinta como primer hijo de su raíz y todo vive debajo, también la ficha de producto
+ * (una vista en el flujo, no una capa): por eso todo cuelga de `.avq-o-root` o de una clase `avq-o-*` y no depende de nada de afuera.
  * - `.avq-o-root` fija las variables `--avq-*` a sus valores claros: la tienda es clara aunque el contenedor diga
  *   `data-avq-theme="dark"` (spec §10.3). `--avq-o-display` es la tipografía de los títulos.
  * - El acento llega en `--avq-accent` (lo pone `accentFor` en la raíz).
  * - Modificadores de uso: `.avq-o-btn` + `--primary|--neutral|--quiet`, `.avq-o-notice` + `--neutral|--warn|--error`,
- *   `.avq-o-chip` (+ `--ok`), `.avq-o-stepper` (+ `--line`, el del carrito), `.avq-o-bar` (+ `--neutral`) y `.avq-o-sheet`
- *   (la capa que cubre la ventana) con `.avq-o-sheet__panel` (la hoja).
+ *   `.avq-o-chip` (+ `--ok`), `.avq-o-stepper` (+ `--line`, el del carrito; `--sm`, el de una opción) y `.avq-o-bar` (+ `--neutral`).
  * - Portada y encabezado (tarea 4): `.avq-o-hero` (+ `--cover`, con foto) con `__img`, `__id`, `__names`, `__name` y `__addr`;
  *   `.avq-o-chips` y `.avq-o-dot`; `.avq-o-mark` (+ `--sm`) es el círculo del logo o de las iniciales; `.avq-o-head` es la
  *   cabecera compacta de carrito, datos y código. Los avisos llevan `.avq-o-notice__body|__title|__action`.
@@ -88,6 +87,11 @@ export function loadStoreFonts(): void {
  *   `__text`, `__info`, `__name`, `__price`, `__desc`, `__tag` (Agotado), `__media`, `__img` y `__add` (el «+»), y `--bare` si no
  *   hay foto; `.avq-o-foot` la nota del final y `.avq-o-empty` los mensajes sueltos. La barra lleva `__count`, `__label`, `__note`
  *   y `__total`.
+ * - Ficha de producto (tarea 6): `.avq-o-sheet` es la vista que reemplaza a la carta (+ `--media` si hay foto), con `__img`,
+ *   `__close` (la X), `__head`, `__title`, `__price`, `__desc`, `__gap` (la franja gris), `__note`, `__foot` (el pie pegajoso),
+ *   `__msg` (+ `--error`), `__actions` y `__add`. Cada grupo es `.avq-o-group` (`__head`, `__names`, `__title`, `__hint`, `__opts`)
+ *   con su `.avq-o-pill` (+ `--required|--done`); cada opción, `.avq-o-opt` (`__main`, `__mark`, `__input`, `__check`, `__text`,
+ *   `__sub`, `__extra`). `.avq-o-menu--sheet` quita el relleno de abajo de la carta mientras la ficha está abierta.
  * Cada tarea puede AGREGAR clases; las que ya están no se cambian ni se quitan.
  */
 export const STORE_CSS = `
@@ -140,11 +144,6 @@ textarea.avq-o-input{min-height:0;padding:12px 14px;resize:none}
 .avq-o-head{display:flex;align-items:center;gap:10px;padding:16px 16px 12px;font-weight:600}
 .avq-o-head__name{min-width:0;overflow-wrap:anywhere}
 @media (min-width:768px){.avq-o-hero__img{border-radius:0 0 16px 16px}}
-.avq-o-sheet{position:fixed;top:0;right:0;bottom:0;left:0;z-index:2147483000;display:flex;justify-content:center;background:rgba(0,0,0,.45)}
-.avq-o-sheet__panel{display:flex;flex-direction:column;width:100%;max-height:100%;overflow:hidden;background:#FFFFFF;animation:avq-o-up .28s cubic-bezier(.2,.8,.2,1)}
-@media (min-width:768px){.avq-o-sheet{align-items:center;padding:24px}.avq-o-sheet__panel{width:520px;border-radius:20px;animation-name:avq-o-pop}}
-@keyframes avq-o-up{from{transform:translateY(100%)}to{transform:none}}
-@keyframes avq-o-pop{from{opacity:0;transform:scale(.98)}to{opacity:1;transform:none}}
 .avq-o-bar{position:sticky;bottom:calc(24px + env(safe-area-inset-bottom,0px));z-index:2;display:flex;align-items:center;gap:12px;width:calc(100% - 32px);min-height:58px;margin:0 16px;padding:0 18px 0 12px;border:0;border-radius:16px;background:var(--avq-accent,${T.ink});color:#FFFFFF;font:inherit;font-size:16px;font-weight:700;text-align:left;text-decoration:none;box-shadow:0 8px 24px rgba(0,0,0,.22);cursor:pointer}
 .avq-o-bar--neutral{min-height:64px;padding-top:10px;padding-bottom:10px;background:#EDEDED;color:${T.text2};box-shadow:none}
 .avq-o-menu{padding-bottom:calc(24px + env(safe-area-inset-bottom,0px))}
@@ -184,4 +183,49 @@ textarea.avq-o-input{min-height:0;padding:12px 14px;resize:none}
 .avq-o-bar__label{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px;overflow-wrap:anywhere}
 .avq-o-bar__note{font-size:13px;font-weight:400}
 .avq-o-bar__total{flex:none}
+.avq-o-menu--sheet{padding-bottom:0}
+.avq-o-sheet{position:relative;animation:avq-o-up .28s cubic-bezier(.2,.8,.2,1)}
+@keyframes avq-o-up{from{opacity:0;transform:translateY(24px)}to{opacity:1;transform:none}}
+.avq-o-sheet__img{display:block;width:100%;height:244px;object-fit:cover;background:#EDEDED}
+.avq-o-sheet__close{display:flex;align-items:center;justify-content:center;width:44px;height:44px;margin:16px 16px 0;padding:0;border:0;border-radius:50%;background:${T.surface};color:${T.ink};cursor:pointer}
+.avq-o-sheet--media .avq-o-sheet__close{position:absolute;top:16px;left:16px;margin:0;background:#FFFFFF;box-shadow:0 2px 10px rgba(0,0,0,.16)}
+.avq-o-sheet__head{display:flex;flex-direction:column;gap:6px;padding:20px 16px 8px}
+.avq-o-sheet__title{margin:0;font-family:var(--avq-o-display);font-weight:800;font-size:28px;line-height:1.1;overflow-wrap:anywhere}
+.avq-o-sheet__price{font-size:17px;font-weight:600}
+.avq-o-sheet__desc{margin:2px 0 0;color:${T.muted};line-height:1.45;overflow-wrap:anywhere}
+.avq-o-sheet__gap{height:8px;margin-top:12px;background:${T.surface}}
+.avq-o-group{padding:18px 16px 4px}
+.avq-o-group__head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+.avq-o-group__names{display:flex;flex-direction:column;gap:2px;min-width:0}
+.avq-o-group__title{margin:0;font-size:17px;font-weight:700;overflow-wrap:anywhere}
+.avq-o-group__hint{color:${T.muted};font-size:14px;overflow-wrap:anywhere}
+.avq-o-group__opts{display:flex;flex-direction:column;margin-top:6px}
+.avq-o-pill{flex:none;display:inline-flex;align-items:center;height:26px;padding:0 10px;border-radius:999px;background:${T.surface};color:${T.text2};font-size:13px;font-weight:600;white-space:nowrap}
+.avq-o-pill--required{background:${T.ink};color:#FFFFFF}
+.avq-o-pill--done{background:${T.okBg};color:${T.okFg}}
+.avq-o-opt{display:flex;align-items:center;gap:12px;min-height:56px;border-bottom:1px solid ${T.divider}}
+.avq-o-opt__main{flex:1;min-width:0;display:flex;align-items:center;gap:14px;min-height:56px;cursor:pointer}
+.avq-o-opt__mark{position:relative;flex:none;display:flex}
+.avq-o-opt__input{width:22px;height:22px;margin:0;border:2px solid #8A8A8A;background:#FFFFFF;-webkit-appearance:none;appearance:none;cursor:pointer}
+.avq-o-opt__input[type=radio]{border-radius:50%}
+.avq-o-opt__input[type=checkbox]{border-radius:6px}
+.avq-o-opt__input[type=radio]:checked{border:7px solid var(--avq-accent,${T.ink})}
+.avq-o-opt__input[type=checkbox]:checked{border:0;background:var(--avq-accent,${T.ink})}
+.avq-o-opt__check{position:absolute;top:4px;left:4px;pointer-events:none}
+.avq-o-opt__text{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px;font-size:16px;overflow-wrap:anywhere}
+.avq-o-opt__sub,.avq-o-opt__extra{color:${T.muted};font-size:15px}
+.avq-o-opt__extra{flex:none}
+.avq-o-stepper--sm{flex:none;height:36px}
+.avq-o-stepper--sm button{position:relative;width:36px;height:36px}
+.avq-o-stepper--sm button::after{content:'';position:absolute;top:-4px;right:-4px;bottom:-4px;left:-4px}
+.avq-o-stepper--sm>span{min-width:16px;font-size:15px}
+.avq-o-sheet__note{display:flex;flex-direction:column;gap:8px;padding:20px 16px 24px}
+.avq-o-sheet__note>label{font-size:17px;font-weight:700}
+.avq-o-opt__input,.avq-o-stepper--sm button,.avq-o-sheet__note>textarea{scroll-margin-bottom:calc(140px + env(safe-area-inset-bottom,0px))}
+.avq-o-sheet__foot{position:sticky;bottom:0;z-index:2;padding:12px 16px calc(24px + env(safe-area-inset-bottom,0px));background:#FFFFFF;border-top:1px solid ${T.divider}}
+.avq-o-sheet__msg{margin:0 0 10px;color:${T.text2};font-size:14px;font-weight:600;overflow-wrap:anywhere}
+.avq-o-sheet__msg--error{color:${T.errFg}}
+.avq-o-sheet__actions{display:flex;align-items:center;gap:12px}
+.avq-o-sheet__add{flex:1;min-width:0;justify-content:space-between;padding:0 18px}
+.avq-o-sheet__add>span:only-child{margin:0 auto}
 `

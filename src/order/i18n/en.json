@@ -3,7 +3,15 @@
     "required": "Required",
     "optional": "Optional",
     "pickOne": "Pick one",
-    "pickUpTo": "Pick up to {{n}}"
+    "pickUpTo": "Pick up to {{n}}",
+    "mandatory": "Required",
+    "done": "Done",
+    "chooseOne": "Choose 1",
+    "chooseUpTo": "Choose up to {{n}}",
+    "chooseAtLeast": "Choose at least {{n}}",
+    "chooseAny": "Choose any",
+    "more": "More {{name}}",
+    "less": "Less {{name}}"
   },
   "common": {
     "offline": "No connection. Check your internet and try again.",
@@ -64,14 +72,17 @@
     "categories": "Menu categories"
   },
   "sheet": {
-    "add": "Add · {{total}}",
     "qty": "Quantity",
     "more": "More",
     "less": "Less",
-    "note": "Note for the kitchen",
+    "note": "Notes for the kitchen",
     "maxQty": "Maximum 20 per product",
     "maxLines": "Your order reached the maximum of 50 different products",
-    "maxOptions": "Maximum 30 options per dish"
+    "maxOptions": "Maximum 30 options per dish",
+    "addLabel": "Add",
+    "notePlaceholder": "For example: no onion",
+    "missing": "Choose {{group}}",
+    "closeAria": "Close and back to the menu"
   },
   "cart": {
     "title": "Your order",

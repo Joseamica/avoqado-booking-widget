@@ -3,7 +3,15 @@
     "required": "Requerido",
     "optional": "Opcional",
     "pickOne": "Elige una opción",
-    "pickUpTo": "Elige hasta {{n}}"
+    "pickUpTo": "Elige hasta {{n}}",
+    "mandatory": "Obligatorio",
+    "done": "Listo",
+    "chooseOne": "Elige 1",
+    "chooseUpTo": "Elige hasta {{n}}",
+    "chooseAtLeast": "Elige al menos {{n}}",
+    "chooseAny": "Elige los que quieras",
+    "more": "Más {{name}}",
+    "less": "Menos {{name}}"
   },
   "common": {
     "offline": "Sin conexión. Revisa tu internet y vuelve a intentar.",
@@ -64,14 +72,17 @@
     "categories": "Categorías de la carta"
   },
   "sheet": {
-    "add": "Agregar · {{total}}",
     "qty": "Cantidad",
     "more": "Más",
     "less": "Menos",
-    "note": "Nota para la cocina",
+    "note": "Indicaciones para la cocina",
     "maxQty": "Máximo 20 por producto",
     "maxLines": "Tu pedido llegó al máximo de 50 productos distintos",
-    "maxOptions": "Máximo 30 opciones por platillo"
+    "maxOptions": "Máximo 30 opciones por platillo",
+    "addLabel": "Agregar",
+    "notePlaceholder": "Ejemplo: sin cebolla",
+    "missing": "Elige {{group}}",
+    "closeAria": "Cerrar y volver a la carta"
   },
   "cart": {
     "title": "Tu pedido",

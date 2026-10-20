@@ -1,26 +1,51 @@
 import { h } from 'preact'
-import { useContext, useState } from 'preact/hooks'
+import { useContext, useId, useLayoutEffect, useRef, useState } from 'preact/hooks'
 import { OrderStoreContext } from '../store'
 import { createOrderT } from '../i18n'
 import { addLine } from '../cart'
 import { toCents, formatMXN } from '../money'
-import { ModifierPicker } from '../../components/ModifierPicker'
 import { areRequiredModifiersSatisfied } from '../../state/modifierValidation'
 import type { ModifierSelection } from '../../types'
 import type { MenuProduct } from '../types'
-import { btn, muted } from './ui'
+import { OptionGroup, Stepper } from './OptionGroup'
 
 const MAX_QTY = 20
 const MAX_LINES = 50
 const MAX_OPTIONS = 30
 
-/** Ficha de un producto: opciones, cantidad, nota y «Agregar». Se monta con el producto ya elegido (key = id). */
+const Close = () => (
+  <svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
+    <path d="M6 6l12 12M18 6L6 18" />
+  </svg>
+)
+
+/**
+ * Ficha de un producto: una VISTA dentro de la tienda que ocupa el lugar de la carta (spec §11.1), no una capa sobre la página.
+ * Foto con la X, nombre, precio y descripción; los grupos de opciones; las indicaciones; y el pie pegado abajo (`sticky`, dentro
+ * del componente) con la cantidad y «Agregar» + el total. Sin `position: fixed`, portal, `inert`, `aria-modal` ni bloqueo del
+ * scroll: no toca nada fuera de la tienda. Se monta con el producto ya elegido (key = id).
+ */
 export function ProductSheet({ product }: { product: MenuProduct }) {
   const store = useContext(OrderStoreContext)!
   const t = createOrderT(store.locale)
   const [selections, setSelections] = useState<ModifierSelection[]>([])
   const [qty, setQty] = useState(1)
   const [note, setNote] = useState('')
+  const [badImg, setBadImg] = useState<string | null>(null)
+  const sheet = useRef<HTMLElement>(null)
+  const title = useRef<HTMLHeadingElement>(null)
+  const added = useRef(false)
+  const titleId = useId()
+  const noteId = useId()
+
+  // Al abrir, el foco va al título sin mover la página. Sólo si el título quedó fuera de la ventana, la ficha (ella, nunca el
+  // host) sube a su inicio, como un enlace dentro de la página (spec §12.2). Antes de pintar, para que no se vea el salto.
+  useLayoutEffect(() => {
+    const el = title.current!
+    el.focus({ preventScroll: true })
+    const top = el.getBoundingClientRect().top
+    if (top < 0 || top > innerHeight) sheet.current!.scrollIntoView({ block: 'start' })
+  }, [])
 
   const mods = product.modifierGroups.flatMap(g => g.modifiers)
   const picked = selections.map(s => ({ ...s, mod: mods.find(m => m.id === s.modifierId)! })).filter(s => s.mod)
@@ -32,12 +57,19 @@ export function ProductSheet({ product }: { product: MenuProduct }) {
   const full = cart.length >= MAX_LINES
   const tooMany = options > MAX_OPTIONS
   const blocker = full ? t('sheet.maxLines') : tooMany ? t('sheet.maxOptions') : null
-  const canAdd = open && !product.soldOut && !blocker && areRequiredModifiersSatisfied(product.modifierGroups, product.id, selections)
+  // El primer grupo que falta, con la regla de reservas grupo por grupo: si no falta ninguno, la ficha está completa.
+  const missing = product.modifierGroups.find(g => !areRequiredModifiersSatisfied([g], product.id, selections))
+  const canAdd = open && !product.soldOut && !blocker && !missing
+  const photo = product.imageUrl && product.imageUrl !== badImg ? product.imageUrl : null
 
   const close = () => { store.productId.value = null }
   const add = () => {
-    const before = cart.filter(l => l.productId === product.id).reduce((n, l) => n + l.quantity, 0)
-    const next = addLine(cart, {
+    // Doble toque: el segundo llega cuando ya se agregó (y la ficha quizá ya se fue). Se agrega una sola vez.
+    if (added.current) return
+    added.current = true
+    const current = store.cart.value
+    const before = current.filter(l => l.productId === product.id).reduce((n, l) => n + l.quantity, 0)
+    const next = addLine(current, {
       productId: product.id, name: product.name, unitPrice: product.price, quantity: qty, note: note.trim() || null,
       modifiers: picked.map(s => ({ modifierId: s.modifierId, name: s.mod.name, price: s.mod.price, quantity: s.quantity })),
     })
@@ -48,31 +80,48 @@ export function ProductSheet({ product }: { product: MenuProduct }) {
   }
 
   return (
-    <div role="dialog" aria-label={product.name} style={{ border: '1px solid var(--avq-border, #e8eaed)', borderRadius: '14px', padding: '16px', background: 'var(--avq-bg, #fff)' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px' }}>
-        <h2 style={{ margin: 0, fontSize: '18px' }}>{product.name}</h2>
-        <button type="button" style={btn()} onClick={close}>{t('common.close')}</button>
+    <section ref={sheet} class={photo ? 'avq-o-sheet avq-o-sheet--media' : 'avq-o-sheet'} aria-labelledby={titleId}
+      onKeyDown={e => {
+        // Con un teclado de composición (IME), Escape sólo cancela lo que se está escribiendo: no cierra ni pierde la nota.
+        if (e.key !== 'Escape' || e.isComposing) return
+        // Escape cierra ESTA vista y se queda aquí: no cierra también, por ejemplo, un <dialog> del sitio que contenga la tienda.
+        e.preventDefault()
+        e.stopPropagation()
+        close()
+      }}>
+      {photo && <img class="avq-o-sheet__img" src={photo} alt="" onError={() => setBadImg(photo)} />}
+      <button type="button" class="avq-o-sheet__close" aria-label={t('sheet.closeAria')} onClick={close}><Close /></button>
+      <div class="avq-o-sheet__head">
+        <h2 ref={title} id={titleId} class="avq-o-sheet__title" tabIndex={-1}>{product.name}</h2>
+        <span class="avq-o-sheet__price">{formatMXN(product.price, store.locale)}</span>
+        {product.description && <p class="avq-o-sheet__desc">{product.description}</p>}
       </div>
-      {product.imageUrl && <img src={product.imageUrl} alt="" style={{ width: '100%', maxHeight: '200px', objectFit: 'cover', borderRadius: '10px', margin: '10px 0' }} />}
-      {product.description && <p style={muted}>{product.description}</p>}
+      <div class="avq-o-sheet__gap" />
       {product.modifierGroups.map(g => (
-        <ModifierPicker key={g.id} productId={product.id} group={g} selections={selections} onChange={setSelections} t={t} maxPerOption={MAX_QTY} />
+        <OptionGroup key={g.id} productId={product.id} group={g} selections={selections} onChange={setSelections} t={t} maxPerOption={MAX_QTY} />
       ))}
-      <label style={{ display: 'block', margin: '8px 0' }}>
-        <span style={muted}>{t('sheet.note')}</span>
-        <textarea aria-label={t('sheet.note')} maxLength={300} value={note} onInput={(e: any) => setNote(e.currentTarget.value)}
-          style={{ display: 'block', width: '100%', font: 'inherit', boxSizing: 'border-box' }} />
-      </label>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', margin: '8px 0' }}>
-        <span style={muted}>{t('sheet.qty')}</span>
-        <button type="button" style={btn()} aria-label={t('sheet.less')} disabled={qty <= 1} onClick={() => setQty(q => Math.max(1, q - 1))}>−</button>
-        <strong>{qty}</strong>
-        <button type="button" style={btn()} aria-label={t('sheet.more')} disabled={qty >= MAX_QTY} onClick={() => setQty(q => Math.min(MAX_QTY, q + 1))}>+</button>
+      <div class="avq-o-sheet__note">
+        <label for={noteId}>{t('sheet.note')}</label>
+        <textarea id={noteId} class="avq-o-input" rows={3} maxLength={300} placeholder={t('sheet.notePlaceholder')} value={note}
+          onInput={(e: any) => setNote(e.currentTarget.value)} />
       </div>
-      {blocker && <p role="alert" style={muted}>{blocker}</p>}
-      <button type="button" style={{ ...btn(true), width: '100%', opacity: canAdd ? 1 : 0.5 }} disabled={!canAdd} onClick={add}>
-        {t('sheet.add', { total: formatMXN((unitCents * qty) / 100, store.locale) })}
-      </button>
-    </div>
+      <div class="avq-o-sheet__foot">
+        {/* Arriba del botón, lo que impide agregar: un tope (alerta) o el primer grupo que falta («Elige Tamaño»). */}
+        {blocker ? <p key="b" role="alert" class="avq-o-sheet__msg avq-o-sheet__msg--error">{blocker}</p>
+          : missing && open && !product.soldOut && <p key="m" role="status" class="avq-o-sheet__msg">{t('sheet.missing', { group: missing.name })}</p>}
+        <div class="avq-o-sheet__actions">
+          <Stepper value={qty} label={t('sheet.qty')} lessLabel={t('sheet.less')} moreLabel={t('sheet.more')}
+            onLess={qty > 1 ? () => setQty(q => Math.max(1, q - 1)) : undefined}
+            onMore={qty < MAX_QTY ? () => setQty(q => Math.min(MAX_QTY, q + 1)) : undefined} />
+          <button type="button" class="avq-o-btn avq-o-btn--primary avq-o-sheet__add" disabled={!canAdd} onClick={add}>
+            {product.soldOut ? <span>{t('menu.soldOut')}</span> : (
+              <>
+                <span>{t('sheet.addLabel')}</span> <span>{formatMXN((unitCents * qty) / 100, store.locale)}</span>
+              </>
+            )}
+          </button>
+        </div>
+      </div>
+    </section>
   )
 }
