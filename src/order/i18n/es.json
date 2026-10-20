@@ -167,7 +167,8 @@
       "PENDING_ACCEPTANCE": "Esperando que el restaurante acepte",
       "ACCEPTED": "Lo están preparando",
       "READY": "¡Listo para recoger!",
-      "COMPLETED": "Entregado"
+      "COMPLETED": "Entregado",
+      "unknown": "Revisando tu pedido…"
     },
     "sub": {
       "waiting": "Tiene hasta las {{time}} para aceptarlo.",

@@ -30,10 +30,10 @@ const tr = (over: Partial<Tracking> = {}): Tracking => ({
 })
 const flush = () => act(async () => { for (let i = 0; i < 8; i++) await Promise.resolve() })
 const tick = (ms: number) => act(async () => { await vi.advanceTimersByTimeAsync(ms) })
-async function show(t: Tracking | ApiError) {
+async function show(t: Tracking | ApiError, locale: 'es' | 'en' = 'es') {
   if (t instanceof ApiError) vi.mocked(getTracking).mockRejectedValue(t)
   else vi.mocked(getTracking).mockResolvedValue(t)
-  const s = makeStore(null, null)
+  const s = makeStore(null, null, locale)
   s.trackingToken.value = 'T'.repeat(32)
   s.go('tracking')
   render(withStore(s, <TrackingScreen />))
@@ -142,6 +142,7 @@ describe('textos por estado', () => {
     expect(screen.getByText('Estará listo como a las 14:35.')).toBeTruthy()
     const list = progress()!
     expect(list.tagName).toBe('OL') // una secuencia real, en orden
+    expect(list.getAttribute('role')).toBe('list') // Safari quita la semántica de lista con list-style:none
     const steps = within(list).getAllByRole('listitem')
     expect(steps.map(s => s.textContent)).toEqual(['Recibido', 'Preparando', 'Listo', 'Entregado'])
     expect(steps.map(s => s.getAttribute('aria-current'))).toEqual([null, 'step', null, null])
@@ -163,6 +164,30 @@ describe('textos por estado', () => {
       cleanup()
     }
   })
+  it('un estado que la tienda no conoce: titular neutro, sin «Dilo…» ni «Pagas al recoger»; el folio y los renglones siguen, y sigue sondeando', async () => {
+    await show(tr({ status: 'ON_HOLD' as OnlineOrderStatus }))
+    expect(screen.getByRole('heading', { name: 'Revisando tu pedido…' })).toBeTruthy()
+    expect(screen.queryByText('El restaurante canceló tu pedido.')).toBeNull()
+    expect(screen.queryByText('Dilo en el mostrador al recoger.')).toBeNull()
+    expect(screen.queryByText(/Pagas al recoger/)).toBeNull()
+    expect(progress()).toBeNull()
+    expect(screen.getByText('42')).toBeTruthy()
+    expect(screen.getByText(/2 × Flautas de pollo/)).toBeTruthy()
+    expect(screen.getByText('Total').parentElement!.textContent).toContain('$170')
+    await tick(10_000)
+    expect(getTracking).toHaveBeenCalledTimes(2)
+  })
+  it('en inglés: titular, línea de hora, pasos y «Your order number»', async () => {
+    await show(tr({ status: 'ACCEPTED', estimatedReadyAt: '2026-10-17T20:35:00Z', canCancel: false }), 'en')
+    expect(screen.getByRole('heading', { name: "They're preparing it" })).toBeTruthy()
+    expect(screen.getByText(/^Ready around 2:35\sPM\.$/)).toBeTruthy()
+    const steps = within(screen.getByRole('list', { name: 'Order progress' })).getAllByRole('listitem')
+    expect(steps.map(s => s.textContent)).toEqual(['Received', 'Preparing', 'Ready', 'Picked up'])
+    expect(steps[1].getAttribute('aria-current')).toBe('step')
+    expect(screen.getByText('Your order number')).toBeTruthy()
+    expect(screen.getByText('Say it at the counter when you pick up.')).toBeTruthy()
+    expect(screen.getByText('VAT included. Pay at pickup.')).toBeTruthy()
+  })
 
   it('no depende de /info: sin info ni menú pinta el pedido completo', async () => {
     await show(tr({ status: 'ACCEPTED', estimatedReadyAt: '2026-10-17T19:30:00Z', canCancel: false }))
@@ -180,7 +205,7 @@ describe('textos por estado', () => {
     for (const status of ['CANCELLED_BY_CUSTOMER', 'CANCELLED_BY_STAFF', 'REJECTED', 'EXPIRED'] as const) {
       await show(tr({ status, canCancel: false }))
       expect(screen.getByText('42')).toBeTruthy()
-      expect(screen.queryByText('IVA incluido. Pagas al recoger.')).toBeNull()
+      expect(screen.queryByText(/Pagas al recoger/)).toBeNull()
       cleanup()
     }
   })
@@ -323,10 +348,26 @@ describe('cancelar', () => {
     expect(cancel.classList.contains('avq-o-btn--quiet')).toBe(true)
     fireEvent.click(cancel)
     const ask = screen.getByRole('group', { name: '¿Cancelar tu pedido?' })
-    expect(within(ask).getAllByRole('button').map(b => b.textContent)).toEqual(['Sí, cancelar', 'No'])
+    const buttons = within(ask).getAllByRole('button')
+    expect(buttons.map(b => b.textContent)).toEqual(['Sí, cancelar', 'No'])
+    // La pantalla no tiene acción principal (§5.6): el color de la marca no «recomienda» cancelar, ni tampoco «No». Mismo peso.
+    for (const b of buttons) {
+      expect(b.classList.contains('avq-o-btn--neutral'), b.textContent!).toBe(true)
+      expect(b.classList.contains('avq-o-btn--primary'), b.textContent!).toBe(false)
+    }
     fireEvent.click(within(ask).getByRole('button', { name: 'No' }))
     expect(screen.getByRole('button', { name: 'Cancelar pedido' })).toBeTruthy()
     expect(cancelOrder).not.toHaveBeenCalled()
+  })
+  it('al abrir la confirmación el foco va a «No»; al cerrarla con «No» vuelve a «Cancelar pedido» (y al cargar no se mueve)', async () => {
+    await show(tr())
+    expect(document.activeElement).toBe(document.body)
+    fireEvent.click(screen.getByRole('button', { name: 'Cancelar pedido' }))
+    await flush()
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'No' }))
+    fireEvent.click(screen.getByRole('button', { name: 'No' }))
+    await flush()
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Cancelar pedido' }))
   })
   it('cancelar sin red: «Sin conexión…» en aviso ámbar, nunca rojo', async () => {
     vi.mocked(cancelOrder).mockRejectedValue(new ApiError('Sin conexión', 0, undefined, undefined, true))

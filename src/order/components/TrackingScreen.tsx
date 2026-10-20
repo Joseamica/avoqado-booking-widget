@@ -9,6 +9,7 @@ import { OrderStoreContext } from '../store'
 import { isFinalStatus, type OnlineOrderStatus, type Tracking } from '../types'
 import { Notice, type NoticeIcon } from './StoreStatusBanner'
 import { VenueMark } from './VenueMark'
+import { optionsText } from './lineOptions'
 
 const POLL_MS = 10_000
 /** Los 4 pasos del avance, en orden. Rechazado, vencido y cancelado no tienen paso: ahí no se pinta el avance. */
@@ -47,6 +48,9 @@ export function TrackingScreen() {
   const [cancelMsg, setCancelMsg] = useState<{ text: string; tone: 'neutral' | 'warn' | 'error'; icon?: NoticeIcon } | null>(null)
   const refresh = useRef<() => Promise<void>>(async () => {})
   const cancelling = useRef(false)
+  const cancelBtn = useRef<HTMLButtonElement>(null)
+  const noBtn = useRef<HTMLButtonElement>(null)
+  const wasAsking = useRef(false)
 
   useEffect(() => {
     if (!token) return
@@ -88,6 +92,14 @@ export function TrackingScreen() {
     }
   }, [store, token])
 
+  // El foco sigue a la confirmación: al abrirla va a «No» (el botón que no hace nada); al cerrarse vuelve a «Cancelar pedido», que
+  // regresa a su lugar (si el pedido ya no se puede cancelar, ese botón no está y no se mueve nada). Al cargar la pantalla no se toca.
+  useEffect(() => {
+    if (asking) noBtn.current?.focus()
+    else if (wasAsking.current) cancelBtn.current?.focus()
+    wasAsking.current = asking
+  }, [asking])
+
   // De vuelta a la carta (el aviso «Tienes un pedido en curso · Ver» de OrderApp regresa aquí).
   const orderMore = (
     <div class="avq-o-track__more">
@@ -104,9 +116,11 @@ export function TrackingScreen() {
 
   const tz = tracking.venueTimezone ?? store.info.value?.venue.timezone ?? 'America/Mexico_City'
   const time = (iso: string) => formatTime(iso, tz, store.locale)
-  const final = isFinalStatus(tracking.status)
   const step = STEP_OF[tracking.status]
-  // Titular y su línea de hora; rechazado, vencido y cancelado dicen su frase de hoy, sin línea.
+  // Algo que recoger: esperando, en preparación o listo. Un estado que la tienda no conoce no se da por confirmado.
+  const toPickUp = step !== undefined && tracking.status !== 'COMPLETED'
+  // Titular y su línea de hora; rechazado, vencido y cancelado dicen su frase de hoy, sin línea. Un estado nuevo del servidor, uno
+  // neutro (y el sondeo sigue: no es final).
   const [head, sub] = ((): [string, string | null] => {
     switch (tracking.status) {
       case 'PENDING_ACCEPTANCE': return [t('tracking.head.PENDING_ACCEPTANCE'), t('tracking.sub.waiting', { time: time(tracking.acceptDeadlineAt) })]
@@ -118,11 +132,12 @@ export function TrackingScreen() {
         return [tracking.rejectReason ? t('tracking.rejected', { reason: t(`tracking.reason.${tracking.rejectReason}`) }) : t('tracking.rejectedNoReason'), null]
       case 'EXPIRED': return [t('tracking.expired'), null]
       case 'CANCELLED_BY_CUSTOMER': return [t('tracking.cancelledByCustomer'), null]
-      default: return [t('tracking.cancelledByStaff'), null]
+      case 'CANCELLED_BY_STAFF': return [t('tracking.cancelledByStaff'), null]
+      default: return [t('tracking.head.unknown'), null]
     }
   })()
-  // Cancelado, rechazado o vencido sin cobro: no hay nada que pagar al recoger.
-  const pay = tracking.paid ? t('tracking.paid') : !final || tracking.status === 'COMPLETED' ? t('cart.taxPickup') : null
+  // Sin cobro, «Pagas al recoger» sólo en curso o entregado (la regla de hoy): no en cancelado, rechazado, vencido ni un estado nuevo.
+  const pay = tracking.paid ? t('tracking.paid') : step !== undefined ? t('cart.taxPickup') : null
 
   async function doCancel() {
     if (cancelling.current || !token) return
@@ -159,7 +174,7 @@ export function TrackingScreen() {
         {sub && <p>{sub}</p>}
       </div>
       {step !== undefined && (
-        <ol class="avq-o-steps" aria-label={t('tracking.progress')}>
+        <ol class="avq-o-steps" role="list" aria-label={t('tracking.progress')}>
           {STEPS.map((k, i) => (
             <li key={k} class={i <= step ? 'avq-o-step avq-o-step--done' : 'avq-o-step'} aria-current={i === step ? 'step' : undefined}>
               {t(`tracking.steps.${k}`)}
@@ -171,14 +186,13 @@ export function TrackingScreen() {
         <div class="avq-o-ticket__folio">
           <span class="avq-o-ticket__label">{t('tracking.folioLabel')}</span>
           <span class="avq-o-ticket__n">{tracking.orderNumber}</span>
-          {/* Ya entregado, rechazado o cancelado no hay nada que recoger. */}
-          {!final && <span class="avq-o-ticket__say">{t('tracking.sayAtCounter')}</span>}
+          {toPickUp && <span class="avq-o-ticket__say">{t('tracking.sayAtCounter')}</span>}
         </div>
         <div class="avq-o-ticket__tear" aria-hidden="true" />
         <div class="avq-o-ticket__body">
           <ul class="avq-o-ticket__lines" role="list">
             {tracking.items.map((it, i) => {
-              const options = it.modifiers.map(m => (m.quantity > 1 ? `${m.name} ×${m.quantity}` : m.name)).join(', ')
+              const options = optionsText(it.modifiers)
               return (
                 <li key={i}>
                   <span>{it.quantity} × {it.name}</span>
@@ -214,14 +228,15 @@ export function TrackingScreen() {
         <div class="avq-o-track__cancel">
           {cancelMsg && <Notice tone={cancelMsg.tone} icon={cancelMsg.icon} text={cancelMsg.text} />}
           {tracking.canCancel && !asking && (
-            <button type="button" class="avq-o-btn avq-o-btn--quiet" onClick={() => { setCancelMsg(null); setAsking(true) }}>{t('tracking.cancel')}</button>
+            <button ref={cancelBtn} type="button" class="avq-o-btn avq-o-btn--quiet" onClick={() => { setCancelMsg(null); setAsking(true) }}>{t('tracking.cancel')}</button>
           )}
+          {/* La pantalla no tiene acción principal (§5.6): los dos botones pesan igual y el acento no «recomienda» cancelar. */}
           {tracking.canCancel && asking && (
             <div role="group" aria-label={t('tracking.cancelAsk')} class="avq-o-track__ask">
               <p>{t('tracking.cancelAsk')}</p>
               <div>
-                <button type="button" class="avq-o-btn avq-o-btn--primary" disabled={busy} onClick={() => void doCancel()}>{busy ? t('tracking.cancelling') : t('tracking.cancelYes')}</button>
-                <button type="button" class="avq-o-btn avq-o-btn--neutral" disabled={busy} onClick={() => setAsking(false)}>{t('tracking.cancelNo')}</button>
+                <button type="button" class="avq-o-btn avq-o-btn--neutral" disabled={busy} onClick={() => void doCancel()}>{busy ? t('tracking.cancelling') : t('tracking.cancelYes')}</button>
+                <button ref={noBtn} type="button" class="avq-o-btn avq-o-btn--neutral" disabled={busy} onClick={() => setAsking(false)}>{t('tracking.cancelNo')}</button>
               </div>
             </div>
           )}

@@ -167,7 +167,8 @@
       "PENDING_ACCEPTANCE": "Waiting for the restaurant to accept",
       "ACCEPTED": "They're preparing it",
       "READY": "Ready for pickup!",
-      "COMPLETED": "Picked up"
+      "COMPLETED": "Picked up",
+      "unknown": "Checking your order…"
     },
     "sub": {
       "waiting": "It has until {{time}} to accept.",

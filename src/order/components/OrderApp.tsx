@@ -94,7 +94,7 @@ export function OrderApp({ accentColor }: { accentColor?: string }) {
   return (
     <div class="avq-o-root" style={{ ['--avq-accent' as any]: accent }}>
       <style>{STORE_CSS}</style>
-      {/* De quién es la tienda, arriba de todo; el seguimiento ya trae el nombre en su título. */}
+      {/* De quién es la tienda, arriba de todo; el seguimiento pinta su propia cabecera chica (TrackingScreen). */}
       {hero && (
         <header class={showCover ? 'avq-o-hero avq-o-hero--cover' : 'avq-o-hero'}>
           {showCover && <img class="avq-o-hero__img" src={cover!} alt="" onError={() => setBadCover(cover)} />}

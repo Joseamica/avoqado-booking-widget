@@ -10,6 +10,7 @@ import { Notice, StoreStatusBanner } from './StoreStatusBanner'
 import { Stepper } from './Stepper'
 import { VenueMark } from './VenueMark'
 import { Back, Plus } from './icons'
+import { optionsText } from './lineOptions'
 import type { Menu, Quote, QuoteIssue } from '../types'
 
 const MAX_QTY = 20
@@ -133,7 +134,7 @@ export function CartScreen() {
       <ul class="avq-o-lines" role="list">
         {cart.map((l, i) => {
           const last = l.quantity <= 1
-          const options = l.modifiers.map(m => (m.quantity > 1 ? `${m.name} ×${m.quantity}` : m.name)).join(', ')
+          const options = optionsText(l.modifiers)
           return (
             <li key={l.lineId} aria-label={l.name} class="avq-o-line" tabIndex={-1}>
               <div class="avq-o-line__info">
