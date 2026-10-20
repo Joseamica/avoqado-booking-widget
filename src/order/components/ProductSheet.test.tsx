@@ -52,7 +52,7 @@ describe('ficha del producto', () => {
     expect(s.productId.value).toBeNull()
     expect(s.cart.value).toHaveLength(1)
     expect(s.cart.value[0]).toMatchObject({ productId: 'p1', quantity: 2, note: 'sin cebolla', modifiers: [{ modifierId: 'm2', name: 'Queso extra', price: 12.5, quantity: 1 }] })
-    expect(screen.getByRole('button', { name: 'Ver pedido · 2 · $195' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Ver pedido: 2 productos, $195' })).toBeTruthy()
   })
   it('cantidad entre 1 y 20, nota con maxlength 300', () => {
     open(product())

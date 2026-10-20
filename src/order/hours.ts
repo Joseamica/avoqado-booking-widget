@@ -20,6 +20,12 @@ const minutes = (hhmm: string) => Number(hhmm.slice(0, 2)) * 60 + Number(hhmm.sl
 
 type Span = { start: number; end: number; close: string }
 
+/** Minutos desde la medianoche, en la zona del negocio (puede lanzar si la zona es inválida: quien llama lo atrapa). */
+function minutesNow(now: Date, timeZone: string): number {
+  const [h, m] = new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit', hourCycle: 'h23', timeZone }).format(now).split(':').map(Number)
+  return h * 60 + m
+}
+
 /**
  * Hora de cierre («22:00») del tramo de servicio en que está el negocio AHORA, en su zona (no la del navegador). Una franja
  * nocturna cierra al día siguiente («02:00»); y si otra franja abre a más tardar a esa hora de cierre (franjas seguidas o
@@ -31,8 +37,7 @@ type Span = { start: number; end: number; close: string }
 export function closesAt(hours: WeeklyHours | null, now: Date, timeZone: string): string | null {
   if (!hours) return null
   try {
-    const [h, m] = new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit', hourCycle: 'h23', timeZone }).format(now).split(':').map(Number)
-    const nowMin = h * 60 + m
+    const nowMin = minutesNow(now, timeZone)
     const today = WEEK.indexOf(weekdayKey(now, timeZone))
     // Las franjas de ayer, hoy y mañana en minutos desde la medianoche de HOY; una nocturna termina al día siguiente.
     const spans: Span[] = []
@@ -52,6 +57,23 @@ export function closesAt(hours: WeeklyHours | null, now: Date, timeZone: string)
     // zona inválida: abajo, null
   }
   return null
+}
+
+/**
+ * Hora («13:00») a la que abre HOY el negocio si todavía no ha abierto: la primera franja de hoy que empieza después de ahora, en
+ * su zona. `null` si no hay horario, si hoy no abre o si ya pasaron todas las aperturas de hoy: mañana no se promete (la frase
+ * diría «desde las 09:00» sin decir «mañana»). Es un adorno (la barra del carrito): una zona inválida da `null`, no tumba la tienda.
+ */
+export function opensAt(hours: WeeklyHours | null, now: Date, timeZone: string): string | null {
+  try {
+    const ranges = todayRanges(hours, now, timeZone)
+    if (!ranges) return null
+    const nowMin = minutesNow(now, timeZone)
+    const next = ranges.filter(r => r.open !== r.close && minutes(r.open) > nowMin).map(r => r.open).sort()
+    return next[0] ?? null
+  } catch (_e) {
+    return null // zona inválida
+  }
 }
 
 export function formatTime(iso: string, timeZone: string, locale: 'es' | 'en'): string {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { closesAt, formatTime, todayRanges, weekdayKey } from './hours'
+import { closesAt, formatTime, opensAt, todayRanges, weekdayKey } from './hours'
 import type { WeeklyHours } from './types'
 
 const TZ = 'America/Mexico_City'
@@ -131,5 +131,39 @@ describe('closesAt: la hora de cierre de la franja abierta ahora', () => {
   })
   it('una zona inválida no tumba nada: null', () => {
     expect(closesAt(everyDay([{ open: '09:00', close: '22:00' }]), at('2026-10-19T18:00:00Z'), 'Marte/Olimpo')).toBeNull()
+  })
+})
+
+describe('opensAt: a qué hora abre HOY el negocio, si todavía no ha abierto', () => {
+  const everyDay = (...ranges: { open: string; close: string }[]) =>
+    Object.fromEntries(['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'].map(k => [k, day(true, ranges)])) as WeeklyHours
+  // CDMX es UTC-6 todo el año: 08:00 del lunes 19-oct = 14:00Z.
+  const at = (iso: string) => new Date(iso)
+
+  it('antes de la primera franja devuelve su apertura; con varias, la primera que falta por abrir', () => {
+    const h = everyDay({ open: '09:00', close: '14:00' }, { open: '17:00', close: '22:00' })
+    expect(opensAt(h, at('2026-10-19T14:00:00Z'), TZ)).toBe('09:00') // 08:00
+    expect(opensAt(h, at('2026-10-19T21:00:00Z'), TZ)).toBe('17:00') // 15:00, entre las dos franjas
+  })
+  it('a la hora exacta de apertura ya no es "falta por abrir"; pasada la última apertura de hoy, null (mañana no se promete)', () => {
+    const h = everyDay({ open: '09:00', close: '22:00' })
+    expect(opensAt(h, at('2026-10-19T15:00:00Z'), TZ)).toBeNull() // 09:00 en punto
+    expect(opensAt(h, at('2026-10-20T03:00:00Z'), TZ)).toBeNull() // 21:00
+  })
+  it('sin horario o con el día apagado, null', () => {
+    expect(opensAt(null, at('2026-10-19T14:00:00Z'), TZ)).toBeNull()
+    expect(opensAt(hours, at('2026-10-19T14:00:00Z'), TZ)).toBeNull() // el lunes de `hours` no abre
+  })
+  it('una franja nocturna cuenta por su apertura (22:00) y las de largo cero no cuentan', () => {
+    expect(opensAt(everyDay({ open: '22:00', close: '02:00' }), at('2026-10-19T14:00:00Z'), TZ)).toBe('22:00')
+    expect(opensAt(everyDay({ open: '10:00', close: '10:00' }), at('2026-10-19T14:00:00Z'), TZ)).toBeNull()
+  })
+  it('el día y la hora son los del negocio, no los del navegador', () => {
+    const h = everyDay({ open: '09:00', close: '14:00' })
+    expect(opensAt(h, at('2026-10-19T14:00:00Z'), TZ)).toBe('09:00') // 08:00 en CDMX
+    expect(opensAt(h, at('2026-10-19T14:00:00Z'), 'Asia/Tokyo')).toBeNull() // 23:00 en Tokio: ya pasó
+  })
+  it('una zona inválida no tumba nada: null', () => {
+    expect(opensAt(everyDay({ open: '09:00', close: '22:00' }), at('2026-10-19T14:00:00Z'), 'Marte/Olimpo')).toBeNull()
   })
 })

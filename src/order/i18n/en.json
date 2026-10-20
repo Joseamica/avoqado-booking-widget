@@ -55,7 +55,13 @@
     "soldOut": "Sold out",
     "viewOrder": "View order · {{n}} · {{total}}",
     "pricesNote": "Prices include VAT.",
-    "poweredBy": "Ordering by Avoqado"
+    "poweredBy": "Ordering by Avoqado",
+    "viewOrderLabel": "View order",
+    "viewOrderAria": "View order: {{n}} items, {{total}}",
+    "viewOrderAriaOne": "View order: 1 item, {{total}}",
+    "addAria": "Add {{name}}",
+    "orderFrom": "You can order from {{time}}",
+    "categories": "Menu categories"
   },
   "sheet": {
     "add": "Add · {{total}}",

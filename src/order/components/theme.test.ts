@@ -129,6 +129,14 @@ describe('STORE_CSS', () => {
     ]
     for (const c of classes) expect(STORE_CSS, `.${c}`).toMatch(new RegExp(`\\.${c}[\\s,{:>.\\[]`))
   })
+  it('trae las clases de la carta (buscador, pestañas, secciones, filas con foto y barra del carrito)', () => {
+    const classes = [
+      'avq-o-menu', 'avq-o-search', 'avq-o-tabs', 'avq-o-tab', 'avq-o-section', 'avq-o-row__text', 'avq-o-row__info', 'avq-o-row__name',
+      'avq-o-row__price', 'avq-o-row__desc', 'avq-o-row__tag', 'avq-o-row__media', 'avq-o-row__img', 'avq-o-row__add', 'avq-o-row--bare',
+      'avq-o-foot', 'avq-o-empty', 'avq-o-bar__count', 'avq-o-bar__label', 'avq-o-bar__note', 'avq-o-bar__total',
+    ]
+    for (const c of classes) expect(STORE_CSS, `.${c}`).toMatch(new RegExp(`\\.${c}[\\s,{:>.\\[]`))
+  })
   it('las fuentes: Figtree en el cuerpo y Bricolage Grotesque en los títulos, con respaldo del sistema', () => {
     expect(STORE_CSS).toMatch(/\.avq-o-root\s*\{[^}]*font-family:\s*'Figtree',\s*system-ui,\s*sans-serif/)
     expect(STORE_CSS).toContain("'Bricolage Grotesque',system-ui,sans-serif")

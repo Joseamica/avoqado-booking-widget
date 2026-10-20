@@ -3,6 +3,7 @@ import { useContext } from 'preact/hooks'
 import { OrderStoreContext } from '../store'
 import { createOrderT } from '../i18n'
 import { formatTime, todayRanges } from '../hours'
+import type { StoreInfo } from '../types'
 
 // Íconos de trazo de los avisos (spec §9.6), del estilo de la maqueta: 24×24, trazo de 2 con puntas redondas y `currentColor`.
 const ICONS = {
@@ -40,12 +41,11 @@ export function Notice({ tone, icon, title, text, action }: {
   )
 }
 
-/** Aviso de por qué no se puede pedir ahora. Con la tienda abierta no pinta nada. */
-export function StoreStatusBanner() {
-  const store = useContext(OrderStoreContext)!
-  const info = store.info.value
-  if (!info || info.status === 'OPEN') return null
-  const t = createOrderT(store.locale)
+/**
+ * Lo que la tienda dice cuando no se puede pedir ahora: la frase de hoy (literal) y, si lleva, su título, el ícono y el tono. Lo
+ * usan el aviso de arriba y el motivo de la barra del carrito. Con la tienda abierta no hay nada que decir: no se llama.
+ */
+export function storeStatus(info: StoreInfo, t: ReturnType<typeof createOrderT>, locale: 'es' | 'en') {
   const tz = info.venue.timezone ?? 'America/Mexico_City'
   let text: string
   // CLOSED y OFFLINE no llevan título: su frase de hoy ya empieza con él («Cerrado ahora. Hoy: …», «El restaurante no está
@@ -65,7 +65,7 @@ export function StoreStatusBanner() {
     // Una pausa con hora (15/30/60 min de la Bandeja) dice cuándo vuelve; la del gerente, o un servidor viejo, el texto de hoy.
     text =
       info.reason === 'TOO_BUSY' ? t('store.tooBusy')
-      : info.reason === 'MANUAL_PAUSE' && info.pausedUntil ? t('store.pausedUntil', { time: formatTime(info.pausedUntil, tz, store.locale) })
+      : info.reason === 'MANUAL_PAUSE' && info.pausedUntil ? t('store.pausedUntil', { time: formatTime(info.pausedUntil, tz, locale) })
       : t('store.manualPause')
     title = t('store.pausedTitle')
   } else if (info.status === 'DISABLED') {
@@ -78,5 +78,14 @@ export function StoreStatusBanner() {
     text = t('store.offline')
     icon = 'cloudOff'
   }
-  return <Notice tone={tone} icon={icon} title={title} text={text} />
+  return { text, title, icon, tone }
+}
+
+/** Aviso de por qué no se puede pedir ahora. Con la tienda abierta no pinta nada. */
+export function StoreStatusBanner() {
+  const store = useContext(OrderStoreContext)!
+  const info = store.info.value
+  if (!info || info.status === 'OPEN') return null
+  const s = storeStatus(info, createOrderT(store.locale), store.locale)
+  return <Notice tone={s.tone} icon={s.icon} title={s.title} text={s.text} />
 }

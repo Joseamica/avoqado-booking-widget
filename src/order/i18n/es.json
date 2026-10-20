@@ -55,7 +55,13 @@
     "soldOut": "Agotado",
     "viewOrder": "Ver pedido · {{n}} · {{total}}",
     "pricesNote": "Precios con IVA incluido.",
-    "poweredBy": "Pedidos con Avoqado"
+    "poweredBy": "Pedidos con Avoqado",
+    "viewOrderLabel": "Ver pedido",
+    "viewOrderAria": "Ver pedido: {{n}} productos, {{total}}",
+    "viewOrderAriaOne": "Ver pedido: 1 producto, {{total}}",
+    "addAria": "Agregar {{name}}",
+    "orderFrom": "Puedes pedir desde las {{time}}",
+    "categories": "Categorías de la carta"
   },
   "sheet": {
     "add": "Agregar · {{total}}",

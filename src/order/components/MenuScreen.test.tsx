@@ -11,6 +11,7 @@ import { loadLastOrder, saveLastOrder } from '../session'
 import { MenuScreen } from './MenuScreen'
 import { OrderApp } from './OrderApp'
 import { StoreStatusBanner } from './StoreStatusBanner'
+import { STORE_CSS, TABS_H } from './theme'
 import type { StoreInfo } from '../types'
 import { infoOf, makeStore, menuOf, product, withStore } from './testKit'
 
@@ -175,21 +176,373 @@ describe('carta', () => {
     expect(screen.getByText('FLÁUTA dorada')).toBeTruthy()
     expect(screen.queryByText('Agua')).toBeNull()
   })
-  it('las categorías son pastillas que filtran', () => {
-    const m = menuOf(product())
-    m.categories.push({ id: 'c2', name: 'Bebidas', productCount: 1, products: [product({ id: 'p9', name: 'Agua' })] })
-    show(makeStore(infoOf(), m))
-    fireEvent.click(screen.getByRole('button', { name: 'Bebidas' }))
-    expect(screen.getByText('Agua')).toBeTruthy()
-    expect(screen.queryByText('Flautas de pollo')).toBeNull()
-  })
   it('abrir un producto abre su ficha; CartBar refleja el carrito', () => {
     const s = makeStore(infoOf(), menuOf(product()))
     s.cart.value = [{ lineId: 'l', productId: 'p1', name: 'Flautas', unitPrice: 85, quantity: 2, modifiers: [], note: null }]
     show(s)
-    expect(screen.getByRole('button', { name: 'Ver pedido · 2 · $170' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Ver pedido: 2 productos, $170' })).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: /Flautas de pollo/ }))
     expect(s.productId.value).toBe('p1')
+  })
+})
+
+describe('carta al estilo de las apps de comida: pestañas, filas y barra del carrito', () => {
+  const scrollIntoView = vi.fn()
+  beforeEach(() => { Element.prototype.scrollIntoView = scrollIntoView })
+  afterEach(() => {
+    delete (Element.prototype as any).scrollIntoView
+    vi.unstubAllGlobals()
+    vi.useRealTimers()
+  })
+
+  // Antojitos (Flautas de pollo, Tostadas) y Bebidas (Agua).
+  const twoCats = () => {
+    const m = menuOf(product(), product({ id: 'p2', name: 'Tostadas', description: null, price: 60 }))
+    m.categories.push({ id: 'c2', name: 'Bebidas', productCount: 1, products: [product({ id: 'p9', name: 'Agua', description: null, price: 25 })] })
+    return m
+  }
+  const everyDay = (open: string, close: string) =>
+    Object.fromEntries(['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'].map(k => [k, { enabled: true, ranges: [{ open, close }] }])) as any
+  const line2 = { lineId: 'l', productId: 'p1', name: 'Flautas', unitPrice: 92, quantity: 2, modifiers: [], note: null }
+  const withCart = (s: ReturnType<typeof makeStore>) => { s.cart.value = [line2]; return s }
+  const tabsNav = () => screen.getByRole('navigation', { name: 'Categorías de la carta' })
+  const tabOf = (name: string) => within(tabsNav()).getByRole('link', { name }) as HTMLElement
+  const sectionOf = (tab: HTMLElement) => document.getElementById(tab.getAttribute('href')!.slice(1)) as HTMLElement
+  const bar = () => screen.getByRole('button', { name: /^Ver pedido/ }) as HTMLButtonElement
+  // Un IntersectionObserver de mentira: la prueba decide qué secciones "entran" a la franja de lectura.
+  const fakeObserver = () => {
+    const made: any[] = []
+    class FakeIO {
+      targets: Element[] = []
+      disconnected = false
+      constructor(public cb: (entries: any[]) => void, public opts: any) { made.push(this) }
+      observe(el: Element) { this.targets.push(el) }
+      unobserve() {}
+      disconnect() { this.disconnected = true }
+      takeRecords() { return [] }
+    }
+    vi.stubGlobal('IntersectionObserver', FakeIO)
+    return made
+  }
+
+  describe('pestañas', () => {
+    it('las categorías son pestañas que llevan a su sección (scrollIntoView), no filtran', () => {
+      show(makeStore(infoOf(), twoCats()))
+      const tab = tabOf('Bebidas')
+      const section = sectionOf(tab)
+      expect(section.tagName).toBe('SECTION')
+      expect(within(section).getByText('Agua')).toBeTruthy()
+      const click = new MouseEvent('click', { bubbles: true, cancelable: true })
+      fireEvent(tab, click)
+      expect(scrollIntoView).toHaveBeenCalledTimes(1)
+      expect(scrollIntoView.mock.contexts[0]).toBe(section)
+      expect(scrollIntoView.mock.calls[0][0]).toMatchObject({ block: 'start' })
+      // No filtra: los productos de las demás categorías siguen en la página, y el navegador no cambia la dirección de la página.
+      expect(screen.getByText('Flautas de pollo')).toBeTruthy()
+      expect(screen.getByText('Tostadas')).toBeTruthy()
+      expect(screen.getByText('Agua')).toBeTruthy()
+      expect(click.defaultPrevented).toBe(true)
+      // «Todo» ya no existe, y la tocada queda marcada.
+      expect(screen.queryByRole('button', { name: 'Todo' })).toBeNull()
+      expect(tab.getAttribute('aria-current')).toBe('true')
+      expect(tabOf('Antojitos').hasAttribute('aria-current')).toBe(false)
+    })
+    it('con «reducir movimiento» el desplazamiento no es suave', () => {
+      show(makeStore(infoOf(), twoCats()))
+      fireEvent.click(tabOf('Bebidas'))
+      expect(scrollIntoView.mock.calls[0][0]).toMatchObject({ behavior: 'smooth' })
+      vi.stubGlobal('matchMedia', (query: string) => ({ matches: query.includes('prefers-reduced-motion'), media: query }))
+      fireEvent.click(tabOf('Antojitos'))
+      expect(scrollIntoView.mock.calls[1][0]).toMatchObject({ behavior: 'auto', block: 'start' })
+    })
+    it('con búsqueda, las pestañas se ocultan y sólo quedan las coincidencias; al borrarla vuelven', () => {
+      show(makeStore(infoOf(), twoCats()))
+      const search = screen.getByRole('searchbox')
+      fireEvent.input(search, { target: { value: 'agu' } })
+      expect(screen.queryByRole('navigation')).toBeNull()
+      expect(screen.getByText('Agua')).toBeTruthy()
+      expect(screen.queryByText('Flautas de pollo')).toBeNull()
+      expect(screen.queryByText('Tostadas')).toBeNull()
+      // Una categoría sin coincidencias no deja ni su título.
+      expect(screen.queryByRole('heading', { name: 'Antojitos' })).toBeNull()
+      expect(screen.getByRole('heading', { name: 'Bebidas' })).toBeTruthy()
+      fireEvent.input(search, { target: { value: '' } })
+      expect(tabsNav()).toBeTruthy()
+      expect(screen.getByText('Flautas de pollo')).toBeTruthy()
+    })
+    it('dos cartas en la misma página no repiten ids de sección, y cada pestaña lleva a una sección que existe', () => {
+      render(withStore(makeStore(infoOf(), twoCats()), <MenuScreen />))
+      render(withStore(makeStore(infoOf(), twoCats()), <MenuScreen />))
+      const ids = [...document.querySelectorAll('section')].map(s => s.id)
+      expect(ids).toHaveLength(4)
+      expect(new Set(ids).size).toBe(4)
+      for (const id of ids) expect(id).toMatch(/^[A-Za-z][\w-]*$/)
+      const links = [...document.querySelectorAll('nav a')]
+      expect(links).toHaveLength(4)
+      for (const a of links) expect(document.querySelectorAll(a.getAttribute('href')!)).toHaveLength(1)
+    })
+    it('la pestaña activa sigue al scroll (IntersectionObserver) y el observador se apaga al desmontar', async () => {
+      const made = fakeObserver()
+      const { unmount } = show(makeStore(infoOf(), twoCats()))
+      const io = made[made.length - 1]
+      const [first, second] = io.targets as HTMLElement[]
+      expect(io.targets.map((t: Element) => t.tagName)).toEqual(['SECTION', 'SECTION'])
+      // La franja de lectura empieza bajo las pestañas: `-{alto}px` arriba.
+      expect(io.opts.rootMargin).toMatch(new RegExp(`^-${TABS_H}px `))
+      // Antes de que nadie se desplace, la primera.
+      expect(tabOf('Antojitos').getAttribute('aria-current')).toBe('true')
+      await act(async () => { io.cb([{ target: second, isIntersecting: true }]) })
+      expect(tabOf('Bebidas').getAttribute('aria-current')).toBe('true')
+      expect(tabOf('Antojitos').hasAttribute('aria-current')).toBe(false)
+      // Con las dos en la franja (la frontera pasa por ella) manda la de más abajo; al salir ésta, vuelve la anterior.
+      await act(async () => { io.cb([{ target: first, isIntersecting: true }]) })
+      expect(tabOf('Bebidas').getAttribute('aria-current')).toBe('true')
+      await act(async () => { io.cb([{ target: second, isIntersecting: false }]) })
+      expect(tabOf('Antojitos').getAttribute('aria-current')).toBe('true')
+      // Con una búsqueda no hay pestañas ni observador; al borrarla se vuelven a observar las secciones.
+      fireEvent.input(screen.getByRole('searchbox'), { target: { value: 'agu' } })
+      expect(io.disconnected).toBe(true)
+      expect(made).toHaveLength(1)
+      fireEvent.input(screen.getByRole('searchbox'), { target: { value: '' } })
+      expect(made).toHaveLength(2)
+      expect(made[1].targets).toHaveLength(2)
+      unmount()
+      expect(made[1].disconnected).toBe(true)
+    })
+    it('al tocar una pestaña queda activa aunque el observador, en pleno desplazamiento, vea otra sección', async () => {
+      vi.useFakeTimers({ toFake: ['Date'] })
+      const made = fakeObserver()
+      show(makeStore(infoOf(), twoCats()))
+      const io = made[made.length - 1]
+      const [first, second] = io.targets as HTMLElement[]
+      await act(async () => { io.cb([{ target: first, isIntersecting: true }]) })
+      fireEvent.click(tabOf('Bebidas'))
+      await act(async () => { io.cb([{ target: second, isIntersecting: false }]) })
+      expect(tabOf('Bebidas').getAttribute('aria-current')).toBe('true')
+      // Terminado el desplazamiento, el observador vuelve a mandar.
+      vi.advanceTimersByTime(1500)
+      await act(async () => { io.cb([{ target: first, isIntersecting: true }]) })
+      expect(tabOf('Antojitos').getAttribute('aria-current')).toBe('true')
+    })
+    it('si la pestaña activa queda fuera de la tira de pestañas, sólo la tira se desplaza para mostrarla', async () => {
+      const made = fakeObserver()
+      show(makeStore(infoOf(), twoCats()))
+      const io = made[made.length - 1]
+      const nav = tabsNav() as HTMLElement
+      const tab = tabOf('Bebidas')
+      Object.defineProperty(nav, 'clientWidth', { configurable: true, value: 300 })
+      Object.defineProperty(tab, 'offsetLeft', { configurable: true, value: 500 })
+      Object.defineProperty(tab, 'offsetWidth', { configurable: true, value: 100 })
+      await act(async () => { io.cb([{ target: io.targets[1], isIntersecting: true }]) })
+      expect(nav.scrollLeft).toBe(484) // la pestaña a 16 px del borde, como el relleno de la tira
+      expect(scrollIntoView).not.toHaveBeenCalled() // la página no se mueve
+    })
+  })
+
+  describe('filas', () => {
+    it('nombre, precio y descripción a la izquierda; con foto, <img> de 112 px con el «+» encima', () => {
+      show(makeStore(infoOf(), menuOf(product({ imageUrl: 'https://x/y.png' }))))
+      const row = screen.getByRole('button', { name: 'Agregar Flautas de pollo' })
+      expect(row.querySelector('.avq-o-row__text')!.textContent).toBe('Flautas de pollo$85Con crema')
+      const img = row.querySelector('img') as HTMLImageElement
+      expect(img.getAttribute('src')).toBe('https://x/y.png')
+      expect([img.getAttribute('width'), img.getAttribute('height'), img.getAttribute('alt')]).toEqual(['112', '112', ''])
+      expect(img.closest('.avq-o-row__media')!.querySelector('.avq-o-row__add')).not.toBeNull()
+      // La fila entera es el botón: el «+» es un adorno, no un segundo botón.
+      expect(row.querySelector('button')).toBeNull()
+      expect(screen.getAllByRole('button')).toHaveLength(1)
+    })
+    it('sin foto no hay <img> ni hueco, sólo el «+» a la derecha; una foto que no carga se trata igual', () => {
+      const { container } = show(makeStore(infoOf(), menuOf(product(), product({ id: 'p2', name: 'Agua', imageUrl: 'https://x/rota.png' }))))
+      const [plain, broken] = Array.from(container.querySelectorAll('.avq-o-row'))
+      expect(plain.querySelector('img')).toBeNull()
+      expect(plain.querySelector('.avq-o-row__media')).toBeNull()
+      expect(plain.querySelector('.avq-o-row__add')).not.toBeNull()
+      expect(broken.querySelector('.avq-o-row__media')).not.toBeNull()
+      fireEvent.error(broken.querySelector('img')!)
+      expect(broken.querySelector('img')).toBeNull()
+      expect(broken.querySelector('.avq-o-row__media')).toBeNull()
+      expect(broken.querySelector('.avq-o-row__add')).not.toBeNull()
+    })
+    it('Agotado: etiqueta en la fila, sin «+», y la fila sí abre la ficha', () => {
+      const s = makeStore(infoOf(), menuOf(product({ soldOut: true })))
+      show(s)
+      const row = screen.getByRole('button', { name: /Flautas de pollo/ }) as HTMLButtonElement
+      expect(within(row).getByText('Agotado')).toBeTruthy()
+      expect(row.querySelector('.avq-o-row__add')).toBeNull()
+      expect(row.disabled).toBe(false)
+      fireEvent.click(row)
+      expect(s.productId.value).toBe('p1')
+    })
+    it('con la tienda no abierta las filas se ven completas pero sin «+», sin atenuar y deshabilitadas', () => {
+      const { container } = show(makeStore(infoOf({ status: 'CLOSED' }), menuOf(product({ imageUrl: 'https://x/y.png' }))))
+      const row = container.querySelector('.avq-o-row') as HTMLButtonElement
+      expect(row.disabled).toBe(true)
+      expect(row.querySelector('.avq-o-row__add')).toBeNull()
+      expect(row.querySelector('img')).not.toBeNull()
+      expect(row.getAttribute('style') ?? '').not.toMatch(/opacity/)
+    })
+    it('el botón de la fila se llama «Agregar {nombre}» (es y en) y su precio y descripción van de descripción accesible', () => {
+      show(makeStore(infoOf(), menuOf(product())))
+      const row = screen.getByRole('button', { name: 'Agregar Flautas de pollo' })
+      expect(document.getElementById(row.getAttribute('aria-describedby')!)!.textContent).toBe('$85Con crema')
+      cleanup()
+      show(makeStore(infoOf(), menuOf(product()), 'en'))
+      expect(screen.getByRole('button', { name: 'Add Flautas de pollo' })).toBeTruthy()
+    })
+    it('un agotado no se llama «Agregar» (no se puede): se llama como el producto y «Agotado» va en su descripción', () => {
+      show(makeStore(infoOf(), menuOf(product({ soldOut: true }))))
+      const row = screen.getByRole('button', { name: 'Flautas de pollo' })
+      expect(document.getElementById(row.getAttribute('aria-describedby')!)!.textContent).toBe('$85Con cremaAgotado')
+    })
+    it('un nombre de 120 caracteres sin espacios no desborda: la fila envuelve (overflow-wrap:anywhere, min-width:0) y el precio y el «+» siguen ahí', () => {
+      const name = 'Á'.repeat(118) + '🌮🌮'
+      const long = menuOf(product({ name, description: 'Sin'.repeat(80), imageUrl: 'https://x/y.png' }), product({ id: 'p2', name }))
+      const { container } = render(withStore(makeStore(infoOf(), long), <OrderApp />))
+      const rows = Array.from(container.querySelectorAll<HTMLElement>('.avq-o-row'))
+      expect(rows).toHaveLength(2)
+      for (const row of rows) {
+        expect(getComputedStyle(row).overflowWrap).toBe('anywhere')
+        expect(getComputedStyle(row).minWidth).toMatch(/^0(px)?$/)
+        const text = row.querySelector<HTMLElement>('.avq-o-row__text')!
+        expect(getComputedStyle(text).minWidth).toMatch(/^0(px)?$/)
+        expect(text.textContent).toContain(name)
+        expect(row.querySelector('.avq-o-row__price')!.textContent).toBe('$85')
+        expect(row.querySelector('.avq-o-row__add')).not.toBeNull()
+      }
+    })
+    it('al final de la carta: «Precios con IVA incluido.» y la línea discreta «Pedidos con Avoqado» (es y en)', () => {
+      const { container } = show(makeStore(infoOf(), menuOf(product())))
+      expect([...container.querySelectorAll('.avq-o-foot p')].map(p => p.textContent)).toEqual(['Precios con IVA incluido.', 'Pedidos con Avoqado'])
+      cleanup()
+      show(makeStore(infoOf(), menuOf(product()), 'en'))
+      expect(screen.getByText('Prices include VAT.')).toBeTruthy()
+      expect(screen.getByText('Ordering by Avoqado')).toBeTruthy()
+    })
+  })
+
+  describe('barra del carrito', () => {
+    it('aria-label «Ver pedido: 2 productos, $184», círculo con la cantidad, «Ver pedido» y el total; abre el carrito', () => {
+      const s = withCart(makeStore(infoOf(), menuOf(product())))
+      show(s)
+      const b = screen.getByRole('button', { name: 'Ver pedido: 2 productos, $184' })
+      expect(b.classList.contains('avq-o-bar--neutral')).toBe(false)
+      expect(b.textContent).toBe('2Ver pedido$184')
+      fireEvent.click(b)
+      expect(s.screen.value).toBe('cart')
+    })
+    it('con un solo producto el aria-label va en singular; en inglés, «View order: 2 items, $184»', () => {
+      const s = makeStore(infoOf(), menuOf(product()))
+      s.cart.value = [{ ...line2, quantity: 1 }]
+      show(s)
+      expect(screen.getByRole('button', { name: 'Ver pedido: 1 producto, $92' })).toBeTruthy()
+      cleanup()
+      show(withCart(makeStore(infoOf(), menuOf(product()), 'en')))
+      expect(screen.getByRole('button', { name: 'View order: 2 items, $184' }).textContent).toBe('2View order$184')
+    })
+    it('sin nada en el carrito no hay barra; con la ficha abierta tampoco (sólo el pie de la ficha); al cerrarla vuelve', async () => {
+      const s = makeStore(infoOf(), menuOf(product()))
+      show(s)
+      expect(screen.queryByRole('button', { name: /^Ver pedido/ })).toBeNull()
+      await act(async () => { s.cart.value = [line2] })
+      expect(bar()).toBeTruthy()
+      await act(async () => { s.productId.value = 'p1' })
+      expect(screen.queryByRole('button', { name: /^Ver pedido/ })).toBeNull()
+      await act(async () => { s.productId.value = null })
+      expect(bar()).toBeTruthy()
+    })
+    it('tienda en pausa con carrito: barra neutra con «Puedes pedir desde las 15:37» y SÍ abre el carrito', () => {
+      // 15:37 en CDMX (UTC-6) = 21:37Z.
+      const s = withCart(makeStore(infoOf({ status: 'PAUSED', reason: 'MANUAL_PAUSE', pausedUntil: '2026-10-19T21:37:00Z' }), menuOf(product())))
+      show(s)
+      const b = screen.getByRole('button', { name: 'Ver pedido: 2 productos, $184' }) as HTMLButtonElement
+      expect(b.classList.contains('avq-o-bar--neutral')).toBe(true)
+      expect(b.disabled).toBe(false)
+      const note = within(b).getByText('Puedes pedir desde las 15:37')
+      // El motivo lo lee el lector de pantalla como descripción del botón.
+      expect(b.getAttribute('aria-describedby')).toBe(note.id)
+      fireEvent.click(b)
+      expect(s.screen.value).toBe('cart')
+    })
+    it('pausa con hora, en inglés: «You can order from 3:37 PM»', () => {
+      show(withCart(makeStore(infoOf({ status: 'PAUSED', reason: 'MANUAL_PAUSE', pausedUntil: '2026-10-19T21:37:00Z' }), menuOf(product()), 'en')))
+      expect(within(screen.getByRole('button', { name: /^View order/ })).getByText(/^You can order from 3:37\sPM$/)).toBeTruthy()
+    })
+    it('cerrada: dice desde qué hora se puede pedir HOY; si ya no abre hoy (o no hay hora), la frase del estado', () => {
+      vi.useFakeTimers({ toFake: ['Date'] })
+      const closed = (hours: any) => withCart(makeStore(infoOf({ status: 'CLOSED', reason: 'OUTSIDE_HOURS', hours }), menuOf(product())))
+      vi.setSystemTime(new Date('2026-10-19T14:00:00Z')) // lunes 08:00 en CDMX
+      show(closed(everyDay('13:00', '17:00')))
+      expect(within(bar()).getByText('Puedes pedir desde las 13:00')).toBeTruthy()
+      expect(bar().classList.contains('avq-o-bar--neutral')).toBe(true)
+      cleanup()
+      vi.setSystemTime(new Date('2026-10-20T03:00:00Z')) // lunes 21:00: ya pasó la apertura de hoy
+      show(closed(everyDay('13:00', '17:00')))
+      expect(within(bar()).getByText('Cerrado ahora. Hoy: 13:00–17:00')).toBeTruthy()
+      cleanup()
+      show(closed(null)) // sin horario no hay hora que prometer
+      expect(within(bar()).getByText('Cerrado ahora.')).toBeTruthy()
+    })
+    it('pausa sin hora, pausa por mucha demanda y restaurante desconectado: la frase del estado, y la barra sigue abriendo el carrito', () => {
+      const cases: [Partial<StoreInfo>, string][] = [
+        [{ status: 'PAUSED', reason: 'MANUAL_PAUSE', pausedUntil: null }, 'Hoy no estamos recibiendo pedidos en línea.'],
+        [{ status: 'PAUSED', reason: 'TOO_BUSY' }, 'Muchos pedidos en este momento. Intenta en unos minutos.'],
+        [{ status: 'OFFLINE', reason: 'NO_DEVICE' }, 'El restaurante no está conectado. Intenta en unos minutos.'],
+      ]
+      for (const [over, sentence] of cases) {
+        const s = withCart(makeStore(infoOf(over), menuOf(product())))
+        show(s)
+        expect(within(bar()).getByText(sentence)).toBeTruthy()
+        fireEvent.click(bar())
+        expect(s.screen.value).toBe('cart')
+        cleanup()
+      }
+    })
+  })
+
+  describe('lo que no cambia de lugar ni de forma', () => {
+    it('el CSS de la carta: pestañas pegajosas y secciones con scroll-margin-top del mismo alto; la carta y la barra respetan el área segura', () => {
+      const { container } = render(withStore(makeStore(infoOf(), twoCats()), <OrderApp />))
+      const tabs = container.querySelector('.avq-o-tabs') as HTMLElement
+      const section = container.querySelector('.avq-o-section') as HTMLElement
+      expect(getComputedStyle(tabs).position).toBe('sticky')
+      expect(getComputedStyle(tabs).height).toBe(`${TABS_H}px`)
+      expect(getComputedStyle(section).getPropertyValue('scroll-margin-top')).toBe(`${TABS_H}px`)
+      const rule = (sel: string) => STORE_CSS.match(new RegExp(`${sel.replace(/\./g, '\\.')}\\s*\\{([^}]*)\\}`))?.[1] ?? ''
+      expect(rule('.avq-o-menu')).toMatch(/padding-bottom:\s*calc\([^;]*env\(safe-area-inset-bottom/)
+      expect(rule('.avq-o-bar')).toMatch(/bottom:\s*calc\([^;]*env\(safe-area-inset-bottom/)
+    })
+    it('ni las pestañas ni la barra tapan el control con foco (WCAG 2.4.11): filas y buscador dejan margen de desplazamiento arriba y abajo', () => {
+      expect(STORE_CSS).toContain(`.avq-o-row,.avq-o-search{scroll-margin-top:${TABS_H + 8}px}`)
+      expect(STORE_CSS).toMatch(/\.avq-o-row\{scroll-margin-bottom:calc\(\d+px \+ env\(safe-area-inset-bottom/)
+    })
+    it('los avisos de la carta (recortada, sin conexión, fallo de carga) usan las tarjetas de la tienda y «Reintentar» su botón', () => {
+      const trunc = show(makeStore(infoOf(), { ...menuOf(product()), truncated: true }))
+      expect(trunc.container.querySelector('.avq-o-notice')!.textContent).toBe('Esta carta es muy grande; algunos productos no se muestran aquí.')
+      cleanup()
+      const failed = makeStore(null, null); failed.infoError.value = new ApiError('', 500)
+      const f = show(failed)
+      expect(f.container.querySelector('.avq-o-notice--error')!.textContent).toBe('No pudimos cargar la tienda.')
+      expect(screen.getByRole('button', { name: 'Reintentar' }).className).toBe('avq-o-btn avq-o-btn--neutral')
+      cleanup()
+      const offline = makeStore(null, null); offline.infoError.value = new ApiError('Sin conexión', 0, undefined, undefined, true)
+      expect(show(offline).container.querySelector('.avq-o-notice--warn')!.textContent).toBe('Sin conexión. Revisa tu internet y vuelve a intentar.')
+      cleanup()
+      const reconnecting = makeStore(infoOf(), menuOf(product())); reconnecting.infoError.value = new ApiError('Sin conexión', 0, undefined, undefined, true)
+      expect(show(reconnecting).container.querySelector('.avq-o-notice--warn')!.textContent).toBe('Sin conexión; reintentando…')
+    })
+    it('carta vacía y sin resultados se dicen en una línea centrada; tienda apagada, en su tarjeta', () => {
+      const empty = show(makeStore(infoOf(), { generatedAt: '', truncated: false, categories: [] }))
+      expect(empty.container.querySelector('.avq-o-empty')!.textContent).toBe('Todavía no hay productos en línea.')
+      cleanup()
+      show(makeStore(infoOf(), menuOf(product())))
+      fireEvent.input(screen.getByRole('searchbox'), { target: { value: 'zzz' } })
+      expect(screen.getByText('No encontramos productos con esa búsqueda.').className).toBe('avq-o-empty')
+      expect(document.querySelector('.avq-o-foot')).toBeNull() // sin renglones no hay nota de precios
+      cleanup()
+      const off = show(makeStore(infoOf({ status: 'DISABLED' }), menuOf(product())))
+      expect(off.container.querySelector('.avq-o-notice')!.textContent).toBe('Este restaurante no recibe pedidos en línea por el momento.')
+    })
   })
 })
 
