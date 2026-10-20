@@ -50,8 +50,10 @@ export function DetailsScreen() {
     // el segundo toque de un doble toque crearía el pedido sin que la persona viera esta pantalla. Lo de los primeros 400 ms se ignora.
     // Cuenta la hora del TOQUE (`timeStamp`, el mismo reloj que `performance.now()`), no la de atenderlo: si el hilo se traba tras
     // «Continuar», el segundo toque espera en la cola y llegaría ya «tarde».
-    // ponytail: un `timeStamp` en 0 o de otro reloj (navegadores viejos, jsdom: Date.now()) cae a la hora de ahora; ahí un hilo
-    // trabado 400 ms o más todavía lo dejaría pasar.
+    // ponytail: donde el `timeStamp` no es la hora del toque, cuenta la de atenderlo, y un toque encolado tras un hilo trabado 400 ms o
+    // más todavía pasa (nunca más que sin esto). Pasa en iOS WebKit (Safari y los WKWebView de otras apps), que sintetiza el click del
+    // toque en el proceso web con la hora en que lo procesa, y con un `timeStamp` en 0 o de otro reloj (jsdom: Date.now()), que cae
+    // a la hora de ahora. Falta confirmarlo en un iPhone real (tarea 10).
     const at = e.timeStamp > 0 && e.timeStamp <= performance.now() ? e.timeStamp : performance.now()
     if (!canSend || at - shownAt < ENTRY_GUARD_MS) return
     void send(store, buildOrderBody(store, { customer: { name, phone, ...(email ? { email } : {}) }, note: d.note || null }))

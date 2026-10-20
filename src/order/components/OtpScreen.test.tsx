@@ -17,6 +17,8 @@ beforeEach(() => {
   sessionStorage.clear()
   localStorage.clear()
   vi.useFakeTimers()
+  // Un «una vez» que sobre de una prueba (p. ej. si falla antes de usarlo) no pasa a la siguiente: `clearMocks` no vacía esa cola.
+  vi.mocked(requestOrderingOtp).mockReset()
   vi.mocked(requestOrderingOtp).mockResolvedValue(undefined)
 })
 afterEach(() => {
@@ -158,6 +160,22 @@ describe('código de WhatsApp', () => {
     expect(resend().compareDocumentPosition(screen.getByText('Si no te llega, revisa que el número sea el de tu WhatsApp.')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 
+  it('si pedir el código falla sin red (no salió nada), «Reenviar código» queda listo al instante; un fallo del servidor conserva la espera', async () => {
+    vi.mocked(requestOrderingOtp)
+      .mockRejectedValueOnce(new ApiError('Sin conexión', 0, undefined, undefined, true))
+      .mockRejectedValueOnce(new ApiError('Algo falló', 500))
+    show()
+    await flush()
+    expect(resend().disabled).toBe(false)
+    expect(resend().textContent).toBe('Reenviar código')
+    fireEvent.click(resend())
+    await flush()
+    expect(requestOrderingOtp).toHaveBeenCalledTimes(2)
+    // Un fallo del servidor no dice que el código no salió: la espera de 30 s sigue.
+    expect(resend().disabled).toBe(true)
+    expect(resend().textContent).toBe('Reenviar código en 30 s')
+  })
+
   it('sin red no es un error en rojo: al pedir o al verificar el código sale el aviso ámbar; los demás errores siguen en rojo', async () => {
     const OFFLINE = 'Sin conexión. Revisa tu internet y vuelve a intentar.'
     const offline = () => screen.getByText(OFFLINE).closest('[role=alert]') as HTMLElement
@@ -166,7 +184,8 @@ describe('código de WhatsApp', () => {
     await flush()
     expect(offline().className).toBe('avq-o-notice avq-o-notice--warn')
     expect(document.querySelector('.avq-o-issue')).toBeNull()
-    // Al verificar sin red (el fetch ni siquiera llega: no es un ApiError), igual.
+    // Al verificar, un error que ni siquiera es un ApiError, igual. Es una rama defensiva: api.ts convierte toda falla del fetch en
+    // ApiError con network: true (el caso de arriba).
     vi.mocked(verifyOrderingOtp).mockRejectedValueOnce(new TypeError('Failed to fetch'))
     fireEvent.input(screen.getAllByRole('textbox')[0], { target: { value: '123456' } })
     await flush()

@@ -44,8 +44,12 @@ export function OtpScreen() {
       await requestOrderingOtp(store.slug, phone)
     } catch (e) {
       const offline = !(e instanceof ApiError) || e.network
-      // Sin red el código no salió: volver a esta pantalla lo pide otra vez (no hereda una espera de un envío que no fue).
-      if (offline) c.otpSentAt.delete(phone)
+      // Sin red el código no salió: ni volver a esta pantalla ni «Reenviar código» heredan la espera de un envío que no fue. Con un
+      // error del servidor sí se espera (no se sabe si salió).
+      if (offline) {
+        c.otpSentAt.delete(phone)
+        setUntil(Date.now())
+      }
       setError({ text: errorText(t, e), offline })
     }
   }
