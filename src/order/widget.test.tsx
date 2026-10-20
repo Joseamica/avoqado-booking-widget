@@ -84,8 +84,7 @@ describe('<avoqado-order>', () => {
     expect(storeOf(a)).not.toBe(storeOf(b))
     await act(async () => { storeOf(a).cart.value = [line] })
     expect(storeOf(b).cart.value).toEqual([])
-    expect(text(a)).toContain('Ver pedido')
-    expect(text(a)).toContain('$170')
+    expect(text(a)).toContain('2Ver pedido$170') // círculo con las 2 piezas, «Ver pedido» y el total
     expect(text(b)).not.toContain('Ver pedido')
   })
 

@@ -117,9 +117,10 @@ function MenuList({ menu, open, query, onQuery }: { menu: Menu; open: boolean; q
             const plus = open && !p.soldOut
             return (
               // Toda la fila es el botón que abre la ficha (también un agotado); el «+» es un adorno, no un segundo botón. Su precio,
-              // descripción y «Agotado» se leen como descripción; un agotado no se llama «Agregar» porque no se puede agregar.
+              // descripción y «Agotado» se leen como descripción. Sólo la fila que invita a agregar (la del «+») se llama «Agregar»:
+              // una agotada o con la tienda no abierta se llama como el producto.
               <button key={p.id} type="button" class={photo ? 'avq-o-row' : 'avq-o-row avq-o-row--bare'} disabled={!open}
-                aria-label={p.soldOut ? p.name : t('menu.addAria', { name: p.name })} aria-describedby={infoId}
+                aria-label={plus ? t('menu.addAria', { name: p.name }) : p.name} aria-describedby={infoId}
                 onClick={() => { if (open) store.productId.value = p.id }}>
                 <span class="avq-o-row__text">
                   <span class="avq-o-row__name">{p.name}</span>

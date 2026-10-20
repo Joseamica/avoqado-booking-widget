@@ -137,6 +137,19 @@ describe('STORE_CSS', () => {
     ]
     for (const c of classes) expect(STORE_CSS, `.${c}`).toMatch(new RegExp(`\\.${c}[\\s,{:>.\\[]`))
   })
+  it('el círculo de cantidad de la barra es blanco con el dígito del color de acento: 4.5:1 con todo acento que accentFor deja pasar (el par del botón, al revés); en la neutra, #4A4A4A', () => {
+    const rule = (sel: string) => STORE_CSS.match(new RegExp(`(?:^|\\n)${sel.replace(/\./g, '\\.')}\\s*\\{([^}]*)\\}`))?.[1] ?? ''
+    const count = rule('.avq-o-bar__count')
+    expect(count).toMatch(/background:\s*#FFFFFF(?![0-9A-Fa-f])/)
+    expect(count).toMatch(/color:\s*var\(--avq-accent,\s*#000000\)/)
+    expect(rule('.avq-o-bar--neutral .avq-o-bar__count')).toMatch(/color:\s*#4A4A4A(?![0-9A-Fa-f])/)
+    // Acentos de marca realistas, de media tonalidad: el filtro del botón (texto blanco sobre el acento) los deja pasar, y el círculo
+    // usa el MISMO par al revés (dígito del acento sobre blanco). Un círculo de blanco al 18 % con dígito blanco daba 3.25–4.0 con ellos.
+    for (const accent of ['#2563EB', '#D93025', '#0066CC', '#0B7A3E', '#767676', '#14532D']) {
+      expect(accentFor(accent), accent).toBe(accent)
+      expect(ratio(accent, '#FFFFFF'), `dígito ${accent} sobre el círculo blanco`).toBeGreaterThanOrEqual(4.5)
+    }
+  })
   it('las fuentes: Figtree en el cuerpo y Bricolage Grotesque en los títulos, con respaldo del sistema', () => {
     expect(STORE_CSS).toMatch(/\.avq-o-root\s*\{[^}]*font-family:\s*'Figtree',\s*system-ui,\s*sans-serif/)
     expect(STORE_CSS).toContain("'Bricolage Grotesque',system-ui,sans-serif")

@@ -390,10 +390,26 @@ describe('carta al estilo de las apps de comida: pestañas, filas y barra del ca
       show(makeStore(infoOf(), menuOf(product()), 'en'))
       expect(screen.getByRole('button', { name: 'Add Flautas de pollo' })).toBeTruthy()
     })
-    it('un agotado no se llama «Agregar» (no se puede): se llama como el producto y «Agotado» va en su descripción', () => {
+    it('una fila sin «+» (agotada, o con la tienda no abierta) se llama como el producto, no «Agregar»; «Agotado» va en su descripción accesible', () => {
       show(makeStore(infoOf(), menuOf(product({ soldOut: true }))))
-      const row = screen.getByRole('button', { name: 'Flautas de pollo' })
-      expect(document.getElementById(row.getAttribute('aria-describedby')!)!.textContent).toBe('$85Con cremaAgotado')
+      const sold = screen.getByRole('button', { name: 'Flautas de pollo' })
+      expect(document.getElementById(sold.getAttribute('aria-describedby')!)!.textContent).toBe('$85Con cremaAgotado')
+      cleanup()
+      show(makeStore(infoOf({ status: 'CLOSED' }), menuOf(product())))
+      expect(screen.getByRole('button', { name: 'Flautas de pollo' })).toBeTruthy()
+      expect(screen.queryByRole('button', { name: /Agregar/ })).toBeNull()
+      cleanup()
+      show(makeStore(infoOf({ status: 'PAUSED', reason: 'TOO_BUSY' }), menuOf(product()), 'en'))
+      expect(screen.getByRole('button', { name: 'Flautas de pollo' })).toBeTruthy()
+      expect(screen.queryByRole('button', { name: /Add/ })).toBeNull()
+    })
+    it('una categoría de 120 caracteres sin espacios envuelve su título (overflow-wrap:anywhere); su pestaña no envuelve pero vive en una tira con scroll horizontal', () => {
+      const m = menuOf(product())
+      m.categories[0].name = 'Ñ'.repeat(120)
+      const { container } = render(withStore(makeStore(infoOf(), m), <OrderApp />))
+      expect(getComputedStyle(container.querySelector('.avq-o-section-title')!).overflowWrap).toBe('anywhere')
+      expect(getComputedStyle(container.querySelector('.avq-o-tab')!).whiteSpace).toBe('nowrap')
+      expect(getComputedStyle(container.querySelector('.avq-o-tabs')!).overflowX).toBe('auto')
     })
     it('un nombre de 120 caracteres sin espacios no desborda: la fila envuelve (overflow-wrap:anywhere, min-width:0) y el precio y el «+» siguen ahí', () => {
       const name = 'Á'.repeat(118) + '🌮🌮'
@@ -512,8 +528,16 @@ describe('carta al estilo de las apps de comida: pestañas, filas y barra del ca
       expect(rule('.avq-o-menu')).toMatch(/padding-bottom:\s*calc\([^;]*env\(safe-area-inset-bottom/)
       expect(rule('.avq-o-bar')).toMatch(/bottom:\s*calc\([^;]*env\(safe-area-inset-bottom/)
     })
-    it('ni las pestañas ni la barra tapan el control con foco (WCAG 2.4.11): filas y buscador dejan margen de desplazamiento arriba y abajo', () => {
-      expect(STORE_CSS).toContain(`.avq-o-row,.avq-o-search{scroll-margin-top:${TABS_H + 8}px}`)
+    it('ni las pestañas ni la barra tapan el control con foco (WCAG 2.4.11): las filas y el campo de búsqueda (lo que recibe el foco) dejan margen arriba, y las filas también abajo', () => {
+      const { container } = render(withStore(makeStore(infoOf(), twoCats()), <OrderApp />))
+      const margin = (el: Element) => getComputedStyle(el).getPropertyValue('scroll-margin-top')
+      expect(margin(container.querySelector('.avq-o-row')!)).toBe(`${TABS_H + 8}px`)
+      // El margen va en el <input> (es el que se desplaza al enfocar), no en la <label> que lo envuelve; y el campo llena la píldora
+      // para que su borde de arriba sea el de ella.
+      const input = container.querySelector('.avq-o-search > input')!
+      expect(margin(input)).toBe(`${TABS_H + 8}px`)
+      expect(margin(container.querySelector('.avq-o-search')!)).toBe('')
+      expect(getComputedStyle(input).alignSelf).toBe('stretch')
       expect(STORE_CSS).toMatch(/\.avq-o-row\{scroll-margin-bottom:calc\(\d+px \+ env\(safe-area-inset-bottom/)
     })
     it('los avisos de la carta (recortada, sin conexión, fallo de carga) usan las tarjetas de la tienda y «Reintentar» su botón', () => {
