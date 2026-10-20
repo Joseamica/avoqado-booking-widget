@@ -76,7 +76,10 @@ export function loadStoreFonts(): void {
  * Hoja de estilos de la tienda. `OrderApp` la pinta como primer hijo de su raíz y todo vive debajo, también la ficha de producto
  * (una vista en el flujo, no una capa): por eso todo cuelga de `.avq-o-root` o de una clase `avq-o-*` y no depende de nada de afuera.
  * - `.avq-o-root` fija las variables `--avq-*` a sus valores claros: la tienda es clara aunque el contenedor diga
- *   `data-avq-theme="dark"` (spec §10.3). `--avq-o-display` es la tipografía de los títulos.
+ *   `data-avq-theme="dark"` (spec §10.3). `--avq-o-display` es la tipografía de los títulos. Es un contexto de bloque
+ *   (`display:flow-root`): el margen del primer o del último hijo se queda dentro de la tienda y no agranda el documento por encima de la
+ *   ventana (la página se desplazaba sola unos píxeles en las pantallas cortas). `.avq-o-title` es el titular de cada pantalla de adelante:
+ *   `tabindex -1` y sin contorno al enfocarlo, a donde va el foco al llegar a ella (`OrderApp`) y, en el seguimiento, tras cancelar.
  * - El acento llega en `--avq-accent` (lo pone `accentFor` en la raíz).
  * - Modificadores de uso: `.avq-o-btn` + `--primary|--neutral|--quiet`, `.avq-o-notice` + `--neutral|--warn|--error`,
  *   `.avq-o-chip` (+ `--ok`), `.avq-o-stepper` (+ `--line`, el del carrito; `--sm`, el de una opción) y `.avq-o-bar` (+ `--neutral`).
@@ -96,7 +99,8 @@ export function loadStoreFonts(): void {
  *   `__sub`, `__extra`). `.avq-o-menu--sheet` quita el relleno de abajo de la carta mientras la ficha está abierta.
  * - Tu pedido (tarea 7): `.avq-o-cart` es la pantalla y `.avq-o-cartfoot` su pie de «Continuar» (pegajoso abajo DENTRO de la tienda,
  *   como el de la ficha); `.avq-o-back` la flecha de volver; `.avq-o-cart__intro` el título con la tarjeta `.avq-o-pickup` («Recoges
- *   en…»: `__text`, `__name`, `__addr`); `.avq-o-lines` > `.avq-o-line` los renglones (`__info`, `__name`, `__sub`, `__price`; tabindex -1 y sin contorno al enfocarlo: el foco llega ahí al quitar otro renglón), con su
+ *   en…»: `__text`, `__name`, `__addr`); `.avq-o-cart__empty` el carrito vacío (mensaje centrado y «Ver la carta», debajo de la flecha y del
+ *   título); `.avq-o-lines` > `.avq-o-line` los renglones (`__info`, `__name`, `__sub`, `__price`; tabindex -1 y sin contorno al enfocarlo: el foco llega ahí al quitar otro renglón), con su
  *   `.avq-o-stepper--line`; `.avq-o-issue` un problema (el de un renglón, radio 12; el del pedido, hijo directo de la pantalla, radio 16 como un aviso); `.avq-o-more` «Agregar algo más»;
  *   `.avq-o-cart__note` la nota; `.avq-o-total` el total (`__row`, `__wait`, `__tax`).
  * - Tus datos y código (tarea 8): `.avq-o-details` es la pantalla de datos (sin estilo propio); `.avq-o-form` sus campos (`__intro` el
@@ -106,20 +110,20 @@ export function loadStoreFonts(): void {
  *   El código: `.avq-o-otp` con `__back` («‹ Cambiar número»), `__intro`, `__code` (las cajas, «Verificando…» y el error: sin red, el
  *   aviso ámbar sin margen; si no, el rojo) y `__more` (el reenvío y la ayuda).
  * - Seguimiento (tarea 9): `.avq-o-track` es la pantalla (sin estilo propio; su encabezado reusa `.avq-o-head`), con `__intro` (titular
- *   y línea de hora; el titular lleva tabindex -1 y no dibuja contorno: el foco llega ahí tras cancelar), `__cancel` (cancelar y su
- *   aviso), `__ask` (la confirmación de dos botones) y `__more` («Pedir algo más»). El avance es `.avq-o-steps` > `.avq-o-step` (+ `--done`
- *   hasta el paso actual: la barra con el acento; el actual lleva `aria-current`).
+ *   y línea de hora), `__cancel` (cancelar y su aviso), `__ask` (la confirmación de dos botones) y `__more` («Pedir algo más»). El avance
+ *   es `.avq-o-steps` > `.avq-o-step` (+ `--done` hasta el paso actual: la barra con el acento; el actual lleva `aria-current`).
  *   El ticket es `.avq-o-ticket` con `__folio` (`__label`, `__n` el folio enorme, `__say`), `__tear` (la línea punteada y sus dos
  *   muescas), `__body`, `__lines` (renglones sin importe, spec §11.2), `__sub` (opciones y nota) y `__sum` (el total, con
  *   `.avq-o-total__row` y `.avq-o-total__tax`). «Dónde recoger» es `.avq-o-where` (`__title`, `__actions`: «Cómo llegar» y «Llamar»).
  * Cada tarea puede AGREGAR clases; las que ya están no se cambian ni se quitan.
  */
 export const STORE_CSS = `
-.avq-o-root{--avq-bg:#FFFFFF;--avq-fg:${T.ink};--avq-muted:${T.surface};--avq-muted-fg:${T.muted};--avq-border:${T.fieldBorder};--avq-o-display:${DISPLAY};box-sizing:border-box;background:#FFFFFF;color:${T.ink};font-family:${BODY};font-size:15px;font-variant-numeric:tabular-nums;color-scheme:light;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}
+.avq-o-root{--avq-bg:#FFFFFF;--avq-fg:${T.ink};--avq-muted:${T.surface};--avq-muted-fg:${T.muted};--avq-border:${T.fieldBorder};--avq-o-display:${DISPLAY};display:flow-root;box-sizing:border-box;background:#FFFFFF;color:${T.ink};font-family:${BODY};font-size:15px;font-variant-numeric:tabular-nums;color-scheme:light;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}
 .avq-o-root *,.avq-o-root *::before,.avq-o-root *::after{box-sizing:border-box}
 .avq-o-root :focus-visible{outline:2px solid var(--avq-accent,${T.ink});outline-offset:2px}
 @media (prefers-reduced-motion:reduce){.avq-o-root *,.avq-o-root *::before,.avq-o-root *::after{animation:none!important;transition:none!important}}
 .avq-o-title{margin:0;font-family:var(--avq-o-display);font-weight:800;font-size:30px;line-height:1.1}
+.avq-o-root .avq-o-title:focus{outline:none}
 .avq-o-section-title{margin:0 0 2px;font-family:var(--avq-o-display);font-weight:700;font-size:22px;overflow-wrap:anywhere}
 .avq-o-row{display:flex;gap:16px;width:100%;min-width:0;margin:0;padding:16px 0;border:0;border-bottom:1px solid ${T.divider};background:transparent;color:inherit;font:inherit;text-align:left;text-decoration:none;word-break:break-word;overflow-wrap:anywhere;cursor:pointer}
 .avq-o-chip{display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 12px;border-radius:999px;background:${T.surface};color:#333333;font-size:14px;font-weight:500;white-space:nowrap}
@@ -269,6 +273,9 @@ textarea.avq-o-input{min-height:0;padding:12px 14px;resize:none}
 .avq-o-line>.avq-o-issue{flex:0 0 100%;margin-top:10px}
 .avq-o-cart>.avq-o-issue{margin:12px 16px 0;border-radius:16px}
 .avq-o-more{margin:4px 0 0 8px}
+.avq-o-cart__empty{display:flex;flex-direction:column;align-items:center;gap:24px;padding:56px 24px 0;text-align:center}
+.avq-o-cart__empty>p{margin:0;color:${T.muted};font-size:17px;line-height:1.4}
+.avq-o-cart__empty>.avq-o-btn{padding:0 32px}
 .avq-o-cart__note{display:flex;flex-direction:column;gap:8px;margin:12px 16px 0}
 .avq-o-cart__note>label{font-weight:600}
 .avq-o-total{display:flex;flex-direction:column;gap:6px;margin:12px 16px 0;padding-top:16px;border-top:1px solid ${T.divider}}
@@ -302,7 +309,6 @@ textarea.avq-o-input{min-height:0;padding:12px 14px;resize:none}
 .avq-o-otp__more>.avq-o-btn{padding:0}
 .avq-o-track__intro{display:flex;flex-direction:column;gap:6px;padding:8px 16px 0}
 .avq-o-track__intro>p{margin:0;color:${T.text2};line-height:1.4}
-.avq-o-root .avq-o-track__intro .avq-o-title:focus{outline:none}
 .avq-o-steps{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;margin:18px 16px 0;padding:0;list-style:none}
 .avq-o-step{display:flex;flex-direction:column;gap:8px;min-width:0;color:${T.muted};font-size:13px;overflow-wrap:anywhere}
 .avq-o-step::before{content:'';height:6px;border-radius:3px;background:#E4E4E4}

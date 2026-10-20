@@ -126,6 +126,23 @@ describe('STORE_CSS', () => {
   it('la tienda es clara siempre: color-scheme light en la raíz (barras y casillas nativas no se vuelven oscuras en un sitio oscuro)', () => {
     expect(STORE_CSS.match(/\.avq-o-root\s*\{([^}]*)\}/)?.[1] ?? '').toMatch(/color-scheme:\s*light(?![\w-])/)
   })
+  it('la raíz de la tienda es un contexto de bloque (display:flow-root): el margen de su primer hijo no se escapa y no deja el documento más alto que la ventana', () => {
+    // Sin esto el margen del primer hijo (12 px del aviso, 32 px del carrito vacío…) se «colaba» fuera de la raíz, empujaba todo el
+    // documento y, con `min-height:100vh` en la página, la ventana se desplazaba sola esos píxeles aunque la pantalla fuera corta.
+    expect(STORE_CSS.match(/\.avq-o-root\s*\{([^}]*)\}/)?.[1] ?? '').toMatch(/display:\s*flow-root(?![\w-])/)
+  })
+  it('el titular de cada pantalla puede recibir el foco por programa (tabindex -1) y no dibuja contorno al tenerlo', () => {
+    expect(STORE_CSS).toMatch(/\.avq-o-root \.avq-o-title:focus\{outline:none\}/)
+  })
+  it('el carrito vacío no queda pegado arriba: bloque centrado, con aire arriba y entre el mensaje y «Ver la carta»', () => {
+    const rule = (sel: string) => STORE_CSS.match(new RegExp(`(?:^|\\n)${sel.replace(/[.[\]>()]/g, '\\$&')}\\s*\\{([^}]*)\\}`))?.[1] ?? ''
+    const empty = rule('.avq-o-cart__empty')
+    expect(empty).toMatch(/display:flex;flex-direction:column;align-items:center/)
+    expect(empty).toMatch(/text-align:center/)
+    expect(empty).toMatch(/gap:24px/)
+    expect(empty).toMatch(/padding:56px 24px 0/)
+    expect(rule('.avq-o-cart__empty>p')).toMatch(/margin:0/)
+  })
   it('trae las clases del encabezado (portada, logo, chips, cabecera compacta) y de las partes del aviso', () => {
     const classes = [
       'avq-o-hero', 'avq-o-hero--cover', 'avq-o-hero__img', 'avq-o-hero__id', 'avq-o-hero__names', 'avq-o-hero__name', 'avq-o-hero__addr',

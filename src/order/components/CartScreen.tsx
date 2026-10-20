@@ -108,11 +108,19 @@ export function CartScreen() {
   let k = 0
   const lineTotals = cart.map((_, i) => (q && lineIssues(i).length === 0 ? q.lines[k++]?.lineTotal : undefined))
 
+  // Vacío: la misma flecha y el mismo título que con renglones (sin la tarjeta de recolección: no hay nada que recoger), el mensaje
+  // centrado con aire y «Ver la carta», que es el que hereda el foco al quitar el último renglón (arriba).
   if (cart.length === 0)
     return (
-      <div ref={root} class="avq-o-empty">
-        <p role="status">{t('cart.empty')}</p>
-        <button ref={goMenu} type="button" class="avq-o-btn avq-o-btn--primary" onClick={() => store.go('menu')}>{t('cart.goToMenu')}</button>
+      <div ref={root} class="avq-o-cart">
+        <button type="button" class="avq-o-back" aria-label={t('cart.backAria')} onClick={() => store.go('menu')}><Back /></button>
+        <div class="avq-o-cart__intro">
+          <h2 class="avq-o-title" tabIndex={-1}>{t('cart.title')}</h2>
+        </div>
+        <div class="avq-o-cart__empty">
+          <p role="status">{t('cart.empty')}</p>
+          <button ref={goMenu} type="button" class="avq-o-btn avq-o-btn--primary" onClick={() => store.go('menu')}>{t('cart.goToMenu')}</button>
+        </div>
       </div>
     )
 
@@ -121,7 +129,7 @@ export function CartScreen() {
       <StoreStatusBanner />
       <button type="button" class="avq-o-back" aria-label={t('cart.backAria')} onClick={() => store.go('menu')}><Back /></button>
       <div class="avq-o-cart__intro">
-        <h2 class="avq-o-title">{t('cart.title')}</h2>
+        <h2 class="avq-o-title" tabIndex={-1}>{t('cart.title')}</h2>
         {(name || address) && (
           <div class="avq-o-pickup">
             <VenueMark />

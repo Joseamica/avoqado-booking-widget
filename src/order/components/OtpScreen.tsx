@@ -1,5 +1,5 @@
 import { h } from 'preact'
-import { useContext, useEffect, useState } from 'preact/hooks'
+import { useContext, useEffect, useId, useLayoutEffect, useRef, useState } from 'preact/hooks'
 import { OrderStoreContext } from '../store'
 import { createOrderT } from '../i18n'
 import { ApiError, requestOrderingOtp } from '../api'
@@ -18,6 +18,9 @@ export function OtpScreen() {
   const t = createOrderT(store.locale)
   const c = checkoutOf(store)
   const phone = phoneToVerify(store)
+  const titleId = useId()
+  const introId = useId()
+  const boxes = useRef<HTMLDivElement>(null)
   const [code, setCode] = useState('')
   // `offline` = no hubo respuesta usable (sin red o ni un ApiError): es un estado normal, ámbar con la nube; lo demás va en rojo.
   const [error, setError] = useState<{ text: string; offline: boolean } | null>(null)
@@ -33,6 +36,15 @@ export function OtpScreen() {
     return () => clearInterval(id)
   }, [])
   const wait = Math.max(0, Math.ceil((until - Date.now()) / 1000))
+
+  // Al llegar, el cursor ya está en la primera caja vacía (spec §5.5): lleva el borde de acento y, en el celular, abre el teclado. Sin mover la
+  // página. Va en lugar del titular, que es a donde van las demás pantallas (OrderApp lo respeta: el foco ya está tomado); el grupo de abajo
+  // le da a las cajas el titular como nombre y «Te lo mandamos…» como descripción, para que un lector de pantalla no llegue a cajas sin contexto.
+  useLayoutEffect(() => {
+    const inputs = Array.from(boxes.current?.querySelectorAll('input') ?? [])
+    const first = inputs.find(i => !i.value) ?? inputs[0]
+    first?.focus({ preventScroll: true })
+  }, [])
 
   const request = async () => {
     if (!phone) return
@@ -90,11 +102,13 @@ export function OtpScreen() {
     <div class="avq-o-otp">
       <button type="button" class="avq-o-btn avq-o-btn--quiet avq-o-otp__back" onClick={() => store.go('details')}><Back />{t('otp.change')}</button>
       <div class="avq-o-otp__intro">
-        <h2 class="avq-o-title">{t('otp.title')}</h2>
-        <p>{t('otp.sent', { phone })}</p>
+        <h2 id={titleId} class="avq-o-title">{t('otp.title')}</h2>
+        <p id={introId}>{t('otp.sent', { phone })}</p>
       </div>
       <div class="avq-o-otp__code">
-        <OtpInput look="tienda" value={code} onChange={setCode} onComplete={v => void verify(v)} disabled={busy} />
+        <div ref={boxes} role="group" aria-labelledby={titleId} aria-describedby={introId}>
+          <OtpInput look="tienda" value={code} onChange={setCode} onComplete={v => void verify(v)} disabled={busy} />
+        </div>
         {busy && <p role="status" class="avq-o-help">{t('otp.verifying')}</p>}
         {error && (error.offline
           ? <Notice role="alert" tone="warn" icon="cloudOff" text={error.text} />

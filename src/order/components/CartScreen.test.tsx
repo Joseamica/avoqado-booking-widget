@@ -355,12 +355,30 @@ describe('carrito cotizado por el servidor', () => {
     expect(screen.getByRole('button', { name: 'Back to the menu' })).toBeTruthy()
   })
 
-  it('carrito vacío: el texto y «Ver la carta», que lleva a la carta (sin cotizar nada)', async () => {
+  it('carrito vacío: la misma flecha y el título «Tu pedido» de siempre, el mensaje centrado y «Ver la carta» (primario), que lleva a la carta (sin cotizar nada)', async () => {
     const s = await show([], quoteOf(0))
-    expect(screen.getByText('Tu pedido está vacío.')).toBeTruthy()
+    const back = screen.getByRole('button', { name: 'Volver a la carta' })
+    const title = screen.getByRole('heading', { name: 'Tu pedido' })
+    const message = screen.getByText('Tu pedido está vacío.')
+    const goMenu = screen.getByRole('button', { name: 'Ver la carta' })
+    // De arriba abajo, como el carrito con renglones: la flecha, el título, el mensaje y el botón.
+    const order = [back, title, message, goMenu]
+    for (let i = 1; i < order.length; i++) expect(order[i - 1].compareDocumentPosition(order[i]) & Node.DOCUMENT_POSITION_FOLLOWING, String(i)).toBeTruthy()
+    expect(back.classList.contains('avq-o-back')).toBe(true)
+    expect(title.classList.contains('avq-o-title')).toBe(true)
+    expect(title.getAttribute('tabindex')).toBe('-1')
+    expect(message.getAttribute('role')).toBe('status')
+    expect(message.parentElement!.className).toBe('avq-o-cart__empty') // el bloque centrado con aire (theme.test)
+    expect(goMenu.parentElement).toBe(message.parentElement)
+    expect(goMenu.classList.contains('avq-o-btn--primary')).toBe(true)
     expect(quote).not.toHaveBeenCalled()
     expect(screen.queryByRole('button', { name: /^Continuar/ })).toBeNull()
-    fireEvent.click(screen.getByRole('button', { name: 'Ver la carta' }))
+    expect(screen.queryByText('Recoges en Flautas')).toBeNull() // sin la tarjeta de recolección: no hay nada que recoger
+    // La flecha y el botón llevan a la carta.
+    fireEvent.click(back)
+    expect(s.screen.value).toBe('menu')
+    s.go('cart')
+    fireEvent.click(goMenu)
     expect(s.screen.value).toBe('menu')
   })
 
@@ -513,12 +531,22 @@ describe('al quitar un renglón con el bote', () => {
     for (const name of ['Flautas', 'Tacos', 'Refresco']) expect(rowOf(name).getAttribute('tabindex'), name).toBe('-1')
   })
 
-  it('si era el único, el carrito queda vacío y el foco va a «Ver la carta»', async () => {
+  it('si era el único, el carrito queda vacío y el foco va a «Ver la carta» (sin mover la página: preventScroll)', async () => {
     const s = await show([tacos], quoteOf(30))
-    fireEvent.click(trashOf('Tacos'))
-    expect(s.cart.value).toEqual([])
-    expect(screen.getByText('Tu pedido está vacío.')).toBeTruthy()
-    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Ver la carta' }))
+    const focus = vi.spyOn(HTMLElement.prototype, 'focus')
+    try {
+      fireEvent.click(trashOf('Tacos'))
+      expect(s.cart.value).toEqual([])
+      expect(screen.getByText('Tu pedido está vacío.')).toBeTruthy()
+      const goMenu = screen.getByRole('button', { name: 'Ver la carta' })
+      expect(document.activeElement).toBe(goMenu)
+      expect(focus.mock.calls[focus.mock.contexts.lastIndexOf(goMenu)][0]).toEqual({ preventScroll: true })
+      // El título y la flecha siguen ahí, y el foco no se fue a ninguno de los dos.
+      expect(screen.getByRole('heading', { name: 'Tu pedido' })).toBeTruthy()
+      expect(screen.getByRole('button', { name: 'Volver a la carta' })).toBeTruthy()
+    } finally {
+      focus.mockRestore()
+    }
   })
 
   it('bajar la cantidad (3 → 2) no mueve el foco: sigue en el mismo botón', async () => {

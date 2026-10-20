@@ -7,6 +7,7 @@ import { formatMXN } from '../money'
 import { clearLastOrder } from '../session'
 import { OrderStoreContext } from '../store'
 import { isFinalStatus, type OnlineOrderStatus, type Tracking } from '../types'
+import { focusLost } from './focus'
 import { Notice, type NoticeIcon } from './StoreStatusBanner'
 import { VenueMark } from './VenueMark'
 import { optionsText } from './lineOptions'
@@ -15,16 +16,6 @@ const POLL_MS = 10_000
 /** Los 4 pasos del avance, en orden. Rechazado, vencido y cancelado no tienen paso: ahí no se pinta el avance. */
 const STEPS = ['received', 'preparing', 'ready', 'completed'] as const
 const STEP_OF: Partial<Record<OnlineOrderStatus, number>> = { PENDING_ACCEPTANCE: 0, ACCEPTED: 1, READY: 2, COMPLETED: 3 }
-
-/**
- * ¿Nadie tiene el foco? La tienda vive en una sombra: `document.activeElement` sólo ve el host, así que se mira también la raíz del
- * elemento. Sólo si ninguna de las dos tiene algo enfocado (o es el `body`) el foco está perdido; si está en otra parte de la tienda
- * o del sitio, no es nuestro.
- */
-const focusLost = (el: Element) => {
-  const inner = (el.getRootNode() as Document | ShadowRoot).activeElement
-  return (!inner || inner === document.body) && (!document.activeElement || document.activeElement === document.body)
-}
 
 // Íconos de «Cómo llegar» y «Llamar» (de la maqueta; sólo se usan aquí).
 const Pin = () => (

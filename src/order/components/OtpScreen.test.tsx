@@ -1,5 +1,5 @@
 import { h } from 'preact'
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/preact'
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/preact'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('../api', async () => {
@@ -158,6 +158,36 @@ describe('código de WhatsApp', () => {
     for (const b of boxes) expect([b.style.height, b.style.background, b.style.color]).toEqual(['60px', 'rgb(255, 255, 255)', 'rgb(0, 0, 0)'])
     // La ayuda va debajo del reenvío, como en la maqueta.
     expect(resend().compareDocumentPosition(screen.getByText('Si no te llega, revisa que el número sea el de tu WhatsApp.')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it('al llegar, el cursor ya está en la primera caja (con preventScroll): lleva el borde de acento y, en el celular, abre el teclado', async () => {
+    const focus = vi.spyOn(HTMLElement.prototype, 'focus')
+    try {
+      show()
+      await flush()
+      const boxes = screen.getAllByRole('textbox') as HTMLInputElement[]
+      expect(document.activeElement).toBe(boxes[0])
+      expect(focus.mock.calls[focus.mock.contexts.lastIndexOf(boxes[0])][0]).toEqual({ preventScroll: true })
+      // El borde de 2 px de acento (spec §5.5) es el de la caja activa; las demás conservan el borde de campo.
+      expect(boxes[0].style.border).toBe('2px solid var(--avq-accent, #000)')
+      expect(boxes.slice(1).map(b => b.style.border)).toEqual(Array(5).fill(boxes[1].style.border))
+      expect(boxes[1].style.border).not.toBe(boxes[0].style.border)
+      // Al escribir el primer dígito, el cursor y el borde pasan a la segunda.
+      fireEvent.input(boxes[0], { target: { value: '4' } })
+      expect(document.activeElement).toBe(boxes[1])
+      expect(boxes[1].style.border).toBe('2px solid var(--avq-accent, #000)')
+    } finally {
+      focus.mockRestore()
+    }
+  })
+
+  it('las cajas forman un grupo con nombre y descripción (el titular y «Te lo mandamos…»): quien llega con un lector de pantalla a la primera caja sabe qué se pide', async () => {
+    show()
+    await flush()
+    const group = screen.getByRole('group', { name: 'Escribe tu código' })
+    expect(document.getElementById(group.getAttribute('aria-describedby')!)!.textContent).toBe('Te lo mandamos por WhatsApp al +525544422262.')
+    expect(within(group).getAllByRole('textbox')).toHaveLength(6)
+    expect(group.contains(document.activeElement)).toBe(true)
   })
 
   it('si pedir el código falla sin red (no salió nada), «Reenviar código» queda listo al instante; un fallo del servidor conserva la espera', async () => {

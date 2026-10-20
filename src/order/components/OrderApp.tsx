@@ -1,5 +1,5 @@
 import { h } from 'preact'
-import { useContext, useEffect, useState } from 'preact/hooks'
+import { useContext, useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks'
 import { OrderStoreContext } from '../store'
 import { ApiError, getTracking } from '../api'
 import { createOrderT } from '../i18n'
@@ -16,6 +16,10 @@ import { TrackingScreen } from './TrackingScreen'
 import { Notice } from './StoreStatusBanner'
 import { STORE_CSS, accentFor, loadStoreFonts } from './theme'
 import { VenueMark, logoOf } from './VenueMark'
+import { focusLost } from './focus'
+
+/** Las pantallas a las que se llega «hacia adelante»: al cambiar a una de ellas la tienda sube a su inicio y se enfoca su titular. */
+const ARRIVALS: ReadonlySet<string> = new Set(['cart', 'details', 'otp', 'tracking'])
 
 /**
  * Raíz de la tienda. La marca sale de `/info` (no de reservas); `accentColor` es el respaldo del atributo `accent-color`.
@@ -23,6 +27,10 @@ import { VenueMark, logoOf } from './VenueMark'
  * Encabezado: la portada completa (foto, logo, nombre, dirección y chips) sólo en la carta; en datos y código, una cabecera compacta
  * (logo y nombre); el carrito no lleva ninguna (su tarjeta «Recoges en» ya trae el logo y el nombre); el seguimiento trae la suya, y la
  * ficha de un producto ocupa el lugar de la tienda.
+ * Al CAMBIAR a una pantalla de adelante (carrito, datos, código o seguimiento; no al cargar la página ni al volver a la carta) la
+ * ventana conserva el scroll de la anterior y la nueva podría abrir a media página: si el borde de arriba de la tienda quedó sobre
+ * la ventana, sube SÓLO la raíz de la tienda a su inicio (nunca el host ni nada del sitio; el mismo principio mínimo de la ficha, §12.2);
+ * y el foco va al titular de la pantalla, sin mover la página, sólo si nadie lo tiene (el código lleva el suyo a su primera caja).
  */
 export function OrderApp({ accentColor }: { accentColor?: string }) {
   const store = useContext(OrderStoreContext)!
@@ -88,11 +96,33 @@ export function OrderApp({ accentColor }: { accentColor?: string }) {
   const address = info?.contact?.address || null
   const notice = store.notice.value
   const screen = store.screen.value
+  const root = useRef<HTMLDivElement>(null)
+  const from = useRef(screen)
+  useLayoutEffect(() => {
+    const prev = from.current
+    from.current = screen
+    const el = root.current
+    if (!el || prev === screen || !ARRIVALS.has(screen)) return
+    if (el.getBoundingClientRect().top < 0) el.scrollIntoView({ block: 'start' })
+    // El titular (`tabindex -1`, sin contorno) y, si nadie tiene el foco, ahí va. Un hijo que ya lo tomó (la primera caja del código) o
+    // una persona que ya está en otro elemento, del sitio o de la tienda, se quedan como están.
+    const arrive = () => {
+      const title = el.querySelector<HTMLElement>('.avq-o-title')
+      if (!title) return false
+      if (focusLost(el)) title.focus({ preventScroll: true })
+      return true
+    }
+    if (arrive()) return
+    // El seguimiento trae sus datos al llegar: su titular aparece después. Se espera a que salga (y se deja de esperar al cambiar de pantalla).
+    const watch = new MutationObserver(() => { if (arrive()) watch.disconnect() })
+    watch.observe(el, { childList: true, subtree: true })
+    return () => watch.disconnect()
+  }, [screen])
   const hasBrand = !!(name || logo)
   const hero = hasBrand && (screen === 'menu' || screen === 'product') && !store.productId.value
   const compact = hasBrand && (screen === 'details' || screen === 'otp')
   return (
-    <div class="avq-o-root" style={{ ['--avq-accent' as any]: accent }}>
+    <div ref={root} class="avq-o-root" style={{ ['--avq-accent' as any]: accent }}>
       <style>{STORE_CSS}</style>
       {/* De quién es la tienda, arriba de todo; el seguimiento pinta su propia cabecera chica (TrackingScreen). */}
       {hero && (

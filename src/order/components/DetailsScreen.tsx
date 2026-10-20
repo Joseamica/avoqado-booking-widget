@@ -68,7 +68,7 @@ export function DetailsScreen() {
       <button type="button" class="avq-o-back" aria-label={t('details.back')} onClick={() => store.go('cart')}><Back /></button>
       <div class="avq-o-form">
         <div class="avq-o-form__intro">
-          <h2 class="avq-o-title">{t('details.title')}</h2>
+          <h2 class="avq-o-title" tabIndex={-1}>{t('details.title')}</h2>
           <p>{t('details.helper')}</p>
         </div>
         <div class="avq-o-field">

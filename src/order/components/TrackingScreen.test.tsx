@@ -404,7 +404,7 @@ describe('foco tras un intento de cancelar', () => {
     const title = screen.getByRole('heading', { name: 'Cancelaste tu pedido.' })
     expect(title.getAttribute('tabindex')).toBe('-1')
     expect(document.activeElement).toBe(title)
-    expect(STORE_CSS).toMatch(/\.avq-o-root \.avq-o-track__intro \.avq-o-title:focus\{outline:none\}/)
+    expect(STORE_CSS).toMatch(/\.avq-o-root \.avq-o-title:focus\{outline:none\}/)
   })
   it('sin red, o con un 409 que deja el pedido cancelable: el aviso sale y, como el foco se perdió, vuelve a «Cancelar pedido»', async () => {
     for (const failure of [offline(), new ApiError('x', 409, 'ORDER_STATE_CHANGED')]) {
