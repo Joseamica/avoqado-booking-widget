@@ -1,5 +1,5 @@
 import { h } from 'preact'
-import { useRef } from 'preact/hooks'
+import { useEffect, useRef, useState } from 'preact/hooks'
 
 interface OtpInputProps {
   value: string
@@ -7,11 +7,26 @@ interface OtpInputProps {
   onComplete: (code: string) => void
   disabled?: boolean
   length?: number
+  /** Aspecto de la tienda de pedidos (spec §4 y §10.3): siempre claro y con colores fijos. Sin esto, el de reservas de siempre. */
+  look?: 'tienda'
 }
 
-export function OtpInput({ value, onChange, onComplete, disabled, length = 6 }: OtpInputProps) {
+export function OtpInput({ value, onChange, onComplete, disabled, length = 6, look }: OtpInputProps) {
   const refs = useRef<(HTMLInputElement | null)[]>([])
   const digits = value.split('').slice(0, length)
+  const tienda = look === 'tienda'
+  const [active, setActive] = useState(-1) // caja con foco; sólo la pinta «tienda»
+  // El navegador no siempre avisa con blur cuando el input con foco se deshabilita (verificando el código): sin esto la caja
+  // se quedaría resaltada aunque el foco ya se perdió.
+  useEffect(() => { if (tienda && disabled) setActive(-1) }, [tienda, disabled])
+
+  // «tienda»: no lee --avq-fg/--avq-bg (un contenedor oscuro dejaría los dígitos blancos sobre blanco); sólo el acento viene del tema.
+  // El borde de 2 px de acento ES el indicador de foco: el `outline: none` en línea anula el anillo `:focus-visible` de la tienda.
+  const tiendaBox = (i: number) => tienda ? {
+    height: '60px', fontSize: '26px', fontWeight: '700', fontFamily: 'inherit', // los inputs no heredan la tipografía de la tienda si no se pide
+    border: active === i ? '2px solid var(--avq-accent, #000)' : '1px solid #DADADA',
+    background: '#FFFFFF', color: '#000000',
+  } : undefined
 
   function emit(next: string) {
     const clean = next.replace(/\D/g, '').slice(0, length)
@@ -69,7 +84,8 @@ export function OtpInput({ value, onChange, onComplete, disabled, length = 6 }: 
           disabled={disabled}
           onInput={e => onInput(i, e)}
           onKeyDown={e => onKeyDown(i, e)}
-          onFocus={e => (e.target as HTMLInputElement).select()}
+          onFocus={e => { (e.target as HTMLInputElement).select(); if (tienda) setActive(i) }}
+          onBlur={tienda ? () => setActive(-1) : undefined}
           style={{
             width: '100%', height: '52px', textAlign: 'center',
             fontSize: '22px', fontWeight: '600', fontVariantNumeric: 'tabular-nums',
@@ -77,6 +93,7 @@ export function OtpInput({ value, onChange, onComplete, disabled, length = 6 }: 
             background: 'var(--avq-bg, #ffffff)', color: 'var(--avq-fg, #111827)',
             outline: 'none', boxSizing: 'border-box',
             transition: 'border-color 0.2s ease, box-shadow 0.2s ease',
+            ...tiendaBox(i),
           }}
         />
       ))}
