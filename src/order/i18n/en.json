@@ -117,7 +117,7 @@
   "details": {
     "title": "Your details",
     "name": "Name",
-    "phone": "Phone (WhatsApp)",
+    "phone": "WhatsApp",
     "phonePlaceholder": "10 digits",
     "countrySearch": "Search country",
     "countryNoResults": "No results",
@@ -134,16 +134,22 @@
     "needAccept": "Accept the privacy notice to continue.",
     "confirm": "Place order",
     "sending": "Sending…",
-    "back": "Back to your order"
+    "back": "Back to your order",
+    "helper": "They'll hand over your order by your name.",
+    "phoneHelp": "We'll send a code here to confirm your order.",
+    "summary": "{{n}} items, for pickup",
+    "summaryOne": "1 item, for pickup",
+    "taxIncluded": "VAT included"
   },
   "otp": {
-    "title": "Verify your number",
-    "sent": "We sent a code over WhatsApp to {{phone}}.",
+    "title": "Enter your code",
+    "sent": "We sent it by WhatsApp to {{phone}}.",
     "resend": "Resend code",
     "resendIn": "Resend code in {{s}} s",
     "change": "Change number",
     "verifying": "Verifying…",
-    "notUsable": "We could not use your verification in this browser. Check your number or open it outside private mode."
+    "notUsable": "We could not use your verification in this browser. Check your number or open it outside private mode.",
+    "help": "Didn't get it? Check that it's your WhatsApp number."
   },
   "checkout": {
     "pending": "Your previous order was not confirmed because of the connection. Retry to find out if it went through.",

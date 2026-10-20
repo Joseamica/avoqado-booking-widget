@@ -16,7 +16,8 @@ const MAX_QTY = 20
 const MAX_LINES = 50
 const QUOTE_DEBOUNCE_MS = 300
 
-const Back = () => (
+/** La flecha de volver (también la de «Tus datos» y la del código). */
+export const Back = () => (
   <svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
     <path d="M15 18l-6-6 6-6" />
   </svg>

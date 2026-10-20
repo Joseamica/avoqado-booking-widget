@@ -16,17 +16,19 @@ export type NoticeIcon = keyof typeof ICONS
 
 /**
  * Aviso de la tienda: tarjeta de radio 16 con el color de su tono, ícono (sin voz: el título ya lo dice), título corto, la
- * frase y, si lo lleva, un botón. Lo usan el estado de la tienda, el aviso general y «Tienes un pedido en curso».
+ * frase y, si lo lleva, un botón. Lo usan el estado de la tienda, el aviso general, «Tienes un pedido en curso» y el estado del envío
+ * (`CheckoutStatus`, que avisa con `role="alert"` lo que falló o pide decidir ya).
  */
-export function Notice({ tone, icon, title, text, action }: {
+export function Notice({ tone, icon, title, text, action, role = 'status' }: {
   tone: 'neutral' | 'warn' | 'error'
   icon?: NoticeIcon
   title?: string
   text: string
   action?: { label: string; onClick: () => void }
+  role?: 'status' | 'alert'
 }) {
   return (
-    <div role="status" class={`avq-o-notice avq-o-notice--${tone}`}>
+    <div role={role} class={`avq-o-notice avq-o-notice--${tone}`}>
       {icon && (
         <svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           {ICONS[icon]}

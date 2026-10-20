@@ -117,7 +117,7 @@
   "details": {
     "title": "Tus datos",
     "name": "Nombre",
-    "phone": "Teléfono (WhatsApp)",
+    "phone": "WhatsApp",
     "phonePlaceholder": "10 dígitos",
     "countrySearch": "Buscar país",
     "countryNoResults": "Sin resultados",
@@ -134,16 +134,22 @@
     "needAccept": "Acepta el aviso de privacidad para continuar.",
     "confirm": "Confirmar pedido",
     "sending": "Enviando…",
-    "back": "Volver al pedido"
+    "back": "Volver al pedido",
+    "helper": "Con tu nombre te entregan el pedido en el mostrador.",
+    "phoneHelp": "Aquí te mandamos un código para confirmar tu pedido.",
+    "summary": "{{n}} productos, para recoger",
+    "summaryOne": "1 producto, para recoger",
+    "taxIncluded": "IVA incluido"
   },
   "otp": {
-    "title": "Verifica tu número",
-    "sent": "Te mandamos un código por WhatsApp al {{phone}}.",
+    "title": "Escribe tu código",
+    "sent": "Te lo mandamos por WhatsApp al {{phone}}.",
     "resend": "Reenviar código",
     "resendIn": "Reenviar código en {{s}} s",
     "change": "Cambiar número",
     "verifying": "Verificando…",
-    "notUsable": "No pudimos usar tu verificación en este navegador. Revisa tu número o ábrelo fuera del modo privado."
+    "notUsable": "No pudimos usar tu verificación en este navegador. Revisa tu número o ábrelo fuera del modo privado.",
+    "help": "Si no te llega, revisa que el número sea el de tu WhatsApp."
   },
   "checkout": {
     "pending": "Tu pedido anterior no se confirmó por la conexión. Reintenta para saber si llegó.",

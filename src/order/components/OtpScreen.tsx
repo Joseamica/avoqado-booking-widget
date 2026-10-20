@@ -7,7 +7,7 @@ import { pendingAttempt } from '../attempt'
 import { checkoutOf, errorText, phoneToVerify, send, verifyPhone } from '../checkout'
 import { OtpInput } from '../../components/ui/OtpInput'
 import { CheckoutStatus } from './CheckoutStatus'
-import { btn, muted } from './ui'
+import { Back } from './CartScreen'
 
 const RESEND_S = 30
 
@@ -72,21 +72,32 @@ export function OtpScreen() {
   }
 
   if (!phone)
-    return <button type="button" style={btn()} onClick={() => store.go('cart')}>{t('details.back')}</button>
+    return (
+      <div class="avq-o-otp">
+        <button type="button" class="avq-o-btn avq-o-btn--quiet avq-o-otp__back" onClick={() => store.go('cart')}><Back />{t('details.back')}</button>
+      </div>
+    )
 
   const busy = verifying || c.busy.value
   return (
-    <div>
-      <button type="button" style={{ ...btn(), marginBottom: '10px' }} onClick={() => store.go('details')}>{t('otp.change')}</button>
-      <h2 style={{ margin: '0 0 6px', fontSize: '18px' }}>{t('otp.title')}</h2>
-      <p style={muted}>{t('otp.sent', { phone })}</p>
-      <OtpInput value={code} onChange={setCode} onComplete={v => void verify(v)} disabled={busy} />
-      {busy && <p role="status" style={muted}>{t('otp.verifying')}</p>}
-      {error && <p role="alert" style={{ color: 'var(--avq-danger, #b91c1c)', fontSize: '14px' }}>{error}</p>}
+    <div class="avq-o-otp">
+      <button type="button" class="avq-o-btn avq-o-btn--quiet avq-o-otp__back" onClick={() => store.go('details')}><Back />{t('otp.change')}</button>
+      <div class="avq-o-otp__intro">
+        <h2 class="avq-o-title">{t('otp.title')}</h2>
+        <p>{t('otp.sent', { phone })}</p>
+      </div>
+      <div class="avq-o-otp__code">
+        <OtpInput look="tienda" value={code} onChange={setCode} onComplete={v => void verify(v)} disabled={busy} />
+        {busy && <p role="status" class="avq-o-help">{t('otp.verifying')}</p>}
+        {error && <p role="alert" class="avq-o-issue">{error}</p>}
+      </div>
       <CheckoutStatus />
-      <button type="button" style={{ ...btn(), marginTop: '10px' }} disabled={wait > 0 || busy} onClick={() => void request()}>
-        {wait > 0 ? t('otp.resendIn', { s: wait }) : t('otp.resend')}
-      </button>
+      <div class="avq-o-otp__more">
+        <button type="button" class="avq-o-btn avq-o-btn--quiet" disabled={wait > 0 || busy} onClick={() => void request()}>
+          {wait > 0 ? t('otp.resendIn', { s: wait }) : t('otp.resend')}
+        </button>
+        <p class="avq-o-help">{t('otp.help')}</p>
+      </div>
     </div>
   )
 }

@@ -143,4 +143,29 @@ describe('código de WhatsApp', () => {
     expect(s.screen.value).toBe('otp')
     expect(screen.getByText('No pudimos usar tu verificación en este navegador. Revisa tu número o ábrelo fuera del modo privado.')).toBeTruthy()
   })
+
+  it('Código: título «Escribe tu código» y OtpInput con look tienda (caja de 60px)', async () => {
+    show()
+    await flush()
+    expect(screen.getByRole('heading', { name: 'Escribe tu código' })).toBeTruthy()
+    expect(screen.getByText('Te lo mandamos por WhatsApp al +525544422262.')).toBeTruthy()
+    expect(screen.getByText('Si no te llega, revisa que el número sea el de tu WhatsApp.')).toBeTruthy()
+    const boxes = screen.getAllByRole('textbox') as HTMLInputElement[]
+    expect(boxes).toHaveLength(6)
+    // El aspecto «tienda» del campo compartido con reservas: cajas de 60 px, claras y con colores fijos.
+    for (const b of boxes) expect([b.style.height, b.style.background, b.style.color]).toEqual(['60px', 'rgb(255, 255, 255)', 'rgb(0, 0, 0)'])
+    // La ayuda va debajo del reenvío, como en la maqueta.
+    expect(resend().compareDocumentPosition(screen.getByText('Si no te llega, revisa que el número sea el de tu WhatsApp.')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it('en inglés: «Enter your code» y «We sent it by WhatsApp to …»', async () => {
+    const s = makeStore(infoOf(), menuOf(), 'en')
+    checkoutOf(s).lastBody.value = body
+    s.go('otp')
+    render(withStore(s, <OtpScreen />))
+    await flush()
+    expect(screen.getByRole('heading', { name: 'Enter your code' })).toBeTruthy()
+    expect(screen.getByText('We sent it by WhatsApp to +525544422262.')).toBeTruthy()
+    expect(screen.getByText("Didn't get it? Check that it's your WhatsApp number.")).toBeTruthy()
+  })
 })

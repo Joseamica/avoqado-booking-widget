@@ -4,11 +4,12 @@ import { OrderStoreContext } from '../store'
 import { createOrderT } from '../i18n'
 import { checkoutOf, retry, send } from '../checkout'
 import { formatMXN } from '../money'
-import { banner, btn } from './ui'
+import { Notice } from './StoreStatusBanner'
 
 /**
  * Lo que quedó del último envío: «el precio cambió» (sólo se manda con el toque), el error con «Reintentar» si el intento
- * sigue vivo, o el aviso de un intento pendiente (también tras recargar). Se pinta en UN lugar por pantalla.
+ * sigue vivo, o el aviso de un intento pendiente (también tras recargar). Se pinta en UN lugar por pantalla. Son tarjetas de la
+ * tienda (`Notice`): sin red es un estado normal (ámbar, nube tachada), no un fallo en rojo.
  */
 export function CheckoutStatus() {
   const store = useContext(OrderStoreContext)!
@@ -16,17 +17,21 @@ export function CheckoutStatus() {
   const c = checkoutOf(store)
   const f = c.feedback.value
   if (c.busy.value) return null
-  const box = (text: string, action: string, onClick: () => void, role: 'alert' | 'status' = 'alert') => (
-    <div role={role} style={banner}>
-      <p style={{ margin: '0 0 6px' }}>{text}</p>
-      <button type="button" style={btn()} onClick={onClick}>{action}</button>
-    </div>
-  )
   if (f?.kind === 'priceChanged')
-    return box(t('checkout.priceChanged', { total: formatMXN(f.total, store.locale) }), t('checkout.confirmNewTotal'), () => void send(store, f.body))
-  if (f?.kind === 'error')
-    return f.retryable ? box(f.message, t('common.retry'), () => void retry(store)) : <div role="alert" style={banner}>{f.message}</div>
+    return (
+      <Notice role="alert" tone="warn" text={t('checkout.priceChanged', { total: formatMXN(f.total, store.locale) })}
+        action={{ label: t('checkout.confirmNewTotal'), onClick: () => void send(store, f.body) }} />
+    )
+  if (f?.kind === 'error') {
+    // El envío sin red llega con el texto de `common.offline` (checkout.ts, `errorText`).
+    const offline = f.message === t('common.offline')
+    return (
+      <Notice role="alert" tone={offline ? 'warn' : 'error'} icon={offline ? 'cloudOff' : 'alert'} text={f.message}
+        action={f.retryable ? { label: t('common.retry'), onClick: () => void retry(store) } : undefined} />
+    )
+  }
   // En la pantalla del código el intento espera la verificación, no la conexión.
-  if (c.pending.value && store.screen.value !== 'otp') return box(t('checkout.pending'), t('common.retry'), () => void retry(store), 'status')
+  if (c.pending.value && store.screen.value !== 'otp')
+    return <Notice tone="warn" icon="cloudOff" text={t('checkout.pending')} action={{ label: t('common.retry'), onClick: () => void retry(store) }} />
   return null
 }

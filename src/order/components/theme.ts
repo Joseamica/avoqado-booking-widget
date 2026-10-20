@@ -98,6 +98,12 @@ export function loadStoreFonts(): void {
  *   en…»: `__text`, `__name`, `__addr`); `.avq-o-lines` > `.avq-o-line` los renglones (`__info`, `__name`, `__sub`, `__price`; tabindex -1 y sin contorno al enfocarlo: el foco llega ahí al quitar otro renglón), con su
  *   `.avq-o-stepper--line`; `.avq-o-issue` un problema (el de un renglón, radio 12; el del pedido, hijo directo de la pantalla, radio 16 como un aviso); `.avq-o-more` «Agregar algo más»;
  *   `.avq-o-cart__note` la nota; `.avq-o-total` el total (`__row`, `__wait`, `__tax`).
+ * - Tus datos y código (tarea 8): `.avq-o-details` es la pantalla de datos (sin estilo propio); `.avq-o-form` sus campos (`__intro` el
+ *   título con su ayuda), cada `.avq-o-field` (`__label` cuando no es un `<label>`), `.avq-o-help` la ayuda en gris, `.avq-o-privacy` el
+ *   aviso con su enlace y `.avq-o-check` la casilla; la letra chica (contacto, pago, cancelación) reusa `.avq-o-foot`. Su pie es el
+ *   `.avq-o-cartfoot` del carrito + `.avq-o-confirm` (`__sum` el resumen, `__msg` lo que falta; el aviso del envío va dentro, sin margen).
+ *   El código: `.avq-o-otp` con `__back` («‹ Cambiar número»), `__intro`, `__code` (las cajas, «Verificando…» y el error) y `__more`
+ *   (el reenvío y la ayuda).
  * Cada tarea puede AGREGAR clases; las que ya están no se cambian ni se quitan.
  */
 export const STORE_CSS = `
@@ -263,4 +269,26 @@ textarea.avq-o-input{min-height:0;padding:12px 14px;resize:none}
 .avq-o-cartfoot{position:sticky;bottom:0;z-index:2;margin-top:16px;padding:12px 16px calc(24px + env(safe-area-inset-bottom,0px));background:#FFFFFF;border-top:1px solid ${T.divider}}
 .avq-o-cartfoot .avq-o-btn{width:100%;min-height:56px;justify-content:space-between}
 .avq-o-cartfoot .avq-o-btn>span:only-child{margin:0 auto}
+.avq-o-form{display:flex;flex-direction:column;gap:20px;padding:4px 16px 0}
+.avq-o-form__intro{display:flex;flex-direction:column;gap:6px}
+.avq-o-form__intro>p{margin:0;color:${T.muted};line-height:1.4}
+.avq-o-field{display:flex;flex-direction:column;gap:8px;min-width:0}
+.avq-o-field>label,.avq-o-field__label{font-weight:600}
+.avq-o-help{margin:0;color:${T.muted};font-size:14px;line-height:1.4;overflow-wrap:anywhere}
+.avq-o-privacy{display:flex;flex-direction:column;gap:4px}
+.avq-o-privacy>a{align-self:flex-start;display:inline-flex;align-items:center;min-height:44px;color:${T.ink};font-weight:600}
+.avq-o-check{display:flex;align-items:flex-start;gap:12px;padding:11px 0;line-height:1.4;cursor:pointer}
+.avq-o-check>input{flex:none;width:20px;height:20px;margin:1px 0 0;accent-color:var(--avq-accent,${T.ink})}
+.avq-o-form input,.avq-o-form button,.avq-o-form a{scroll-margin-bottom:calc(170px + env(safe-area-inset-bottom,0px))}
+.avq-o-confirm{display:flex;flex-direction:column;gap:10px}
+.avq-o-confirm .avq-o-notice{margin:0}
+.avq-o-confirm__sum{display:flex;justify-content:space-between;gap:12px;margin:0;color:${T.text2};font-size:14px}
+.avq-o-confirm__msg{margin:0;color:${T.text2};font-size:14px;font-weight:600;overflow-wrap:anywhere}
+.avq-o-otp{padding-bottom:24px}
+.avq-o-otp__back{margin:12px 8px 0;gap:4px}
+.avq-o-otp__intro{display:flex;flex-direction:column;gap:8px;padding:8px 16px 0}
+.avq-o-otp__intro>p{margin:0;color:${T.text2};line-height:1.45;overflow-wrap:anywhere}
+.avq-o-otp__code{display:flex;flex-direction:column;gap:12px;margin:28px 16px 0}
+.avq-o-otp__more{display:flex;flex-direction:column;align-items:flex-start;gap:4px;padding:20px 16px 0}
+.avq-o-otp__more>.avq-o-btn{padding:0}
 `
