@@ -95,7 +95,7 @@ export function loadStoreFonts(): void {
  *   `__sub`, `__extra`). `.avq-o-menu--sheet` quita el relleno de abajo de la carta mientras la ficha está abierta.
  * - Tu pedido (tarea 7): `.avq-o-cart` es la pantalla y `.avq-o-cartfoot` su pie de «Continuar» (pegajoso abajo DENTRO de la tienda,
  *   como el de la ficha); `.avq-o-back` la flecha de volver; `.avq-o-cart__intro` el título con la tarjeta `.avq-o-pickup` («Recoges
- *   en…»: `__text`, `__name`, `__addr`); `.avq-o-lines` > `.avq-o-line` los renglones (`__info`, `__name`, `__sub`, `__price`), con su
+ *   en…»: `__text`, `__name`, `__addr`); `.avq-o-lines` > `.avq-o-line` los renglones (`__info`, `__name`, `__sub`, `__price`; tabindex -1 y sin contorno al enfocarlo: el foco llega ahí al quitar otro renglón), con su
  *   `.avq-o-stepper--line`; `.avq-o-issue` un problema (el de un renglón, radio 12; el del pedido, hijo directo de la pantalla, radio 16 como un aviso); `.avq-o-more` «Agregar algo más»;
  *   `.avq-o-cart__note` la nota; `.avq-o-total` el total (`__row`, `__wait`, `__tax`).
  * Cada tarea puede AGREGAR clases; las que ya están no se cambian ni se quitan.
@@ -245,6 +245,7 @@ textarea.avq-o-input{min-height:0;padding:12px 14px;resize:none}
 .avq-o-pickup__addr{color:${T.text2};font-size:14px}
 .avq-o-lines{list-style:none;margin:8px 0 0;padding:0 16px}
 .avq-o-line{display:flex;flex-wrap:wrap;align-items:center;column-gap:12px;padding:16px 0;border-bottom:1px solid ${T.divider}}
+.avq-o-root .avq-o-line:focus{outline:none}
 .avq-o-line__info{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px;overflow-wrap:anywhere}
 .avq-o-line__name{font-size:16px;font-weight:600}
 .avq-o-line__sub{color:${T.muted};font-size:14px}

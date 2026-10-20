@@ -89,15 +89,17 @@ export function CartScreen() {
     }
   }, [cart, attempt])
 
-  // Quitar un renglón con el bote destruye el botón que tenía el foco. El foco pasa al stepper del renglón que sube a ese lugar (el
-  // siguiente); si era el último, al anterior; y si no queda ninguno, a «Ver la carta» del carrito vacío («Agregar algo más» si por
-  // algo no hubiera stepper). Sin mover la página: sólo si el control queda arriba de la ventana, o bajo el pie pegajoso, se centra.
+  // Quitar un renglón con el bote destruye el botón que tenía el foco. El foco pasa al RENGLÓN que sube a ese lugar (el siguiente; si
+  // era el último, el anterior), nunca a un botón suyo: un Enter mantenido repite clics sobre lo que tiene el foco, y en el bote del
+  // siguiente vaciaría el carrito renglón por renglón. El <li> es neutro (tabindex -1, sin contorno) y un Tab desde ahí entra a su
+  // stepper. Si no queda ningún renglón, a «Ver la carta» del carrito vacío («Agregar algo más» si por algo no hubiera renglón): esos
+  // dos sólo navegan. Sin mover la página: sólo si queda arriba de la ventana, o bajo el pie pegajoso, se centra.
   useLayoutEffect(() => {
     const i = removedAt.current
     if (i === null) return
     removedAt.current = null
     const rows = Array.from(root.current?.querySelectorAll<HTMLElement>('.avq-o-line') ?? [])
-    const target = rows[Math.min(i, rows.length - 1)]?.querySelector<HTMLElement>('.avq-o-stepper button') ?? addMore.current ?? goMenu.current
+    const target = rows[Math.min(i, rows.length - 1)] ?? addMore.current ?? goMenu.current
     if (!target) return
     target.focus({ preventScroll: true })
     const r = target.getBoundingClientRect()
@@ -143,7 +145,7 @@ export function CartScreen() {
           const last = l.quantity <= 1
           const options = l.modifiers.map(m => (m.quantity > 1 ? `${m.name} ×${m.quantity}` : m.name)).join(', ')
           return (
-            <li key={l.lineId} aria-label={l.name} class="avq-o-line">
+            <li key={l.lineId} aria-label={l.name} class="avq-o-line" tabIndex={-1}>
               <div class="avq-o-line__info">
                 <span class="avq-o-line__name">{l.name}</span>
                 {options && <span class="avq-o-line__sub">{options}</span>}

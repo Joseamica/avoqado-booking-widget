@@ -173,6 +173,8 @@ describe('STORE_CSS', () => {
     expect(rule('.avq-o-line__info')).toMatch(/min-width:0/)
     expect(rule('.avq-o-line__info')).toMatch(/overflow-wrap:anywhere/)
     expect(rule('.avq-o-pickup__text')).toMatch(/overflow-wrap:anywhere/)
+    // El renglón recibe el foco por programa al quitar otro con el bote (tabindex -1): sin contorno, como la ficha (no es un control).
+    expect(STORE_CSS).toMatch(/\.avq-o-root \.avq-o-line:focus\{outline:none\}/)
     // Los controles del carrito no quedan tapados por el pie al llegar con el teclado (WCAG 2.4.11).
     expect(STORE_CSS).toMatch(/\.avq-o-cart button,\.avq-o-cart textarea\{scroll-margin-bottom:calc\(\d+px \+ env\(safe-area-inset-bottom,0px\)\)\}/)
   })

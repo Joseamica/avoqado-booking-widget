@@ -468,24 +468,49 @@ describe('«Continuar» pegado abajo, dentro de la tienda', () => {
 })
 
 describe('al quitar un renglón con el bote', () => {
-  // El «−» de la primera posición de cada stepper: el control que se acaba de usar y el que hereda el foco.
-  const firstButton = (name: string) => within(rowOf(name)).getAllByRole('button')[0]
+  // El foco cae en un elemento NEUTRO: el renglón mismo (<li tabindex="-1">, sin contorno), nunca en un botón. Un Enter mantenido repite
+  // el clic sobre lo que tiene el foco: en el bote del siguiente renglón vaciaría el carrito renglón por renglón.
 
-  it('el foco pasa al stepper del renglón que sube a su lugar (el siguiente)', async () => {
+  it('el foco pasa al renglón que sube a su lugar (el siguiente), que es neutro: un <li> con tabindex -1, no un botón', async () => {
     const s = await show([flautas1, tacos, refresco], quoteOf(140))
     trashOf('Tacos').focus()
     fireEvent.click(trashOf('Tacos'))
     expect(s.cart.value.map(l => l.name)).toEqual(['Flautas', 'Refresco'])
-    expect(document.activeElement).toBe(firstButton('Refresco'))
-    // Es el stepper del que sigue: su «−» (con cantidad 1, su bote).
-    expect(document.activeElement!.getAttribute('aria-label')).toBe('Quitar Refresco')
+    const focused = document.activeElement as HTMLElement
+    expect(focused).toBe(rowOf('Refresco'))
+    expect(focused.tagName).toBe('LI')
+    expect(focused.getAttribute('tabindex')).toBe('-1')
+    expect(focused.closest('button')).toBeNull()
+    expect(focused.matches('button, a, input, textarea, select')).toBe(false)
   })
 
-  it('si era el último, el foco pasa al anterior', async () => {
+  it('si era el último, el foco pasa al renglón anterior (también neutro)', async () => {
     const s = await show([flautas1, tacos, refresco], quoteOf(140))
     fireEvent.click(trashOf('Refresco'))
     expect(s.cart.value.map(l => l.name)).toEqual(['Flautas', 'Tacos'])
-    expect(document.activeElement).toBe(firstButton('Tacos'))
+    expect(document.activeElement).toBe(rowOf('Tacos'))
+    expect(document.activeElement!.tagName).toBe('LI')
+  })
+
+  it('un Enter o un clic repetido sobre lo enfocado NO sigue vaciando el carrito: con tres renglones de 1, el bote del primero deja 2, no 1', async () => {
+    const s = await show([flautas1, tacos, refresco], quoteOf(140))
+    trashOf('Flautas').focus()
+    fireEvent.click(trashOf('Flautas'))
+    // Lo que hace un Enter mantenido: en CADA repetición, tecla repetida y un clic sobre lo que tiene el foco en ese momento.
+    for (let i = 0; i < 3; i++) {
+      const focused = document.activeElement as HTMLElement
+      fireEvent.keyDown(focused, { key: 'Enter', repeat: i > 0 })
+      fireEvent.click(focused)
+    }
+    fireEvent.keyUp(document.activeElement!, { key: 'Enter' })
+    expect(s.cart.value.map(l => l.name)).toEqual(['Tacos', 'Refresco'])
+    expect(s.screen.value).toBe('cart')
+    expect(document.activeElement).toBe(rowOf('Tacos'))
+  })
+
+  it('todo renglón puede recibir el foco por programa (tabindex -1) pero ninguno entra en el orden del Tab', async () => {
+    await show([flautas1, tacos, refresco], quoteOf(140))
+    for (const name of ['Flautas', 'Tacos', 'Refresco']) expect(rowOf(name).getAttribute('tabindex'), name).toBe('-1')
   })
 
   it('si era el único, el carrito queda vacío y el foco va a «Ver la carta»', async () => {
@@ -524,7 +549,7 @@ describe('al quitar un renglón con el bote', () => {
       where(300, 344) // a la vista
       await removeTacos()
       expect(focus).toHaveBeenCalledWith({ preventScroll: true })
-      expect(document.activeElement).toBe(firstButton('Refresco'))
+      expect(document.activeElement).toBe(rowOf('Refresco'))
       expect(scrollIntoView).not.toHaveBeenCalled()
       cleanup()
       where(-60, -16) // arriba de la ventana
