@@ -84,7 +84,8 @@ export function loadStoreFonts(): void {
  *   `.avq-o-chips` y `.avq-o-dot`; `.avq-o-mark` (+ `--sm`) es el círculo del logo o de las iniciales; `.avq-o-head` es la
  *   cabecera compacta de datos y código (el carrito no la lleva: su tarjeta «Recoges en» ya dice quién es). Los avisos llevan `.avq-o-notice__body|__title|__action`.
  * - Carta (tarea 5): `.avq-o-menu` es la raíz de la carta (deja el relleno de abajo de la barra); `.avq-o-search` el buscador;
- *   `.avq-o-tabs` y `.avq-o-tab` las pestañas pegajosas; `.avq-o-section` cada categoría; la fila (`.avq-o-row`) lleva
+ *   `.avq-o-tabs` y `.avq-o-tab` las pestañas pegajosas (miden 240 px como máximo: su `__label` se corta con «…»); `.avq-o-section`
+ *   cada categoría; la fila (`.avq-o-row`) lleva
  *   `__text`, `__info`, `__name`, `__price`, `__desc`, `__tag` (Agotado), `__media`, `__img` y `__add` (el «+»), y `--bare` si no
  *   hay foto; `.avq-o-foot` la nota del final y `.avq-o-empty` los mensajes sueltos. La barra lleva `__count`, `__label`, `__note`
  *   y `__total`.
@@ -99,14 +100,15 @@ export function loadStoreFonts(): void {
  *   `.avq-o-stepper--line`; `.avq-o-issue` un problema (el de un renglón, radio 12; el del pedido, hijo directo de la pantalla, radio 16 como un aviso); `.avq-o-more` «Agregar algo más»;
  *   `.avq-o-cart__note` la nota; `.avq-o-total` el total (`__row`, `__wait`, `__tax`).
  * - Tus datos y código (tarea 8): `.avq-o-details` es la pantalla de datos (sin estilo propio); `.avq-o-form` sus campos (`__intro` el
- *   título con su ayuda), cada `.avq-o-field` (`__label` cuando no es un `<label>`), `.avq-o-help` la ayuda en gris, `.avq-o-privacy` el
+ *   título con su ayuda), cada `.avq-o-field` (su `<label>` directo va en negritas), `.avq-o-help` la ayuda en gris, `.avq-o-privacy` el
  *   aviso con su enlace y `.avq-o-check` la casilla; la letra chica (contacto, pago, cancelación) reusa `.avq-o-foot`. Su pie es el
  *   `.avq-o-cartfoot` del carrito + `.avq-o-confirm` (`__sum` el resumen, `__msg` lo que falta; el aviso del envío va dentro, sin margen).
  *   El código: `.avq-o-otp` con `__back` («‹ Cambiar número»), `__intro`, `__code` (las cajas, «Verificando…» y el error: sin red, el
  *   aviso ámbar sin margen; si no, el rojo) y `__more` (el reenvío y la ayuda).
  * - Seguimiento (tarea 9): `.avq-o-track` es la pantalla (sin estilo propio; su encabezado reusa `.avq-o-head`), con `__intro` (titular
- *   y línea de hora), `__cancel` (cancelar y su aviso), `__ask` (la confirmación de dos botones) y `__more` («Pedir algo más»). El
- *   avance es `.avq-o-steps` > `.avq-o-step` (+ `--done` hasta el paso actual: la barra con el acento; el actual lleva `aria-current`).
+ *   y línea de hora; el titular lleva tabindex -1 y no dibuja contorno: el foco llega ahí tras cancelar), `__cancel` (cancelar y su
+ *   aviso), `__ask` (la confirmación de dos botones) y `__more` («Pedir algo más»). El avance es `.avq-o-steps` > `.avq-o-step` (+ `--done`
+ *   hasta el paso actual: la barra con el acento; el actual lleva `aria-current`).
  *   El ticket es `.avq-o-ticket` con `__folio` (`__label`, `__n` el folio enorme, `__say`), `__tear` (la línea punteada y sus dos
  *   muescas), `__body`, `__lines` (renglones sin importe, spec §11.2), `__sub` (opciones y nota) y `__sum` (el total, con
  *   `.avq-o-total__row` y `.avq-o-total__tax`). «Dónde recoger» es `.avq-o-where` (`__title`, `__actions`: «Cómo llegar» y «Llamar»).
@@ -173,7 +175,8 @@ textarea.avq-o-input{min-height:0;padding:12px 14px;resize:none}
 .avq-o-search>input::placeholder{color:${T.muted};opacity:1}
 .avq-o-tabs{position:sticky;top:0;z-index:3;display:flex;gap:24px;height:${TABS_H}px;padding:0 16px;overflow-x:auto;scrollbar-width:none;background:#FFFFFF;border-bottom:1px solid #E7E7E7}
 .avq-o-tabs::-webkit-scrollbar{display:none}
-.avq-o-tab{flex:none;display:flex;align-items:center;justify-content:center;min-width:44px;padding-top:3px;border-bottom:3px solid transparent;color:${T.muted};font-weight:600;text-decoration:none;white-space:nowrap}
+.avq-o-tab{flex:none;display:flex;align-items:center;justify-content:center;min-width:44px;max-width:240px;padding-top:3px;border-bottom:3px solid transparent;color:${T.muted};font-weight:600;text-decoration:none;white-space:nowrap}
+.avq-o-tab__label{min-width:0;overflow:hidden;text-overflow:ellipsis}
 .avq-o-tab[aria-current]{border-bottom-color:var(--avq-accent,${T.ink});color:${T.ink};font-weight:700}
 .avq-o-root .avq-o-tab:focus-visible{outline-offset:-4px;border-radius:8px}
 .avq-o-section{padding:22px 16px 0;scroll-margin-top:${TABS_H}px}
@@ -279,7 +282,7 @@ textarea.avq-o-input{min-height:0;padding:12px 14px;resize:none}
 .avq-o-form__intro{display:flex;flex-direction:column;gap:6px}
 .avq-o-form__intro>p{margin:0;color:${T.muted};line-height:1.4}
 .avq-o-field{display:flex;flex-direction:column;gap:8px;min-width:0}
-.avq-o-field>label,.avq-o-field__label{font-weight:600}
+.avq-o-field>label{font-weight:600}
 .avq-o-help{margin:0;color:${T.muted};font-size:14px;line-height:1.4;overflow-wrap:anywhere}
 .avq-o-privacy{display:flex;flex-direction:column;gap:4px}
 .avq-o-privacy>a{align-self:flex-start;display:inline-flex;align-items:center;min-height:44px;color:${T.ink};font-weight:600}
@@ -299,6 +302,7 @@ textarea.avq-o-input{min-height:0;padding:12px 14px;resize:none}
 .avq-o-otp__more>.avq-o-btn{padding:0}
 .avq-o-track__intro{display:flex;flex-direction:column;gap:6px;padding:8px 16px 0}
 .avq-o-track__intro>p{margin:0;color:${T.text2};line-height:1.4}
+.avq-o-root .avq-o-track__intro .avq-o-title:focus{outline:none}
 .avq-o-steps{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;margin:18px 16px 0;padding:0;list-style:none}
 .avq-o-step{display:flex;flex-direction:column;gap:8px;min-width:0;color:${T.muted};font-size:13px;overflow-wrap:anywhere}
 .avq-o-step::before{content:'';height:6px;border-radius:3px;background:#E4E4E4}

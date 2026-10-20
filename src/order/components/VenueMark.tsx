@@ -21,7 +21,8 @@ const brokenOf = (store: OrderStore) => {
 /**
  * El círculo del restaurante: su logo; sin logo, o con la liga rota, las iniciales del nombre (nunca un hueco). Las iniciales no se leen
  * en voz alta (el nombre ya va al lado) y el logo es una imagen sin texto alternativo. Sin logo y sin letras en el nombre, nada.
- * `small` es el de la cabecera compacta (32 px); sin él, el de la portada (80 px). La tarjeta del carrito lo reajusta por CSS.
+ * `small` es el de la cabecera compacta (32 px); sin él, el base de 64 px, que mide 80 sólo en la portada con foto (`.avq-o-hero--cover`) y
+ * 40 en la tarjeta «Recoges en» del carrito: ambos lo reajustan por CSS.
  * `name` es el nombre que va al lado cuando no sale de `/info` (el seguimiento lo trae en su respuesta): de él salen las iniciales.
  */
 export function VenueMark({ small, name }: { small?: boolean; name?: string }) {

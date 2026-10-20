@@ -18,7 +18,7 @@ const Check = () => (
 
 /**
  * Un grupo de opciones de la ficha: título, ayuda («Elige 1», «Elige N», «Elige hasta N»…) y pastilla «Obligatorio» → «Listo», u
- * «Opcional»; la ayuda y la pastilla describen las opciones (`aria-describedby`).
+ * «Opcional»; la ayuda, la pastilla y la descripción del grupo (si la trae) describen las opciones (`aria-describedby`).
  * Opciones de 56 px: radio si el grupo es de una, casilla si es de varias y, ya elegida una que admite cantidad, un stepper.
  * Las reglas son las de reservas (`state/modifierSelection` y `areRequiredModifiersSatisfied`); aquí sólo cambia la forma.
  */
@@ -47,11 +47,12 @@ export function OptionGroup({ productId, group, selections, onChange, t, maxPerO
         <div class="avq-o-group__names">
           <h3 class="avq-o-group__title" id={`${id}-t`}>{group.name}</h3>
           <span class="avq-o-group__hint" id={`${id}-h`}>{hint}</span>
-          {group.description && <span class="avq-o-group__hint">{group.description}</span>}
+          {group.description && <span class="avq-o-group__hint" id={`${id}-d`}>{group.description}</span>}
         </div>
         <span class={pill} id={`${id}-p`}>{pillText}</span>
       </div>
-      <div class="avq-o-group__opts" role={group.allowMultiple ? 'group' : 'radiogroup'} aria-labelledby={`${id}-t`} aria-describedby={`${id}-h ${id}-p`}>
+      <div class="avq-o-group__opts" role={group.allowMultiple ? 'group' : 'radiogroup'} aria-labelledby={`${id}-t`}
+        aria-describedby={`${id}-h ${id}-p${group.description ? ` ${id}-d` : ''}`}>
         {group.modifiers.map(m => {
           const qty = qtyIn(selections, m.id)
           // Con cantidad, el stepper toma el lugar del sobreprecio y éste pasa debajo del nombre, en gris (spec §9.4).

@@ -12,11 +12,13 @@ interface CountryPhoneInputProps {
   noResultsText: string
   /** Aspecto de la tienda de pedidos (spec §4 y §10.3): siempre claro y con colores fijos. Sin esto, el de reservas de siempre. */
   look?: 'tienda'
+  /** Sólo con `look="tienda"`: el `id` del campo del número, para que una `<label for>` de afuera lo nombre y lo enfoque al tocarla. */
+  inputId?: string
 }
 
 export function CountryPhoneInput({
   dialCode, nationalNumber, onDialCodeChange, onNationalNumberChange,
-  numberPlaceholder, searchPlaceholder, noResultsText, look,
+  numberPlaceholder, searchPlaceholder, noResultsText, look, inputId,
 }: CountryPhoneInputProps) {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
@@ -125,6 +127,7 @@ export function CountryPhoneInput({
         </button>
         {/* National number */}
         <input
+          id={look === 'tienda' ? inputId : undefined}
           type="tel"
           inputMode="numeric"
           value={nationalNumber}

@@ -8,6 +8,7 @@ vi.mock('../api', async () => {
 })
 import { ApiError, cancelOrder, getTracking } from '../api'
 import { TrackingScreen } from './TrackingScreen'
+import { STORE_CSS } from './theme'
 import { makeStore, withStore } from './testKit'
 import type { OnlineOrderStatus, Tracking } from '../types'
 
@@ -377,5 +378,75 @@ describe('cancelar', () => {
     await flush()
     const msg = screen.getByText('Sin conexión. Revisa tu internet y vuelve a intentar.')
     expect(msg.closest('.avq-o-notice')!.classList.contains('avq-o-notice--warn')).toBe(true)
+  })
+})
+
+describe('foco tras un intento de cancelar', () => {
+  const offline = () => new ApiError('Sin conexión', 0, undefined, undefined, true)
+  /** Abre la confirmación y deja el foco en «Sí, cancelar» (como lo deja quien lo toca o lo alcanza con el teclado). */
+  async function ask() {
+    fireEvent.click(screen.getByRole('button', { name: 'Cancelar pedido' }))
+    await flush()
+    const yes = screen.getByRole('button', { name: 'Sí, cancelar' })
+    yes.focus()
+    return yes
+  }
+  const cancelBtn = () => screen.getByRole('button', { name: 'Cancelar pedido' })
+
+  it('se canceló: el botón se va y el foco pasa al titular del estado (tabindex -1, sin contorno), no se pierde', async () => {
+    vi.mocked(cancelOrder).mockResolvedValue({ status: 'CANCELLED_BY_CUSTOMER' })
+    await show(tr())
+    const yes = await ask()
+    vi.mocked(getTracking).mockResolvedValue(tr({ status: 'CANCELLED_BY_CUSTOMER', canCancel: false }))
+    fireEvent.click(yes)
+    await flush()
+    expect(screen.queryByRole('button', { name: 'Cancelar pedido' })).toBeNull()
+    const title = screen.getByRole('heading', { name: 'Cancelaste tu pedido.' })
+    expect(title.getAttribute('tabindex')).toBe('-1')
+    expect(document.activeElement).toBe(title)
+    expect(STORE_CSS).toMatch(/\.avq-o-root \.avq-o-track__intro \.avq-o-title:focus\{outline:none\}/)
+  })
+  it('sin red, o con un 409 que deja el pedido cancelable: el aviso sale y, como el foco se perdió, vuelve a «Cancelar pedido»', async () => {
+    for (const failure of [offline(), new ApiError('x', 409, 'ORDER_STATE_CHANGED')]) {
+      vi.mocked(cancelOrder).mockRejectedValue(failure)
+      await show(tr())
+      const yes = await ask()
+      // El refresco también falla (sin red) o trae el mismo pedido aún cancelable (409): el botón sigue en su lugar.
+      if (failure.code) vi.mocked(getTracking).mockResolvedValue(tr())
+      else vi.mocked(getTracking).mockRejectedValue(failure)
+      fireEvent.click(yes)
+      await flush()
+      expect(screen.getByText(failure.code ? 'Tu pedido ya no se puede cancelar.' : 'Sin conexión. Revisa tu internet y vuelve a intentar.')).toBeTruthy()
+      expect(screen.queryByRole('group', { name: '¿Cancelar tu pedido?' })).toBeNull()
+      expect(document.activeElement, failure.code ?? 'sin red').toBe(cancelBtn())
+      cleanup()
+    }
+  })
+  it('cerrar la confirmación con «No» devuelve el foco a «Cancelar pedido» (el intento no interviene)', async () => {
+    await show(tr())
+    await ask()
+    fireEvent.click(screen.getByRole('button', { name: 'No' }))
+    await flush()
+    expect(document.activeElement).toBe(cancelBtn())
+    expect(cancelOrder).not.toHaveBeenCalled()
+  })
+  it('nunca jala el foco de otro lado: si durante el intento la persona pasó a otro elemento, ahí se queda (se cancele o no)', async () => {
+    for (const cancels of [false, true]) {
+      let settle!: () => void
+      vi.mocked(cancelOrder).mockReturnValue(new Promise((resolve, reject) => { settle = () => (cancels ? resolve({ status: 'CANCELLED_BY_CUSTOMER' }) : reject(offline())) }))
+      await show(tr())
+      const yes = await ask()
+      fireEvent.click(yes)
+      await flush()
+      const more = screen.getByRole('button', { name: 'Pedir algo más' })
+      more.focus()
+      if (cancels) vi.mocked(getTracking).mockResolvedValue(tr({ status: 'CANCELLED_BY_CUSTOMER', canCancel: false }))
+      else vi.mocked(getTracking).mockRejectedValue(offline())
+      settle()
+      await flush()
+      expect(screen.queryByRole('button', { name: 'Cancelar pedido' }) === null, 'el botón sigue sólo si no se canceló').toBe(cancels)
+      expect(document.activeElement, cancels ? 'se canceló' : 'sin red').toBe(more)
+      cleanup()
+    }
   })
 })

@@ -16,6 +16,16 @@ const POLL_MS = 10_000
 const STEPS = ['received', 'preparing', 'ready', 'completed'] as const
 const STEP_OF: Partial<Record<OnlineOrderStatus, number>> = { PENDING_ACCEPTANCE: 0, ACCEPTED: 1, READY: 2, COMPLETED: 3 }
 
+/**
+ * ¿Nadie tiene el foco? La tienda vive en una sombra: `document.activeElement` sólo ve el host, así que se mira también la raíz del
+ * elemento. Sólo si ninguna de las dos tiene algo enfocado (o es el `body`) el foco está perdido; si está en otra parte de la tienda
+ * o del sitio, no es nuestro.
+ */
+const focusLost = (el: Element) => {
+  const inner = (el.getRootNode() as Document | ShadowRoot).activeElement
+  return (!inner || inner === document.body) && (!document.activeElement || document.activeElement === document.body)
+}
+
 // Íconos de «Cómo llegar» y «Llamar» (de la maqueta; sólo se usan aquí).
 const Pin = () => (
   <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -50,7 +60,11 @@ export function TrackingScreen() {
   const cancelling = useRef(false)
   const cancelBtn = useRef<HTMLButtonElement>(null)
   const noBtn = useRef<HTMLButtonElement>(null)
-  const wasAsking = useRef(false)
+  const titleRef = useRef<HTMLHeadingElement>(null)
+  /** «No» cerró la confirmación (y no un intento de cancelar): sólo entonces el foco vuelve a «Cancelar pedido» al cerrarse. */
+  const closedByNo = useRef(false)
+  /** Cuenta los intentos de cancelar ya resueltos y con la vista refrescada (ver el efecto de abajo). */
+  const [settled, setSettled] = useState(0)
 
   useEffect(() => {
     if (!token) return
@@ -92,13 +106,24 @@ export function TrackingScreen() {
     }
   }, [store, token])
 
-  // El foco sigue a la confirmación: al abrirla va a «No» (el botón que no hace nada); al cerrarse vuelve a «Cancelar pedido», que
-  // regresa a su lugar (si el pedido ya no se puede cancelar, ese botón no está y no se mueve nada). Al cargar la pantalla no se toca.
+  // El foco sigue a la confirmación: al abrirla va a «No» (el botón que no hace nada); al cerrarla con «No» vuelve a «Cancelar pedido»,
+  // que regresa a su lugar. Al cargar la pantalla no se toca. Tras un intento de cancelar NO vuelve aquí: aún no se sabe si el botón
+  // seguirá (lo decide el efecto de abajo, con la vista ya refrescada).
   useEffect(() => {
     if (asking) noBtn.current?.focus()
-    else if (wasAsking.current) cancelBtn.current?.focus()
-    wasAsking.current = asking
+    else if (closedByNo.current) {
+      closedByNo.current = false
+      cancelBtn.current?.focus()
+    }
   }, [asking])
+
+  // Un intento de cancelar ya resuelto y la vista ya refrescada: la confirmación se fue con el foco que tenía. Si el botón también se
+  // fue (el pedido se canceló, o ya no se puede), el foco pasa al titular del estado, que dice lo que pasó; si sigue (sin red, un 409
+  // que lo deja cancelable), vuelve a «Cancelar pedido». Sólo si el foco se perdió: quien ya está en otro elemento, ahí se queda.
+  useEffect(() => {
+    const target = cancelBtn.current ?? titleRef.current
+    if (settled && target && focusLost(target)) target.focus()
+  }, [settled])
 
   // De vuelta a la carta (el aviso «Tienes un pedido en curso · Ver» de OrderApp regresa aquí).
   const orderMore = (
@@ -158,6 +183,7 @@ export function TrackingScreen() {
       setAsking(false)
     }
     await refresh.current()
+    setSettled(n => n + 1)
   }
 
   const contact = tracking.venueContact
@@ -170,7 +196,7 @@ export function TrackingScreen() {
       {problemNotice}
       {/* Un cambio de estado se anuncia (como la frase de hoy, que era `role="status"`). */}
       <div class="avq-o-track__intro" role="status">
-        <h2 class="avq-o-title">{head}</h2>
+        <h2 ref={titleRef} class="avq-o-title" tabIndex={-1}>{head}</h2>
         {sub && <p>{sub}</p>}
       </div>
       {step !== undefined && (
@@ -236,7 +262,7 @@ export function TrackingScreen() {
               <p>{t('tracking.cancelAsk')}</p>
               <div>
                 <button type="button" class="avq-o-btn avq-o-btn--neutral" disabled={busy} onClick={() => void doCancel()}>{busy ? t('tracking.cancelling') : t('tracking.cancelYes')}</button>
-                <button ref={noBtn} type="button" class="avq-o-btn avq-o-btn--neutral" disabled={busy} onClick={() => setAsking(false)}>{t('tracking.cancelNo')}</button>
+                <button ref={noBtn} type="button" class="avq-o-btn avq-o-btn--neutral" disabled={busy} onClick={() => { closedByNo.current = true; setAsking(false) }}>{t('tracking.cancelNo')}</button>
               </div>
             </div>
           )}

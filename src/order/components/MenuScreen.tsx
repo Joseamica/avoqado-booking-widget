@@ -98,7 +98,9 @@ function MenuList({ menu, open, query, onQuery }: { menu: Menu; open: boolean; q
       {!q && (
         <nav ref={strip} class="avq-o-tabs" aria-label={t('menu.categories')}>
           {cats.map((c, i) => (
-            <a key={c.id} class="avq-o-tab" href={`#${ids[i]}`} aria-current={ids[i] === active ? 'true' : undefined} onClick={e => go(e, ids[i])}>{c.name}</a>
+            <a key={c.id} class="avq-o-tab" href={`#${ids[i]}`} aria-current={ids[i] === active ? 'true' : undefined} onClick={e => go(e, ids[i])}>
+              <span class="avq-o-tab__label">{c.name}</span>
+            </a>
           ))}
         </nav>
       )}

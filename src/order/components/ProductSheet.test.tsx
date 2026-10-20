@@ -347,6 +347,26 @@ describe('ficha con grupos de opciones (maqueta Producto)', () => {
     expect(desc(tam)).toBe('Elige 1 Listo')
     expect(desc(screen.getByRole('group', { name: 'Aderezos' }))).toBe('Elige los que quieras Opcional')
   })
+  it('la descripción del grupo (si la hay) también describe las opciones: va al final de aria-describedby; sin ella no queda ningún id de más', () => {
+    open(product({
+      modifierGroups: [
+        group({
+          id: 'sal', name: 'Salsa', description: 'La roja pica mucho', required: true, minSelections: 1, maxSelections: 1,
+          modifiers: [{ id: 'v', name: 'Verde', price: 0 }, { id: 'r', name: 'Roja', price: 0 }],
+        }),
+        group({ id: 'ext', name: 'Extras', allowMultiple: true, modifiers: [{ id: 'q', name: 'Queso', price: 10 }] }),
+      ],
+    }))
+    const ids = (el: HTMLElement) => el.getAttribute('aria-describedby')!.split(/\s+/)
+    const desc = (el: HTMLElement) => ids(el).map(id => document.getElementById(id)!.textContent).join(' ')
+    const salsa = screen.getByRole('radiogroup', { name: 'Salsa' })
+    expect(desc(salsa)).toBe('Elige 1 Obligatorio La roja pica mucho')
+    fireEvent.click(box(/Verde/))
+    expect(desc(salsa)).toBe('Elige 1 Listo La roja pica mucho')
+    const extras = screen.getByRole('group', { name: 'Extras' })
+    expect(ids(extras)).toHaveLength(2) // sólo la ayuda y la pastilla
+    expect(desc(extras)).toBe('Elige los que quieras Opcional')
+  })
   it('con el teclado, al llegar al tope el foco se queda en el botón y otro toque no cambia nada (pie y opción)', () => {
     open(product({
       modifierGroups: [group({ id: 'sal', name: 'Salsas', allowMultiple: true, maxSelections: 2, modifiers: [{ id: 'v', name: 'Verde', price: 0 }] })],

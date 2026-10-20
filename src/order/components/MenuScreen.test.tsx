@@ -411,6 +411,21 @@ describe('carta al estilo de las apps de comida: pestañas, filas y barra del ca
       expect(getComputedStyle(container.querySelector('.avq-o-tab')!).whiteSpace).toBe('nowrap')
       expect(getComputedStyle(container.querySelector('.avq-o-tabs')!).overflowX).toBe('auto')
     })
+    it('una pestaña no pasa de 240 px: el nombre largo se corta con «…» al pintar, pero su texto y su nombre accesible siguen completos', () => {
+      const name = 'Ñ'.repeat(120)
+      const m = menuOf(product())
+      m.categories[0].name = name
+      render(withStore(makeStore(infoOf(), m), <OrderApp />))
+      const tab = within(screen.getByRole('navigation', { name: 'Categorías de la carta' })).getByRole('link', { name })
+      expect(tab.textContent).toBe(name)
+      expect(getComputedStyle(tab).maxWidth).toBe('240px')
+      // `text-overflow` no actúa sobre un contenedor flex: el corte vive en el texto, un hijo de bloque que puede encogerse.
+      const label = tab.querySelector('.avq-o-tab__label') as HTMLElement
+      expect(label.textContent).toBe(name)
+      const css = getComputedStyle(label)
+      expect([css.overflow, css.textOverflow]).toEqual(['hidden', 'ellipsis'])
+      expect(css.minWidth).toMatch(/^0(px)?$/)
+    })
     it('un nombre de 120 caracteres sin espacios no desborda: la fila envuelve (overflow-wrap:anywhere, min-width:0) y el precio y el «+» siguen ahí', () => {
       const name = 'Á'.repeat(118) + '🌮🌮'
       const long = menuOf(product({ name, description: 'Sin'.repeat(80), imageUrl: 'https://x/y.png' }), product({ id: 'p2', name }))

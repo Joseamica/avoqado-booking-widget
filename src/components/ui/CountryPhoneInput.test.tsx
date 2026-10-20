@@ -230,6 +230,17 @@ describe('CountryPhoneInput', () => {
     expect(search.style.outline).toBe('')
   })
 
+  it('CountryPhoneInput inputId: con look=tienda es el id del número (para una <label for>); sin look se ignora y no se agrega ningún id', () => {
+    render(<CountryPhoneInput {...props} look="tienda" inputId="num-1" />)
+    expect((screen.getByPlaceholderText('Número') as HTMLInputElement).id).toBe('num-1')
+    cleanup()
+    render(<CountryPhoneInput {...props} inputId="num-1" />)
+    expect(screen.getByPlaceholderText('Número').hasAttribute('id')).toBe(false)
+    cleanup()
+    render(<CountryPhoneInput {...props} look="tienda" />)
+    expect(screen.getByPlaceholderText('Número').hasAttribute('id')).toBe(false)
+  })
+
   it('CountryPhoneInput look=tienda: no lee el tema salvo el acento (ni --avq-fg, --avq-bg, --avq-muted...)', () => {
     const { field, number } = show('tienda')
     const root = field.parentElement!

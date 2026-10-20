@@ -230,6 +230,29 @@ describe('«Confirmar pedido» en un pie fijo', () => {
     expect(createOrder).toHaveBeenCalledTimes(1)
   })
 
+  it('un toque sellado ANTES de que la pantalla se armara (diferencia negativa) también se ignora: es de quien la abrió, no de quien la ve', async () => {
+    vi.mocked(createOrder).mockReturnValue(new Promise(() => {}))
+    await act(() => { vi.advanceTimersByTime(1000) }) // el reloj falso arranca en 0: hace falta un «antes» al que sellar el toque
+    const armed = performance.now()
+    const { s } = ready()
+    await act(() => { vi.advanceTimersByTime(500) }) // al atenderse los toques, la ventana de 400 ms ya pasó
+    const tap = (timeStamp: number) => {
+      const e = new MouseEvent('click', { bubbles: true, cancelable: true })
+      Object.defineProperty(e, 'timeStamp', { value: timeStamp })
+      fireEvent(confirmBtn(), e)
+    }
+    tap(armed - 400) // 800 ms antes de armarse, 50 ms antes, 1 ms antes: ninguno pasa aunque ya hayan pasado más de 400 ms
+    tap(armed - 50)
+    tap(armed - 1)
+    await flush()
+    expect(createOrder).not.toHaveBeenCalled()
+    expect(s.screen.value).toBe('details')
+    // Sin hora del toque se usa la de ahora (500 ms después de armarse): pasa. La guarda no dejó nada trabado.
+    tap(0)
+    await flush()
+    expect(createOrder).toHaveBeenCalledTimes(1)
+  })
+
   it('la fila de la casilla de privacidad mide al menos 44 px (toque mínimo)', () => {
     ready()
     expect(getComputedStyle(screen.getByLabelText('Acepto el aviso de privacidad').closest('label')!).minHeight).toBe('44px')
@@ -294,12 +317,29 @@ describe('campos de «Tus datos»', () => {
     expect(screen.getByText('Con tu nombre te entregan el pedido en el mostrador.')).toBeTruthy()
     expect(screen.getByLabelText('Nombre').classList.contains('avq-o-input')).toBe(true)
     expect(screen.getByLabelText('Correo (opcional)').classList.contains('avq-o-input')).toBe(true)
-    const phone = screen.getByRole('group', { name: 'WhatsApp' })
+    // «WhatsApp» es la etiqueta REAL del número (<label for>), no un grupo con nombre.
+    const number = screen.getByLabelText('WhatsApp') as HTMLInputElement
+    expect(number.getAttribute('type')).toBe('tel')
+    const phone = number.closest('.avq-o-field') as HTMLElement
     expect(within(phone).getByText('Aquí te mandamos un código para confirmar tu pedido.')).toBeTruthy()
     // El campo compartido con reservas, en su aspecto «tienda» (sólo aquí): 52 px de alto, con la lada como segmento.
-    expect((within(phone).getByPlaceholderText('10 dígitos').parentElement as HTMLElement).style.height).toBe('52px')
+    expect((number.parentElement as HTMLElement).style.height).toBe('52px')
     expect(within(phone).getByRole('button', { name: /\+52/ })).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: 'Volver al pedido' }))
     expect(s.screen.value).toBe('cart')
+  })
+  it('«WhatsApp» es una etiqueta real (<label for>) del número: tocarla llega al campo y el navegador lo enfoca; nombra al campo, ya no a un grupo', () => {
+    show()
+    const label = screen.getByText('WhatsApp', { selector: 'label' }) as HTMLLabelElement
+    const number = screen.getByPlaceholderText('10 dígitos') as HTMLInputElement
+    expect(number.id).not.toBe('')
+    expect(label.htmlFor).toBe(number.id)
+    expect(label.control).toBe(number)
+    expect(screen.queryByRole('group', { name: 'WhatsApp' })).toBeNull()
+    // jsdom reenvía el clic de la etiqueta al campo; MOVER el foco ahí es la acción por omisión del navegador (se comprueba en la corrida real).
+    const clicks = vi.fn()
+    number.addEventListener('click', clicks)
+    fireEvent.click(label)
+    expect(clicks).toHaveBeenCalledTimes(1)
   })
 })

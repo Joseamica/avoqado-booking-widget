@@ -60,9 +60,10 @@ export function CartScreen() {
 
   // Cada cambio del carrito reinicia la cotización y vuelve a cotizar, ~300 ms después del último toque (el límite de /quote es
   // 60/min por IP, y con CGNAT muchos comparten IP); una respuesta vieja no pisa a la nueva. Es un efecto de layout: el reinicio
-  // ocurre ANTES de pintar. (Al CAMBIAR el carrito, checkout.ts ya anula la cotización en el mismo lote, antes de repintar; lo que
-  // esto evita es el cuadro con la cotización que dejó la visita anterior al volver al carrito —un «Continuar $viejo» que enseguida
-  // desaparece— y con el aviso de error del carrito anterior.)
+  // ocurre ANTES de pintar. (Al CAMBIAR el carrito, checkout.ts ya anula la cotización en el mismo lote, antes de repintar. Lo que el
+  // efecto evita de verdad es volver a entrar al carrito con la cotización de la visita anterior —`store.quote` sobrevive a salir de
+  // la pantalla—: un «Continuar $viejo» que enseguida desaparece. El aviso de error, en cambio, nace vacío en cada visita: aquí sólo
+  // se limpia al cambiar el carrito.)
   useLayoutEffect(() => {
     store.quote.value = null
     setError(null)

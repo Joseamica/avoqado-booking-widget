@@ -76,10 +76,10 @@ export function DetailsScreen() {
           <input id={`${id}-name`} class="avq-o-input" type="text" autoComplete="name" maxLength={80} value={d.name}
             onInput={(e: any) => set({ name: e.currentTarget.value })} />
         </div>
-        {/* El campo es compartido con reservas (sin `id` para el número): el grupo lleva el nombre «WhatsApp». */}
-        <div class="avq-o-field" role="group" aria-labelledby={`${id}-phone`}>
-          <span id={`${id}-phone`} class="avq-o-field__label">{t('details.phone')}</span>
-          <CountryPhoneInput look="tienda" dialCode={d.dial} nationalNumber={d.national}
+        {/* El campo es compartido con reservas: `inputId` (sólo con `look="tienda"`) le pone id al número, y así «WhatsApp» es su etiqueta real. */}
+        <div class="avq-o-field">
+          <label for={`${id}-phone`}>{t('details.phone')}</label>
+          <CountryPhoneInput look="tienda" inputId={`${id}-phone`} dialCode={d.dial} nationalNumber={d.national}
             onDialCodeChange={dial => set({ dial })} onNationalNumberChange={national => set({ national })}
             numberPlaceholder={t('details.phonePlaceholder')} searchPlaceholder={t('details.countrySearch')} noResultsText={t('details.countryNoResults')} />
           <p class="avq-o-help">{t('details.phoneHelp')}</p>
