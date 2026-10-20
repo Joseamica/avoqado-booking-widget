@@ -15,7 +15,8 @@ export interface VenueContact { address: string | null; phone: string | null }
 
 export interface StoreInfo {
   venue: { slug: string; name: string | null; timezone: string | null; currency: string }
-  brand: { logo: string | null; logoFull: string | null; primaryColor: string | null; secondaryColor: string | null }
+  /** `heroImageUrl` (la portada) es aditivo: un servidor viejo no lo manda y la tienda sale sin foto. */
+  brand: { logo: string | null; logoFull: string | null; primaryColor: string | null; secondaryColor: string | null; heroImageUrl?: string | null }
   status: StoreStatus
   reason: StoreReason
   /** ISO; sólo en una pausa con hora vigente que NO es la del gerente. Aditivo: un servidor viejo no lo manda. */

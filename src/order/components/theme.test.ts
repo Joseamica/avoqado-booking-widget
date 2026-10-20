@@ -118,6 +118,17 @@ describe('STORE_CSS', () => {
     expect(STORE_CSS).toContain(':focus-visible')
     expect(STORE_CSS).toMatch(/@media\s*\(prefers-reduced-motion:\s*reduce\)/)
   })
+  it('la tienda es clara siempre: color-scheme light en la raíz (barras y casillas nativas no se vuelven oscuras en un sitio oscuro)', () => {
+    expect(STORE_CSS.match(/\.avq-o-root\s*\{([^}]*)\}/)?.[1] ?? '').toMatch(/color-scheme:\s*light(?![\w-])/)
+  })
+  it('trae las clases del encabezado (portada, logo, chips, cabecera compacta) y de las partes del aviso', () => {
+    const classes = [
+      'avq-o-hero', 'avq-o-hero--cover', 'avq-o-hero__img', 'avq-o-hero__id', 'avq-o-hero__names', 'avq-o-hero__name', 'avq-o-hero__addr',
+      'avq-o-chips', 'avq-o-dot', 'avq-o-mark', 'avq-o-mark--sm', 'avq-o-head', 'avq-o-head__name',
+      'avq-o-notice__body', 'avq-o-notice__title', 'avq-o-notice__action',
+    ]
+    for (const c of classes) expect(STORE_CSS, `.${c}`).toMatch(new RegExp(`\\.${c}[\\s,{:>.\\[]`))
+  })
   it('las fuentes: Figtree en el cuerpo y Bricolage Grotesque en los títulos, con respaldo del sistema', () => {
     expect(STORE_CSS).toMatch(/\.avq-o-root\s*\{[^}]*font-family:\s*'Figtree',\s*system-ui,\s*sans-serif/)
     expect(STORE_CSS).toContain("'Bricolage Grotesque',system-ui,sans-serif")

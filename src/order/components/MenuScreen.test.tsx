@@ -1,5 +1,5 @@
 import { h } from 'preact'
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/preact'
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/preact'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('../api', async () => {
@@ -10,6 +10,8 @@ import { ApiError, getInfo, getMenu, getTracking } from '../api'
 import { loadLastOrder, saveLastOrder } from '../session'
 import { MenuScreen } from './MenuScreen'
 import { OrderApp } from './OrderApp'
+import { StoreStatusBanner } from './StoreStatusBanner'
+import type { StoreInfo } from '../types'
 import { infoOf, makeStore, menuOf, product, withStore } from './testKit'
 
 beforeEach(() => { sessionStorage.clear(); localStorage.clear() })
@@ -217,7 +219,8 @@ describe('OrderApp', () => {
     const s = makeStore(infoOf({ venue, brand: { logo: 'https://x/logo.png', logoFull: 'https://x/full.png', primaryColor: null, secondaryColor: null } }), menuOf(product()))
     render(withStore(s, <OrderApp />))
     const header = () => screen.getByRole('banner')
-    expect(header().textContent).toBe('Flautas Coyoacán')
+    // En la carta es la portada completa (nombre como título y chips); en el carrito y los datos, la cabecera compacta.
+    expect(within(header()).getByRole('heading', { name: 'Flautas Coyoacán' })).toBeTruthy()
     expect(header().querySelector('img')!.getAttribute('src')).toBe('https://x/logo.png')
     for (const sc of ['cart', 'details'] as const) {
       await act(async () => { s.go(sc) })
@@ -230,6 +233,188 @@ describe('OrderApp', () => {
     // Sólo el logo ancho: también sirve.
     render(withStore(makeStore(infoOf({ venue, brand: { logo: null, logoFull: 'https://x/full.png', primaryColor: null, secondaryColor: null } }), menuOf(product())), <OrderApp />))
     expect(header().querySelector('img')!.getAttribute('src')).toBe('https://x/full.png')
+  })
+})
+
+describe('encabezado de la tienda: portada, logo, chips y avisos', () => {
+  const venue = { slug: 'a', name: 'Avoqado Full', timezone: 'America/Mexico_City', currency: 'MXN' }
+  const brand = (over: Partial<StoreInfo['brand']> = {}): StoreInfo['brand'] => ({ logo: null, logoFull: null, primaryColor: null, secondaryColor: null, ...over })
+  const store = (over: Partial<StoreInfo> = {}, locale: 'es' | 'en' = 'es') => makeStore(infoOf({ venue, ...over }), menuOf(product()), locale)
+  const app = (s: ReturnType<typeof makeStore>) => render(withStore(s, <OrderApp />))
+  const header = () => screen.getByRole('banner')
+  const everyDay = (open: string, close: string) =>
+    Object.fromEntries(['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'].map(k => [k, { enabled: true, ranges: [{ open, close }] }])) as any
+  afterEach(() => { vi.useRealTimers() })
+
+  it('portada: con brand.heroImageUrl hay <img> de portada; sin ella no hay hueco; si la imagen falla se quita', () => {
+    const { container } = app(store({ brand: brand({ heroImageUrl: 'https://x/portada.jpg' }) }))
+    const cover = () => container.querySelector('.avq-o-hero__img') as HTMLImageElement | null
+    expect(cover()!.getAttribute('src')).toBe('https://x/portada.jpg')
+    expect(header().classList.contains('avq-o-hero--cover')).toBe(true)
+    // Una portada rota se trata como si no hubiera: se quita y el encabezado queda sin foto, sin hueco gris.
+    fireEvent.error(cover()!)
+    expect(cover()).toBeNull()
+    expect(header().classList.contains('avq-o-hero--cover')).toBe(false)
+    cleanup()
+    for (const heroImageUrl of [undefined, null, '']) {
+      const r = app(store({ brand: brand({ heroImageUrl }) }))
+      expect(r.container.querySelector('.avq-o-hero__img')).toBeNull()
+      expect(header().classList.contains('avq-o-hero--cover')).toBe(false)
+      cleanup()
+    }
+  })
+  it('una portada nueva (otra liga) se intenta aunque la anterior hubiera fallado', async () => {
+    const s = store({ brand: brand({ heroImageUrl: 'https://x/rota.jpg' }) })
+    const { container } = app(s)
+    fireEvent.error(container.querySelector('.avq-o-hero__img')!)
+    expect(container.querySelector('.avq-o-hero__img')).toBeNull()
+    await act(async () => { s.info.value = infoOf({ venue, brand: brand({ heroImageUrl: 'https://x/buena.jpg' }) }) })
+    expect(container.querySelector('.avq-o-hero__img')!.getAttribute('src')).toBe('https://x/buena.jpg')
+  })
+  it('logo: con logo, <img>; sin logo o con logo roto, iniciales «AF»', () => {
+    const { container } = app(store({ brand: brand({ logo: 'https://x/logo.png' }) }))
+    const img = () => container.querySelector('.avq-o-mark img') as HTMLImageElement | null
+    expect(img()!.getAttribute('src')).toBe('https://x/logo.png')
+    expect(screen.queryByText('AF')).toBeNull()
+    fireEvent.error(img()!)
+    expect(img()).toBeNull()
+    expect(screen.getByText('AF')).toBeTruthy()
+    cleanup()
+    const none = app(store())
+    expect(none.container.querySelector('.avq-o-mark img')).toBeNull()
+    expect(screen.getByText('AF')).toBeTruthy()
+  })
+  it('el logo ancho (logoFull) también sirve, y sin nombre ni logo no hay encabezado', () => {
+    const { container } = app(store({ brand: brand({ logoFull: 'https://x/full.png' }) }))
+    expect(container.querySelector('.avq-o-mark img')!.getAttribute('src')).toBe('https://x/full.png')
+    cleanup()
+    app(makeStore(infoOf({ venue: { ...venue, name: null } }), menuOf(product())))
+    expect(screen.queryByRole('banner')).toBeNull()
+  })
+  it('chips: «Abierto hasta las 22:00», «Listo en ~20 min» si estimatedPrepMinutes=20 y «Pagas al recoger»', () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-10-19T18:00:00Z')) // lunes 12:00 en CDMX
+    app(store({ hours: everyDay('09:00', '22:00'), estimatedPrepMinutes: 20 }))
+    expect(screen.getByText('Abierto hasta las 22:00')).toBeTruthy()
+    expect(screen.getByText('Listo en ~20 min')).toBeTruthy()
+    expect(screen.getByText('Pagas al recoger')).toBeTruthy()
+    cleanup()
+    // Sin horario, «Abierto» a secas; sin tiempo de preparación ni pago al recoger, esos chips no salen.
+    app(store({ hours: null, estimatedPrepMinutes: 0, paymentModes: { payAtPickup: false } }))
+    expect(screen.getByText('Abierto')).toBeTruthy()
+    expect(screen.queryByText(/Abierto hasta/)).toBeNull()
+    expect(screen.queryByText(/Listo en/)).toBeNull()
+    expect(screen.queryByText('Pagas al recoger')).toBeNull()
+    cleanup()
+    // El servidor dice «abierto» pero el reloj cae fuera de las franjas: no se inventa una hora.
+    vi.setSystemTime(new Date('2026-10-19T08:00:00Z')) // 02:00 en CDMX
+    app(store({ hours: everyDay('09:00', '22:00') }))
+    expect(screen.getByText('Abierto')).toBeTruthy()
+  })
+  it('chips en inglés', () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-10-19T18:00:00Z'))
+    app(store({ hours: everyDay('09:00', '22:00'), estimatedPrepMinutes: 15 }, 'en'))
+    expect(screen.getByText('Open until 22:00')).toBeTruthy()
+    expect(screen.getByText('Ready in ~15 min')).toBeTruthy()
+    expect(screen.getByText('Pay at pickup')).toBeTruthy()
+  })
+  it('dirección: «Para recoger en Av. Insurgentes Sur 1234» sólo si contact.address', () => {
+    app(store({ contact: { address: 'Av. Insurgentes Sur 1234', phone: null } }))
+    expect(screen.getByText('Para recoger en Av. Insurgentes Sur 1234')).toBeTruthy()
+    cleanup()
+    app(store({ contact: { address: 'Av. Insurgentes Sur 1234', phone: null } }, 'en'))
+    expect(screen.getByText('Pickup at Av. Insurgentes Sur 1234')).toBeTruthy()
+    cleanup()
+    app(store({ contact: { address: null, phone: '55 1234 5678' } }))
+    expect(screen.queryByText(/Para recoger en/)).toBeNull()
+    cleanup()
+    app(store())
+    expect(screen.queryByText(/Para recoger en/)).toBeNull()
+  })
+  it('aviso de pausa: título «Pedidos en pausa» + la frase de hoy literal, en otro elemento, y sin chips', () => {
+    app(store({ status: 'PAUSED', reason: 'MANUAL_PAUSE', pausedUntil: '2026-10-17T19:30:00Z' }))
+    const title = screen.getByText('Pedidos en pausa')
+    const sentence = screen.getByText('En este momento no estamos recibiendo pedidos. Volvemos a recibirlos a las 13:30.')
+    expect(title).not.toBe(sentence)
+    expect(screen.getByRole('status').contains(title) && screen.getByRole('status').contains(sentence)).toBe(true)
+    // El aviso reemplaza al chip de estado, y con la tienda cerrada a pedidos los otros chips no prometen nada.
+    expect(screen.queryByText(/^Abierto/)).toBeNull()
+    expect(screen.queryByText('Pagas al recoger')).toBeNull()
+    expect(screen.queryByText(/Listo en/)).toBeNull()
+  })
+  it('cada estado trae su título (es y en), su ícono sin voz y la frase de hoy aparte', () => {
+    const cases: [Partial<StoreInfo>, string, string][] = [
+      [{ status: 'PAUSED', reason: 'MANUAL_PAUSE' }, 'Pedidos en pausa', 'Orders paused'],
+      [{ status: 'CLOSED', reason: 'OUTSIDE_HOURS' }, 'Cerrado ahora', 'Closed now'],
+      [{ status: 'OFFLINE', reason: 'NO_DEVICE' }, 'El restaurante no está conectado', 'The restaurant is offline'],
+      [{ status: 'DISABLED', reason: 'NOT_ENABLED' }, 'Pedidos en línea apagados', 'Online ordering is off'],
+    ]
+    for (const [over, es, en] of cases) {
+      for (const [locale, title] of [['es', es], ['en', en]] as const) {
+        const { container } = render(withStore(store(over, locale), <StoreStatusBanner />))
+        const notice = screen.getByRole('status')
+        const titleEl = within(notice).getByText(title)
+        expect(titleEl.textContent).toBe(title)
+        // La frase de hoy sigue entera en su propio elemento.
+        const sentence = [...notice.querySelectorAll('span')].find(el => el !== titleEl && el.parentElement === titleEl.parentElement)
+        expect(sentence, `${over.status}/${locale}`).toBeTruthy()
+        expect(sentence!.textContent!.length).toBeGreaterThan(title.length)
+        expect(container.querySelector('svg[aria-hidden="true"]'), `${over.status}/${locale} ícono`).not.toBeNull()
+        cleanup()
+      }
+    }
+  })
+  it('la tienda abierta no pinta aviso', () => {
+    const { container } = render(withStore(store(), <StoreStatusBanner />))
+    expect(container.querySelector('.avq-o-notice')).toBeNull()
+  })
+  it('portada completa sólo en la carta; carrito, datos y código llevan la cabecera compacta; con la ficha abierta, ninguna', async () => {
+    const s = store({ brand: brand({ logo: 'https://x/logo.png', heroImageUrl: 'https://x/portada.jpg' }), contact: { address: 'Av. Insurgentes Sur 1234', phone: null } })
+    const { container } = app(s)
+    expect(container.querySelector('.avq-o-hero__img')).not.toBeNull()
+    expect(screen.getByRole('heading', { name: 'Avoqado Full' })).toBeTruthy()
+    // La ficha de un producto ocupa el lugar de la tienda: sin encabezado encima.
+    await act(async () => { s.productId.value = 'p1' })
+    expect(screen.getByRole('dialog')).toBeTruthy()
+    expect(screen.queryByRole('banner')).toBeNull()
+    await act(async () => { s.productId.value = null })
+    expect(screen.getByRole('banner')).toBeTruthy()
+    for (const sc of ['cart', 'details', 'otp'] as const) {
+      await act(async () => { s.go(sc) })
+      expect(container.querySelector('.avq-o-hero__img'), sc).toBeNull()
+      expect(screen.queryByText(/Para recoger en/), sc).toBeNull()
+      expect(screen.queryByRole('heading', { name: 'Avoqado Full' }), sc).toBeNull()
+      expect(header().textContent, sc).toBe('Avoqado Full')
+      expect(header().querySelector('img')!.getAttribute('src'), sc).toBe('https://x/logo.png')
+    }
+    // Con el logo roto, la cabecera compacta también cae a las iniciales.
+    await act(async () => { s.info.value = infoOf({ venue, brand: brand({ logo: 'https://x/logo.png' }) }) })
+    fireEvent.error(header().querySelector('img')!)
+    expect(header().querySelector('img')).toBeNull()
+    expect(header().querySelector('.avq-o-mark--sm')!.textContent).toBe('AF')
+  })
+  it('el aviso global es neutro y «Cerrar» lo quita', () => {
+    const s = store(); s.notice.value = 'Aviso de prueba'
+    app(s)
+    const text = screen.getByText('Aviso de prueba')
+    expect(text.closest('.avq-o-notice--neutral')).not.toBeNull()
+    expect(text.closest('[role="status"]')).not.toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Cerrar' }))
+    expect(s.notice.value).toBeNull()
+    expect(screen.queryByText('Aviso de prueba')).toBeNull()
+  })
+  it('«Tienes un pedido en curso · Ver» es un aviso neutro con su botón', async () => {
+    vi.mocked(getTracking).mockResolvedValue({
+      orderNumber: '7', status: 'ACCEPTED', paymentMode: 'PAY_AT_PICKUP', venueName: 'Flautas', venueSlug: 'a', items: [], total: 0, paid: false,
+      estimatedReadyAt: null, acceptDeadlineAt: '2026-10-17T19:05:00Z', rejectReason: null, createdAt: '', canCancel: false,
+    })
+    const s = store()
+    saveLastOrder(s.slug, { trackingToken: 'T'.repeat(32), orderNumber: '7' })
+    app(s); await flush()
+    const text = screen.getByText('Tienes un pedido en curso')
+    expect(text.closest('.avq-o-notice--neutral')).not.toBeNull()
+    expect(within(text.closest('[role="status"]') as HTMLElement).getByRole('button', { name: 'Ver' })).toBeTruthy()
   })
 })
 

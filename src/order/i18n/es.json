@@ -35,7 +35,16 @@
     "pausedUntil": "En este momento no estamos recibiendo pedidos. Volvemos a recibirlos a las {{time}}.",
     "tooBusy": "Muchos pedidos en este momento. Intenta en unos minutos.",
     "offline": "El restaurante no está conectado. Intenta en unos minutos.",
-    "reconnecting": "Sin conexión; reintentando…"
+    "reconnecting": "Sin conexión; reintentando…",
+    "open": "Abierto",
+    "openUntil": "Abierto hasta las {{time}}",
+    "readyIn": "Listo en ~{{n}} min",
+    "payAtPickupChip": "Pagas al recoger",
+    "pickupAt": "Para recoger en {{address}}",
+    "pausedTitle": "Pedidos en pausa",
+    "closedTitle": "Cerrado ahora",
+    "offlineTitle": "El restaurante no está conectado",
+    "disabledTitle": "Pedidos en línea apagados"
   },
   "menu": {
     "empty": "Todavía no hay productos en línea.",
@@ -44,7 +53,9 @@
     "all": "Todo",
     "noResults": "No encontramos productos con esa búsqueda.",
     "soldOut": "Agotado",
-    "viewOrder": "Ver pedido · {{n}} · {{total}}"
+    "viewOrder": "Ver pedido · {{n}} · {{total}}",
+    "pricesNote": "Precios con IVA incluido.",
+    "poweredBy": "Pedidos con Avoqado"
   },
   "sheet": {
     "add": "Agregar · {{total}}",

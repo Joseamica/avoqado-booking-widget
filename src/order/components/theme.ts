@@ -77,10 +77,13 @@ export function loadStoreFonts(): void {
  * - Modificadores de uso: `.avq-o-btn` + `--primary|--neutral|--quiet`, `.avq-o-notice` + `--neutral|--warn|--error`,
  *   `.avq-o-chip` (+ `--ok`), `.avq-o-stepper` (+ `--line`, el del carrito), `.avq-o-bar` (+ `--neutral`) y `.avq-o-sheet`
  *   (la capa que cubre la ventana) con `.avq-o-sheet__panel` (la hoja).
+ * - Portada y encabezado (tarea 4): `.avq-o-hero` (+ `--cover`, con foto) con `__img`, `__id`, `__names`, `__name` y `__addr`;
+ *   `.avq-o-chips` y `.avq-o-dot`; `.avq-o-mark` (+ `--sm`) es el círculo del logo o de las iniciales; `.avq-o-head` es la
+ *   cabecera compacta de carrito, datos y código. Los avisos llevan `.avq-o-notice__body|__title|__action`.
  * Cada tarea puede AGREGAR clases; las que ya están no se cambian ni se quitan.
  */
 export const STORE_CSS = `
-.avq-o-root{--avq-bg:#FFFFFF;--avq-fg:${T.ink};--avq-muted:${T.surface};--avq-muted-fg:${T.muted};--avq-border:${T.fieldBorder};--avq-o-display:${DISPLAY};box-sizing:border-box;background:#FFFFFF;color:${T.ink};font-family:${BODY};font-size:15px;font-variant-numeric:tabular-nums;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}
+.avq-o-root{--avq-bg:#FFFFFF;--avq-fg:${T.ink};--avq-muted:${T.surface};--avq-muted-fg:${T.muted};--avq-border:${T.fieldBorder};--avq-o-display:${DISPLAY};box-sizing:border-box;background:#FFFFFF;color:${T.ink};font-family:${BODY};font-size:15px;font-variant-numeric:tabular-nums;color-scheme:light;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}
 .avq-o-root *,.avq-o-root *::before,.avq-o-root *::after{box-sizing:border-box}
 .avq-o-root :focus-visible{outline:2px solid var(--avq-accent,${T.ink});outline-offset:2px}
 @media (prefers-reduced-motion:reduce){.avq-o-root *,.avq-o-root *::before,.avq-o-root *::after{animation:none!important;transition:none!important}}
@@ -110,6 +113,25 @@ textarea.avq-o-input{min-height:0;padding:12px 14px;resize:none}
 .avq-o-notice--warn{background:${T.warnBg};color:${T.warnFg}}
 .avq-o-notice--error{background:${T.errBg};color:${T.errFg}}
 .avq-o-notice>svg{flex:none;margin-top:1px}
+.avq-o-notice__body{display:flex;flex-direction:column;gap:2px;flex:1;min-width:0;overflow-wrap:anywhere}
+.avq-o-notice__title{font-weight:700}
+.avq-o-notice__action{flex:none;align-self:center;min-height:44px;margin:-8px 0;padding:0 16px;border:0;border-radius:999px;background:#FFFFFF;color:${T.ink};font:inherit;font-weight:600;cursor:pointer}
+.avq-o-hero{position:relative;padding-bottom:12px}
+.avq-o-hero__img{display:block;width:100%;height:196px;object-fit:cover;background:#E2E2E2}
+.avq-o-hero__id{display:flex;align-items:center;gap:14px;padding:16px 16px 0}
+.avq-o-hero--cover .avq-o-hero__id{display:block;padding-top:48px}
+.avq-o-hero__names{display:flex;flex-direction:column;gap:6px;min-width:0}
+.avq-o-hero__name{margin:0;font-family:var(--avq-o-display);font-weight:800;font-size:32px;line-height:1.05;letter-spacing:-.01em;overflow-wrap:anywhere}
+.avq-o-hero__addr{margin:0;color:${T.text2};line-height:1.4;overflow-wrap:anywhere}
+.avq-o-chips{display:flex;flex-wrap:wrap;gap:8px;margin:14px 16px 4px}
+.avq-o-dot{flex:none;width:8px;height:8px;border-radius:50%;background:${T.okDot}}
+.avq-o-mark{flex:none;display:flex;align-items:center;justify-content:center;width:64px;height:64px;overflow:hidden;border-radius:50%;background:${T.ink};color:#FFFFFF;font-family:var(--avq-o-display);font-weight:800;font-size:22px;line-height:1}
+.avq-o-mark img{display:block;width:100%;height:100%;object-fit:contain;background:#FFFFFF}
+.avq-o-hero--cover .avq-o-mark{position:absolute;left:16px;top:152px;width:80px;height:80px;border:4px solid #FFFFFF;font-size:26px}
+.avq-o-mark--sm{width:32px;height:32px;font-size:13px}
+.avq-o-head{display:flex;align-items:center;gap:10px;padding:16px 16px 12px;font-weight:600}
+.avq-o-head__name{min-width:0;overflow-wrap:anywhere}
+@media (min-width:768px){.avq-o-hero__img{border-radius:0 0 16px 16px}}
 .avq-o-sheet{position:fixed;top:0;right:0;bottom:0;left:0;z-index:2147483000;display:flex;justify-content:center;background:rgba(0,0,0,.45)}
 .avq-o-sheet__panel{display:flex;flex-direction:column;width:100%;max-height:100%;overflow:hidden;background:#FFFFFF;animation:avq-o-up .28s cubic-bezier(.2,.8,.2,1)}
 @media (min-width:768px){.avq-o-sheet{align-items:center;padding:24px}.avq-o-sheet__panel{width:520px;border-radius:20px;animation-name:avq-o-pop}}

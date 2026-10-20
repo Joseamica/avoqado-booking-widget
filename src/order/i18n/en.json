@@ -35,7 +35,16 @@
     "pausedUntil": "We're not taking orders right now. We'll be back at {{time}}.",
     "tooBusy": "Lots of orders right now. Try again in a few minutes.",
     "offline": "The restaurant is not connected. Try again in a few minutes.",
-    "reconnecting": "No connection; retrying…"
+    "reconnecting": "No connection; retrying…",
+    "open": "Open",
+    "openUntil": "Open until {{time}}",
+    "readyIn": "Ready in ~{{n}} min",
+    "payAtPickupChip": "Pay at pickup",
+    "pickupAt": "Pickup at {{address}}",
+    "pausedTitle": "Orders paused",
+    "closedTitle": "Closed now",
+    "offlineTitle": "The restaurant is offline",
+    "disabledTitle": "Online ordering is off"
   },
   "menu": {
     "empty": "There are no online products yet.",
@@ -44,7 +53,9 @@
     "all": "All",
     "noResults": "No products match your search.",
     "soldOut": "Sold out",
-    "viewOrder": "View order · {{n}} · {{total}}"
+    "viewOrder": "View order · {{n}} · {{total}}",
+    "pricesNote": "Prices include VAT.",
+    "poweredBy": "Ordering by Avoqado"
   },
   "sheet": {
     "add": "Add · {{total}}",
