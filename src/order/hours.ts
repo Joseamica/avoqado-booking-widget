@@ -18,25 +18,36 @@ export function todayRanges(hours: WeeklyHours | null, now: Date, timeZone: stri
 const WEEK: Weekday[] = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday']
 const minutes = (hhmm: string) => Number(hhmm.slice(0, 2)) * 60 + Number(hhmm.slice(3, 5))
 
+type Span = { start: number; end: number; close: string }
+
 /**
- * Hora de cierre («22:00») de la franja en que el negocio está abierto AHORA, en su zona (no la del navegador); la de una
- * franja nocturna es la del día siguiente («02:00»). `null` si no hay horario o ahora no cae en ninguna franja. Las fronteras
- * son las del servidor (`isWithinHours`): abre a la hora de apertura y cierra a la de cierre, y la madrugada de la franja
- * nocturna de AYER cuenta. Es un adorno (el chip «Abierto hasta las…»): una zona inválida da `null`, no tumba la tienda.
- * ponytail: con franjas traslapadas dice el cierre de la primera que contiene la hora; el servidor no las prohíbe, pero nadie las pone.
+ * Hora de cierre («22:00») del tramo de servicio en que está el negocio AHORA, en su zona (no la del navegador). Una franja
+ * nocturna cierra al día siguiente («02:00»); y si otra franja abre a más tardar a esa hora de cierre (franjas seguidas o
+ * traslapadas, o la del día siguiente que abre justo cuando la nocturna cierra), el servicio es de corrido: se sigue la cadena y
+ * la respuesta es el cierre de la última. `null` si no hay horario o ahora no cae en ninguna franja. Las fronteras son las del
+ * servidor (`isWithinHours`): abre a la hora de apertura y cierra a la de cierre, y la madrugada de la franja nocturna de AYER
+ * cuenta. Es un adorno (el chip «Abierto hasta las…»): una zona inválida da `null`, no tumba la tienda.
  */
 export function closesAt(hours: WeeklyHours | null, now: Date, timeZone: string): string | null {
   if (!hours) return null
   try {
     const [h, m] = new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit', hourCycle: 'h23', timeZone }).format(now).split(':').map(Number)
     const nowMin = h * 60 + m
-    const today = weekdayKey(now, timeZone)
-    for (const r of rangesOf(hours[today])) {
-      const open = minutes(r.open), close = minutes(r.close)
-      if (open < close ? nowMin >= open && nowMin < close : open > close && nowMin >= open) return r.close
+    const today = WEEK.indexOf(weekdayKey(now, timeZone))
+    // Las franjas de ayer, hoy y mañana en minutos desde la medianoche de HOY; una nocturna termina al día siguiente.
+    const spans: Span[] = []
+    for (const day of [-1, 0, 1])
+      for (const r of rangesOf(hours[WEEK[(today + day + 7) % 7]])) {
+        const open = minutes(r.open), close = minutes(r.close)
+        if (open !== close) spans.push({ start: day * 1440 + open, end: day * 1440 + (open < close ? close : close + 1440), close: r.close })
+      }
+    let cur = spans.find(s => s.start <= nowMin && nowMin < s.end)
+    while (cur) {
+      const end = cur.end
+      const next = spans.find(s => s.start <= end && s.end > end)
+      if (!next) return cur.close
+      cur = next
     }
-    for (const r of rangesOf(hours[WEEK[(WEEK.indexOf(today) + 6) % 7]]))
-      if (minutes(r.open) > minutes(r.close) && nowMin < minutes(r.close)) return r.close
   } catch (_e) {
     // zona inválida: abajo, null
   }

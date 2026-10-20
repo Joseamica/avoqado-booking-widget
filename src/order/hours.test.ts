@@ -92,6 +92,43 @@ describe('closesAt: la hora de cierre de la franja abierta ahora', () => {
     expect(closesAt(h, now, TZ)).toBe('22:00')
     expect(closesAt(h, now, 'UTC')).toBeNull()
   })
+  it('franjas seguidas (una cierra a las 14:00 y otra abre a las 14:00): sigue de corrido hasta el cierre real; con un hueco, cierra a las 14:00', () => {
+    const chain = everyDay([{ open: '09:00', close: '14:00' }, { open: '14:00', close: '22:00' }])
+    expect(closesAt(chain, at('2026-10-19T16:00:00Z'), TZ)).toBe('22:00') // 10:00
+    expect(closesAt(chain, at('2026-10-19T19:59:00Z'), TZ)).toBe('22:00') // 13:59
+    expect(closesAt(chain, at('2026-10-19T20:00:00Z'), TZ)).toBe('22:00') // 14:00 en punto
+    const gap = everyDay([{ open: '09:00', close: '14:00' }, { open: '15:00', close: '22:00' }])
+    expect(closesAt(gap, at('2026-10-19T16:00:00Z'), TZ)).toBe('14:00') // 10:00
+    expect(closesAt(gap, at('2026-10-19T20:30:00Z'), TZ)).toBeNull() // 14:30: en la pausa
+    expect(closesAt(gap, at('2026-10-19T21:00:00Z'), TZ)).toBe('22:00') // 15:00
+  })
+  it('la cadena no depende del orden en que vengan las franjas, cruza traslapes y sigue varias', () => {
+    const reversed = everyDay([{ open: '14:00', close: '22:00' }, { open: '09:00', close: '14:00' }])
+    expect(closesAt(reversed, at('2026-10-19T16:00:00Z'), TZ)).toBe('22:00')
+    const overlap = everyDay([{ open: '09:00', close: '17:00' }, { open: '12:00', close: '20:00' }])
+    expect(closesAt(overlap, at('2026-10-19T16:00:00Z'), TZ)).toBe('20:00') // 10:00
+    expect(closesAt(overlap, at('2026-10-19T19:00:00Z'), TZ)).toBe('20:00') // 13:00
+    const three = everyDay([{ open: '09:00', close: '12:00' }, { open: '12:00', close: '15:00' }, { open: '15:00', close: '22:00' }])
+    expect(closesAt(three, at('2026-10-19T16:00:00Z'), TZ)).toBe('22:00')
+  })
+  it('la cadena cruza la medianoche: la franja nocturna (o la que cierra a las 00:00) y el día siguiente abre justo ahí', () => {
+    const night = week(['monday', true, [{ open: '22:00', close: '02:00' }]], ['tuesday', true, [{ open: '02:00', close: '10:00' }]])
+    expect(closesAt(night, at('2026-10-20T05:30:00Z'), TZ)).toBe('10:00') // lunes 23:30
+    expect(closesAt(night, at('2026-10-20T07:00:00Z'), TZ)).toBe('10:00') // martes 01:00: la madrugada de ayer, seguida por la franja de hoy
+    expect(closesAt(night, at('2026-10-20T09:00:00Z'), TZ)).toBe('10:00') // martes 03:00
+    // Con el martes apagado, cierra a las 02:00.
+    const off = week(['monday', true, [{ open: '22:00', close: '02:00' }]], ['tuesday', false, [{ open: '02:00', close: '10:00' }]])
+    expect(closesAt(off, at('2026-10-20T05:30:00Z'), TZ)).toBe('02:00')
+    // Cierra «a las 00:00» y el martes abre a las 00:00.
+    const midnight = week(['monday', true, [{ open: '18:00', close: '00:00' }]], ['tuesday', true, [{ open: '00:00', close: '03:00' }]])
+    expect(closesAt(midnight, at('2026-10-20T05:00:00Z'), TZ)).toBe('03:00') // lunes 23:00
+    // Con un hueco de un minuto no hay cadena.
+    const almost = week(['monday', true, [{ open: '18:00', close: '23:59' }]], ['tuesday', true, [{ open: '00:00', close: '03:00' }]])
+    expect(closesAt(almost, at('2026-10-20T05:00:00Z'), TZ)).toBe('23:59')
+  })
+  it('una franja de largo cero (10:00–10:00) no abre nunca, como en el servidor', () => {
+    expect(closesAt(everyDay([{ open: '10:00', close: '10:00' }]), at('2026-10-19T18:00:00Z'), TZ)).toBeNull() // 12:00
+  })
   it('una zona inválida no tumba nada: null', () => {
     expect(closesAt(everyDay([{ open: '09:00', close: '22:00' }]), at('2026-10-19T18:00:00Z'), 'Marte/Olimpo')).toBeNull()
   })

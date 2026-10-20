@@ -48,7 +48,9 @@ export function StoreStatusBanner() {
   const t = createOrderT(store.locale)
   const tz = info.venue.timezone ?? 'America/Mexico_City'
   let text: string
-  let title: string
+  // CLOSED y OFFLINE no llevan título: su frase de hoy ya empieza con él («Cerrado ahora. Hoy: …», «El restaurante no está
+  // conectado. …») y se leería dos veces. `store.closedTitle` y `store.offlineTitle` quedan en el JSON por si se acortan esas frases.
+  let title: string | undefined
   let icon: NoticeIcon = 'clock'
   let tone: 'neutral' | 'warn' = 'warn'
   if (info.status === 'CLOSED') {
@@ -59,7 +61,6 @@ export function StoreStatusBanner() {
     text =
       t('store.closedNow') +
       (ranges === null ? '' : ' ' + (ranges.length ? t('store.todayHours', { ranges: ranges.map(label).join(', ') }) : t('store.noOpenToday')))
-    title = t('store.closedTitle')
   } else if (info.status === 'PAUSED') {
     // Una pausa con hora (15/30/60 min de la Bandeja) dice cuándo vuelve; la del gerente, o un servidor viejo, el texto de hoy.
     text =
@@ -75,7 +76,6 @@ export function StoreStatusBanner() {
     tone = 'neutral' // no es una pausa: el restaurante no vende en línea
   } else {
     text = t('store.offline')
-    title = t('store.offlineTitle')
     icon = 'cloudOff'
   }
   return <Notice tone={tone} icon={icon} title={title} text={text} />

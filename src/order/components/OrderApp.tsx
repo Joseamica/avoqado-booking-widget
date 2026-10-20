@@ -70,9 +70,10 @@ export function OrderApp({ accentColor }: { accentColor?: string }) {
   const showLogo = !!logo && badLogo !== logo
   const showCover = !!cover && badCover !== cover
   const initials = initialsOf(name)
+  // Las iniciales no se leen en voz alta (el nombre ya va al lado); el logo es una imagen sin texto alternativo.
   const mark = (small = false) =>
     showLogo || initials ? (
-      <span class={small ? 'avq-o-mark avq-o-mark--sm' : 'avq-o-mark'}>
+      <span class={small ? 'avq-o-mark avq-o-mark--sm' : 'avq-o-mark'} aria-hidden={showLogo ? undefined : 'true'}>
         {showLogo ? <img src={logo!} alt="" onError={() => setBadLogo(logo)} /> : initials}
       </span>
     ) : null

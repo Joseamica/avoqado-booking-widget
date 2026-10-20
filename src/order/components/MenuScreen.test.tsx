@@ -242,8 +242,9 @@ describe('encabezado de la tienda: portada, logo, chips y avisos', () => {
   const store = (over: Partial<StoreInfo> = {}, locale: 'es' | 'en' = 'es') => makeStore(infoOf({ venue, ...over }), menuOf(product()), locale)
   const app = (s: ReturnType<typeof makeStore>) => render(withStore(s, <OrderApp />))
   const header = () => screen.getByRole('banner')
-  const everyDay = (open: string, close: string) =>
-    Object.fromEntries(['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'].map(k => [k, { enabled: true, ranges: [{ open, close }] }])) as any
+  const everyDay = (open: string, close: string, ...more: [string, string][]) =>
+    Object.fromEntries(['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']
+      .map(k => [k, { enabled: true, ranges: [{ open, close }, ...more.map(([o, c]) => ({ open: o, close: c }))] }])) as any
   afterEach(() => { vi.useRealTimers() })
 
   it('portada: con brand.heroImageUrl hay <img> de portada; sin ella no hay hueco; si la imagen falla se quita', () => {
@@ -284,6 +285,20 @@ describe('encabezado de la tienda: portada, logo, chips y avisos', () => {
     expect(none.container.querySelector('.avq-o-mark img')).toBeNull()
     expect(screen.getByText('AF')).toBeTruthy()
   })
+  it('las iniciales no se leen en voz alta antes del nombre (aria-hidden); el logo es una imagen sin texto alternativo', () => {
+    const { container } = app(store())
+    expect(container.querySelector('.avq-o-mark')!.getAttribute('aria-hidden')).toBe('true')
+    cleanup()
+    const withLogo = app(store({ brand: brand({ logo: 'https://x/logo.png' }) }))
+    const mark = withLogo.container.querySelector('.avq-o-mark')!
+    expect(mark.hasAttribute('aria-hidden')).toBe(false)
+    expect(mark.querySelector('img')!.getAttribute('alt')).toBe('')
+    // El nombre sí se lee: es el título de la página.
+    expect(screen.getByRole('heading', { name: 'Avoqado Full' })).toBeTruthy()
+    // Con el logo roto caen a las iniciales, y entonces se esconden.
+    fireEvent.error(mark.querySelector('img')!)
+    expect(withLogo.container.querySelector('.avq-o-mark')!.getAttribute('aria-hidden')).toBe('true')
+  })
   it('el logo ancho (logoFull) también sirve, y sin nombre ni logo no hay encabezado', () => {
     const { container } = app(store({ brand: brand({ logoFull: 'https://x/full.png' }) }))
     expect(container.querySelector('.avq-o-mark img')!.getAttribute('src')).toBe('https://x/full.png')
@@ -310,6 +325,16 @@ describe('encabezado de la tienda: portada, logo, chips y avisos', () => {
     vi.setSystemTime(new Date('2026-10-19T08:00:00Z')) // 02:00 en CDMX
     app(store({ hours: everyDay('09:00', '22:00') }))
     expect(screen.getByText('Abierto')).toBeTruthy()
+  })
+  it('chip con franjas seguidas: no anuncia el cierre de una franja si otra abre de inmediato', () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-10-19T18:00:00Z')) // lunes 12:00 en CDMX
+    app(store({ hours: everyDay('09:00', '14:00', ['14:00', '22:00']) }))
+    expect(screen.getByText('Abierto hasta las 22:00')).toBeTruthy()
+    cleanup()
+    // Con un hueco sí: cierra a las 14:00.
+    app(store({ hours: everyDay('09:00', '14:00', ['15:00', '22:00']) }))
+    expect(screen.getByText('Abierto hasta las 14:00')).toBeTruthy()
   })
   it('chips en inglés', () => {
     vi.useFakeTimers({ toFake: ['Date'] })
@@ -343,24 +368,24 @@ describe('encabezado de la tienda: portada, logo, chips y avisos', () => {
     expect(screen.queryByText('Pagas al recoger')).toBeNull()
     expect(screen.queryByText(/Listo en/)).toBeNull()
   })
-  it('cada estado trae su título (es y en), su ícono sin voz y la frase de hoy aparte', () => {
-    const cases: [Partial<StoreInfo>, string, string][] = [
-      [{ status: 'PAUSED', reason: 'MANUAL_PAUSE' }, 'Pedidos en pausa', 'Orders paused'],
-      [{ status: 'CLOSED', reason: 'OUTSIDE_HOURS' }, 'Cerrado ahora', 'Closed now'],
-      [{ status: 'OFFLINE', reason: 'NO_DEVICE' }, 'El restaurante no está conectado', 'The restaurant is offline'],
-      [{ status: 'DISABLED', reason: 'NOT_ENABLED' }, 'Pedidos en línea apagados', 'Online ordering is off'],
+  it('PAUSED y DISABLED llevan título; CLOSED y OFFLINE no (su frase de hoy ya empieza con él); todos con ícono sin voz y la frase de hoy literal (es y en)', () => {
+    // [estado, [título o null, frase] en español, [título o null, frase] en inglés]
+    const cases: [Partial<StoreInfo>, [string | null, string], [string | null, string]][] = [
+      [{ status: 'PAUSED', reason: 'MANUAL_PAUSE' }, ['Pedidos en pausa', 'Hoy no estamos recibiendo pedidos en línea.'], ['Orders paused', 'We are not taking online orders today.']],
+      [{ status: 'PAUSED', reason: 'TOO_BUSY' }, ['Pedidos en pausa', 'Muchos pedidos en este momento. Intenta en unos minutos.'], ['Orders paused', 'Lots of orders right now. Try again in a few minutes.']],
+      [{ status: 'DISABLED', reason: 'NOT_ENABLED' }, ['Pedidos en línea apagados', 'Este restaurante no recibe pedidos en línea por el momento.'], ['Online ordering is off', 'This restaurant is not taking online orders right now.']],
+      [{ status: 'CLOSED', reason: 'OUTSIDE_HOURS' }, [null, 'Cerrado ahora.'], [null, 'Closed now.']],
+      [{ status: 'OFFLINE', reason: 'NO_DEVICE' }, [null, 'El restaurante no está conectado. Intenta en unos minutos.'], [null, 'The restaurant is not connected. Try again in a few minutes.']],
     ]
     for (const [over, es, en] of cases) {
-      for (const [locale, title] of [['es', es], ['en', en]] as const) {
+      for (const [locale, [title, sentence]] of [['es', es], ['en', en]] as const) {
+        const label = `${over.status}/${over.reason}/${locale}`
         const { container } = render(withStore(store(over, locale), <StoreStatusBanner />))
         const notice = screen.getByRole('status')
-        const titleEl = within(notice).getByText(title)
-        expect(titleEl.textContent).toBe(title)
-        // La frase de hoy sigue entera en su propio elemento.
-        const sentence = [...notice.querySelectorAll('span')].find(el => el !== titleEl && el.parentElement === titleEl.parentElement)
-        expect(sentence, `${over.status}/${locale}`).toBeTruthy()
-        expect(sentence!.textContent!.length).toBeGreaterThan(title.length)
-        expect(container.querySelector('svg[aria-hidden="true"]'), `${over.status}/${locale} ícono`).not.toBeNull()
+        // Sin título no hay elemento de título; con él, exactamente su texto. La frase de hoy va siempre en su propio elemento.
+        expect(notice.querySelector('.avq-o-notice__title')?.textContent ?? null, label).toBe(title)
+        expect(notice.querySelector('.avq-o-notice__body > span:not(.avq-o-notice__title)')?.textContent, label).toBe(sentence)
+        expect(container.querySelector('svg[aria-hidden="true"]'), `${label} ícono`).not.toBeNull()
         cleanup()
       }
     }
@@ -393,6 +418,7 @@ describe('encabezado de la tienda: portada, logo, chips y avisos', () => {
     fireEvent.error(header().querySelector('img')!)
     expect(header().querySelector('img')).toBeNull()
     expect(header().querySelector('.avq-o-mark--sm')!.textContent).toBe('AF')
+    expect(header().querySelector('.avq-o-mark--sm')!.getAttribute('aria-hidden')).toBe('true')
   })
   it('el aviso global es neutro y «Cerrar» lo quita', () => {
     const s = store(); s.notice.value = 'Aviso de prueba'
