@@ -142,6 +142,32 @@ describe('STORE_CSS', () => {
     ]
     for (const c of classes) expect(STORE_CSS, `.${c}`).toMatch(new RegExp(`\\.${c}[\\s,{:>.\\[]`))
   })
+  it('trae las clases de tu pedido (volver, tarjeta de recolección, renglones, total y el pie de «Continuar»)', () => {
+    const classes = [
+      'avq-o-cart', 'avq-o-back', 'avq-o-cart__intro', 'avq-o-pickup', 'avq-o-pickup__text', 'avq-o-pickup__name', 'avq-o-pickup__addr',
+      'avq-o-lines', 'avq-o-line', 'avq-o-line__info', 'avq-o-line__name', 'avq-o-line__sub', 'avq-o-line__price', 'avq-o-issue', 'avq-o-more',
+      'avq-o-cart__note', 'avq-o-total', 'avq-o-total__row', 'avq-o-total__wait', 'avq-o-total__tax', 'avq-o-cartfoot',
+    ]
+    for (const c of classes) expect(STORE_CSS, `.${c}`).toMatch(new RegExp(`\\.${c}[\\s,{:>.\\[]`))
+  })
+  it('tu pedido: el pie de «Continuar» es pegajoso abajo con el margen seguro, la tarjeta y el aviso de un renglón llevan los tokens y los nombres largos envuelven', () => {
+    const rule = (sel: string) => STORE_CSS.match(new RegExp(`(?:^|\\n)${sel.replace(/\./g, '\\.')}\\s*\\{([^}]*)\\}`))?.[1] ?? ''
+    const foot = rule('.avq-o-cartfoot')
+    expect(foot).toMatch(/position:sticky;bottom:0/)
+    expect(foot).toMatch(/padding:12px 16px calc\(24px \+ env\(safe-area-inset-bottom,0px\)\)/)
+    expect(foot).toMatch(/background:#FFFFFF/)
+    expect(foot).toMatch(/border-top:1px solid #EEEEEE/) // se separa con un divisor, no con sombra
+    expect(foot).not.toMatch(/shadow/)
+    expect(rule('.avq-o-pickup')).toMatch(/border-radius:16px;background:#F4F4F4/)
+    expect(rule('.avq-o-issue')).toMatch(/background:#FDECEA/)
+    expect(rule('.avq-o-issue')).toMatch(/color:#B3261E/)
+    // Un nombre de 120 caracteres sin espacios no empuja el stepper fuera de la tienda.
+    expect(rule('.avq-o-line__info')).toMatch(/min-width:0/)
+    expect(rule('.avq-o-line__info')).toMatch(/overflow-wrap:anywhere/)
+    expect(rule('.avq-o-pickup__text')).toMatch(/overflow-wrap:anywhere/)
+    // Los controles del carrito no quedan tapados por el pie al llegar con el teclado (WCAG 2.4.11).
+    expect(STORE_CSS).toMatch(/\.avq-o-cart button,\.avq-o-cart textarea\{scroll-margin-bottom:calc\(\d+px \+ env\(safe-area-inset-bottom,0px\)\)\}/)
+  })
   it('el círculo de cantidad de la barra es blanco con el dígito del color de acento: 4.5:1 con todo acento que accentFor deja pasar (el par del botón, al revés); en la neutra, #4A4A4A', () => {
     const rule = (sel: string) => STORE_CSS.match(new RegExp(`(?:^|\\n)${sel.replace(/\./g, '\\.')}\\s*\\{([^}]*)\\}`))?.[1] ?? ''
     const count = rule('.avq-o-bar__count')

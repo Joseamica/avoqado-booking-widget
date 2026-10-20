@@ -93,6 +93,11 @@ export function loadStoreFonts(): void {
  *   `__msg` (+ `--error`), `__actions` y `__add`. Cada grupo es `.avq-o-group` (`__head`, `__names`, `__title`, `__hint`, `__opts`)
  *   con su `.avq-o-pill` (+ `--required|--done`); cada opción, `.avq-o-opt` (`__main`, `__mark`, `__input`, `__check`, `__text`,
  *   `__sub`, `__extra`). `.avq-o-menu--sheet` quita el relleno de abajo de la carta mientras la ficha está abierta.
+ * - Tu pedido (tarea 7): `.avq-o-cart` es la pantalla y `.avq-o-cartfoot` su pie de «Continuar» (pegajoso abajo DENTRO de la tienda,
+ *   como el de la ficha); `.avq-o-back` la flecha de volver; `.avq-o-cart__intro` el título con la tarjeta `.avq-o-pickup` («Recoges
+ *   en…»: `__text`, `__name`, `__addr`); `.avq-o-lines` > `.avq-o-line` los renglones (`__info`, `__name`, `__sub`, `__price`), con su
+ *   `.avq-o-stepper--line`; `.avq-o-issue` un problema (de un renglón o del pedido); `.avq-o-more` «Agregar algo más»;
+ *   `.avq-o-cart__note` la nota; `.avq-o-total` el total (`__row`, `__wait`, `__tax`).
  * Cada tarea puede AGREGAR clases; las que ya están no se cambian ni se quitan.
  */
 export const STORE_CSS = `
@@ -230,4 +235,31 @@ textarea.avq-o-input{min-height:0;padding:12px 14px;resize:none}
 .avq-o-sheet__actions{display:flex;align-items:center;gap:12px}
 .avq-o-sheet__add{flex:1;min-width:0;justify-content:space-between;padding:0 18px}
 .avq-o-sheet__add>span:only-child{margin:0 auto}
+.avq-o-cart button,.avq-o-cart textarea{scroll-margin-bottom:calc(108px + env(safe-area-inset-bottom,0px))}
+.avq-o-back{display:flex;align-items:center;justify-content:center;width:44px;height:44px;margin:12px 8px 0;padding:0;border:0;border-radius:50%;background:transparent;color:${T.ink};cursor:pointer}
+.avq-o-cart__intro{display:flex;flex-direction:column;gap:16px;padding:4px 16px 0}
+.avq-o-pickup{display:flex;align-items:center;gap:12px;padding:14px;border-radius:16px;background:${T.card}}
+.avq-o-pickup .avq-o-mark{width:40px;height:40px;font-size:15px}
+.avq-o-pickup__text{display:flex;flex-direction:column;gap:2px;min-width:0;overflow-wrap:anywhere}
+.avq-o-pickup__name{font-weight:600}
+.avq-o-pickup__addr{color:${T.muted};font-size:14px}
+.avq-o-lines{list-style:none;margin:8px 0 0;padding:0 16px}
+.avq-o-line{display:flex;flex-wrap:wrap;align-items:center;column-gap:12px;padding:16px 0;border-bottom:1px solid ${T.divider}}
+.avq-o-line__info{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px;overflow-wrap:anywhere}
+.avq-o-line__name{font-size:16px;font-weight:600}
+.avq-o-line__sub{color:${T.muted};font-size:14px}
+.avq-o-line__price{margin-top:2px;font-weight:500}
+.avq-o-issue{margin:0;padding:8px 12px;border-radius:12px;background:${T.errBg};color:${T.errFg};font-size:14px;font-weight:600;line-height:1.4;overflow-wrap:anywhere}
+.avq-o-line>.avq-o-issue{flex:0 0 100%;margin-top:10px}
+.avq-o-cart>.avq-o-issue{margin:12px 16px 0}
+.avq-o-more{margin:4px 0 0 8px}
+.avq-o-cart__note{display:flex;flex-direction:column;gap:8px;margin:12px 16px 0}
+.avq-o-cart__note>label{font-weight:600}
+.avq-o-total{display:flex;flex-direction:column;gap:6px;margin:12px 16px 0;padding-top:16px;border-top:1px solid ${T.divider}}
+.avq-o-total__row{display:flex;justify-content:space-between;align-items:baseline;gap:12px;margin:0;font-size:17px;font-weight:700}
+.avq-o-total__wait{color:${T.muted};font-size:15px;font-weight:400}
+.avq-o-total__tax{margin:0;color:${T.muted};font-size:14px}
+.avq-o-cartfoot{position:sticky;bottom:0;z-index:2;margin-top:16px;padding:12px 16px calc(24px + env(safe-area-inset-bottom,0px));background:#FFFFFF;border-top:1px solid ${T.divider}}
+.avq-o-cartfoot .avq-o-btn{width:100%;min-height:56px;justify-content:space-between}
+.avq-o-cartfoot .avq-o-btn>span:only-child{margin:0 auto}
 `

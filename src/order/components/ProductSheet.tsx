@@ -7,7 +7,8 @@ import { toCents, formatMXN } from '../money'
 import { areRequiredModifiersSatisfied } from '../../state/modifierValidation'
 import type { ModifierSelection } from '../../types'
 import type { MenuProduct } from '../types'
-import { OptionGroup, Stepper } from './OptionGroup'
+import { OptionGroup } from './OptionGroup'
+import { Stepper } from './Stepper'
 
 const MAX_QTY = 20
 const MAX_LINES = 50

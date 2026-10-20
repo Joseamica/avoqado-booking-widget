@@ -7,35 +7,14 @@ import type { ModifierSelection } from '../../types'
 import type { MenuModifierGroup } from '../types'
 import { optionCap, setModifierQuantity, toggleModifier } from '../../state/modifierSelection'
 import { areRequiredModifiersSatisfied } from '../../state/modifierValidation'
+import { Stepper } from './Stepper'
 
-const Icon = ({ d, size }: { d: string; size: number }) => (
-  <svg aria-hidden="true" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round">
-    <path d={d} />
-  </svg>
-)
 // La palomita va en el DOM (no como imagen `data:` en el CSS): un sitio con CSP estricta en `img-src` no la borra.
 const Check = () => (
   <svg class="avq-o-opt__check" aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
     <path d="M5 12l5 5L20 7" />
   </svg>
 )
-
-/**
- * «− n +»: el de la ficha (52 px) y, con `small`, el de una opción (36 px dentro de 44 de toque). Sin `onLess`/`onMore` su botón
- * está en el tope: `aria-disabled` e ignora el toque, pero NO `disabled`, que le quitaría el foco a quien llegó con el teclado.
- */
-export function Stepper({ value, label, lessLabel, moreLabel, onLess, onMore, small }: {
-  value: number; label?: string; lessLabel: string; moreLabel: string; onLess?: () => void; onMore?: () => void; small?: boolean
-}) {
-  const size = small ? 16 : 18
-  return (
-    <div class={small ? 'avq-o-stepper avq-o-stepper--sm' : 'avq-o-stepper'} role={label ? 'group' : undefined} aria-label={label}>
-      <button type="button" aria-label={lessLabel} aria-disabled={onLess ? undefined : 'true'} onClick={onLess}><Icon d="M5 12h14" size={size} /></button>
-      <span aria-live="polite">{value}</span>
-      <button type="button" aria-label={moreLabel} aria-disabled={onMore ? undefined : 'true'} onClick={onMore}><Icon d="M12 5v14M5 12h14" size={size} /></button>
-    </div>
-  )
-}
 
 /**
  * Un grupo de opciones de la ficha: título, ayuda («Elige 1», «Elige N», «Elige hasta N»…) y pastilla «Obligatorio» → «Listo», u
