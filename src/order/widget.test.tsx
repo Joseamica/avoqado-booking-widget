@@ -10,11 +10,11 @@ vi.mock('../api/booking', () => pendingModule(() => vi.importActual('../api/book
 vi.mock('../api/venueChat', () => pendingModule(() => vi.importActual('../api/venueChat')))
 vi.mock('./api', async () => {
   const actual = await vi.importActual<typeof import('./api')>('./api')
-  return { ...actual, getInfo: vi.fn(), getMenu: vi.fn(), getTracking: vi.fn(), createOrder: vi.fn() }
+  return { ...actual, getInfo: vi.fn(), getMenu: vi.fn(), getTracking: vi.fn(), createOrder: vi.fn(), abandonPayment: vi.fn(() => new Promise(() => {})) }
 })
 import '../widget'
 import * as booking from '../state/booking'
-import { ApiError, createOrder, getInfo, getMenu, getTracking } from './api'
+import { ApiError, abandonPayment, createOrder, getInfo, getMenu, getTracking } from './api'
 import { buildOrderBody, send } from './checkout'
 import { saveSession } from './session'
 import type { OrderStore } from './store'
@@ -93,6 +93,19 @@ describe('<avoqado-order>', () => {
     expect(getMenu).not.toHaveBeenCalled()
     expect(getTracking).toHaveBeenCalledWith('a', 'T'.repeat(32))
     expect(text(el)).toContain('Tu folio42')
+  })
+
+  it('fase 2: el atributo pago (de regreso de Stripe) llega a la tienda: «cancelado» cancela el pago, «1» confirma; sin él, nada', async () => {
+    const T = 'T'.repeat(32)
+    vi.mocked(getTracking).mockReturnValue(new Promise(() => {}))
+    const a = await mount({ venue: 'a', tracking: T, pago: 'cancelado' })
+    const b = await mount({ venue: 'b', tracking: T, pago: '1' })
+    const c = await mount({ venue: 'c', tracking: T })
+    expect(abandonPayment).toHaveBeenCalledTimes(1)
+    expect(abandonPayment).toHaveBeenCalledWith('a', T)
+    expect(text(a)).toContain('Cancelando el pago…')
+    expect(text(b)).toContain('Confirmando tu pago…')
+    expect(text(c)).toContain('Cargando tu pedido…')
   })
 
   it('tracking: pide /info UNA vez (la marca), sin /menu ni sondeo; y si /info falla el seguimiento se pinta', async () => {

@@ -173,7 +173,8 @@
       "ACCEPTED": "Lo están preparando",
       "READY": "¡Listo para recoger!",
       "COMPLETED": "Entregado",
-      "unknown": "Revisando tu pedido…"
+      "unknown": "Revisando tu pedido…",
+      "AWAITING_PAYMENT": "Confirmando tu pago…"
     },
     "sub": {
       "waiting": "Tiene hasta las {{time}} para aceptarlo.",
@@ -218,6 +219,21 @@
     "updateFailed": "No pudimos actualizar tu pedido; reintentando…",
     "inProgress": "Tienes un pedido en curso",
     "view": "Ver",
-    "orderMore": "Pedir algo más"
+    "orderMore": "Pedir algo más",
+    "notCompleted": "No se completó el pago. No se te cobró nada.",
+    "abandoning": "Cancelando el pago…",
+    "paymentFailed": "No se pudo cobrar tu tarjeta.",
+    "backToMenu": "Volver al menú",
+    "card": {
+      "notCompleted": "No se completó el pago.",
+      "rejected": "El restaurante no pudo aceptar tu pedido: {{reason}}.",
+      "rejectedNoReason": "El restaurante no pudo aceptar tu pedido.",
+      "expired": "El restaurante no contestó a tiempo.",
+      "authorized": "Tu tarjeta está apartada; se cobra cuando el restaurante acepte.",
+      "captured": "Tu pago se cobró.",
+      "refundDue": "Tu tarjeta se cobró; el negocio te la devolverá.",
+      "notCharged": "No se te cobró nada. Si viste un cargo, tu banco lo liberará en unos días.",
+      "releasing": "Estamos liberando tu tarjeta…"
+    }
   }
 }

@@ -29,6 +29,31 @@ describe('página de pedidos (carril de la tienda en index.html)', () => {
   })
 })
 
+describe('fase 2: de regreso de Stripe', () => {
+  const T = 'T'.repeat(32)
+  it('?pago=cancelado llega al elemento como atributo y se quita de la URL (recargar no vuelve a cancelar); lo demás se queda', () => {
+    window.history.replaceState({}, '', `/flautas-coyoacan/pedido/${T}?app=order&pago=cancelado&locale=en`)
+    new Function(script())()
+    const el = document.querySelector('avoqado-order')!
+    expect(el.getAttribute('tracking')).toBe(T)
+    expect(el.getAttribute('pago')).toBe('cancelado')
+    expect(el.getAttribute('locale')).toBe('en')
+    expect(window.location.pathname + window.location.search).toBe(`/flautas-coyoacan/pedido/${T}?app=order&locale=en`)
+  })
+  it('?pago=1 también llega y se quita', () => {
+    window.history.replaceState({}, '', `/flautas-coyoacan/pedido/${T}?app=order&pago=1`)
+    new Function(script())()
+    expect(document.querySelector('avoqado-order')!.getAttribute('pago')).toBe('1')
+    expect(window.location.pathname + window.location.search).toBe(`/flautas-coyoacan/pedido/${T}?app=order`)
+  })
+  it('sin ?pago no hay atributo y la URL no cambia', () => {
+    window.history.replaceState({}, '', `/flautas-coyoacan/pedido/${T}?app=order`)
+    new Function(script())()
+    expect(document.querySelector('avoqado-order')!.hasAttribute('pago')).toBe(false)
+    expect(window.location.search).toBe('?app=order')
+  })
+})
+
 describe('página propia de la tienda: de orilla a orilla en el celular y columna de 600 px en computadora', () => {
   const css = /<style>([\s\S]*?)<\/style>/.exec(pagina)![1].replace(/\/\*[\s\S]*?\*\//g, '')
   const rule = (selector: string) => css.match(new RegExp(`${selector.replace(/\./g, '\\.')}\\s*\\{([^}]*)\\}`))?.[1] ?? ''

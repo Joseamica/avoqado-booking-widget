@@ -178,11 +178,18 @@ class AvoqadoOrderWidget extends HTMLElement {
     const venue = this.getAttribute('venue') ?? ''
     const locale = this.getAttribute('locale') === 'en' ? 'en' : 'es'
     const tracking = this.getAttribute('tracking') || null
+    // Fase 2: de regreso de Stripe (lo pone la página hospedada desde `?pago`). Sólo cuenta al crear la tienda de ese pedido.
+    const pago = this.getAttribute('pago')
     // Otro negocio, idioma o pedido = otra tienda (el carrito sigue guardado por negocio).
     const key = `${venue}|${locale}|${tracking ?? ''}`
     if (!this.store || key !== this.storeKey) {
       this.store?.dispose()
-      this.store = venue ? createOrderStore(venue, { locale, trackingToken: tracking, host: this }) : null
+      this.store = venue
+        ? createOrderStore(venue, {
+            locale, trackingToken: tracking, host: this,
+            paymentReturn: !tracking || !pago ? null : pago === 'cancelado' ? 'cancelled' : 'returned',
+          })
+        : null
       this.storeKey = key
     }
     if (!this.store) return void render(null, container)

@@ -4,9 +4,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('../api', async () => {
   const actual = await vi.importActual<typeof import('../api')>('../api')
-  return { ...actual, getTracking: vi.fn(), cancelOrder: vi.fn(), getInfo: vi.fn(), getMenu: vi.fn() }
+  return { ...actual, getTracking: vi.fn(), cancelOrder: vi.fn(), abandonPayment: vi.fn(), getInfo: vi.fn(), getMenu: vi.fn() }
 })
-import { ApiError, cancelOrder, getTracking } from '../api'
+import { ApiError, abandonPayment, cancelOrder, getTracking } from '../api'
 import { TrackingScreen } from './TrackingScreen'
 import { STORE_CSS } from './theme'
 import { makeStore, withStore } from './testKit'
@@ -19,6 +19,7 @@ beforeEach(() => {
   Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => visibility })
   vi.mocked(getTracking).mockReset()
   vi.mocked(cancelOrder).mockReset()
+  vi.mocked(abandonPayment).mockReset()
 })
 afterEach(() => { cleanup(); vi.useRealTimers() })
 
@@ -448,5 +449,192 @@ describe('foco tras un intento de cancelar', () => {
       expect(document.activeElement, cancels ? 'se canceló' : 'sin red').toBe(more)
       cleanup()
     }
+  })
+})
+
+describe('fase 2: pagar con tarjeta', () => {
+  /** Un pedido o borrador de tarjeta. */
+  const card = (over: Partial<Tracking> = {}) => tr({ paymentMode: 'CARD_ONLINE', cardStatus: 'AUTHORIZED', canCancel: false, ...over })
+  const draft = (over: Partial<Tracking> = {}) => card({ status: 'AWAITING_PAYMENT', orderNumber: '', cardStatus: null, ...over })
+  const money = () => document.querySelector('.avq-o-total__tax')?.textContent ?? null
+  const NOTHING = 'No se te cobró nada. Si viste un cargo, tu banco lo liberará en unos días.'
+  const REFUND_DUE = 'Tu tarjeta se cobró; el negocio te la devolverá.'
+
+  it('AWAITING_PAYMENT: «Confirmando tu pago…», sin avance ni folio, y sigue sondeando', async () => {
+    await show(draft())
+    expect(screen.getByRole('heading', { name: 'Confirmando tu pago…' })).toBeTruthy()
+    expect(progress()).toBeNull()
+    expect(screen.queryByText('Tu folio')).toBeNull()
+    expect(document.querySelector('.avq-o-ticket__folio')).toBeNull()
+    expect(screen.getByText(/Flautas de pollo/)).toBeTruthy() // los renglones sí
+    await tick(10_000)
+    expect(getTracking).toHaveBeenCalledTimes(2)
+  })
+
+  it('PAYMENT_NOT_COMPLETED: final, su texto y «Volver al menú» (lleva a la carta)', async () => {
+    const s = await show(draft({ status: 'PAYMENT_NOT_COMPLETED' }))
+    expect(screen.getByRole('heading', { name: 'No se completó el pago. No se te cobró nada.' })).toBeTruthy()
+    expect(money()).toBeNull()
+    await tick(60_000)
+    expect(getTracking).toHaveBeenCalledTimes(1)
+    expect(screen.queryByRole('button', { name: 'Pedir algo más' })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Volver al menú' }))
+    expect(s.screen.value).toBe('menu')
+    expect(s.trackingToken.value).toBeNull()
+  })
+
+  it('un borrador no completado pero COBRADO afuera: no dice «No se te cobró nada»; dice que el negocio la devolverá', async () => {
+    await show(draft({ status: 'PAYMENT_NOT_COMPLETED', cardStatus: 'CAPTURED' }))
+    expect(screen.getByRole('heading', { name: 'No se completó el pago.' })).toBeTruthy()
+    expect(money()).toBe(REFUND_DUE)
+    expect(document.body.textContent).not.toContain('No se te cobró nada')
+  })
+
+  it('las líneas del dinero con tarjeta (nunca «Pagas al recoger»)', async () => {
+    const cases: [Partial<Tracking>, string][] = [
+      [{ status: 'PENDING_ACCEPTANCE', cardStatus: 'AUTHORIZED' }, 'Tu tarjeta está apartada; se cobra cuando el restaurante acepte.'],
+      [{ status: 'ACCEPTED', cardStatus: 'CAPTURED', paid: true }, 'Tu pago se cobró.'],
+      [{ status: 'READY', cardStatus: 'CAPTURED', paid: true }, 'Tu pago se cobró.'],
+      [{ status: 'COMPLETED', cardStatus: 'CAPTURED', paid: true }, 'Tu pago se cobró.'],
+      [{ status: 'REJECTED', cardStatus: 'CAPTURED', rejectReason: 'TOO_BUSY' }, REFUND_DUE],
+      [{ status: 'EXPIRED', cardStatus: 'CAPTURED' }, REFUND_DUE],
+      [{ status: 'CANCELLED_BY_STAFF', cardStatus: 'CAPTURED' }, REFUND_DUE],
+      [{ status: 'REJECTED', cardStatus: 'RELEASED', rejectReason: 'OUT_OF_ITEMS' }, NOTHING],
+      [{ status: 'EXPIRED', cardStatus: 'RELEASED' }, NOTHING],
+      [{ status: 'CANCELLED_BY_CUSTOMER', cardStatus: 'RELEASED' }, NOTHING],
+      [{ status: 'REJECTED', cardStatus: 'RELEASING', rejectReason: 'CLOSED' }, 'Estamos liberando tu tarjeta…'],
+    ]
+    for (const [over, text] of cases) {
+      vi.mocked(getTracking).mockReset()
+      await show(card(over))
+      expect(money(), JSON.stringify(over)).toBe(text)
+      expect(document.body.textContent).not.toContain('Pagas al recoger')
+      cleanup()
+    }
+  })
+
+  it('rechazado o vencido con tarjeta: el titular no promete «No se te cobró nada» (lo dice la línea del dinero)', async () => {
+    await show(card({ status: 'REJECTED', rejectReason: 'OUT_OF_ITEMS', cardStatus: 'CAPTURED' }))
+    expect(screen.getByRole('heading', { name: 'El restaurante no pudo aceptar tu pedido: Sin ingredientes.' })).toBeTruthy()
+    expect(document.body.textContent).not.toContain('No se te cobró nada')
+    cleanup()
+    await show(card({ status: 'EXPIRED', cardStatus: 'CAPTURED' }))
+    expect(screen.getByRole('heading', { name: 'El restaurante no contestó a tiempo.' })).toBeTruthy()
+    expect(document.body.textContent).not.toContain('No se te cobró nada')
+  })
+
+  it('rejectReason PAYMENT_FAILED: «No se pudo cobrar tu tarjeta.»', async () => {
+    await show(card({ status: 'REJECTED', rejectReason: 'PAYMENT_FAILED', cardStatus: 'RELEASED' }))
+    expect(screen.getByRole('heading', { name: 'No se pudo cobrar tu tarjeta.' })).toBeTruthy()
+    expect(money()).toBe(NOTHING)
+  })
+
+  it('el sondeo NO se detiene en un final con el dinero en duda (REJECTED + RELEASING); para con RELEASED', async () => {
+    await show(card({ status: 'REJECTED', rejectReason: 'CLOSED', cardStatus: 'RELEASING' }))
+    await tick(10_000)
+    expect(getTracking).toHaveBeenCalledTimes(2)
+    vi.mocked(getTracking).mockResolvedValue(card({ status: 'REJECTED', rejectReason: 'CLOSED', cardStatus: 'RELEASED' }))
+    await tick(10_000)
+    expect(getTracking).toHaveBeenCalledTimes(3)
+    expect(money()).toBe(NOTHING)
+    await tick(60_000)
+    expect(getTracking).toHaveBeenCalledTimes(3)
+  })
+
+  it('cancelado con la tarjeta apartada o confirmándose también sigue sondeando', async () => {
+    for (const cardStatus of ['AUTHORIZED', 'CONFIRMING'] as const) {
+      vi.mocked(getTracking).mockReset()
+      await show(card({ status: 'CANCELLED_BY_CUSTOMER', cardStatus }))
+      await tick(10_000)
+      expect(getTracking, cardStatus).toHaveBeenCalledTimes(2)
+      cleanup()
+    }
+  })
+
+  it('en inglés', async () => {
+    await show(draft(), 'en')
+    expect(screen.getByRole('heading', { name: 'Confirming your payment…' })).toBeTruthy()
+    cleanup()
+    await show(card({ status: 'PENDING_ACCEPTANCE' }), 'en')
+    expect(money()).toBe('Your card is on hold; it is charged when the restaurant accepts.')
+  })
+})
+
+describe('fase 2: de regreso de Stripe (?pago)', () => {
+  const T = 'T'.repeat(32)
+  const draft = (over: Partial<Tracking> = {}) =>
+    tr({ paymentMode: 'CARD_ONLINE', status: 'AWAITING_PAYMENT', orderNumber: '', cardStatus: null, canCancel: false, ...over })
+  function back(ret: 'returned' | 'cancelled') {
+    const s = makeStore(null, null)
+    s.trackingToken.value = T
+    s.paymentReturn = ret
+    s.go('tracking')
+    const view = render(withStore(s, <TrackingScreen />))
+    return { s, view }
+  }
+
+  it('?pago=1: «Confirmando tu pago…» de inmediato, antes de que conteste el seguimiento', async () => {
+    vi.mocked(getTracking).mockReturnValue(new Promise(() => {}))
+    back('returned')
+    await flush()
+    expect(screen.getByText('Confirmando tu pago…')).toBeTruthy()
+    expect(screen.queryByText('Cargando tu pedido…')).toBeNull()
+    expect(abandonPayment).not.toHaveBeenCalled()
+  })
+
+  it('?pago=cancelado: «Cancelando el pago…» y abandon-payment UNA vez (nunca cancel); al confirmar, «No se completó el pago»', async () => {
+    let answer!: (t: Tracking) => void
+    vi.mocked(abandonPayment).mockReturnValue(new Promise(r => { answer = r }))
+    vi.mocked(getTracking).mockResolvedValue(draft({ status: 'PAYMENT_NOT_COMPLETED' }))
+    const { s, view } = back('cancelled')
+    await flush()
+    expect(screen.getByRole('heading', { name: 'Cancelando el pago…' })).toBeTruthy()
+    expect(abandonPayment).toHaveBeenCalledTimes(1)
+    expect(abandonPayment).toHaveBeenCalledWith(s.slug, T)
+    expect(getTracking).not.toHaveBeenCalled() // el sondeo no le gana a la cancelación
+    expect(cancelOrder).not.toHaveBeenCalled()
+    // Se lee una sola vez: volver a pintar (o volver a esta pantalla) no cancela otra vez.
+    expect(s.paymentReturn).toBeNull()
+    view.rerender(withStore(s, <TrackingScreen />))
+    await flush()
+    answer(draft({ status: 'PAYMENT_NOT_COMPLETED' }))
+    await flush()
+    expect(screen.getByRole('heading', { name: 'No se completó el pago. No se te cobró nada.' })).toBeTruthy()
+    await tick(60_000)
+    expect(abandonPayment).toHaveBeenCalledTimes(1)
+    expect(getTracking).not.toHaveBeenCalled() // final: no hace falta sondear
+  })
+
+  it('?pago=cancelado pero otra pestaña ya pagó: se muestra ese pedido y se sigue sondeando', async () => {
+    vi.mocked(abandonPayment).mockResolvedValue(tr({ paymentMode: 'CARD_ONLINE', cardStatus: 'AUTHORIZED', orderNumber: '42' }))
+    vi.mocked(getTracking).mockResolvedValue(tr({ paymentMode: 'CARD_ONLINE', cardStatus: 'AUTHORIZED', orderNumber: '42' }))
+    back('cancelled')
+    await flush()
+    expect(screen.getByRole('heading', { name: 'Esperando que el restaurante acepte' })).toBeTruthy()
+    expect(screen.getByText('Tu tarjeta está apartada; se cobra cuando el restaurante acepte.')).toBeTruthy()
+    await tick(10_000)
+    expect(getTracking).toHaveBeenCalledTimes(1)
+  })
+
+  it('?pago=cancelado sin red o con un 5xx: sigue «Cancelando el pago…» con «Reintentar»; nunca dice que se canceló', async () => {
+    vi.mocked(abandonPayment).mockRejectedValueOnce(new ApiError('Sin conexión', 0, undefined, undefined, true))
+    back('cancelled')
+    await flush()
+    expect(screen.getByRole('heading', { name: 'Cancelando el pago…' })).toBeTruthy()
+    expect(screen.getByText('Sin conexión. Revisa tu internet y vuelve a intentar.')).toBeTruthy()
+    expect(document.body.textContent).not.toContain('No se completó')
+    await tick(60_000)
+    expect(getTracking).not.toHaveBeenCalled()
+    vi.mocked(abandonPayment).mockRejectedValueOnce(new ApiError('x', 503))
+    fireEvent.click(screen.getByRole('button', { name: 'Reintentar' }))
+    await flush()
+    expect(abandonPayment).toHaveBeenCalledTimes(2)
+    expect(screen.getByRole('heading', { name: 'Cancelando el pago…' })).toBeTruthy()
+    expect(screen.getByText('Algo falló de nuestro lado. Intenta de nuevo.')).toBeTruthy()
+    vi.mocked(abandonPayment).mockResolvedValueOnce(draft({ status: 'PAYMENT_NOT_COMPLETED' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Reintentar' }))
+    await flush()
+    expect(abandonPayment).toHaveBeenCalledTimes(3)
+    expect(screen.getByRole('heading', { name: 'No se completó el pago. No se te cobró nada.' })).toBeTruthy()
   })
 })

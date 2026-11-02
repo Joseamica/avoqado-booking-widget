@@ -703,7 +703,21 @@
         })
         var orderEl = document.createElement('avoqado-order')
         orderEl.setAttribute('venue', slug)
-        if (flowType === 'pedido' && parts[2]) orderEl.setAttribute('tracking', parts[2])
+        if (flowType === 'pedido' && parts[2]) {
+          orderEl.setAttribute('tracking', parts[2])
+          // De regreso de Stripe (`?pago=1` o `?pago=cancelado`): la tienda lo lee UNA vez y aquí se quita de la barra, así
+          // recargar no vuelve a cancelar el pago.
+          var pago = orderParams.get('pago')
+          if (pago) {
+            orderEl.setAttribute('pago', pago)
+            var rest = new URLSearchParams(window.location.search)
+            rest.delete('pago')
+            var restQs = rest.toString()
+            try {
+              history.replaceState(null, '', window.location.pathname + (restQs ? '?' + restQs : ''))
+            } catch (err) { /* sin historial: recargar sólo vuelve a avisar; el servidor nunca cancela un pedido */ }
+          }
+        }
         if (orderParams.get('locale')) orderEl.setAttribute('locale', orderParams.get('locale'))
         // Cuando llega `/info`, el título lleva el nombre real del restaurante (el del slug es sólo un adelanto).
         orderEl.addEventListener('avoqado:tienda-cargada', function (e) {

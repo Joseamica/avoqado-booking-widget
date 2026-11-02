@@ -96,6 +96,13 @@ export const cancelOrder = (slug: string, trackingToken: string) =>
     }),
   )
 
+/**
+ * Fase 2: el comensal volvió de Stripe sin pagar. Nunca cancela un pedido: suelta la página de pago y responde lo mismo que el
+ * seguimiento (`PAYMENT_NOT_COMPLETED`, o el estado del pedido si otra pestaña ya pagó).
+ */
+export const abandonPayment = (slug: string, trackingToken: string) =>
+  data(send<{ data: Tracking }>(`${ordering(slug)}/orders/${encodeURIComponent(trackingToken)}/abandon-payment`, { method: 'POST' }))
+
 // El OTP vive fuera de /ordering y responde sin `success`/`data`.
 const otp = (slug: string) => `/venues/${encodeURIComponent(slug)}/auth/otp`
 
