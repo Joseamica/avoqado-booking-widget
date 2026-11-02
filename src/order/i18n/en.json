@@ -136,7 +136,11 @@
     "phoneHelp": "We'll send a code here to confirm your order.",
     "summary": "{{n}} items, for pickup",
     "summaryOne": "1 item, for pickup",
-    "taxIncluded": "VAT included"
+    "taxIncluded": "VAT included",
+    "payHow": "How do you want to pay?",
+    "payCard": "Pay now by card",
+    "payPickup": "Pay at pickup",
+    "payCardNote": "You pay now by card."
   },
   "otp": {
     "title": "Enter your code",
@@ -158,7 +162,10 @@
     "noStorage": "Your browser does not let this page save data. Open it in another browser or outside private mode to order.",
     "serverError": "Something went wrong on our side. Try again.",
     "failed": "We could not send your order. Try again.",
-    "inactive": "Your account is deactivated at this restaurant."
+    "inactive": "Your account is deactivated at this restaurant.",
+    "cardNotAccepted": "This business no longer takes cards online. Choose to pay at pickup.",
+    "cardAmountOutOfRange": "This total can't be paid by card online (minimum $10, maximum $50,000).",
+    "cardProviderUnavailable": "We couldn't open the payment. Try again."
   },
   "tracking": {
     "head": {

@@ -136,7 +136,11 @@
     "phoneHelp": "Aquí te mandamos un código para confirmar tu pedido.",
     "summary": "{{n}} productos, para recoger",
     "summaryOne": "1 producto, para recoger",
-    "taxIncluded": "IVA incluido"
+    "taxIncluded": "IVA incluido",
+    "payHow": "¿Cómo quieres pagar?",
+    "payCard": "Pagar ahora con tarjeta",
+    "payPickup": "Pagar al recoger",
+    "payCardNote": "Pagas ahora con tarjeta."
   },
   "otp": {
     "title": "Escribe tu código",
@@ -158,7 +162,10 @@
     "noStorage": "Tu navegador no deja guardar datos de esta página. Ábrela en otro navegador o fuera del modo privado para pedir.",
     "serverError": "Algo falló de nuestro lado. Intenta de nuevo.",
     "failed": "No pudimos enviar tu pedido. Intenta de nuevo.",
-    "inactive": "Tu cuenta está desactivada en este restaurante."
+    "inactive": "Tu cuenta está desactivada en este restaurante.",
+    "cardNotAccepted": "Este negocio ya no acepta tarjeta en línea. Elige pagar al recoger.",
+    "cardAmountOutOfRange": "El total no se puede pagar con tarjeta en línea (mínimo $10, máximo $50,000).",
+    "cardProviderUnavailable": "No pudimos abrir el pago. Intenta de nuevo."
   },
   "tracking": {
     "head": {

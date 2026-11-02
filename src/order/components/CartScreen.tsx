@@ -184,7 +184,8 @@ export function CartScreen() {
           <span>{t('cart.totalShort')}</span>
           {q ? <span>{formatMXN(q.total, store.locale)}</span> : !error && <span class="avq-o-total__wait">{t('cart.quoting')}</span>}
         </p>
-        <p class="avq-o-total__tax">{t('cart.taxPickup')}</p>
+        {/* Con tarjeta en línea (fase 2) se elige cómo pagar en «Tus datos»: aquí sólo el IVA. */}
+        <p class="avq-o-total__tax">{info?.paymentModes.cardOnline ? t('details.taxIncluded') : t('cart.taxPickup')}</p>
       </div>
       <div class="avq-o-cartfoot">
         <button type="button" class="avq-o-btn avq-o-btn--primary" disabled={!q?.ok || !open}

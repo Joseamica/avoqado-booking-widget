@@ -12,13 +12,13 @@ const api = vi.hoisted(() => ({
 vi.mock('./api', async () => ({ ...(await vi.importActual<typeof import('./api')>('./api')), ...api }))
 
 import { ApiError } from './api'
-import { buildOrderBody, checkoutOf, isDefinitive, phoneToVerify, retry, send, storageWorks, submitOrder, verifyPhone } from './checkout'
+import { buildOrderBody, checkoutOf, isDefinitive, nav, phoneToVerify, retry, send, storageWorks, submitOrder, verifyPhone } from './checkout'
 import { createOrderStore, type OrderStore } from './store'
 import { loadLastOrder, loadSession, saveSession } from './session'
 import { pendingAttempt } from './attempt'
 import { phoneE164 } from './phone'
 import type { CartLine } from './cart'
-import type { CreatedOrder, Quote, StoreInfo } from './types'
+import type { CreatedCardOrder, CreatedOrder, Quote, StoreInfo } from './types'
 
 const KEY_RE = /^[A-Za-z0-9_-]{32,64}$/
 const PHONE = phoneE164('52', '55 4442 2262')
@@ -491,5 +491,117 @@ describe('ronda 1 de arreglos', () => {
     const { store } = setup()
     await expect(send(store, null as any)).rejects.toThrow()
     expect(checkoutOf(store).busy.value).toBe(false)
+  })
+})
+
+describe('fase 2: pagar con tarjeta', () => {
+  const URL_PAGO = 'https://checkout.stripe.com/c/pay/cs_test_1'
+  const draft = (over: Partial<CreatedCardOrder> = {}): CreatedCardOrder => ({
+    trackingToken: 'D'.repeat(32), checkoutUrl: URL_PAGO, status: 'AWAITING_PAYMENT', total: '170.00', replay: false, ...over,
+  })
+  /** Tienda con tarjeta, SIN sesión de WhatsApp (pagar con tarjeta no la pide) y escuchando el evento público. */
+  function card() {
+    const host = new EventTarget()
+    const events: any[] = []
+    host.addEventListener('avoqado:pedido-creado', e => events.push((e as CustomEvent).detail))
+    const store = createOrderStore(`card${++n}`, { locale: 'es', host })
+    store.cart.value = [line()]
+    store.quote.value = quoteOf(170)
+    store.info.value = info
+    const body = buildOrderBody(store, { customer: { name: ' Ana López ', phone: PHONE }, note: null, paymentMode: 'CARD_ONLINE' })
+    const assign = vi.spyOn(nav, 'assign').mockImplementation(() => {})
+    return { store, body, events, assign }
+  }
+
+  it('el cuerpo lleva CARD_ONLINE, el nombre y el teléfono; sin sesión NO pide el código y manda la llave del intento sin token', async () => {
+    const { store, body } = card()
+    expect(body).toEqual({
+      items: [{ productId: 'p-flauta', quantity: 2, modifiers: [{ modifierId: 'm-salsa', quantity: 1 }] }],
+      paymentMode: 'CARD_ONLINE', expectedTotal: '170.00', customer: { name: 'Ana López', phone: '+525544422262' },
+    })
+    api.createOrder.mockResolvedValueOnce(draft())
+    await send(store, body)
+    expect(store.screen.value).not.toBe('otp')
+    expect(api.requestOrderingOtp).not.toHaveBeenCalled()
+    expect(api.createOrder).toHaveBeenCalledTimes(1)
+    expect(sent().body).toEqual(body)
+    expect(sent().key).toMatch(KEY_RE)
+    expect(sent().token).toBeUndefined()
+  })
+
+  it('201 AWAITING_PAYMENT con liga ⇒ guarda el token (folio vacío), emite el evento sin folio y abre la página de pago', async () => {
+    const { store, body, events, assign } = card()
+    api.createOrder.mockResolvedValueOnce(draft())
+    await send(store, body)
+    expect(loadLastOrder(store.slug)).toEqual({ trackingToken: 'D'.repeat(32), orderNumber: '' })
+    expect(pendingAttempt(store.slug)).toBeNull()
+    expect(events).toEqual([expect.objectContaining({ orderNumber: '', trackingToken: 'D'.repeat(32) })])
+    expect(assign).toHaveBeenCalledTimes(1)
+    expect(assign).toHaveBeenCalledWith(URL_PAGO)
+    // Al volver con «atrás» desde Stripe se ve el seguimiento de ese borrador, no el formulario.
+    expect(store.trackingToken.value).toBe('D'.repeat(32))
+    expect(store.screen.value).toBe('tracking')
+    expect(store.cart.value).toEqual([])
+  })
+
+  it('una repetición que ya avanzó o venció (otro estado, o sin liga) NO abre Stripe: va al seguimiento de ese token', async () => {
+    for (const over of [
+      { replay: true, status: 'PENDING_ACCEPTANCE', checkoutUrl: '' },
+      { replay: true, status: 'PAYMENT_NOT_COMPLETED', checkoutUrl: '' },
+      { replay: true, status: 'AWAITING_PAYMENT', checkoutUrl: '' },
+      { replay: true, status: 'PENDING_ACCEPTANCE', checkoutUrl: URL_PAGO },
+    ]) {
+      sessionStorage.clear()
+      const { store, body, assign } = card()
+      api.createOrder.mockResolvedValueOnce(draft(over))
+      await send(store, body)
+      expect(assign, JSON.stringify(over)).not.toHaveBeenCalled()
+      expect(store.trackingToken.value).toBe('D'.repeat(32))
+      expect(store.screen.value).toBe('tracking')
+      vi.restoreAllMocks()
+    }
+  })
+
+  it('una liga que no es https no se abre (va al seguimiento)', async () => {
+    const { store, body, assign } = card()
+    api.createOrder.mockResolvedValueOnce(draft({ checkoutUrl: 'javascript:alert(1)' }))
+    await send(store, body)
+    expect(assign).not.toHaveBeenCalled()
+    expect(store.screen.value).toBe('tracking')
+  })
+
+  it('502 CARD_PROVIDER_UNAVAILABLE ⇒ «No pudimos abrir el pago…» con «Reintentar»; el reintento lleva la MISMA llave', async () => {
+    const { store, body, assign } = card()
+    api.createOrder.mockRejectedValueOnce(new ApiError('No pudimos abrir la página de pago.', 502, 'CARD_PROVIDER_UNAVAILABLE'))
+    await send(store, body)
+    expect(checkoutOf(store).feedback.value).toEqual({ kind: 'error', message: 'No pudimos abrir el pago. Intenta de nuevo.', retryable: true })
+    expect(pendingAttempt(store.slug)?.key).toBe(sent(0).key)
+    api.createOrder.mockResolvedValueOnce(draft({ replay: true }))
+    await retry(store)
+    expect(sent(1).key).toBe(sent(0).key)
+    expect(sent(1).body).toEqual(sent(0).body)
+    expect(sent(1).token).toBeUndefined()
+    expect(assign).toHaveBeenCalledWith(URL_PAGO)
+  })
+
+  it.each([
+    ['CARD_PAYMENT_NOT_ACCEPTED', 'Este negocio ya no acepta tarjeta en línea. Elige pagar al recoger.'],
+    ['CARD_AMOUNT_OUT_OF_RANGE', 'El total no se puede pagar con tarjeta en línea (mínimo $10, máximo $50,000).'],
+  ])('400 %s ⇒ su texto, sin «Reintentar», y el intento se borra', async (code, text) => {
+    const { store, body } = card()
+    api.createOrder.mockRejectedValueOnce(new ApiError('x', 400, code))
+    expect(await submitOrder(store, body)).toEqual({ kind: 'error', message: text, retryable: false })
+    expect(pendingAttempt(store.slug)).toBeNull()
+  })
+
+  it('un intento pendiente de tarjeta tras recargar se reintenta igual, sin pedir el código', async () => {
+    const { store, body } = card()
+    api.createOrder.mockRejectedValueOnce(offline())
+    await send(store, body)
+    api.createOrder.mockResolvedValueOnce(draft({ replay: true }))
+    // Otro cuerpo (al recoger) en pantalla: se manda el pendiente, con su modo y su llave.
+    await submitOrder(store, buildOrderBody(store, { customer: { name: 'Ana', phone: PHONE }, note: null }))
+    expect(sent(1).body.paymentMode).toBe('CARD_ONLINE')
+    expect(sent(1).key).toBe(sent(0).key)
   })
 })

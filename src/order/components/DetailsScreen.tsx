@@ -11,6 +11,7 @@ import { StoreStatusBanner } from './StoreStatusBanner'
 import { CheckoutStatus } from './CheckoutStatus'
 import { Back } from './icons'
 import { tapTime } from './focus'
+import type { PaymentMode } from '../types'
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 /** Durante cuánto, al aparecer la pantalla, «Confirmar pedido» ignora los toques (ver `confirm`). */
@@ -19,7 +20,8 @@ const ENTRY_GUARD_MS = 400
 /**
  * Nombre, WhatsApp (el mismo texto que se verifica por código), correo opcional, aviso simplificado y «Confirmar pedido». El botón,
  * con el total, va en un pie pegajoso DENTRO de la tienda (el mismo `.avq-o-cartfoot` del carrito, nunca `position: fixed`), con lo
- * que falta y el estado del envío arriba de él.
+ * que falta y el estado del envío arriba de él. Fase 2: con tarjeta en línea, «¿Cómo quieres pagar?» ofrece «Pagar ahora con tarjeta»
+ * (primera y elegida) y, si el negocio lo acepta, «Pagar al recoger»; sólo con tarjeta no hay selector. Con tarjeta no se pide el código.
  */
 export function DetailsScreen() {
   const store = useContext(OrderStoreContext)!
@@ -31,6 +33,10 @@ export function DetailsScreen() {
   const set = (patch: Partial<typeof d>) => { c.draft.value = { ...c.draft.value, ...patch } }
   const info = store.info.value
   const q = store.quote.value
+  const modes = info?.paymentModes
+  const choose = !!modes?.cardOnline && modes.payAtPickup
+  const payment: PaymentMode = modes?.cardOnline && !(choose && d.payment === 'PAY_AT_PICKUP') ? 'CARD_ONLINE' : 'PAY_AT_PICKUP'
+  const card = payment === 'CARD_ONLINE'
 
   const phone = phoneE164(d.dial, d.national)
   const name = d.name.trim()
@@ -52,7 +58,7 @@ export function DetailsScreen() {
     // contando la hora del TOQUE (`tapTime`), no la de atenderlo. La raíz de la tienda (OrderApp) ya descarta los toques de los 400 ms que
     // siguen a un cambio de pantalla; ésta es la guarda propia del botón, medida desde que se pinta esta pantalla.
     if (!canSend || tapTime(e) - shownAt < ENTRY_GUARD_MS) return
-    void send(store, buildOrderBody(store, { customer: { name, phone, ...(email ? { email } : {}) }, note: d.note || null }))
+    void send(store, buildOrderBody(store, { customer: { name, phone, ...(email ? { email } : {}) }, note: d.note || null, paymentMode: payment }))
   }
   const venue = info?.venue.name || t('details.theRestaurant')
   // Piezas, como el contador de la barra del carrito.
@@ -78,13 +84,30 @@ export function DetailsScreen() {
           <CountryPhoneInput look="tienda" inputId={`${id}-phone`} dialCode={d.dial} nationalNumber={d.national}
             onDialCodeChange={dial => set({ dial })} onNationalNumberChange={national => set({ national })}
             numberPlaceholder={t('details.phonePlaceholder')} searchPlaceholder={t('details.countrySearch')} noResultsText={t('details.countryNoResults')} />
-          <p class="avq-o-help">{t('details.phoneHelp')}</p>
+          {!card && <p class="avq-o-help">{t('details.phoneHelp')}</p>}
         </div>
         <div class="avq-o-field">
           <label for={`${id}-email`}>{t('details.email')}</label>
           <input id={`${id}-email`} class="avq-o-input" type="email" autoComplete="email" maxLength={120} value={d.email}
             onInput={(e: any) => set({ email: e.currentTarget.value })} />
         </div>
+        {choose && (
+          <div class="avq-o-field">
+            <h3 id={`${id}-pay`} class="avq-o-group__title">{t('details.payHow')}</h3>
+            <div class="avq-o-group__opts" role="radiogroup" aria-labelledby={`${id}-pay`}>
+              {(['CARD_ONLINE', 'PAY_AT_PICKUP'] as const).map(m => (
+                <div key={m} class="avq-o-opt">
+                  <label class="avq-o-opt__main">
+                    <span class="avq-o-opt__mark">
+                      <input class="avq-o-opt__input" type="radio" name={`${id}-pay`} checked={payment === m} onChange={() => set({ payment: m })} />
+                    </span>
+                    <span class="avq-o-opt__text">{t(m === 'CARD_ONLINE' ? 'details.payCard' : 'details.payPickup')}</span>
+                  </label>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
         <div class="avq-o-privacy">
           <p class="avq-o-help">{t('details.privacy', { venue })}</p>
           {info?.privacyNoticePath && (
@@ -99,7 +122,7 @@ export function DetailsScreen() {
       <div class="avq-o-foot">
         {info?.contact?.address && <p>{info.contact.address}</p>}
         {info?.contact?.phone && <p>{info.contact.phone}</p>}
-        <p>{t('cart.payAtPickup')}</p>
+        <p>{card ? t('details.payCardNote') : t('cart.payAtPickup')}</p>
         <p>{t('details.cancelPolicy')}</p>
         <p>{t('details.updates')}</p>
       </div>
