@@ -46,6 +46,8 @@
     "open": "Open",
     "openUntil": "Open until {{time}}",
     "readyIn": "Ready in ~{{n}} min",
+    "cardOrPickupChip": "Card or at pickup",
+    "cardChip": "Pay by card",
     "payAtPickupChip": "Pay at pickup",
     "pickupAt": "Pickup at {{address}}",
     "pausedTitle": "Orders paused",

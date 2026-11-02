@@ -85,6 +85,8 @@ export function OrderApp({ accentColor }: { accentColor?: string }) {
   const chips = () => {
     if (info?.status !== 'OPEN') return null
     const until = closesAt(info.hours, new Date(), info.venue.timezone ?? 'America/Mexico_City')
+    const { payAtPickup, cardOnline } = info.paymentModes ?? {}
+    const payChip = cardOnline ? (payAtPickup ? 'store.cardOrPickupChip' : 'store.cardChip') : payAtPickup ? 'store.payAtPickupChip' : null
     return (
       <div class="avq-o-chips">
         <span class="avq-o-chip avq-o-chip--ok">
@@ -92,7 +94,7 @@ export function OrderApp({ accentColor }: { accentColor?: string }) {
           {until ? t('store.openUntil', { time: until }) : t('store.open')}
         </span>
         {info.estimatedPrepMinutes > 0 && <span class="avq-o-chip">{t('store.readyIn', { n: info.estimatedPrepMinutes })}</span>}
-        {info.paymentModes?.payAtPickup && <span class="avq-o-chip">{t('store.payAtPickupChip')}</span>}
+        {payChip && <span class="avq-o-chip">{t(payChip)}</span>}
       </div>
     )
   }

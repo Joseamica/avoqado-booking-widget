@@ -728,6 +728,16 @@ describe('encabezado de la tienda: portada, logo, chips y avisos', () => {
     app(makeStore(infoOf({ venue: { ...venue, name: null } }), menuOf(product())))
     expect(screen.queryByRole('banner')).toBeNull()
   })
+  it.each([
+    [{ payAtPickup: true, cardOnline: true }, 'Tarjeta o al recoger'],
+    [{ payAtPickup: false, cardOnline: true }, 'Pagas con tarjeta'],
+    [{ payAtPickup: true, cardOnline: false }, 'Pagas al recoger'],
+    [{ payAtPickup: true }, 'Pagas al recoger'],
+  ])('fase 2: el letrero de cómo se paga no promete de más: %j ⇒ «%s»', (paymentModes, texto) => {
+    app(store({ hours: null, estimatedPrepMinutes: 0, paymentModes }))
+    expect(screen.getByText(texto)).toBeTruthy()
+  })
+
   it('chips: «Abierto hasta las 22:00», «Listo en ~20 min» si estimatedPrepMinutes=20 y «Pagas al recoger»', () => {
     vi.useFakeTimers({ toFake: ['Date'] })
     vi.setSystemTime(new Date('2026-10-19T18:00:00Z')) // lunes 12:00 en CDMX

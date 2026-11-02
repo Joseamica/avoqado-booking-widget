@@ -46,6 +46,8 @@
     "open": "Abierto",
     "openUntil": "Abierto hasta las {{time}}",
     "readyIn": "Listo en ~{{n}} min",
+    "cardOrPickupChip": "Tarjeta o al recoger",
+    "cardChip": "Pagas con tarjeta",
     "payAtPickupChip": "Pagas al recoger",
     "pickupAt": "Para recoger en {{address}}",
     "pausedTitle": "Pedidos en pausa",
