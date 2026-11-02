@@ -16,6 +16,7 @@ let visibility = 'visible'
 beforeEach(() => {
   vi.useFakeTimers()
   sessionStorage.clear() // el abandono pendiente vive ahí (fix ronda 1)
+  window.history.replaceState({}, '', '/') // y en la URL (`?pago=cancelado`, fix ronda 2)
   visibility = 'visible'
   Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => visibility })
   vi.mocked(getTracking).mockReset()
@@ -752,5 +753,79 @@ describe('fix ronda 1 (Codex r1): nunca «No se te cobró nada» con el dinero e
     await show(tr({ paymentMode: 'CARD_ONLINE', cardStatus: 'AUTHORIZED' }))
     expect(screen.queryByRole('button', { name: 'Cancelar el pago' })).toBeNull()
     expect(screen.queryByText('Si ya pagaste, espera unos segundos.')).toBeNull()
+  })
+})
+
+describe('fix ronda 2 (Codex r2): el sondeo nunca se queda parado; la intención de cancelar también vive en la URL', () => {
+  const T = 'T'.repeat(32)
+  const draft = (over: Partial<Tracking> = {}) =>
+    tr({ paymentMode: 'CARD_ONLINE', status: 'AWAITING_PAYMENT', orderNumber: '', cardStatus: null, canCancel: false, ...over })
+  const order = () => tr({ paymentMode: 'CARD_ONLINE', cardStatus: 'AUTHORIZED', orderNumber: '42', canCancel: false })
+  function mount(ret: 'cancelled' | null = null) {
+    const s = makeStore(null, null)
+    s.trackingToken.value = T
+    s.paymentReturn = ret
+    s.go('tracking')
+    render(withStore(s, <TrackingScreen />))
+    return s
+  }
+  /** Lo que haría la página al recargar: `?pago=cancelado` en la URL ⇒ el atributo ⇒ la tienda arranca cancelando. */
+  const fromUrl = () => (new URLSearchParams(window.location.search).get('pago') === 'cancelado' ? 'cancelled' : null)
+
+  it('GET en vuelo + «Cancelar el pago» que devuelve el pedido: el sondeo se reprograma y llega un GET nuevo', async () => {
+    vi.mocked(getTracking).mockResolvedValueOnce(draft())
+    mount()
+    await flush()
+    let late!: (t: Tracking) => void
+    vi.mocked(getTracking).mockReturnValueOnce(new Promise(r => { late = r }))
+    await tick(10_000) // el segundo GET sale y se queda en camino
+    expect(getTracking).toHaveBeenCalledTimes(2)
+    vi.mocked(abandonPayment).mockResolvedValueOnce(order())
+    fireEvent.click(screen.getByRole('button', { name: 'Cancelar el pago' }))
+    await flush()
+    expect(screen.getByRole('heading', { name: 'Esperando que el restaurante acepte' })).toBeTruthy()
+    await tick(10_000) // el tick encuentra el GET viejo todavía en camino
+    late(draft()) // llega la respuesta vieja: se descarta (no vuelve el borrador)
+    await flush()
+    expect(screen.getByRole('heading', { name: 'Esperando que el restaurante acepte' })).toBeTruthy()
+    vi.mocked(getTracking).mockResolvedValue(order())
+    await tick(10_000)
+    expect(getTracking).toHaveBeenCalledTimes(3)
+    await tick(10_000)
+    expect(getTracking).toHaveBeenCalledTimes(4)
+  })
+
+  it('setItem falla y el abandono falla: la URL conserva `?pago=cancelado`, recargar vuelve a llamar; tras un 2xx la URL ya no trae `pago`', async () => {
+    window.history.replaceState({}, '', `/flautas/pedido/${T}?app=order&pago=cancelado&locale=en`)
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new DOMException('lleno', 'QuotaExceededError') })
+    vi.mocked(abandonPayment).mockRejectedValueOnce(new ApiError('HTTP 502', 502))
+    mount(fromUrl())
+    await flush()
+    expect(abandonPayment).toHaveBeenCalledTimes(1)
+    expect(window.location.search).toContain('pago=cancelado')
+    cleanup()
+    vi.mocked(abandonPayment).mockResolvedValueOnce(draft({ status: 'PAYMENT_NOT_COMPLETED' }))
+    mount(fromUrl()) // recarga
+    await flush()
+    expect(abandonPayment).toHaveBeenCalledTimes(2)
+    expect(screen.getByRole('heading', { name: 'No se completó el pago. No se te cobró nada.' })).toBeTruthy()
+    expect(window.location.pathname + window.location.search).toBe(`/flautas/pedido/${T}?app=order&locale=en`)
+    vi.restoreAllMocks()
+  })
+
+  it('«Cancelar el pago» pone `?pago=cancelado` en la URL ANTES de llamar, y lo quita con la respuesta', async () => {
+    window.history.replaceState({}, '', `/flautas/pedido/${T}?app=order`)
+    vi.mocked(getTracking).mockResolvedValue(draft())
+    mount()
+    await flush()
+    let urlAtCall = ''
+    vi.mocked(abandonPayment).mockImplementationOnce(async () => {
+      urlAtCall = window.location.search
+      return draft({ status: 'PAYMENT_NOT_COMPLETED' })
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Cancelar el pago' }))
+    await flush()
+    expect(urlAtCall).toBe('?app=order&pago=cancelado')
+    expect(window.location.search).toBe('?app=order')
   })
 })

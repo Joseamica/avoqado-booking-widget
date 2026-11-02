@@ -23,6 +23,21 @@ const CLOSED: ReadonlySet<OnlineOrderStatus> = new Set(['REJECTED', 'EXPIRED', '
 const MONEY_IN_DOUBT: ReadonlySet<string> = new Set(['AUTHORIZED', 'CONFIRMING', 'RELEASING'])
 const done = (r: Tracking) => isFinalStatus(r.status) && !MONEY_IN_DOUBT.has(r.cardStatus ?? '')
 
+/**
+ * `?pago=cancelado` en la barra mientras el servidor no conteste el abandono (fix ronda 2): recargar lo reintenta aunque falle
+ * sessionStorage (la página hospedada lo vuelve atributo). `null` lo quita, dejando lo demás de la URL.
+ */
+function urlPago(value: 'cancelado' | null): void {
+  try {
+    const u = new URL(location.href)
+    if (value) u.searchParams.set('pago', value)
+    else u.searchParams.delete('pago')
+    if (u.href !== location.href) history.replaceState(history.state, '', u.href)
+  } catch {
+    /* sin historial: queda el respaldo de sessionStorage */
+  }
+}
+
 // Íconos de «Cómo llegar» y «Llamar» (de la maqueta; sólo se usan aquí).
 const Pin = () => (
   <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -88,7 +103,8 @@ export function TrackingScreen() {
     // Mientras no se confirme el abandono del pago, el sondeo no corre (diría «Confirmando tu pago…» del borrador vivo).
     let cancelling = entry.cancel
     let timer: ReturnType<typeof setTimeout> | null = null
-    const later = () => { if (!stopped && !finished && !cancelling) timer = setTimeout(() => void run(), POLL_MS) }
+    // Un solo temporizador: si ya hay uno agendado, se respeta.
+    const later = () => { if (!stopped && !finished && !cancelling && !timer) timer = setTimeout(() => void run(), POLL_MS) }
     const apply = (r: Tracking) => {
       setTracking(r)
       setProblem(null)
@@ -102,16 +118,20 @@ export function TrackingScreen() {
     const run = async () => {
       if (timer) clearTimeout(timer)
       timer = null
-      if (stopped || finished || inflight || cancelling || document.visibilityState !== 'visible') return
+      if (stopped || finished || cancelling || document.visibilityState !== 'visible') return
+      // Una consulta vieja sigue en camino (salió antes de un abandono, o la red va lenta): se intenta en el siguiente tick, nunca se
+      // deja el sondeo parado (fix ronda 2).
+      if (inflight) return later()
       inflight = true
       const mine = epoch
       try {
         const r = await getTracking(store.slug, token)
-        if (stopped || mine !== epoch) return
-        apply(r)
+        // Salió antes de un abandono: no pinta nada (traería el borrador vivo), pero el sondeo sigue (`later` de abajo).
+        if (!stopped && mine === epoch) apply(r)
       } catch (e) {
-        if (stopped || mine !== epoch) return
-        if (e instanceof ApiError && e.status === 404) vanish()
+        if (stopped || mine !== epoch) {
+          /* respuesta vieja: se descarta */
+        } else if (e instanceof ApiError && e.status === 404) vanish()
         else setProblem(e instanceof ApiError && e.network ? 'store.reconnecting' : 'tracking.updateFailed')
       } finally {
         inflight = false
@@ -125,13 +145,16 @@ export function TrackingScreen() {
       epoch++
       if (timer) clearTimeout(timer)
       timer = null
-      // La intención se guarda ANTES de llamar: si la respuesta se pierde y se recarga, la vista nueva vuelve a intentarlo.
+      // La intención se guarda ANTES de llamar, en sessionStorage y en la URL: si la respuesta se pierde y se recarga, la vista nueva
+      // vuelve a intentarlo (la URL sirve aunque el almacenamiento falle).
       markAbandon(token)
+      urlPago('cancelado')
       setAbandonError(null)
       try {
         const r = await abandonPayment(store.slug, token)
         if (stopped) return
         clearAbandon(token)
+        urlPago(null)
         cancelling = false
         setAbandoning(false)
         apply(r)

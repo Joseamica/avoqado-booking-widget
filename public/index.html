@@ -705,11 +705,11 @@
         orderEl.setAttribute('venue', slug)
         if (flowType === 'pedido' && parts[2]) {
           orderEl.setAttribute('tracking', parts[2])
-          // De regreso de Stripe (`?pago=1` o `?pago=cancelado`): la tienda lo lee UNA vez y aquí se quita de la barra, así
-          // recargar no vuelve a cancelar el pago.
+          // De regreso de Stripe (`?pago=1` o `?pago=cancelado`): la tienda lo lee UNA vez. `?pago=1` se quita aquí; `?pago=cancelado`
+          // se queda en la barra hasta que el servidor confirme el abandono (lo quita la tienda): recargar antes lo reintenta.
           var pago = orderParams.get('pago')
-          if (pago) {
-            orderEl.setAttribute('pago', pago)
+          if (pago) orderEl.setAttribute('pago', pago)
+          if (pago && pago !== 'cancelado') {
             var rest = new URLSearchParams(window.location.search)
             rest.delete('pago')
             var restQs = rest.toString()

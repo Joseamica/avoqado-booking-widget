@@ -31,14 +31,14 @@ describe('página de pedidos (carril de la tienda en index.html)', () => {
 
 describe('fase 2: de regreso de Stripe', () => {
   const T = 'T'.repeat(32)
-  it('?pago=cancelado llega al elemento como atributo y se quita de la URL (recargar no vuelve a cancelar); lo demás se queda', () => {
+  it('?pago=cancelado llega al elemento como atributo y SE QUEDA en la URL (la tienda lo quita con la respuesta del servidor; fix ronda 2)', () => {
     window.history.replaceState({}, '', `/flautas-coyoacan/pedido/${T}?app=order&pago=cancelado&locale=en`)
     new Function(script())()
     const el = document.querySelector('avoqado-order')!
     expect(el.getAttribute('tracking')).toBe(T)
     expect(el.getAttribute('pago')).toBe('cancelado')
     expect(el.getAttribute('locale')).toBe('en')
-    expect(window.location.pathname + window.location.search).toBe(`/flautas-coyoacan/pedido/${T}?app=order&locale=en`)
+    expect(window.location.pathname + window.location.search).toBe(`/flautas-coyoacan/pedido/${T}?app=order&pago=cancelado&locale=en`)
   })
   it('?pago=1 también llega y se quita', () => {
     window.history.replaceState({}, '', `/flautas-coyoacan/pedido/${T}?app=order&pago=1`)
