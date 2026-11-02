@@ -23,21 +23,6 @@ const CLOSED: ReadonlySet<OnlineOrderStatus> = new Set(['REJECTED', 'EXPIRED', '
 const MONEY_IN_DOUBT: ReadonlySet<string> = new Set(['AUTHORIZED', 'CONFIRMING', 'RELEASING'])
 const done = (r: Tracking) => isFinalStatus(r.status) && !MONEY_IN_DOUBT.has(r.cardStatus ?? '')
 
-/**
- * `?pago=cancelado` en la barra mientras el servidor no conteste el abandono (fix ronda 2): recargar lo reintenta aunque falle
- * sessionStorage (la página hospedada lo vuelve atributo). `null` lo quita, dejando lo demás de la URL.
- */
-function urlPago(value: 'cancelado' | null): void {
-  try {
-    const u = new URL(location.href)
-    if (value) u.searchParams.set('pago', value)
-    else u.searchParams.delete('pago')
-    if (u.href !== location.href) history.replaceState(history.state, '', u.href)
-  } catch {
-    /* sin historial: queda el respaldo de sessionStorage */
-  }
-}
-
 // Íconos de «Cómo llegar» y «Llamar» (de la maqueta; sólo se usan aquí).
 const Pin = () => (
   <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -145,20 +130,22 @@ export function TrackingScreen() {
       epoch++
       if (timer) clearTimeout(timer)
       timer = null
-      // La intención se guarda ANTES de llamar, en sessionStorage y en la URL: si la respuesta se pierde y se recarga, la vista nueva
-      // vuelve a intentarlo (la URL sirve aunque el almacenamiento falle).
+      // La intención se guarda ANTES de llamar, sólo en sessionStorage y por pedido (fix ronda 3: el widget nunca toca la URL): si la
+      // respuesta se pierde y se recarga, la vista nueva de ESTE pedido vuelve a intentarlo. Sin almacenamiento queda «Cancelar el pago».
       markAbandon(token)
-      urlPago('cancelado')
       setAbandonError(null)
       try {
         const r = await abandonPayment(store.slug, token)
+        clearAbandon(token) // el servidor contestó (aunque esta vista ya se haya ido)
         if (stopped) return
-        clearAbandon(token)
-        urlPago(null)
         cancelling = false
         setAbandoning(false)
         apply(r)
       } catch (e) {
+        // Una respuesta definitiva (4xx que no sea 408 ni 429, 404 incluido) también cierra la intención; sin red, 408, 429 o 5xx se
+        // conserva para reintentar al volver a montar.
+        if (e instanceof ApiError && !e.network && e.status >= 400 && e.status < 500 && e.status !== 408 && e.status !== 429)
+          clearAbandon(token)
         if (stopped) return
         if (e instanceof ApiError && e.status === 404) {
           cancelling = false
