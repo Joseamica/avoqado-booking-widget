@@ -180,7 +180,8 @@
       "waiting": "Tiene hasta las {{time}} para aceptarlo.",
       "eta": "Estará listo como a las {{time}}.",
       "ready": "Pasa al mostrador con tu folio.",
-      "completed": "¡Gracias!"
+      "completed": "¡Gracias!",
+      "paidWait": "Si ya pagaste, espera unos segundos."
     },
     "steps": {
       "received": "Recibido",
@@ -234,6 +235,7 @@
       "refundDue": "Tu tarjeta se cobró; el negocio te la devolverá.",
       "notCharged": "No se te cobró nada. Si viste un cargo, tu banco lo liberará en unos días.",
       "releasing": "Estamos liberando tu tarjeta…"
-    }
+    },
+    "cancelPayment": "Cancelar el pago"
   }
 }

@@ -180,7 +180,8 @@
       "waiting": "It has until {{time}} to accept.",
       "eta": "Ready around {{time}}.",
       "ready": "Go to the counter with your order number.",
-      "completed": "Thank you!"
+      "completed": "Thank you!",
+      "paidWait": "If you already paid, wait a few seconds."
     },
     "steps": {
       "received": "Received",
@@ -234,6 +235,7 @@
       "refundDue": "Your card was charged; the business will refund it.",
       "notCharged": "You were not charged. If you saw a charge, your bank will release it in a few days.",
       "releasing": "We are releasing your card…"
-    }
+    },
+    "cancelPayment": "Cancel the payment"
   }
 }

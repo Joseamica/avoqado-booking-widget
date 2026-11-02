@@ -96,13 +96,14 @@ describe('<avoqado-order>', () => {
   })
 
   it('fase 2: el atributo pago (de regreso de Stripe) llega a la tienda: «cancelado» cancela el pago, «1» confirma; sin él, nada', async () => {
-    const T = 'T'.repeat(32)
+    // Un pedido distinto en cada tienda: el abandono pendiente se guarda por pedido (fix ronda 1).
+    const [A, B, C] = ['A', 'B', 'C'].map(x => x.repeat(32))
     vi.mocked(getTracking).mockReturnValue(new Promise(() => {}))
-    const a = await mount({ venue: 'a', tracking: T, pago: 'cancelado' })
-    const b = await mount({ venue: 'b', tracking: T, pago: '1' })
-    const c = await mount({ venue: 'c', tracking: T })
+    const a = await mount({ venue: 'a', tracking: A, pago: 'cancelado' })
+    const b = await mount({ venue: 'b', tracking: B, pago: '1' })
+    const c = await mount({ venue: 'c', tracking: C })
     expect(abandonPayment).toHaveBeenCalledTimes(1)
-    expect(abandonPayment).toHaveBeenCalledWith('a', T)
+    expect(abandonPayment).toHaveBeenCalledWith('a', A)
     expect(text(a)).toContain('Cancelando el pago…')
     expect(text(b)).toContain('Confirmando tu pago…')
     expect(text(c)).toContain('Cargando tu pedido…')

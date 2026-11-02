@@ -54,3 +54,28 @@ export function loadLastOrder(slug: string): LastOrder | null {
     : null
 }
 export const clearLastOrder = (slug: string): void => remove(lKey(slug))
+
+// Fase 2: «cancelar el pago» pendiente (de regreso de Stripe con `?pago=cancelado`, o con el botón del seguimiento). En
+// sessionStorage y por pedido: sobrevive a recargar la pestaña y se borra sólo cuando el servidor contesta el abandono.
+const aKey = (trackingToken: string) => `avq_order_abandon:${trackingToken}`
+export function markAbandon(trackingToken: string): void {
+  try {
+    sessionStorage.setItem(aKey(trackingToken), '1')
+  } catch {
+    /* sin almacenamiento: recargar ya no reintenta, pero el abandono de esta vista sigue */
+  }
+}
+export function abandonPending(trackingToken: string): boolean {
+  try {
+    return sessionStorage.getItem(aKey(trackingToken)) === '1'
+  } catch {
+    return false
+  }
+}
+export function clearAbandon(trackingToken: string): void {
+  try {
+    sessionStorage.removeItem(aKey(trackingToken))
+  } catch {
+    /* sin almacenamiento */
+  }
+}

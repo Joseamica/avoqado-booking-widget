@@ -15,6 +15,7 @@ import type { OnlineOrderStatus, Tracking } from '../types'
 let visibility = 'visible'
 beforeEach(() => {
   vi.useFakeTimers()
+  sessionStorage.clear() // el abandono pendiente vive ahí (fix ronda 1)
   visibility = 'visible'
   Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => visibility })
   vi.mocked(getTracking).mockReset()
@@ -636,5 +637,120 @@ describe('fase 2: de regreso de Stripe (?pago)', () => {
     await flush()
     expect(abandonPayment).toHaveBeenCalledTimes(3)
     expect(screen.getByRole('heading', { name: 'No se completó el pago. No se te cobró nada.' })).toBeTruthy()
+  })
+})
+
+describe('fix ronda 1 (Codex r1): nunca «No se te cobró nada» con el dinero en duda; el abandono sobrevive a recargar', () => {
+  const T = 'T'.repeat(32)
+  const draft = (over: Partial<Tracking> = {}) =>
+    tr({ paymentMode: 'CARD_ONLINE', status: 'AWAITING_PAYMENT', orderNumber: '', cardStatus: null, canCancel: false, ...over })
+  const money = () => document.querySelector('.avq-o-total__tax')?.textContent ?? null
+  const NOTHING = /No se te cobró nada/
+  /** Una instancia NUEVA del seguimiento (como al recargar la pestaña): tienda nueva, sin `?pago`. */
+  function mount(ret: 'cancelled' | null = null) {
+    const s = makeStore(null, null)
+    s.trackingToken.value = T
+    s.paymentReturn = ret
+    s.go('tracking')
+    render(withStore(s, <TrackingScreen />))
+    return s
+  }
+
+  it('PAYMENT_NOT_COMPLETED + RELEASING y luego CAPTURED: nunca «No se te cobró nada»; el sondeo sigue mientras se libera', async () => {
+    await show(draft({ status: 'PAYMENT_NOT_COMPLETED', cardStatus: 'RELEASING' }))
+    expect(screen.getByRole('heading', { name: 'No se completó el pago.' })).toBeTruthy()
+    expect(money()).toBe('Estamos liberando tu tarjeta…')
+    expect(document.body.textContent).not.toMatch(NOTHING)
+    vi.mocked(getTracking).mockResolvedValue(draft({ status: 'PAYMENT_NOT_COMPLETED', cardStatus: 'CAPTURED' }))
+    await tick(10_000)
+    expect(getTracking).toHaveBeenCalledTimes(2)
+    expect(screen.getByRole('heading', { name: 'No se completó el pago.' })).toBeTruthy()
+    expect(money()).toBe('Tu tarjeta se cobró; el negocio te la devolverá.')
+    expect(document.body.textContent).not.toMatch(NOTHING)
+    await tick(60_000)
+    expect(getTracking).toHaveBeenCalledTimes(2) // cobrada: ya no está en duda
+  })
+
+  it('cerrado con la tarjeta apartada o confirmándose: titular sin promesa y «Estamos liberando tu tarjeta…» (nunca «se cobra al aceptar»)', async () => {
+    const cases: Partial<Tracking>[] = [
+      { status: 'PAYMENT_NOT_COMPLETED', orderNumber: '', cardStatus: 'AUTHORIZED' },
+      { status: 'PAYMENT_NOT_COMPLETED', orderNumber: '', cardStatus: 'CONFIRMING' },
+      { status: 'CANCELLED_BY_CUSTOMER', cardStatus: 'AUTHORIZED' },
+      { status: 'REJECTED', rejectReason: 'CLOSED', cardStatus: 'CONFIRMING' },
+      { status: 'EXPIRED', cardStatus: 'AUTHORIZED' },
+    ]
+    for (const over of cases) {
+      vi.mocked(getTracking).mockReset()
+      await show(tr({ paymentMode: 'CARD_ONLINE', canCancel: false, ...over }))
+      expect(money(), JSON.stringify(over)).toBe('Estamos liberando tu tarjeta…')
+      expect(document.body.textContent).not.toMatch(NOTHING)
+      if (over.status === 'PAYMENT_NOT_COMPLETED') expect(screen.getByRole('heading', { name: 'No se completó el pago.' })).toBeTruthy()
+      cleanup()
+    }
+  })
+
+  it('el abandono pendiente se guarda ANTES de llamar; si falla y se recarga, la instancia nueva lo reintenta con «Cancelando el pago…»', async () => {
+    let savedBeforeCall: string | null = null
+    vi.mocked(abandonPayment).mockImplementationOnce(async () => {
+      savedBeforeCall = JSON.stringify({ ...sessionStorage })
+      throw new ApiError('HTTP 502', 502)
+    })
+    mount('cancelled')
+    await flush()
+    expect(savedBeforeCall).toContain(T)
+    expect(screen.getByRole('heading', { name: 'Cancelando el pago…' })).toBeTruthy()
+    cleanup()
+    // Recarga: la URL ya no trae `?pago` y la tienda es nueva, pero la intención sigue guardada.
+    vi.mocked(abandonPayment).mockRejectedValueOnce(new ApiError('Sin conexión', 0, undefined, undefined, true))
+    mount()
+    await flush()
+    expect(abandonPayment).toHaveBeenCalledTimes(2)
+    expect(abandonPayment).toHaveBeenLastCalledWith(expect.any(String), T)
+    expect(screen.getByRole('heading', { name: 'Cancelando el pago…' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Reintentar' })).toBeTruthy()
+    expect(getTracking).not.toHaveBeenCalled()
+    // El servidor contesta: se borra y la siguiente recarga ya no cancela.
+    vi.mocked(abandonPayment).mockResolvedValueOnce(draft({ status: 'PAYMENT_NOT_COMPLETED' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Reintentar' }))
+    await flush()
+    expect(screen.getByRole('heading', { name: 'No se completó el pago. No se te cobró nada.' })).toBeTruthy()
+    cleanup()
+    vi.mocked(getTracking).mockResolvedValue(draft({ status: 'PAYMENT_NOT_COMPLETED' }))
+    mount()
+    await flush()
+    expect(abandonPayment).toHaveBeenCalledTimes(3)
+    expect(getTracking).toHaveBeenCalledTimes(1)
+  })
+
+  it('sin `?pago` (volvió con «atrás»): en AWAITING_PAYMENT, «Si ya pagaste, espera unos segundos.» y «Cancelar el pago» hace el mismo abandono', async () => {
+    vi.mocked(getTracking).mockResolvedValue(draft())
+    mount()
+    await flush()
+    expect(screen.getByRole('heading', { name: 'Confirmando tu pago…' })).toBeTruthy()
+    expect(screen.getByText('Si ya pagaste, espera unos segundos.')).toBeTruthy()
+    const btn = screen.getByRole('button', { name: 'Cancelar el pago' })
+    expect(btn.classList.contains('avq-o-btn--primary')).toBe(false) // secundario
+    let answer!: (t: Tracking) => void
+    vi.mocked(abandonPayment).mockReturnValueOnce(new Promise(r => { answer = r }))
+    fireEvent.click(btn)
+    fireEvent.click(btn) // doble toque: una sola llamada
+    await flush()
+    expect(abandonPayment).toHaveBeenCalledTimes(1)
+    expect(abandonPayment).toHaveBeenCalledWith(expect.any(String), T)
+    expect(cancelOrder).not.toHaveBeenCalled()
+    expect(screen.getByRole('heading', { name: 'Cancelando el pago…' })).toBeTruthy()
+    expect(JSON.stringify({ ...sessionStorage })).toContain(T)
+    await tick(30_000)
+    expect(getTracking).toHaveBeenCalledTimes(1) // mientras se cancela, el sondeo no corre
+    answer(draft({ status: 'PAYMENT_NOT_COMPLETED' }))
+    await flush()
+    expect(screen.getByRole('heading', { name: 'No se completó el pago. No se te cobró nada.' })).toBeTruthy()
+    expect(JSON.stringify({ ...sessionStorage })).not.toContain(T)
+  })
+
+  it('«Cancelar el pago» sólo en AWAITING_PAYMENT', async () => {
+    await show(tr({ paymentMode: 'CARD_ONLINE', cardStatus: 'AUTHORIZED' }))
+    expect(screen.queryByRole('button', { name: 'Cancelar el pago' })).toBeNull()
+    expect(screen.queryByText('Si ya pagaste, espera unos segundos.')).toBeNull()
   })
 })
