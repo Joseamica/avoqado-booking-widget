@@ -166,6 +166,7 @@
     "failed": "No pudimos enviar tu pedido. Intenta de nuevo.",
     "inactive": "Tu cuenta está desactivada en este restaurante.",
     "cardNotAccepted": "Este negocio ya no acepta tarjeta en línea. Elige pagar al recoger.",
+    "cardNotAcceptedOnly": "Este negocio ya no acepta tarjeta en línea.",
     "cardAmountOutOfRange": "El total no se puede pagar con tarjeta en línea (mínimo $10, máximo $50,000).",
     "cardProviderUnavailable": "No pudimos abrir el pago. Intenta de nuevo."
   },

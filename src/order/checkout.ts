@@ -199,7 +199,8 @@ async function doSubmit(store: OrderStore, body: CreateOrderBody): Promise<Submi
       : e.code === 'PLAN_REQUIRED' ? t('store.disabled')
       : e.code === 'VENUE_NOT_FOUND' ? t('store.notFound')
       : e.code === 'IDEMPOTENCY_KEY_CONFLICT' ? t('checkout.failed')
-      : e.code === 'CARD_PAYMENT_NOT_ACCEPTED' ? t('checkout.cardNotAccepted')
+      // «Elige pagar al recoger» sólo si esa opción existe: en una tienda de sólo tarjeta no hay a dónde ir.
+      : e.code === 'CARD_PAYMENT_NOT_ACCEPTED' ? t(store.info.value?.paymentModes?.payAtPickup ? 'checkout.cardNotAccepted' : 'checkout.cardNotAcceptedOnly')
       : e.code === 'CARD_AMOUNT_OUT_OF_RANGE' ? t('checkout.cardAmountOutOfRange')
       : errorText(t, e)
     return { kind: 'error', message, retryable: false }

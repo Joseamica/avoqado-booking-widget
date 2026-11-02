@@ -166,6 +166,7 @@
     "failed": "We could not send your order. Try again.",
     "inactive": "Your account is deactivated at this restaurant.",
     "cardNotAccepted": "This business no longer takes cards online. Choose to pay at pickup.",
+    "cardNotAcceptedOnly": "This business no longer takes cards online.",
     "cardAmountOutOfRange": "This total can't be paid by card online (minimum $10, maximum $50,000).",
     "cardProviderUnavailable": "We couldn't open the payment. Try again."
   },

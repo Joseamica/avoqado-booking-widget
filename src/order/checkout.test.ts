@@ -589,9 +589,17 @@ describe('fase 2: pagar con tarjeta', () => {
     ['CARD_AMOUNT_OUT_OF_RANGE', 'El total no se puede pagar con tarjeta en línea (mínimo $10, máximo $50,000).'],
   ])('400 %s ⇒ su texto, sin «Reintentar», y el intento se borra', async (code, text) => {
     const { store, body } = card()
+    store.info.value = { ...store.info.value!, paymentModes: { payAtPickup: true, cardOnline: true } }
     api.createOrder.mockRejectedValueOnce(new ApiError('x', 400, code))
     expect(await submitOrder(store, body)).toEqual({ kind: 'error', message: text, retryable: false })
     expect(pendingAttempt(store.slug)).toBeNull()
+  })
+
+  it('400 CARD_PAYMENT_NOT_ACCEPTED en una tienda de sólo tarjeta ⇒ no ofrece pagar al recoger, porque no existe', async () => {
+    const { store, body } = card()
+    store.info.value = { ...store.info.value!, paymentModes: { payAtPickup: false, cardOnline: true } }
+    api.createOrder.mockRejectedValueOnce(new ApiError('x', 400, 'CARD_PAYMENT_NOT_ACCEPTED'))
+    expect(await submitOrder(store, body)).toEqual({ kind: 'error', message: 'Este negocio ya no acepta tarjeta en línea.', retryable: false })
   })
 
   it('un intento pendiente de tarjeta tras recargar se reintenta igual, sin pedir el código', async () => {
