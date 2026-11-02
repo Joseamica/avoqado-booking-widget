@@ -11,10 +11,10 @@ import { expectedTotalFromQuote } from './money'
 import { createOrderT } from './i18n'
 import { emitOrderCreated } from './events'
 import type { OrderStore } from './store'
-import type { CreateOrderBody, CreatedOrder, Quote, QuoteIssue, StoreReason, StoreStatus } from './types'
+import type { CreateOrderBody, CreatedCardOrder, CreatedOrder, Quote, QuoteIssue, StoreReason, StoreStatus } from './types'
 
 export type SubmitResult =
-  | { kind: 'created'; order: CreatedOrder }
+  | { kind: 'created'; order: CreatedOrder | CreatedCardOrder }
   | { kind: 'needsOtp' }
   /** `body` = el cuerpo enviado con el total nuevo: se manda (con OTRA llave) sólo si la persona confirma. */
   | { kind: 'priceChanged'; quote: Quote; body: CreateOrderBody }
@@ -149,7 +149,7 @@ async function doSubmit(store: OrderStore, body: CreateOrderBody): Promise<Submi
   const attempt = pending ?? beginAttempt(slug, body)
   if (!attempt) return { kind: 'error', message: t('checkout.noStorage'), retryable: false }
 
-  let order: CreatedOrder
+  let order: CreatedOrder | CreatedCardOrder
   try {
     order = await createOrder(slug, attempt.body, { idempotencyKey: attempt.key, token: session.token })
     if (typeof order?.trackingToken !== 'string') throw new Error('respuesta sin pedido')
@@ -190,11 +190,13 @@ async function doSubmit(store: OrderStore, body: CreateOrderBody): Promise<Submi
       : errorText(t, e)
     return { kind: 'error', message, retryable: false }
   }
+  // El borrador de tarjeta todavía no tiene folio (nace con el pedido, al confirmarse el pago).
+  const orderNumber = 'orderNumber' in order ? order.orderNumber : ''
   // Primero el pedido guardado y luego borrar el intento: si algo muere en medio, el reintento recupera el mismo pedido.
-  saveLastOrder(slug, { trackingToken: order.trackingToken, orderNumber: order.orderNumber })
+  saveLastOrder(slug, { trackingToken: order.trackingToken, orderNumber })
   settleAttempt(slug)
   // Aquí (una vez por respuesta del servidor) y no en `send`: un doble toque comparte esta petición y no repite el evento.
-  if (store.host) emitOrderCreated(store.host, slug, order)
+  if (store.host) emitOrderCreated(store.host, slug, { trackingToken: order.trackingToken, orderNumber })
   return { kind: 'created', order }
 }
 

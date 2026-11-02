@@ -113,6 +113,21 @@ describe('respuestas correctas', () => {
     expect(c.body).toEqual(BODY)
   })
 
+  it('fase 2: createOrder con tarjeta, sin token ⇒ NO manda Authorization (sí la llave) y devuelve el borrador con checkoutUrl', async () => {
+    const draft = {
+      trackingToken: 'TRK_abcdefghijklmnopqrstuvwxyz012', checkoutUrl: 'https://checkout.stripe.com/c/pay/cs_test_1',
+      status: 'AWAITING_PAYMENT', total: '206.00', replay: false,
+    }
+    fetchMock.mockResolvedValue(json(201, { success: true, data: draft }))
+
+    await expect(createOrder('flautas', { ...BODY, paymentMode: 'CARD_ONLINE' }, { idempotencyKey: KEY })).resolves.toEqual(draft)
+
+    const c = call()
+    expect(c.headers['Idempotency-Key']).toBe(KEY)
+    expect(Object.keys(c.headers).map(h => h.toLowerCase())).not.toContain('authorization')
+    expect(c.body.paymentMode).toBe('CARD_ONLINE')
+  })
+
   it('createOrder con 200 (repetición) devuelve el mismo pedido con replay:true', async () => {
     const replayed = {
       orderId: 'corder0000000000000000001',

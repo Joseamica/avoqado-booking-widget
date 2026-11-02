@@ -67,6 +67,8 @@ export function storeStatus(info: StoreInfo, t: ReturnType<typeof createOrderT>,
     // Una pausa con hora (15/30/60 min de la Bandeja) dice cuándo vuelve; la del gerente, o un servidor viejo, el texto de hoy.
     text =
       info.reason === 'TOO_BUSY' ? t('store.tooBusy')
+      // Sin medio de pago vivo (fase 2) no hay hora de regreso: la decide el negocio.
+      : info.reason === 'NO_PAYMENT_MODE' ? t('store.noPaymentMode')
       : info.reason === 'MANUAL_PAUSE' && info.pausedUntil ? t('store.pausedUntil', { time: formatTime(info.pausedUntil, tz, locale) })
       : t('store.manualPause')
     title = t('store.pausedTitle')

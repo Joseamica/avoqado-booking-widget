@@ -40,6 +40,7 @@
     "manualPause": "We are not taking online orders today.",
     "pausedUntil": "We're not taking orders right now. We'll be back at {{time}}.",
     "tooBusy": "Lots of orders right now. Try again in a few minutes.",
+    "noPaymentMode": "This business is not taking online orders for now.",
     "offline": "The restaurant is not connected. Try again in a few minutes.",
     "reconnecting": "No connection; retrying…",
     "open": "Open",

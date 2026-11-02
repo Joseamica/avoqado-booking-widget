@@ -67,6 +67,16 @@ describe('estado de la tienda', () => {
     show(paused(null))
     expect(screen.getByText('Hoy no estamos recibiendo pedidos en línea.')).toBeTruthy()
   })
+  it('fase 2: PAUSED NO_PAYMENT_MODE (sin medio de pago vivo) dice su frase, sin «Volvemos a las…» aunque llegue una hora', () => {
+    for (const pausedUntil of [null, '2026-10-17T19:30:00Z']) {
+      render(withStore(makeStore(infoOf({ status: 'PAUSED', reason: 'NO_PAYMENT_MODE', pausedUntil }), menuOf(product())), <StoreStatusBanner />))
+      expect(screen.getByText('Por ahora este negocio no está recibiendo pedidos en línea.')).toBeTruthy()
+      expect(screen.queryByText(/Volvemos/)).toBeNull()
+      cleanup()
+    }
+    render(withStore(makeStore(infoOf({ status: 'PAUSED', reason: 'NO_PAYMENT_MODE' }), menuOf(product()), 'en'), <StoreStatusBanner />))
+    expect(screen.getByText('This business is not taking online orders for now.')).toBeTruthy()
+  })
   it('con la tienda no abierta se ve la carta pero no se puede agregar', () => {
     const s = makeStore(infoOf({ status: 'CLOSED' }), menuOf(product()))
     show(s)

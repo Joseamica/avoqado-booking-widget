@@ -40,6 +40,7 @@
     "manualPause": "Hoy no estamos recibiendo pedidos en línea.",
     "pausedUntil": "En este momento no estamos recibiendo pedidos. Volvemos a recibirlos a las {{time}}.",
     "tooBusy": "Muchos pedidos en este momento. Intenta en unos minutos.",
+    "noPaymentMode": "Por ahora este negocio no está recibiendo pedidos en línea.",
     "offline": "El restaurante no está conectado. Intenta en unos minutos.",
     "reconnecting": "Sin conexión; reintentando…",
     "open": "Abierto",
