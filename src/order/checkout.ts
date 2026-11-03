@@ -2,6 +2,7 @@
 // - Un intento = una llave. Si hay un intento pendiente se manda ESE cuerpo con ESA llave (beginAttempt lo devuelve).
 // - Sólo una respuesta DEFINITIVA lo borra; red, 5xx, 408, 429, 401 y un 404 sin la marca `final` lo conservan y se reintenta igual.
 // - El teléfono que se verifica es el del cuerpo que se va a mandar (el del intento pendiente, si lo hay).
+// - Fase 2: pagar con tarjeta no pide el código ni manda token; el pago en Stripe es la prueba. El modo es el del cuerpo que se manda.
 import { signal, type Signal } from '@preact/signals'
 import { ApiError, createOrder, verifyOrderingOtp } from './api'
 import { beginAttempt, pendingAttempt, settleAttempt } from './attempt'
@@ -11,10 +12,10 @@ import { expectedTotalFromQuote } from './money'
 import { createOrderT } from './i18n'
 import { emitOrderCreated } from './events'
 import type { OrderStore } from './store'
-import type { CreateOrderBody, CreatedOrder, Quote, QuoteIssue, StoreReason, StoreStatus } from './types'
+import type { CreateOrderBody, CreatedCardOrder, CreatedOrder, PaymentMode, Quote, QuoteIssue, StoreReason, StoreStatus } from './types'
 
 export type SubmitResult =
-  | { kind: 'created'; order: CreatedOrder }
+  | { kind: 'created'; order: CreatedOrder | CreatedCardOrder }
   | { kind: 'needsOtp' }
   /** `body` = el cuerpo enviado con el total nuevo: se manda (con OTRA llave) sólo si la persona confirma. */
   | { kind: 'priceChanged'; quote: Quote; body: CreateOrderBody }
@@ -42,7 +43,7 @@ export function errorText(t: T, e: unknown): string {
 
 export function buildOrderBody(
   store: OrderStore,
-  input: { customer: { name: string; phone: string; email?: string }; note: string | null },
+  input: { customer: { name: string; phone: string; email?: string }; note: string | null; paymentMode?: PaymentMode },
 ): CreateOrderBody {
   const quote = store.quote.value
   if (!quote) throw new Error('buildOrderBody sin cotización')
@@ -50,7 +51,7 @@ export function buildOrderBody(
   const note = input.note?.trim()
   return {
     items: toQuoteItems(store.cart.value),
-    paymentMode: 'PAY_AT_PICKUP',
+    paymentMode: input.paymentMode ?? 'PAY_AT_PICKUP',
     expectedTotal: expectedTotalFromQuote(quote.total),
     customer: { name: input.customer.name.trim(), phone: input.customer.phone, ...(email ? { email } : {}) },
     ...(note ? { note } : {}),
@@ -58,7 +59,10 @@ export function buildOrderBody(
 }
 
 /** Estado del envío de UNA tienda (dos `<avoqado-order>` nunca lo comparten). */
-export interface CheckoutDraft { note: string; name: string; dial: string; national: string; email: string; accepted: boolean }
+/** `payment`: lo que eligió la persona en «¿Cómo quieres pagar?»; sin elegir, tarjeta si el negocio la acepta. */
+export interface CheckoutDraft {
+  note: string; name: string; dial: string; national: string; email: string; accepted: boolean; payment?: PaymentMode
+}
 export type Feedback =
   | { kind: 'priceChanged'; total: number; body: CreateOrderBody }
   | { kind: 'error'; message: string; retryable: boolean }
@@ -123,6 +127,9 @@ export function storageWorks(): boolean {
   }
 }
 
+/** Abre la página de pago (Stripe). Un objeto para que las pruebas lo cambien: jsdom no navega. */
+export const nav = { assign: (url: string): void => location.assign(url) }
+
 const sameItems = (a: CreateOrderBody['items'], b: CreateOrderBody['items']) => JSON.stringify(a) === JSON.stringify(b)
 
 // Una petición a la vez por negocio (el intento guardado también es por negocio).
@@ -143,15 +150,16 @@ async function doSubmit(store: OrderStore, body: CreateOrderBody): Promise<Submi
   // Con el almacenamiento bloqueado la sesión no se guardaría: se pediría un código tras otro sin poder pedir nunca.
   if (!pending && !storageWorks()) return { kind: 'error', message: t('checkout.noStorage'), retryable: false }
   const session = loadSession(slug)
+  const card = (pending?.body ?? body).paymentMode === 'CARD_ONLINE'
   const phone = (pending?.body ?? body).customer.phone
   // El mismo texto que se verificó cuenta siempre (samePhone pide 10 dígitos y no reconoce números más cortos).
-  if (!session || (session.phone !== phone && !samePhone(session.phone, phone))) return { kind: 'needsOtp' }
+  if (!card && (!session || (session.phone !== phone && !samePhone(session.phone, phone)))) return { kind: 'needsOtp' }
   const attempt = pending ?? beginAttempt(slug, body)
   if (!attempt) return { kind: 'error', message: t('checkout.noStorage'), retryable: false }
 
-  let order: CreatedOrder
+  let order: CreatedOrder | CreatedCardOrder
   try {
-    order = await createOrder(slug, attempt.body, { idempotencyKey: attempt.key, token: session.token })
+    order = await createOrder(slug, attempt.body, { idempotencyKey: attempt.key, token: card ? undefined : session?.token })
     if (typeof order?.trackingToken !== 'string') throw new Error('respuesta sin pedido')
   } catch (e) {
     if (!(e instanceof ApiError) || !isDefinitive(e)) {
@@ -160,11 +168,15 @@ async function doSubmit(store: OrderStore, body: CreateOrderBody): Promise<Submi
       // hasta que se cierre la pestaña (sessionStorage); sólo una respuesta definitiva lo borra.
       if (e instanceof ApiError && e.code === 'CUSTOMER_INACTIVE')
         return { kind: 'error', message: t('checkout.inactive'), retryable: false }
-      if (e instanceof ApiError && e.status === 401) {
+      if (e instanceof ApiError && e.status === 401 && !card) {
         clearSession(slug)
         return { kind: 'needsOtp' }
       }
-      const message = e instanceof ApiError && e.code === 'VENUE_NOT_FOUND' ? t('store.notFound') : errorText(t, e)
+      const message =
+        e instanceof ApiError && e.code === 'VENUE_NOT_FOUND' ? t('store.notFound')
+        // 502 de Stripe: no es definitivo, el reintento con la MISMA llave recupera la página de pago.
+        : e instanceof ApiError && e.code === 'CARD_PROVIDER_UNAVAILABLE' ? t('checkout.cardProviderUnavailable')
+        : errorText(t, e)
       return { kind: 'error', message, retryable: true }
     }
     settleAttempt(slug)
@@ -187,14 +199,21 @@ async function doSubmit(store: OrderStore, body: CreateOrderBody): Promise<Submi
       : e.code === 'PLAN_REQUIRED' ? t('store.disabled')
       : e.code === 'VENUE_NOT_FOUND' ? t('store.notFound')
       : e.code === 'IDEMPOTENCY_KEY_CONFLICT' ? t('checkout.failed')
+      // «Elige pagar al recoger» sólo si esa opción existe: en una tienda de sólo tarjeta no hay a dónde ir.
+      : e.code === 'CARD_PAYMENT_NOT_ACCEPTED' ? t(store.info.value?.paymentModes?.payAtPickup ? 'checkout.cardNotAccepted' : 'checkout.cardNotAcceptedOnly')
+      : e.code === 'CARD_AMOUNT_OUT_OF_RANGE' ? t('checkout.cardAmountOutOfRange')
       : errorText(t, e)
     return { kind: 'error', message, retryable: false }
   }
+  // El borrador de tarjeta todavía no tiene folio (nace con el pedido, al confirmarse el pago).
+  const orderNumber = 'orderNumber' in order ? order.orderNumber : ''
   // Primero el pedido guardado y luego borrar el intento: si algo muere en medio, el reintento recupera el mismo pedido.
-  saveLastOrder(slug, { trackingToken: order.trackingToken, orderNumber: order.orderNumber })
+  saveLastOrder(slug, { trackingToken: order.trackingToken, orderNumber })
   settleAttempt(slug)
   // Aquí (una vez por respuesta del servidor) y no en `send`: un doble toque comparte esta petición y no repite el evento.
-  if (store.host) emitOrderCreated(store.host, slug, order)
+  if (store.host) emitOrderCreated(store.host, slug, { trackingToken: order.trackingToken, orderNumber })
+  // Stripe sólo con un borrador que espera el pago y su liga: una repetición que ya avanzó o venció va al seguimiento (`send`).
+  if ('checkoutUrl' in order && order.status === 'AWAITING_PAYMENT' && /^https:\/\//.test(order.checkoutUrl)) nav.assign(order.checkoutUrl)
   return { kind: 'created', order }
 }
 

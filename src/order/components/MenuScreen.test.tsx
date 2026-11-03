@@ -67,6 +67,16 @@ describe('estado de la tienda', () => {
     show(paused(null))
     expect(screen.getByText('Hoy no estamos recibiendo pedidos en línea.')).toBeTruthy()
   })
+  it('fase 2: PAUSED NO_PAYMENT_MODE (sin medio de pago vivo) dice su frase, sin «Volvemos a las…» aunque llegue una hora', () => {
+    for (const pausedUntil of [null, '2026-10-17T19:30:00Z']) {
+      render(withStore(makeStore(infoOf({ status: 'PAUSED', reason: 'NO_PAYMENT_MODE', pausedUntil }), menuOf(product())), <StoreStatusBanner />))
+      expect(screen.getByText('Por ahora este negocio no está recibiendo pedidos en línea.')).toBeTruthy()
+      expect(screen.queryByText(/Volvemos/)).toBeNull()
+      cleanup()
+    }
+    render(withStore(makeStore(infoOf({ status: 'PAUSED', reason: 'NO_PAYMENT_MODE' }), menuOf(product()), 'en'), <StoreStatusBanner />))
+    expect(screen.getByText('This business is not taking online orders for now.')).toBeTruthy()
+  })
   it('con la tienda no abierta se ve la carta pero no se puede agregar', () => {
     const s = makeStore(infoOf({ status: 'CLOSED' }), menuOf(product()))
     show(s)
@@ -718,6 +728,16 @@ describe('encabezado de la tienda: portada, logo, chips y avisos', () => {
     app(makeStore(infoOf({ venue: { ...venue, name: null } }), menuOf(product())))
     expect(screen.queryByRole('banner')).toBeNull()
   })
+  it.each([
+    [{ payAtPickup: true, cardOnline: true }, 'Tarjeta o al recoger'],
+    [{ payAtPickup: false, cardOnline: true }, 'Pagas con tarjeta'],
+    [{ payAtPickup: true, cardOnline: false }, 'Pagas al recoger'],
+    [{ payAtPickup: true }, 'Pagas al recoger'],
+  ])('fase 2: el letrero de cómo se paga no promete de más: %j ⇒ «%s»', (paymentModes, texto) => {
+    app(store({ hours: null, estimatedPrepMinutes: 0, paymentModes }))
+    expect(screen.getByText(texto)).toBeTruthy()
+  })
+
   it('chips: «Abierto hasta las 22:00», «Listo en ~20 min» si estimatedPrepMinutes=20 y «Pagas al recoger»', () => {
     vi.useFakeTimers({ toFake: ['Date'] })
     vi.setSystemTime(new Date('2026-10-19T18:00:00Z')) // lunes 12:00 en CDMX
@@ -928,6 +948,19 @@ describe('pedido en curso (lo pinta OrderApp: se ve en TODAS las ramas)', () => 
     expect(s.screen.value).toBe('menu')
     expect(screen.queryByText('Tienes un pedido en curso')).toBeNull()
     expect(loadLastOrder(s.slug)).toBeNull()
+  })
+  it('fase 2: un borrador de tarjeta esperando el pago cuenta como pedido en curso; uno no completado, no', async () => {
+    const s = makeStore(infoOf(), menuOf(product())); withLast(s)
+    vi.mocked(getTracking).mockResolvedValue(trk('AWAITING_PAYMENT'))
+    app(s); await flush()
+    expect(screen.getByText('Tienes un pedido en curso')).toBeTruthy()
+    expect(loadLastOrder(s.slug)).not.toBeNull()
+    cleanup()
+    const s2 = makeStore(infoOf(), menuOf(product())); withLast(s2)
+    vi.mocked(getTracking).mockResolvedValue(trk('PAYMENT_NOT_COMPLETED'))
+    app(s2); await flush()
+    expect(screen.queryByText('Tienes un pedido en curso')).toBeNull()
+    expect(loadLastOrder(s2.slug)).toBeNull()
   })
   it('final: se olvida sin aviso', async () => {
     const s = makeStore(infoOf(), menuOf(product())); withLast(s)

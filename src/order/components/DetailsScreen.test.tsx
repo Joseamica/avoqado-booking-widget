@@ -343,3 +343,80 @@ describe('campos de «Tus datos»', () => {
     expect(clicks).toHaveBeenCalledTimes(1)
   })
 })
+
+describe('fase 2: cómo pagar', () => {
+  const radios = () => screen.queryAllByRole('radio') as HTMLInputElement[]
+  const foot = () => document.querySelector('.avq-o-foot') as HTMLElement
+
+  it('con tarjeta y al recoger: dos opciones, «Pagar ahora con tarjeta» primero y elegida; el pie dice cómo se paga', () => {
+    show({ paymentModes: { payAtPickup: true, cardOnline: true } })
+    const group = screen.getByRole('radiogroup', { name: '¿Cómo quieres pagar?' })
+    const [card, pickup] = within(group).getAllByRole('radio') as HTMLInputElement[]
+    expect(within(group).getAllByRole('radio')).toHaveLength(2)
+    expect(card.closest('label')!.textContent).toBe('Pagar ahora con tarjeta')
+    expect(pickup.closest('label')!.textContent).toBe('Pagar al recoger')
+    expect([card.checked, pickup.checked]).toEqual([true, false])
+    expect(within(foot()).getByText('Pagas ahora con tarjeta.')).toBeTruthy()
+    expect(within(foot()).queryByText('Pagas al recoger en el restaurante.')).toBeNull()
+    // Con tarjeta no se manda código: la ayuda del código no aplica.
+    expect(screen.queryByText('Aquí te mandamos un código para confirmar tu pedido.')).toBeNull()
+    fireEvent.click(pickup)
+    expect([card.checked, pickup.checked]).toEqual([false, true])
+    expect(within(foot()).getByText('Pagas al recoger en el restaurante.')).toBeTruthy()
+    expect(screen.getByText('Aquí te mandamos un código para confirmar tu pedido.')).toBeTruthy()
+  })
+
+  it('sólo tarjeta: sin selector, y el pie dice que se paga con tarjeta', () => {
+    show({ paymentModes: { payAtPickup: false, cardOnline: true } })
+    expect(screen.queryByRole('radiogroup')).toBeNull()
+    expect(radios()).toHaveLength(0)
+    expect(within(foot()).getByText('Pagas ahora con tarjeta.')).toBeTruthy()
+  })
+
+  it('sin tarjeta (o un servidor viejo sin `cardOnline`): como hoy, sin selector y «Pagas al recoger»', () => {
+    for (const paymentModes of [{ payAtPickup: true, cardOnline: false }, { payAtPickup: true }]) {
+      show({ paymentModes })
+      expect(screen.queryByRole('radiogroup')).toBeNull()
+      expect(within(foot()).getByText('Pagas al recoger en el restaurante.')).toBeTruthy()
+      cleanup()
+    }
+  })
+
+  it('con tarjeta NO pide el código por WhatsApp: manda el pedido con CARD_ONLINE sin sesión', async () => {
+    const s = show({ paymentModes: { payAtPickup: true, cardOnline: true } })
+    vi.mocked(createOrder).mockReturnValue(new Promise(() => {}))
+    fill()
+    accept()
+    await pastGuard()
+    fireEvent.click(confirmBtn())
+    await flush()
+    expect(s.screen.value).toBe('details')
+    expect(createOrder).toHaveBeenCalledTimes(1)
+    const [, body, opts] = vi.mocked(createOrder).mock.calls[0]
+    expect(body.paymentMode).toBe('CARD_ONLINE')
+    expect(body.customer).toEqual({ name: 'Ana López', phone: '+525544422262' })
+    expect(opts.token).toBeUndefined()
+  })
+
+  it('eligiendo «Pagar al recoger» sigue pidiendo el código como hoy', async () => {
+    const s = show({ paymentModes: { payAtPickup: true, cardOnline: true } })
+    fill()
+    accept()
+    fireEvent.click(screen.getByRole('radio', { name: 'Pagar al recoger' }))
+    await pastGuard()
+    fireEvent.click(confirmBtn())
+    await flush()
+    expect(s.screen.value).toBe('otp')
+    expect(createOrder).not.toHaveBeenCalled()
+  })
+
+  it('en inglés', () => {
+    const s = makeStore(infoOf({ paymentModes: { payAtPickup: true, cardOnline: true } }), menuOf(), 'en')
+    s.quote.value = { ok: true, lines: [], subtotal: 170, total: 170, minOrderAmount: 0, issues: [] }
+    render(withStore(s, <DetailsScreen />))
+    expect(screen.getByRole('radiogroup', { name: 'How do you want to pay?' })).toBeTruthy()
+    expect(screen.getByRole('radio', { name: 'Pay now by card' })).toBeTruthy()
+    expect(screen.getByRole('radio', { name: 'Pay at pickup' })).toBeTruthy()
+    expect(screen.getByText('You pay now by card.')).toBeTruthy()
+  })
+})

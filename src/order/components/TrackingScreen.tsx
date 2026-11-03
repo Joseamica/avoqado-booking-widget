@@ -1,10 +1,11 @@
 import { h } from 'preact'
 import { useContext, useEffect, useId, useRef, useState } from 'preact/hooks'
-import { ApiError, cancelOrder, getTracking } from '../api'
+import { ApiError, abandonPayment, cancelOrder, getTracking } from '../api'
+import { errorText } from '../checkout'
 import { formatTime } from '../hours'
 import { createOrderT } from '../i18n'
 import { formatMXN } from '../money'
-import { clearLastOrder } from '../session'
+import { abandonPending, clearAbandon, clearLastOrder, markAbandon } from '../session'
 import { OrderStoreContext } from '../store'
 import { isFinalStatus, type OnlineOrderStatus, type Tracking } from '../types'
 import { focusLost } from './focus'
@@ -16,6 +17,11 @@ const POLL_MS = 10_000
 /** Los 4 pasos del avance, en orden. Rechazado, vencido y cancelado no tienen paso: ahí no se pinta el avance. */
 const STEPS = ['received', 'preparing', 'ready', 'completed'] as const
 const STEP_OF: Partial<Record<OnlineOrderStatus, number>> = { PENDING_ACCEPTANCE: 0, ACCEPTED: 1, READY: 2, COMPLETED: 3 }
+/** Cerrado sin entregar (también el borrador de tarjeta que no se pagó): ahí la línea del dinero dice qué pasó con la tarjeta. */
+const CLOSED: ReadonlySet<OnlineOrderStatus> = new Set(['REJECTED', 'EXPIRED', 'CANCELLED_BY_CUSTOMER', 'CANCELLED_BY_STAFF', 'PAYMENT_NOT_COMPLETED'])
+/** Fase 2: un pedido final cuyo dinero sigue en duda (apartado, cobrándose o liberándose) se sigue sondeando (Codex plan r1 #3). */
+const MONEY_IN_DOUBT: ReadonlySet<string> = new Set(['AUTHORIZED', 'CONFIRMING', 'RELEASING'])
+const done = (r: Tracking) => isFinalStatus(r.status) && !MONEY_IN_DOUBT.has(r.cardStatus ?? '')
 
 // Íconos de «Cómo llegar» y «Llamar» (de la maqueta; sólo se usan aquí).
 const Pin = () => (
@@ -33,7 +39,8 @@ const Phone = () => (
  * Seguimiento del pedido. No usa `/info` ni `/menu` (el plan puede haber vencido): todo sale de la respuesta del seguimiento (el logo,
  * si `/info` cargó). Lleva su propio encabezado chico, el titular del estado con su línea de hora, el avance en 4 pasos, el ticket con
  * el folio enorme y los renglones SIN importe (spec §11.2: no cuadraría con cortesías ni descuentos), «Dónde recoger», cancelar y
- * «Pedir algo más».
+ * «Pedir algo más». Fase 2 (tarjeta): el borrador «Confirmando tu pago…» (sin folio), el pago no completado, la línea del dinero según
+ * `cardStatus`, y el regreso de Stripe: con `?pago=cancelado` primero se avisa al servidor (`abandon-payment`, nunca `cancel`).
  */
 export function TrackingScreen() {
   const store = useContext(OrderStoreContext)!
@@ -56,40 +63,110 @@ export function TrackingScreen() {
   const closedByNo = useRef(false)
   /** Cuenta los intentos de cancelar ya resueltos y con la vista refrescada (ver el efecto de abajo). */
   const [settled, setSettled] = useState(0)
+  // De regreso de Stripe: se lee UNA vez y se borra de la tienda, así volver a esta pantalla no repite nada. Un abandono que quedó
+  // pendiente (falló y se recargó la pestaña) también arranca cancelando (fix ronda 1).
+  const [entry] = useState(() => {
+    const ret = store.paymentReturn
+    store.paymentReturn = null
+    return { ret, cancel: ret === 'cancelled' || (!!token && abandonPending(token)) }
+  })
+  /** «Cancelando el pago…» hasta que el servidor confirma el abandono; sin red o con un 5xx sigue así, con «Reintentar». */
+  const [abandoning, setAbandoning] = useState(entry.cancel)
+  const [abandonError, setAbandonError] = useState<string | null>(null)
+  const retryAbandon = useRef<() => void>(() => {})
+  /** «Cancelar el pago» del borrador (volvió de Stripe con «atrás», sin `?pago`): el mismo abandono. */
+  const startAbandon = useRef<() => void>(() => {})
 
   useEffect(() => {
     if (!token) return
     let stopped = false
     let finished = false
-    let inflight = false
+    let inflight = false // una consulta del seguimiento
+    let sending = false // un abandono
+    /** Sube con cada abandono: una consulta que salió antes ya no pinta nada (llegaría con el borrador vivo). */
+    let epoch = 0
+    // Mientras no se confirme el abandono del pago, el sondeo no corre (diría «Confirmando tu pago…» del borrador vivo).
+    let cancelling = entry.cancel
     let timer: ReturnType<typeof setTimeout> | null = null
+    // Un solo temporizador: si ya hay uno agendado, se respeta.
+    const later = () => { if (!stopped && !finished && !cancelling && !timer) timer = setTimeout(() => void run(), POLL_MS) }
+    const apply = (r: Tracking) => {
+      setTracking(r)
+      setProblem(null)
+      if (done(r)) finished = true
+    }
+    const vanish = () => {
+      finished = true
+      setGone(true)
+      clearLastOrder(store.slug)
+    }
     const run = async () => {
       if (timer) clearTimeout(timer)
       timer = null
-      if (stopped || finished || inflight || document.visibilityState !== 'visible') return
+      if (stopped || finished || cancelling || document.visibilityState !== 'visible') return
+      // Una consulta vieja sigue en camino (salió antes de un abandono, o la red va lenta): se intenta en el siguiente tick, nunca se
+      // deja el sondeo parado (fix ronda 2).
+      if (inflight) return later()
       inflight = true
+      const mine = epoch
       try {
         const r = await getTracking(store.slug, token)
-        if (stopped) return
-        setTracking(r)
-        setProblem(null)
-        if (isFinalStatus(r.status)) finished = true
+        // Salió antes de un abandono: no pinta nada (traería el borrador vivo), pero el sondeo sigue (`later` de abajo).
+        if (!stopped && mine === epoch) apply(r)
       } catch (e) {
-        if (stopped) return
-        if (e instanceof ApiError && e.status === 404) {
-          finished = true
-          setGone(true)
-          clearLastOrder(store.slug)
-        } else setProblem(e instanceof ApiError && e.network ? 'store.reconnecting' : 'tracking.updateFailed')
+        if (stopped || mine !== epoch) {
+          /* respuesta vieja: se descarta */
+        } else if (e instanceof ApiError && e.status === 404) vanish()
+        else setProblem(e instanceof ApiError && e.network ? 'store.reconnecting' : 'tracking.updateFailed')
       } finally {
         inflight = false
       }
-      if (!stopped && !finished) timer = setTimeout(() => void run(), POLL_MS)
+      later()
+    }
+    // `?pago=cancelado`: el servidor nunca cancela un pedido aquí; responde el borrador no completado, o el pedido si ya se pagó.
+    const abandon = async () => {
+      if (stopped || sending) return
+      sending = true
+      epoch++
+      if (timer) clearTimeout(timer)
+      timer = null
+      // La intención se guarda ANTES de llamar, sólo en sessionStorage y por pedido (fix ronda 3: el widget nunca toca la URL): si la
+      // respuesta se pierde y se recarga, la vista nueva de ESTE pedido vuelve a intentarlo. Sin almacenamiento queda «Cancelar el pago».
+      markAbandon(token)
+      setAbandonError(null)
+      try {
+        const r = await abandonPayment(store.slug, token)
+        clearAbandon(token) // el servidor contestó (aunque esta vista ya se haya ido)
+        if (stopped) return
+        cancelling = false
+        setAbandoning(false)
+        apply(r)
+      } catch (e) {
+        // Una respuesta definitiva (4xx que no sea 408 ni 429, 404 incluido) también cierra la intención; sin red, 408, 429 o 5xx se
+        // conserva para reintentar al volver a montar.
+        if (e instanceof ApiError && !e.network && e.status >= 400 && e.status < 500 && e.status !== 408 && e.status !== 429)
+          clearAbandon(token)
+        if (stopped) return
+        if (e instanceof ApiError && e.status === 404) {
+          cancelling = false
+          setAbandoning(false)
+          vanish()
+        } else setAbandonError(errorText(t, e))
+      } finally {
+        sending = false
+      }
+      later()
     }
     refresh.current = run
+    retryAbandon.current = () => void abandon()
+    startAbandon.current = () => {
+      cancelling = true
+      setAbandoning(true)
+      void abandon()
+    }
     const onVisible = () => void run()
     document.addEventListener('visibilitychange', onVisible)
-    void run()
+    void (cancelling ? abandon() : run())
     return () => {
       stopped = true
       if (timer) clearTimeout(timer)
@@ -116,25 +193,43 @@ export function TrackingScreen() {
     if (settled && target && focusLost(target)) target.focus()
   }, [settled])
 
-  // De vuelta a la carta (el aviso «Tienes un pedido en curso · Ver» de OrderApp regresa aquí).
+  // De vuelta a la carta (el aviso «Tienes un pedido en curso · Ver» de OrderApp regresa aquí). Si el pago no se completó, «Volver al menú».
   const orderMore = (
     <div class="avq-o-track__more">
       <button type="button" class="avq-o-btn avq-o-btn--neutral" onClick={() => { store.trackingToken.value = null; store.go('menu') }}>
-        {t('tracking.orderMore')}
+        {t(tracking?.status === 'PAYMENT_NOT_COMPLETED' ? 'tracking.backToMenu' : 'tracking.orderMore')}
       </button>
     </div>
   )
   // Sin red, o el servidor falló, mientras se reintenta solo: es un estado normal (ámbar), nunca un error en rojo.
   const problemNotice = problem && <Notice tone="warn" icon={problem === 'store.reconnecting' ? 'cloudOff' : undefined} text={t(problem)} />
   if (gone) return <div class="avq-o-track"><Notice tone="neutral" text={t('tracking.notFound')} />{orderMore}</div>
+  if (abandoning)
+    return (
+      <div class="avq-o-track">
+        <div class="avq-o-track__intro" role="status">
+          <h2 ref={titleRef} class="avq-o-title" tabIndex={-1}>{t('tracking.abandoning')}</h2>
+        </div>
+        {abandonError && (
+          <Notice tone="warn" icon={abandonError === t('common.offline') ? 'cloudOff' : undefined} text={abandonError}
+            action={{ label: t('common.retry'), onClick: () => retryAbandon.current() }} />
+        )}
+      </div>
+    )
   if (!tracking)
-    return problemNotice ? <div class="avq-o-track">{problemNotice}{orderMore}</div> : <p role="status" class="avq-o-empty">{t('tracking.loading')}</p>
+    return problemNotice ? <div class="avq-o-track">{problemNotice}{orderMore}</div>
+      // `?pago=1`: de regreso de Stripe, lo primero que se ve es que el pago se está confirmando.
+      : <p role="status" class="avq-o-empty">{t(entry.ret === 'returned' ? 'tracking.head.AWAITING_PAYMENT' : 'tracking.loading')}</p>
 
   const tz = tracking.venueTimezone ?? store.info.value?.venue.timezone ?? 'America/Mexico_City'
   const time = (iso: string) => formatTime(iso, tz, store.locale)
   const step = STEP_OF[tracking.status]
   // Algo que recoger: esperando, en preparación o listo. Un estado que la tienda no conoce no se da por confirmado.
   const toPickUp = step !== undefined && tracking.status !== 'COMPLETED'
+  const card = tracking.paymentMode === 'CARD_ONLINE'
+  const closed = CLOSED.has(tracking.status)
+  // «No se te cobró nada» sólo con la tarjeta liberada (o sin cargo): apartada, cobrándose o liberándose, todavía no se sabe.
+  const released = !tracking.cardStatus || tracking.cardStatus === 'RELEASED'
   // Titular y su línea de hora; rechazado, vencido y cancelado dicen su frase de hoy, sin línea. Un estado nuevo del servidor, uno
   // neutro (y el sondeo sigue: no es final).
   const [head, sub] = ((): [string, string | null] => {
@@ -144,16 +239,36 @@ export function TrackingScreen() {
         return [t('tracking.head.ACCEPTED'), tracking.estimatedReadyAt ? t('tracking.sub.eta', { time: time(tracking.estimatedReadyAt) }) : null]
       case 'READY': return [t('tracking.head.READY'), t('tracking.sub.ready')]
       case 'COMPLETED': return [t('tracking.head.COMPLETED'), t('tracking.sub.completed')]
+      case 'AWAITING_PAYMENT': return [t('tracking.head.AWAITING_PAYMENT'), t('tracking.sub.paidWait')]
+      // Sin liberar todavía (o cobrada afuera): el titular no promete «No se te cobró nada»; la línea del dinero dice qué pasa.
+      case 'PAYMENT_NOT_COMPLETED': return [t(released ? 'tracking.notCompleted' : 'tracking.card.notCompleted'), null]
+      // Con tarjeta, el titular no habla del dinero (puede haberse cobrado): lo dice la línea del dinero.
       case 'REJECTED':
-        return [tracking.rejectReason ? t('tracking.rejected', { reason: t(`tracking.reason.${tracking.rejectReason}`) }) : t('tracking.rejectedNoReason'), null]
-      case 'EXPIRED': return [t('tracking.expired'), null]
+        if (tracking.rejectReason === 'PAYMENT_FAILED') return [t('tracking.paymentFailed'), null]
+        return [
+          tracking.rejectReason
+            ? t(card ? 'tracking.card.rejected' : 'tracking.rejected', { reason: t(`tracking.reason.${tracking.rejectReason}`) })
+            : t(card ? 'tracking.card.rejectedNoReason' : 'tracking.rejectedNoReason'),
+          null,
+        ]
+      case 'EXPIRED': return [t(card ? 'tracking.card.expired' : 'tracking.expired'), null]
       case 'CANCELLED_BY_CUSTOMER': return [t('tracking.cancelledByCustomer'), null]
       case 'CANCELLED_BY_STAFF': return [t('tracking.cancelledByStaff'), null]
       default: return [t('tracking.head.unknown'), null]
     }
   })()
+  // Con tarjeta, qué pasó con el dinero según `cardStatus`. Liberada (o sin estado) en cerrado: nada se cobró; el borrador no
+  // completado ya lo dice en su titular.
+  const cardPay = (): string | null => {
+    const s = tracking.cardStatus
+    if (s === 'CAPTURED') return t(closed ? 'tracking.card.refundDue' : 'tracking.card.captured')
+    // Cerrado con la tarjeta aún apartada o confirmándose: se va a liberar (fix ronda 1), nunca «se cobra cuando acepte».
+    if (s === 'RELEASING' || (closed && (s === 'AUTHORIZED' || s === 'CONFIRMING'))) return t('tracking.card.releasing')
+    if (s === 'AUTHORIZED' || s === 'CONFIRMING') return t('tracking.card.authorized')
+    return closed && tracking.status !== 'PAYMENT_NOT_COMPLETED' ? t('tracking.card.notCharged') : tracking.paid ? t('tracking.paid') : null
+  }
   // Sin cobro, «Pagas al recoger» sólo en curso o entregado (la regla de hoy): no en cancelado, rechazado, vencido ni un estado nuevo.
-  const pay = tracking.paid ? t('tracking.paid') : step !== undefined ? t('cart.taxPickup') : null
+  const pay = card ? cardPay() : tracking.paid ? t('tracking.paid') : step !== undefined ? t('cart.taxPickup') : null
 
   async function doCancel() {
     if (cancelling.current || !token) return
@@ -190,6 +305,12 @@ export function TrackingScreen() {
         <h2 ref={titleRef} class="avq-o-title" tabIndex={-1}>{head}</h2>
         {sub && <p>{sub}</p>}
       </div>
+      {/* Volvió de Stripe con «atrás» (sin `?pago`): puede soltar la página de pago; si ya pagó, el servidor responde el pedido. */}
+      {tracking.status === 'AWAITING_PAYMENT' && (
+        <div class="avq-o-track__cancel">
+          <button type="button" class="avq-o-btn avq-o-btn--neutral" onClick={() => startAbandon.current()}>{t('tracking.cancelPayment')}</button>
+        </div>
+      )}
       {step !== undefined && (
         <ol class="avq-o-steps" role="list" aria-label={t('tracking.progress')}>
           {STEPS.map((k, i) => (
@@ -200,12 +321,17 @@ export function TrackingScreen() {
         </ol>
       )}
       <div class="avq-o-ticket">
-        <div class="avq-o-ticket__folio">
-          <span class="avq-o-ticket__label">{t('tracking.folioLabel')}</span>
-          <span class="avq-o-ticket__n">{tracking.orderNumber}</span>
-          {toPickUp && <span class="avq-o-ticket__say">{t('tracking.sayAtCounter')}</span>}
-        </div>
-        <div class="avq-o-ticket__tear" aria-hidden="true" />
+        {/* El borrador de tarjeta no tiene folio todavía (nace al confirmarse el pago). */}
+        {tracking.orderNumber && (
+          <>
+            <div class="avq-o-ticket__folio">
+              <span class="avq-o-ticket__label">{t('tracking.folioLabel')}</span>
+              <span class="avq-o-ticket__n">{tracking.orderNumber}</span>
+              {toPickUp && <span class="avq-o-ticket__say">{t('tracking.sayAtCounter')}</span>}
+            </div>
+            <div class="avq-o-ticket__tear" aria-hidden="true" />
+          </>
+        )}
         <div class="avq-o-ticket__body">
           <ul class="avq-o-ticket__lines" role="list">
             {tracking.items.map((it, i) => {

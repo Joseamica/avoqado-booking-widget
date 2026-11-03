@@ -2,7 +2,8 @@
 // Nombres exactos del servidor; dinero en PESOS como `number`, salvo `expectedTotal` y `CreatedOrder.total` («206.00»).
 
 export type StoreStatus = 'OPEN' | 'CLOSED' | 'PAUSED' | 'OFFLINE' | 'DISABLED'
-export type StoreReason = null | 'NOT_ENABLED' | 'MANUAL_PAUSE' | 'OUTSIDE_HOURS' | 'NO_DEVICE' | 'TOO_BUSY'
+/** `NO_PAYMENT_MODE` (fase 2): abierta, pero sin ningún medio de pago vivo; va con `PAUSED` y sin `pausedUntil`. */
+export type StoreReason = null | 'NOT_ENABLED' | 'MANUAL_PAUSE' | 'OUTSIDE_HOURS' | 'NO_DEVICE' | 'TOO_BUSY' | 'NO_PAYMENT_MODE'
 
 export type Weekday = 'monday' | 'tuesday' | 'wednesday' | 'thursday' | 'friday' | 'saturday' | 'sunday'
 /** Hora local del negocio; una franja `22:00–02:00` cruza la medianoche. */
@@ -22,7 +23,8 @@ export interface StoreInfo {
   /** ISO; sólo en una pausa con hora vigente que NO es la del gerente. Aditivo: un servidor viejo no lo manda. */
   pausedUntil?: string | null
   hours: WeeklyHours | null
-  paymentModes: { payAtPickup: boolean }
+  /** `cardOnline` (fase 2) es aditivo: un servidor viejo no lo manda y la tienda sólo ofrece pagar al recoger. */
+  paymentModes: { payAtPickup: boolean; cardOnline?: boolean }
   minOrderAmount: number
   estimatedPrepMinutes: number
   acceptTimeoutMinutes: number
@@ -96,9 +98,10 @@ export interface Quote {
   issues: QuoteIssue[]
 }
 
+export type PaymentMode = 'PAY_AT_PICKUP' | 'CARD_ONLINE'
 export interface CreateOrderBody {
   items: QuoteItem[]
-  paymentMode: 'PAY_AT_PICKUP'
+  paymentMode: PaymentMode
   /** El `total` de la última cotización con dos decimales: «206.00». */
   expectedTotal: string
   customer: { name: string; phone: string; email?: string }
@@ -107,6 +110,10 @@ export interface CreateOrderBody {
 }
 
 export type OnlineOrderStatus =
+  /** Fase 2: el borrador de tarjeta espera el pago (todavía no es pedido ni tiene folio). */
+  | 'AWAITING_PAYMENT'
+  /** Fase 2: el pago no se completó (vencido o abandonado); final. */
+  | 'PAYMENT_NOT_COMPLETED'
   | 'PENDING_ACCEPTANCE'
   | 'ACCEPTED'
   | 'READY'
@@ -115,10 +122,12 @@ export type OnlineOrderStatus =
   | 'EXPIRED'
   | 'CANCELLED_BY_CUSTOMER'
   | 'CANCELLED_BY_STAFF'
-const FINAL_STATUSES: OnlineOrderStatus[] = ['COMPLETED', 'REJECTED', 'EXPIRED', 'CANCELLED_BY_CUSTOMER', 'CANCELLED_BY_STAFF']
+const FINAL_STATUSES: OnlineOrderStatus[] = ['COMPLETED', 'REJECTED', 'EXPIRED', 'CANCELLED_BY_CUSTOMER', 'CANCELLED_BY_STAFF', 'PAYMENT_NOT_COMPLETED']
 /** El pedido ya no cambia: el seguimiento deja de sondear y la tienda olvida «el pedido en curso». */
 export const isFinalStatus = (s: OnlineOrderStatus): boolean => FINAL_STATUSES.includes(s)
-export type RejectReason = 'OUT_OF_ITEMS' | 'CLOSED' | 'TOO_BUSY' | 'OTHER'
+export type RejectReason = 'OUT_OF_ITEMS' | 'CLOSED' | 'TOO_BUSY' | 'OTHER' | 'PAYMENT_FAILED'
+/** Fase 2: lo que el comensal ve de su tarjeta. `RELEASING` = liberación decidida, todavía sin confirmar. */
+export type CardStatus = 'AUTHORIZED' | 'CONFIRMING' | 'CAPTURED' | 'RELEASING' | 'RELEASED'
 
 export interface CreatedOrder {
   orderId: string
@@ -132,11 +141,25 @@ export interface CreatedOrder {
   replay: boolean
 }
 
+/**
+ * Fase 2: respuesta al pedir con tarjeta (201). En una repetición `status` es el vigente y `checkoutUrl` puede venir vacío (la
+ * página de pago ya venció o el pago ya avanzó): sólo se abre Stripe con `AWAITING_PAYMENT` y una liga.
+ */
+export interface CreatedCardOrder {
+  trackingToken: string
+  checkoutUrl: string
+  status: string
+  total: string
+  replay: boolean
+}
+
 export interface TrackingItem { name: string; quantity: number; note: string | null; modifiers: { name: string; quantity: number }[] }
 export interface Tracking {
   orderNumber: string
   status: OnlineOrderStatus
-  paymentMode: 'PAY_AT_PICKUP'
+  paymentMode: PaymentMode
+  /** Fase 2: `null` al recoger; aditivo (un servidor viejo no lo manda). */
+  cardStatus?: CardStatus | null
   venueName: string
   venueSlug: string
   items: TrackingItem[]

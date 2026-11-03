@@ -391,6 +391,12 @@ describe('carrito cotizado por el servidor', () => {
     expect(checkoutOf(s).draft.value.note).toBe('Paso a las 2')
   })
 
+  it('fase 2: con tarjeta en línea el total no promete «Pagas al recoger» (lo elige en «Tus datos»)', async () => {
+    await show([flautas], quoteOf(170), infoOf({ paymentModes: { payAtPickup: true, cardOnline: true } }))
+    expect(screen.queryByText('IVA incluido. Pagas al recoger.')).toBeNull()
+    expect(screen.getByText('IVA incluido')).toBeTruthy()
+  })
+
   it('W5: en inglés los motivos salen por código, con los valores de la respuesta; un código desconocido usa el message', async () => {
     const withGroup = product({
       modifierGroups: [{

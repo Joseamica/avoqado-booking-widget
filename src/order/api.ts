@@ -1,4 +1,4 @@
-import type { CreateOrderBody, CreatedOrder, Menu, OrderingCustomer, Quote, QuoteItem, StoreInfo, Tracking } from './types'
+import type { CreateOrderBody, CreatedCardOrder, CreatedOrder, Menu, OrderingCustomer, Quote, QuoteItem, StoreInfo, Tracking } from './types'
 
 export const API_BASE: string =
   (import.meta.env?.VITE_API_URL as string | undefined) || 'https://api.avoqado.io/api/v1/public'
@@ -73,13 +73,16 @@ export const getMenu = (slug: string) => data(send<{ data: Menu }>(`${ordering(s
 export const quote = (slug: string, items: QuoteItem[]) =>
   data(send<{ data: Quote }>(`${ordering(slug)}/quote`, { method: 'POST', body: { items } }))
 
-/** 201 al crear, 200 si es una repetición de la misma llave: `data.replay` lo dice. */
-export const createOrder = (slug: string, body: CreateOrderBody, opts: { idempotencyKey: string; token: string }) =>
+/**
+ * 201 al crear, 200 si es una repetición de la misma llave: `data.replay` lo dice. Con tarjeta (fase 2) no hay token (no se pide
+ * el código) ni `Authorization`, y la respuesta es el borrador con su `checkoutUrl`.
+ */
+export const createOrder = (slug: string, body: CreateOrderBody, opts: { idempotencyKey: string; token?: string }) =>
   data(
-    send<{ data: CreatedOrder }>(`${ordering(slug)}/orders`, {
+    send<{ data: CreatedOrder | CreatedCardOrder }>(`${ordering(slug)}/orders`, {
       method: 'POST',
       body,
-      headers: { 'Idempotency-Key': opts.idempotencyKey, Authorization: `Bearer ${opts.token}` },
+      headers: { 'Idempotency-Key': opts.idempotencyKey, ...(opts.token ? { Authorization: `Bearer ${opts.token}` } : {}) },
     }),
   )
 
@@ -92,6 +95,13 @@ export const cancelOrder = (slug: string, trackingToken: string) =>
       method: 'POST',
     }),
   )
+
+/**
+ * Fase 2: el comensal volvió de Stripe sin pagar. Nunca cancela un pedido: suelta la página de pago y responde lo mismo que el
+ * seguimiento (`PAYMENT_NOT_COMPLETED`, o el estado del pedido si otra pestaña ya pagó).
+ */
+export const abandonPayment = (slug: string, trackingToken: string) =>
+  data(send<{ data: Tracking }>(`${ordering(slug)}/orders/${encodeURIComponent(trackingToken)}/abandon-payment`, { method: 'POST' }))
 
 // El OTP vive fuera de /ordering y responde sin `success`/`data`.
 const otp = (slug: string) => `/venues/${encodeURIComponent(slug)}/auth/otp`

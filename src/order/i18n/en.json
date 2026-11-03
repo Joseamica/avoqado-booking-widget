@@ -40,11 +40,14 @@
     "manualPause": "We are not taking online orders today.",
     "pausedUntil": "We're not taking orders right now. We'll be back at {{time}}.",
     "tooBusy": "Lots of orders right now. Try again in a few minutes.",
+    "noPaymentMode": "This business is not taking online orders for now.",
     "offline": "The restaurant is not connected. Try again in a few minutes.",
     "reconnecting": "No connection; retrying…",
     "open": "Open",
     "openUntil": "Open until {{time}}",
     "readyIn": "Ready in ~{{n}} min",
+    "cardOrPickupChip": "Card or at pickup",
+    "cardChip": "Pay by card",
     "payAtPickupChip": "Pay at pickup",
     "pickupAt": "Pickup at {{address}}",
     "pausedTitle": "Orders paused",
@@ -135,7 +138,11 @@
     "phoneHelp": "We'll send a code here to confirm your order.",
     "summary": "{{n}} items, for pickup",
     "summaryOne": "1 item, for pickup",
-    "taxIncluded": "VAT included"
+    "taxIncluded": "VAT included",
+    "payHow": "How do you want to pay?",
+    "payCard": "Pay now by card",
+    "payPickup": "Pay at pickup",
+    "payCardNote": "You pay now by card."
   },
   "otp": {
     "title": "Enter your code",
@@ -157,7 +164,11 @@
     "noStorage": "Your browser does not let this page save data. Open it in another browser or outside private mode to order.",
     "serverError": "Something went wrong on our side. Try again.",
     "failed": "We could not send your order. Try again.",
-    "inactive": "Your account is deactivated at this restaurant."
+    "inactive": "Your account is deactivated at this restaurant.",
+    "cardNotAccepted": "This business no longer takes cards online. Choose to pay at pickup.",
+    "cardNotAcceptedOnly": "This business no longer takes cards online.",
+    "cardAmountOutOfRange": "This total can't be paid by card online (minimum $10, maximum $50,000).",
+    "cardProviderUnavailable": "We couldn't open the payment. Try again."
   },
   "tracking": {
     "head": {
@@ -165,13 +176,15 @@
       "ACCEPTED": "They're preparing it",
       "READY": "Ready for pickup!",
       "COMPLETED": "Picked up",
-      "unknown": "Checking your order…"
+      "unknown": "Checking your order…",
+      "AWAITING_PAYMENT": "Confirming your payment…"
     },
     "sub": {
       "waiting": "It has until {{time}} to accept.",
       "eta": "Ready around {{time}}.",
       "ready": "Go to the counter with your order number.",
-      "completed": "Thank you!"
+      "completed": "Thank you!",
+      "paidWait": "If you already paid, wait a few seconds."
     },
     "steps": {
       "received": "Received",
@@ -210,6 +223,22 @@
     "updateFailed": "We could not update your order; retrying…",
     "inProgress": "You have an order in progress",
     "view": "View",
-    "orderMore": "Order something else"
+    "orderMore": "Order something else",
+    "notCompleted": "The payment was not completed. You were not charged.",
+    "abandoning": "Cancelling the payment…",
+    "paymentFailed": "We could not charge your card.",
+    "backToMenu": "Back to the menu",
+    "card": {
+      "notCompleted": "The payment was not completed.",
+      "rejected": "The restaurant could not accept your order: {{reason}}.",
+      "rejectedNoReason": "The restaurant could not accept your order.",
+      "expired": "The restaurant did not answer in time.",
+      "authorized": "Your card is on hold; it is charged when the restaurant accepts.",
+      "captured": "Your payment was charged.",
+      "refundDue": "Your card was charged; the business will refund it.",
+      "notCharged": "You were not charged. If you saw a charge, your bank will release it in a few days.",
+      "releasing": "We are releasing your card…"
+    },
+    "cancelPayment": "Cancel the payment"
   }
 }

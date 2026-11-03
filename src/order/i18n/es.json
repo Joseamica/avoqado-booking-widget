@@ -40,11 +40,14 @@
     "manualPause": "Hoy no estamos recibiendo pedidos en línea.",
     "pausedUntil": "En este momento no estamos recibiendo pedidos. Volvemos a recibirlos a las {{time}}.",
     "tooBusy": "Muchos pedidos en este momento. Intenta en unos minutos.",
+    "noPaymentMode": "Por ahora este negocio no está recibiendo pedidos en línea.",
     "offline": "El restaurante no está conectado. Intenta en unos minutos.",
     "reconnecting": "Sin conexión; reintentando…",
     "open": "Abierto",
     "openUntil": "Abierto hasta las {{time}}",
     "readyIn": "Listo en ~{{n}} min",
+    "cardOrPickupChip": "Tarjeta o al recoger",
+    "cardChip": "Pagas con tarjeta",
     "payAtPickupChip": "Pagas al recoger",
     "pickupAt": "Para recoger en {{address}}",
     "pausedTitle": "Pedidos en pausa",
@@ -135,7 +138,11 @@
     "phoneHelp": "Aquí te mandamos un código para confirmar tu pedido.",
     "summary": "{{n}} productos, para recoger",
     "summaryOne": "1 producto, para recoger",
-    "taxIncluded": "IVA incluido"
+    "taxIncluded": "IVA incluido",
+    "payHow": "¿Cómo quieres pagar?",
+    "payCard": "Pagar ahora con tarjeta",
+    "payPickup": "Pagar al recoger",
+    "payCardNote": "Pagas ahora con tarjeta."
   },
   "otp": {
     "title": "Escribe tu código",
@@ -157,7 +164,11 @@
     "noStorage": "Tu navegador no deja guardar datos de esta página. Ábrela en otro navegador o fuera del modo privado para pedir.",
     "serverError": "Algo falló de nuestro lado. Intenta de nuevo.",
     "failed": "No pudimos enviar tu pedido. Intenta de nuevo.",
-    "inactive": "Tu cuenta está desactivada en este restaurante."
+    "inactive": "Tu cuenta está desactivada en este restaurante.",
+    "cardNotAccepted": "Este negocio ya no acepta tarjeta en línea. Elige pagar al recoger.",
+    "cardNotAcceptedOnly": "Este negocio ya no acepta tarjeta en línea.",
+    "cardAmountOutOfRange": "El total no se puede pagar con tarjeta en línea (mínimo $10, máximo $50,000).",
+    "cardProviderUnavailable": "No pudimos abrir el pago. Intenta de nuevo."
   },
   "tracking": {
     "head": {
@@ -165,13 +176,15 @@
       "ACCEPTED": "Lo están preparando",
       "READY": "¡Listo para recoger!",
       "COMPLETED": "Entregado",
-      "unknown": "Revisando tu pedido…"
+      "unknown": "Revisando tu pedido…",
+      "AWAITING_PAYMENT": "Confirmando tu pago…"
     },
     "sub": {
       "waiting": "Tiene hasta las {{time}} para aceptarlo.",
       "eta": "Estará listo como a las {{time}}.",
       "ready": "Pasa al mostrador con tu folio.",
-      "completed": "¡Gracias!"
+      "completed": "¡Gracias!",
+      "paidWait": "Si ya pagaste, espera unos segundos."
     },
     "steps": {
       "received": "Recibido",
@@ -210,6 +223,22 @@
     "updateFailed": "No pudimos actualizar tu pedido; reintentando…",
     "inProgress": "Tienes un pedido en curso",
     "view": "Ver",
-    "orderMore": "Pedir algo más"
+    "orderMore": "Pedir algo más",
+    "notCompleted": "No se completó el pago. No se te cobró nada.",
+    "abandoning": "Cancelando el pago…",
+    "paymentFailed": "No se pudo cobrar tu tarjeta.",
+    "backToMenu": "Volver al menú",
+    "card": {
+      "notCompleted": "No se completó el pago.",
+      "rejected": "El restaurante no pudo aceptar tu pedido: {{reason}}.",
+      "rejectedNoReason": "El restaurante no pudo aceptar tu pedido.",
+      "expired": "El restaurante no contestó a tiempo.",
+      "authorized": "Tu tarjeta está apartada; se cobra cuando el restaurante acepte.",
+      "captured": "Tu pago se cobró.",
+      "refundDue": "Tu tarjeta se cobró; el negocio te la devolverá.",
+      "notCharged": "No se te cobró nada. Si viste un cargo, tu banco lo liberará en unos días.",
+      "releasing": "Estamos liberando tu tarjeta…"
+    },
+    "cancelPayment": "Cancelar el pago"
   }
 }
