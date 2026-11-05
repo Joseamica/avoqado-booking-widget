@@ -25,6 +25,12 @@ describe('textos de la tienda', () => {
     const [tes, ten] = await Promise.all([import('./i18n/es.json'), import('./i18n/en.json')])
     expect(keys(ten.default)).toEqual(keys(tes.default))
   })
+  it('ningún texto le dice «restaurante» o «carta» a un gimnasio: los textos sirven para cualquier giro', async () => {
+    const textos = (o: any): string[] => Object.values(o).flatMap(v => (v && typeof v === 'object' ? textos(v) : [String(v)]))
+    const [tes, ten] = await Promise.all([import('./i18n/es.json'), import('./i18n/en.json')])
+    const deComida = /restaurant|\bcarta\b|platillo|cocina|ingrediente|cebolla|\bdish|kitchen|ingredient|onion/i
+    expect([...textos(tes.default), ...textos(ten.default)].filter(x => deComida.test(x))).toEqual([])
+  })
   it('idioma desconocido cae a es', () => {
     expect(createOrderT('fr')('modifiers.mandatory')).toBe('Obligatorio')
   })

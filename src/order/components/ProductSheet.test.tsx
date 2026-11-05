@@ -52,7 +52,7 @@ const addBtn = () => screen.getByRole('button', { name: /^Agregar/ }) as HTMLBut
 const btn = (name: string) => screen.getByRole('button', { name }) as HTMLButtonElement
 const box = (name: RegExp | string) => screen.getByLabelText(name) as HTMLInputElement
 const groupOf = (name: string) => screen.getByRole('heading', { name }).closest('.avq-o-group') as HTMLElement
-const close = () => fireEvent.click(btn('Cerrar y volver a la carta'))
+const close = () => fireEvent.click(btn('Cerrar y volver al menú'))
 // En su tope, el botón de un stepper NO se deshabilita (el foco se perdería): queda aria-disabled e ignora el toque.
 const capped = (b: HTMLButtonElement) => b.getAttribute('aria-disabled') === 'true' && !b.disabled
 
@@ -76,7 +76,7 @@ describe('ficha del producto', () => {
     const s = open(withSalsa())
     fireEvent.click(box(/Queso extra/))
     fireEvent.click(btn('Más'))
-    fireEvent.input(screen.getByLabelText('Indicaciones para la cocina'), { target: { value: 'sin cebolla' } })
+    fireEvent.input(screen.getByLabelText('Indicaciones para el negocio'), { target: { value: 'sin cebolla' } })
     fireEvent.click(addBtn())
     expect(s.productId.value).toBeNull()
     expect(s.cart.value).toHaveLength(1)
@@ -89,9 +89,9 @@ describe('ficha del producto', () => {
     for (let i = 0; i < 25; i++) fireEvent.click(btn('Más'))
     expect(capped(btn('Más'))).toBe(true)
     expect(addBtn().textContent).toBe('Agregar $1,700')
-    const note = screen.getByLabelText('Indicaciones para la cocina') as HTMLTextAreaElement
+    const note = screen.getByLabelText('Indicaciones para el negocio') as HTMLTextAreaElement
     expect(note.maxLength).toBe(300)
-    expect(note.placeholder).toBe('Ejemplo: sin cebolla')
+    expect(note.placeholder).toBe('Escribe aquí tus indicaciones')
   })
   it('si el carrito topa en 20 avisa «Máximo 20 por producto»', () => {
     const s = makeStore(infoOf(), menuOf(product()))
@@ -254,10 +254,10 @@ describe('ficha con grupos de opciones (maqueta Producto)', () => {
     fireEvent.click(box('Queso'))
     for (let i = 0; i < 9; i++) fireEvent.click(btn('Más Queso'))
     expect(addBtn().disabled).toBe(false)
-    expect(screen.queryByText('Máximo 30 opciones por platillo')).toBeNull()
+    expect(screen.queryByText('Máximo 30 opciones por producto')).toBeNull()
     fireEvent.click(btn('Más Queso'))
     expect(addBtn().disabled).toBe(true)
-    expect(screen.getByText('Máximo 30 opciones por platillo')).toBeTruthy()
+    expect(screen.getByText('Máximo 30 opciones por producto')).toBeTruthy()
   })
   it('es una vista DENTRO de la tienda: sin position fixed, sin hijos nuevos en document.body y sin tocar body.style ni inert', () => {
     const s = makeStore(infoOf(), menuOf(product({ imageUrl: 'https://x/foto.jpg' })))
@@ -295,7 +295,7 @@ describe('ficha con grupos de opciones (maqueta Producto)', () => {
     const inner = sheet.firstElementChild as HTMLElement
     expect(inner.className).toBe('avq-o-sheet__in')
     expect(getComputedStyle(inner).position).toBe('relative') // la X con foto se acomoda contra ella, como antes contra la sección
-    for (const el of [sheet.querySelector('img')!, btn('Cerrar y volver a la carta'), screen.getByRole('heading', { name: 'Flautas de pollo' })]) {
+    for (const el of [sheet.querySelector('img')!, btn('Cerrar y volver al menú'), screen.getByRole('heading', { name: 'Flautas de pollo' })]) {
       expect(inner.contains(el)).toBe(true)
     }
     // Último hijo de una envoltura que ocupa toda la ficha: el pie se sigue pegando abajo a lo largo de toda ella.
@@ -308,7 +308,7 @@ describe('ficha con grupos de opciones (maqueta Producto)', () => {
     fireEvent.error(sheet.querySelector('img')!)
     expect(sheet.querySelector('img')).toBeNull()
     expect(sheet.classList.contains('avq-o-sheet--media')).toBe(false)
-    expect(btn('Cerrar y volver a la carta')).toBeTruthy()
+    expect(btn('Cerrar y volver al menú')).toBeTruthy()
   })
   it('nombres de 120 caracteres sin espacios (producto, grupo y opción) envuelven: nada se desborda a lo ancho', () => {
     const long = 'Á'.repeat(118) + '🌮🌮'
@@ -328,7 +328,7 @@ describe('ficha con grupos de opciones (maqueta Producto)', () => {
   })
   it('Escape mientras se compone texto (teclado IME: isComposing o keyCode 229) no cierra la ficha ni pierde la nota; sin componer, sí cierra', () => {
     const s = open(product())
-    const note = screen.getByLabelText('Indicaciones para la cocina')
+    const note = screen.getByLabelText('Indicaciones para el negocio')
     fireEvent.input(note, { target: { value: 'sin' } })
     fireEvent.keyDown(note, { key: 'Escape', isComposing: true })
     expect(s.productId.value).toBe('p1')

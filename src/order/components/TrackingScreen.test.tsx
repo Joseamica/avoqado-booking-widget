@@ -76,7 +76,7 @@ describe('sondeo', () => {
     vi.mocked(getTracking).mockRejectedValue(new ApiError('Sin conexión', 0, undefined, undefined, true))
     await tick(10_000)
     expect(screen.getByText('Sin conexión; reintentando…')).toBeTruthy()
-    expect(screen.getByText(/Esperando que el restaurante acepte/)).toBeTruthy()
+    expect(screen.getByText(/Esperando que el negocio acepte/)).toBeTruthy()
     vi.mocked(getTracking).mockResolvedValue(tr())
     await tick(10_000)
     expect(screen.queryByText('Sin conexión; reintentando…')).toBeNull()
@@ -91,7 +91,7 @@ describe('sondeo', () => {
     vi.mocked(getTracking).mockRejectedValue(new ApiError('x', 503))
     await tick(10_000)
     expect(screen.getByText('No pudimos actualizar tu pedido; reintentando…')).toBeTruthy()
-    expect(screen.getByText(/Esperando que el restaurante acepte/)).toBeTruthy()
+    expect(screen.getByText(/Esperando que el negocio acepte/)).toBeTruthy()
   })
   it('404: «No encontramos ese pedido.» y no sigue sondeando', async () => {
     await show(new ApiError('x', 404))
@@ -114,7 +114,7 @@ describe('sondeo', () => {
 describe('textos por estado', () => {
   // Estados en curso y entregado: titular nuevo, su línea de hora (o ninguna) y el paso actual.
   const positives: [string, OnlineOrderStatus, Partial<Tracking>, string, string | null, string][] = [
-    ['PENDING_ACCEPTANCE', 'PENDING_ACCEPTANCE', {}, 'Esperando que el restaurante acepte', 'Tiene hasta las 13:05 para aceptarlo.', 'Recibido'],
+    ['PENDING_ACCEPTANCE', 'PENDING_ACCEPTANCE', {}, 'Esperando que el negocio acepte', 'Tiene hasta las 13:05 para aceptarlo.', 'Recibido'],
     ['ACCEPTED con hora', 'ACCEPTED', { estimatedReadyAt: '2026-10-17T19:30:00Z', canCancel: false }, 'Lo están preparando', 'Estará listo como a las 13:30.', 'Preparando'],
     ['ACCEPTED sin hora', 'ACCEPTED', { canCancel: false }, 'Lo están preparando', null, 'Preparando'],
     ['READY', 'READY', { canCancel: false }, '¡Listo para recoger!', 'Pasa al mostrador con tu folio.', 'Listo'],
@@ -129,10 +129,10 @@ describe('textos por estado', () => {
     })
   // Rechazado, vencido y cancelado: la frase de hoy, literal.
   const cases: [OnlineOrderStatus, Partial<Tracking>, string][] = [
-    ['REJECTED', { rejectReason: 'OUT_OF_ITEMS', canCancel: false }, 'El restaurante no pudo aceptar tu pedido: Sin ingredientes. No se te cobró nada.'],
-    ['EXPIRED', { canCancel: false }, 'El restaurante no contestó a tiempo. No se te cobró nada.'],
+    ['REJECTED', { rejectReason: 'OUT_OF_ITEMS', canCancel: false }, 'El negocio no pudo aceptar tu pedido: Sin existencias. No se te cobró nada.'],
+    ['EXPIRED', { canCancel: false }, 'El negocio no contestó a tiempo. No se te cobró nada.'],
     ['CANCELLED_BY_CUSTOMER', { canCancel: false }, 'Cancelaste tu pedido.'],
-    ['CANCELLED_BY_STAFF', { canCancel: false }, 'El restaurante canceló tu pedido.'],
+    ['CANCELLED_BY_STAFF', { canCancel: false }, 'El negocio canceló tu pedido.'],
   ]
   for (const [status, over, text] of cases)
     it(status, async () => {
@@ -156,7 +156,7 @@ describe('textos por estado', () => {
   it('rechazado/vencido/cancelado: sin pasos; la frase de hoy literal', async () => {
     const finals: [OnlineOrderStatus, Partial<Tracking>, string][] = [
       ...cases,
-      ['REJECTED', { rejectReason: null, canCancel: false }, 'El restaurante no pudo aceptar tu pedido. No se te cobró nada.'],
+      ['REJECTED', { rejectReason: null, canCancel: false }, 'El negocio no pudo aceptar tu pedido. No se te cobró nada.'],
     ]
     for (const [status, over, text] of finals) {
       await show(tr({ status, ...over }))
@@ -171,7 +171,7 @@ describe('textos por estado', () => {
   it('un estado que la tienda no conoce: titular neutro, sin «Dilo…» ni «Pagas al recoger»; el folio y los renglones siguen, y sigue sondeando', async () => {
     await show(tr({ status: 'ON_HOLD' as OnlineOrderStatus }))
     expect(screen.getByRole('heading', { name: 'Revisando tu pedido…' })).toBeTruthy()
-    expect(screen.queryByText('El restaurante canceló tu pedido.')).toBeNull()
+    expect(screen.queryByText('El negocio canceló tu pedido.')).toBeNull()
     expect(screen.queryByText('Dilo en el mostrador al recoger.')).toBeNull()
     expect(screen.queryByText(/Pagas al recoger/)).toBeNull()
     expect(progress()).toBeNull()
@@ -344,7 +344,7 @@ describe('cancelar', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Cancelar pedido' }))
     fireEvent.click(screen.getByRole('button', { name: 'Sí, cancelar' }))
     await flush()
-    expect(screen.getByText('Este pedido ya tiene un pago; llama al restaurante.')).toBeTruthy()
+    expect(screen.getByText('Este pedido ya tiene un pago; llama al negocio.')).toBeTruthy()
   })
   it('«Cancelar pedido» es un botón de texto discreto; su confirmación lleva dos botones y «No» la cierra sin cancelar', async () => {
     await show(tr())
@@ -494,7 +494,7 @@ describe('fase 2: pagar con tarjeta', () => {
 
   it('las líneas del dinero con tarjeta (nunca «Pagas al recoger»)', async () => {
     const cases: [Partial<Tracking>, string][] = [
-      [{ status: 'PENDING_ACCEPTANCE', cardStatus: 'AUTHORIZED' }, 'Tu tarjeta está apartada; se cobra cuando el restaurante acepte.'],
+      [{ status: 'PENDING_ACCEPTANCE', cardStatus: 'AUTHORIZED' }, 'Tu tarjeta está apartada; se cobra cuando el negocio acepte.'],
       [{ status: 'ACCEPTED', cardStatus: 'CAPTURED', paid: true }, 'Tu pago se cobró.'],
       [{ status: 'READY', cardStatus: 'CAPTURED', paid: true }, 'Tu pago se cobró.'],
       [{ status: 'COMPLETED', cardStatus: 'CAPTURED', paid: true }, 'Tu pago se cobró.'],
@@ -517,11 +517,11 @@ describe('fase 2: pagar con tarjeta', () => {
 
   it('rechazado o vencido con tarjeta: el titular no promete «No se te cobró nada» (lo dice la línea del dinero)', async () => {
     await show(card({ status: 'REJECTED', rejectReason: 'OUT_OF_ITEMS', cardStatus: 'CAPTURED' }))
-    expect(screen.getByRole('heading', { name: 'El restaurante no pudo aceptar tu pedido: Sin ingredientes.' })).toBeTruthy()
+    expect(screen.getByRole('heading', { name: 'El negocio no pudo aceptar tu pedido: Sin existencias.' })).toBeTruthy()
     expect(document.body.textContent).not.toContain('No se te cobró nada')
     cleanup()
     await show(card({ status: 'EXPIRED', cardStatus: 'CAPTURED' }))
-    expect(screen.getByRole('heading', { name: 'El restaurante no contestó a tiempo.' })).toBeTruthy()
+    expect(screen.getByRole('heading', { name: 'El negocio no contestó a tiempo.' })).toBeTruthy()
     expect(document.body.textContent).not.toContain('No se te cobró nada')
   })
 
@@ -558,7 +558,7 @@ describe('fase 2: pagar con tarjeta', () => {
     expect(screen.getByRole('heading', { name: 'Confirming your payment…' })).toBeTruthy()
     cleanup()
     await show(card({ status: 'PENDING_ACCEPTANCE' }), 'en')
-    expect(money()).toBe('Your card is on hold; it is charged when the restaurant accepts.')
+    expect(money()).toBe('Your card is on hold; it is charged when the business accepts.')
   })
 })
 
@@ -612,8 +612,8 @@ describe('fase 2: de regreso de Stripe (?pago)', () => {
     vi.mocked(getTracking).mockResolvedValue(tr({ paymentMode: 'CARD_ONLINE', cardStatus: 'AUTHORIZED', orderNumber: '42' }))
     back('cancelled')
     await flush()
-    expect(screen.getByRole('heading', { name: 'Esperando que el restaurante acepte' })).toBeTruthy()
-    expect(screen.getByText('Tu tarjeta está apartada; se cobra cuando el restaurante acepte.')).toBeTruthy()
+    expect(screen.getByRole('heading', { name: 'Esperando que el negocio acepte' })).toBeTruthy()
+    expect(screen.getByText('Tu tarjeta está apartada; se cobra cuando el negocio acepte.')).toBeTruthy()
     await tick(10_000)
     expect(getTracking).toHaveBeenCalledTimes(1)
   })
@@ -783,11 +783,11 @@ describe('fix ronda 2 y 3: el sondeo nunca se queda parado; la intención de can
     vi.mocked(abandonPayment).mockResolvedValueOnce(order())
     fireEvent.click(screen.getByRole('button', { name: 'Cancelar el pago' }))
     await flush()
-    expect(screen.getByRole('heading', { name: 'Esperando que el restaurante acepte' })).toBeTruthy()
+    expect(screen.getByRole('heading', { name: 'Esperando que el negocio acepte' })).toBeTruthy()
     await tick(10_000) // el tick encuentra el GET viejo todavía en camino
     late(draft()) // llega la respuesta vieja: se descarta (no vuelve el borrador)
     await flush()
-    expect(screen.getByRole('heading', { name: 'Esperando que el restaurante acepte' })).toBeTruthy()
+    expect(screen.getByRole('heading', { name: 'Esperando que el negocio acepte' })).toBeTruthy()
     vi.mocked(getTracking).mockResolvedValue(order())
     await tick(10_000)
     expect(getTracking).toHaveBeenCalledTimes(3)
