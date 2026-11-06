@@ -1111,10 +1111,19 @@ describe('W3: seguimiento del folio', () => {
     expect(ticks()).toBe(1)
     spy.mockRestore()
   })
-  it('m3: un vencido que ya está pagado deja de consultar', async () => {
+  it('W3c: un vencido ya pagado SIGUE consultando (el servidor lo revive) y sigue su avance hasta «¡Listo para recoger!»', async () => {
     await showF(folio({ status: 'EXPIRED', paid: true, canCancel: false }))
     expect(screen.getByRole('heading', { name: '¡Pagado! Lo están preparando' })).toBeTruthy()
+    expect(screen.getByText(/^En vivo/)).toBeTruthy()
+    await tick(3000)
+    expect(screen.getByText('En vivo · 13:00:03')).toBeTruthy() // el reloj sigue corriendo
+    vi.mocked(getTracking).mockResolvedValue(folio({ status: 'READY', paid: true, canCancel: false }))
+    await tick(10_000)
+    expect(screen.getByRole('heading', { name: '¡Listo para recoger!' })).toBeTruthy()
+    vi.mocked(getTracking).mockResolvedValue(folio({ status: 'COMPLETED', paid: true, canCancel: false }))
+    await tick(10_000)
+    const n = vi.mocked(getTracking).mock.calls.length
     await tick(60_000)
-    expect(getTracking).toHaveBeenCalledTimes(1)
+    expect(getTracking).toHaveBeenCalledTimes(n) // sólo al entregar se detiene
   })
 })

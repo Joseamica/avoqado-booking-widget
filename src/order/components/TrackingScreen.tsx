@@ -25,8 +25,9 @@ const MONEY_IN_DOUBT: ReadonlySet<string> = new Set(['AUTHORIZED', 'CONFIRMING',
 const LATE_MONEY_MS = 2 * 60 * 60_000
 const isFolioOf = (r: Tracking) => r.requiresAcceptance === false && r.paymentMode !== 'CARD_ONLINE'
 /** Un folio vencido y sin dinero sigue en la ventana de 2 h: el menú lo recuerda y el seguimiento lo consulta. */
-export const lateWindowOpen = (r: Tracking) => isFolioOf(r) && r.status === 'EXPIRED' && Date.now() < Date.parse(r.acceptDeadlineAt) + LATE_MONEY_MS
-const done = (r: Tracking) => isFinalStatus(r.status) && !MONEY_IN_DOUBT.has(r.cardStatus ?? '') && !(lateWindowOpen(r) && !r.paid)
+/** Con dinero el servidor lo revive (ACCEPTED, luego READY/COMPLETED): se sigue siempre, sin límite de tiempo. */
+export const lateWindowOpen = (r: Tracking) => isFolioOf(r) && r.status === 'EXPIRED' && (!!r.paid || Date.now() < Date.parse(r.acceptDeadlineAt) + LATE_MONEY_MS)
+const done = (r: Tracking) => isFinalStatus(r.status) && !MONEY_IN_DOUBT.has(r.cardStatus ?? '') && !lateWindowOpen(r)
 const FOLIO_STEPS = ['order', 'paid', 'ready', 'completed'] as const
 const FOLIO_PAID: ReadonlySet<OnlineOrderStatus> = new Set(['ACCEPTED', 'READY', 'COMPLETED'])
 const FOLIO_VOID: ReadonlySet<OnlineOrderStatus> = new Set(['CANCELLED_BY_CUSTOMER', 'CANCELLED_BY_STAFF', 'REJECTED', 'PAYMENT_NOT_COMPLETED'])

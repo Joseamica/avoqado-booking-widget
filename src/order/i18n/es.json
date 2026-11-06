@@ -288,7 +288,7 @@
       "paidBy": "{{name}} · pagado hoy",
       "paidByAt": "{{name}} · pagado hoy a las {{time}}",
       "paidTodayAt": "Pagado hoy a las {{time}}",
-      "reminderExpired": "Se venció. Si ya pagaste en caja, ábrelo para ver si ya se registró.",
+      "reminderExpired": "Se canceló. Si ya pagaste en caja, ábrelo para ver si ya se registró.",
       "paidToday": "Pagado hoy",
       "live": "En vivo · {{time}}",
       "offline": "Sin conexión: te enseñamos lo último que supimos; se actualiza solo al volver.",

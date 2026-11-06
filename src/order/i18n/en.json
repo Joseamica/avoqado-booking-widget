@@ -288,7 +288,7 @@
       "paidBy": "{{name}} · paid today",
       "paidByAt": "{{name}} · paid today at {{time}}",
       "paidTodayAt": "Paid today at {{time}}",
-      "reminderExpired": "It expired. If you already paid at the counter, open it to see if it was recorded.",
+      "reminderExpired": "It was cancelled. If you already paid at the counter, open it to see if it was recorded.",
       "paidToday": "Paid today",
       "live": "Live · {{time}}",
       "offline": "No connection: we're showing you the last thing we knew; it updates by itself when you're back online.",
