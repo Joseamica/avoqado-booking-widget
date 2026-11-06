@@ -55,9 +55,10 @@ export function OrderApp({ accentColor }: { accentColor?: string }) {
     const stop = () => { if (timer) clearInterval(timer); timer = null }
     // Mientras el pedido siga vivo (o en su ventana tardía) se relee cada 30 s y al volver a la pestaña: un abono o un pago que
     // llega con la clienta en el menú cambia el aviso. Al ser final, se olvida y se deja de leer.
-    const read = () => getTracking(store.slug, last.trackingToken).then(
+    let seq = 0 // lecturas que se traslapan (intervalo y pestaña): sólo aplica la última que salió
+    const read = () => { const mine = ++seq; return getTracking(store.slug, last.trackingToken).then(
       r => {
-        if (off) return
+        if (off || mine !== seq) return
         if (isFinalStatus(r.status) && !lateWindowOpen(r)) {
           stop()
           clearLastOrder(store.slug)
@@ -65,13 +66,13 @@ export function OrderApp({ accentColor }: { accentColor?: string }) {
         } else setActive({ token: last.trackingToken, tracking: r })
       },
       e => {
-        if (off || !(e instanceof ApiError) || e.status !== 404) return
+        if (off || mine !== seq || !(e instanceof ApiError) || e.status !== 404) return
         stop()
         clearLastOrder(store.slug)
         setActive(null)
         store.notice.value = t('tracking.notFound')
       },
-    )
+    ) }
     const again = () => { if (!off && timer && document.visibilityState === 'visible') void read() }
     timer = setInterval(again, 30_000)
     document.addEventListener('visibilitychange', again)

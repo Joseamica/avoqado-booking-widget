@@ -27,13 +27,13 @@ const isFolioOf = (r: Tracking) => r.requiresAcceptance === false && r.paymentMo
 /** Un folio vencido o cancelado sin dinero sigue en la ventana de 2 h: el menú lo recuerda y el seguimiento lo consulta. */
 const LAPSED: ReadonlySet<OnlineOrderStatus> = new Set(['EXPIRED', 'CANCELLED_BY_STAFF', 'CANCELLED_BY_CUSTOMER'])
 export const isLapsedFolio = (r: Tracking) => isFolioOf(r) && LAPSED.has(r.status)
-/** Con dinero el servidor lo revive (ACCEPTED, luego READY/COMPLETED): se sigue siempre, sin límite de tiempo. */
-/** Un cancelado que dice `paid` y nunca se revive deja de consultarse a las 24 h (Wc1-m1). */
+/** Con dinero el servidor lo revive (ACCEPTED, luego READY/COMPLETED): se sigue hasta 24 h. */
+/** Un vencido o cancelado que dice `paid` y nunca se revive deja de consultarse a las 24 h (Wc1-m1). */
 const CANCELLED_PAID_MS = 24 * 60 * 60_000
 export const lateWindowOpen = (r: Tracking) => {
   if (!isLapsedFolio(r)) return false
-  const end = Date.parse(r.acceptDeadlineAt) + (r.paid && r.status !== 'EXPIRED' ? CANCELLED_PAID_MS : LATE_MONEY_MS)
-  return (r.paid && r.status === 'EXPIRED') || Date.now() < end
+  // Con dinero el servidor lo revive en ~30 s; si en 24 h no lo hizo, ya no se espera más (ni se recuerda en el menú).
+  return Date.now() < Date.parse(r.acceptDeadlineAt) + (r.paid ? CANCELLED_PAID_MS : LATE_MONEY_MS)
 }
 const done = (r: Tracking) => isFinalStatus(r.status) && !MONEY_IN_DOUBT.has(r.cardStatus ?? '') && !lateWindowOpen(r)
 const FOLIO_STEPS = ['order', 'paid', 'ready', 'completed'] as const

@@ -1198,4 +1198,17 @@ describe('W3: seguimiento del folio', () => {
     await tick(60_000)
     expect(getTracking).toHaveBeenCalledTimes(m)
   })
+  it('tope: un EXPIRED con `paid` que nadie revive deja de consultarse a las 24 h', async () => {
+    await showF(folio({ status: 'EXPIRED', paid: true, canCancel: false }))
+    vi.setSystemTime(new Date('2026-10-18T10:00:00Z')) // ~15 h: sigue
+    await tick(10_000)
+    const n = vi.mocked(getTracking).mock.calls.length
+    await tick(10_000)
+    expect(vi.mocked(getTracking).mock.calls.length).toBeGreaterThan(n)
+    vi.setSystemTime(new Date('2026-10-18T20:00:00Z')) // > 24 h
+    await tick(10_000)
+    const m = vi.mocked(getTracking).mock.calls.length
+    await tick(60_000)
+    expect(getTracking).toHaveBeenCalledTimes(m)
+  })
 })

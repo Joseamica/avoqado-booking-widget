@@ -396,4 +396,25 @@ describe('W3: el aviso del menú con un folio (volvió a abrir el QR)', () => {
     expect(screen.queryByRole('button', { name: 'Ver' })).toBeNull()
     expect(localStorage.getItem(`avq_order_last:${s.slug}`)).toBeNull()
   })
+  it('tope: un vencido con `paid` que nadie revive se olvida pasadas 24 h', async () => {
+    vi.setSystemTime(new Date('2026-10-18T20:00:00Z'))
+    vi.mocked(getTracking).mockResolvedValue(folio({ status: 'EXPIRED', paid: true, canCancel: false }))
+    const s = await open()
+    expect(screen.queryByRole('button', { name: 'Ver' })).toBeNull()
+    expect(localStorage.getItem(`avq_order_last:${s.slug}`)).toBeNull()
+  })
+  it('una respuesta vieja no pisa a la nueva (lecturas que se traslapan)', async () => {
+    let slow!: (t: Tracking) => void
+    vi.mocked(getTracking).mockResolvedValue(folio())
+    await open()
+    vi.mocked(getTracking).mockReturnValueOnce(new Promise<Tracking>(r => { slow = r })) // la lenta sale primero
+    await act(async () => { await vi.advanceTimersByTimeAsync(30_000) })
+    vi.mocked(getTracking).mockResolvedValue(folio({ status: 'ACCEPTED', paid: true, canCancel: false }))
+    await act(async () => { document.dispatchEvent(new Event('visibilitychange')) })
+    await flush()
+    expect(screen.getByText('Tu pedido W7K3P está pagado')).toBeTruthy()
+    await act(async () => { slow(folio()) }) // llega tarde con el estado viejo
+    await flush()
+    expect(screen.getByText('Tu pedido W7K3P está pagado')).toBeTruthy()
+  })
 })
