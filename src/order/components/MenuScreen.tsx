@@ -5,17 +5,17 @@ import { createOrderT } from '../i18n'
 import { formatMXN } from '../money'
 import { formatTime } from '../hours'
 import type { Menu, StoreInfo } from '../types'
+import { Notice, StoreStatusBanner } from './StoreStatusBanner'
+import { ProductSheet } from './ProductSheet'
+import { CartBar } from './CartBar'
+import { TABS_H } from './theme'
+import { Plus } from './icons'
 
 // Cierra en menos de 30 min (R56: en los últimos 10 el servidor ya dice CLOSED y manda «Ya no recibimos pedidos»).
 const closesSoon = (info: StoreInfo) => {
   const ms = info.closesAt ? new Date(info.closesAt).getTime() - Date.now() : NaN
   return ms > 0 && ms < 30 * 60_000
 }
-import { Notice, StoreStatusBanner } from './StoreStatusBanner'
-import { ProductSheet } from './ProductSheet'
-import { CartBar } from './CartBar'
-import { TABS_H } from './theme'
-import { Plus } from './icons'
 
 /** Sin acentos ni mayúsculas, para buscar «flauta» y encontrar «FLÁUTA». */
 const fold = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()

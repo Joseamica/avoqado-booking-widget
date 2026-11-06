@@ -729,8 +729,12 @@
         orderEl.addEventListener('avoqado:pedido-creado', function (e) {
           var token = e && e.detail && e.detail.trackingToken
           if (!token) return
+          // `canal` sólo sirve para crear el pedido: la liga de seguimiento que se comparte no lo lleva (como `pago`, se quita con URLSearchParams).
+          var track = new URLSearchParams(window.location.search)
+          track.delete('canal')
+          var trackQs = track.toString()
           try {
-            history.replaceState(null, '', '/' + slug + '/pedido/' + encodeURIComponent(token) + window.location.search)
+            history.replaceState(null, '', '/' + slug + '/pedido/' + encodeURIComponent(token) + (trackQs ? '?' + trackQs : ''))
           } catch (err) { /* sin historial: la liga sigue en el aviso */ }
         })
         var orderMount = document.getElementById('mount')
