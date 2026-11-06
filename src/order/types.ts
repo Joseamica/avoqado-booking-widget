@@ -163,7 +163,11 @@ export interface CreatedCardOrder {
   replay: boolean
 }
 
-export interface TrackingItem { name: string; quantity: number; note: string | null; modifiers: { name: string; quantity: number }[] }
+export interface TrackingItem {
+  name: string; quantity: number; note: string | null; modifiers: { name: string; quantity: number }[]
+  /** R67, opcionales (PESOS): precio de una pieza y total del renglón. */
+  unitPrice?: number; total?: number
+}
 export interface Tracking {
   orderNumber: string
   status: OnlineOrderStatus
@@ -185,6 +189,9 @@ export interface Tracking {
   /** Tienda híbrida (etapa 1), aditivos: un folio de «Nadie» tiene `requiresAcceptance: false`. */
   requiresAcceptance?: boolean
   channel?: 'QR' | 'LINK' | null
+  /** R67, opcionales: el nombre con que se pidió y cuándo quedó pagada la cuenta (ISO). */
+  customerName?: string | null
+  paidAt?: string | null
 }
 
 export interface OrderingCustomer {

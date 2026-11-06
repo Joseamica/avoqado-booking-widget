@@ -24,12 +24,13 @@ const MONEY_IN_DOUBT: ReadonlySet<string> = new Set(['AUTHORIZED', 'CONFIRMING',
 /** Un folio de «Nadie» vencido se sigue consultando 2 h después de su hora: un efectivo registrado tarde lo pasa a «PAGADO». */
 const LATE_MONEY_MS = 2 * 60 * 60_000
 const isFolioOf = (r: Tracking) => r.requiresAcceptance === false && r.paymentMode !== 'CARD_ONLINE'
-const done = (r: Tracking) =>
-  isFinalStatus(r.status) && !MONEY_IN_DOUBT.has(r.cardStatus ?? '')
-  && !(isFolioOf(r) && r.status === 'EXPIRED' && Date.now() < Date.parse(r.acceptDeadlineAt) + LATE_MONEY_MS)
+/** Un folio vencido y sin dinero sigue en la ventana de 2 h: el menú lo recuerda y el seguimiento lo consulta. */
+export const lateWindowOpen = (r: Tracking) => isFolioOf(r) && r.status === 'EXPIRED' && Date.now() < Date.parse(r.acceptDeadlineAt) + LATE_MONEY_MS
+const done = (r: Tracking) => isFinalStatus(r.status) && !MONEY_IN_DOUBT.has(r.cardStatus ?? '') && !(lateWindowOpen(r) && !r.paid)
 const FOLIO_STEPS = ['order', 'paid', 'ready', 'completed'] as const
 const FOLIO_PAID: ReadonlySet<OnlineOrderStatus> = new Set(['ACCEPTED', 'READY', 'COMPLETED'])
 const FOLIO_VOID: ReadonlySet<OnlineOrderStatus> = new Set(['CANCELLED_BY_CUSTOMER', 'CANCELLED_BY_STAFF', 'REJECTED', 'PAYMENT_NOT_COMPLETED'])
+const folioPaidOf = (r: Tracking) => isFolioOf(r) && !FOLIO_VOID.has(r.status) && (r.paid || FOLIO_PAID.has(r.status))
 
 // Íconos de «Cómo llegar» y «Llamar» (de la maqueta; sólo se usan aquí).
 const Pin = () => (
@@ -202,7 +203,9 @@ export function TrackingScreen() {
   }, [settled])
 
   // Folio de «Nadie»: el reloj corre cada segundo (la cuenta regresiva y el «En vivo»), también con «reducir movimiento».
+  // Sólo corre mientras algo cambia en pantalla: la cuenta regresiva (por pagar) o el «En vivo» (pagado y sin entregar).
   const folioMode = !!tracking && isFolioOf(tracking)
+    && (tracking.status === 'PENDING_ACCEPTANCE' || (folioPaidOf(tracking) && tracking.status !== 'COMPLETED'))
   const [now, setNow] = useState(() => Date.now())
   useEffect(() => {
     if (!folioMode) return
@@ -256,12 +259,15 @@ export function TrackingScreen() {
   const time = (iso: string) => formatTime(iso, tz, store.locale)
   const isFolio = isFolioOf(tracking)
   // Folio de «Nadie»: pagado en caja (o dinero que llegó tarde a uno vencido) pasa a «PAGADO»; cancelado por alguien, no.
-  const folioPaid = isFolio && !FOLIO_VOID.has(tracking.status) && (tracking.paid || FOLIO_PAID.has(tracking.status))
+  const folioPaid = folioPaidOf(tracking)
   const step = isFolio
     ? folioPaid ? (tracking.status === 'COMPLETED' ? 3 : tracking.status === 'READY' ? 2 : 1) : tracking.status === 'PENDING_ACCEPTANCE' ? 0 : undefined
     : STEP_OF[tracking.status]
   const offline = problem === 'store.reconnecting'
-  const left = Math.max(1, Math.ceil((Date.parse(tracking.acceptDeadlineAt) - now) / 60_000))
+  // Sin hora del servidor en la respuesta: reloj del aparato, y pasada la hora límite no hay cuenta (nunca «Faltan 1 min»).
+  const msLeft = Date.parse(tracking.acceptDeadlineAt) - now
+  const left = Math.ceil(msLeft / 60_000)
+  const shownName = tracking.customerName || who
   const clock = new Intl.DateTimeFormat(store.locale === 'en' ? 'en-US' : 'es-MX', { timeZone: tz, hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23' }).format(now)
   // Algo que recoger: esperando, en preparación o listo. Un estado que la tienda no conoce no se da por confirmado.
   const toPickUp = step !== undefined && tracking.status !== 'COMPLETED'
@@ -275,7 +281,7 @@ export function TrackingScreen() {
     if (!isFolio) return null
     const f = (k: string, v?: Record<string, string>) => t(`tracking.folio.${k}`, v)
     if (folioPaid) {
-      if (tracking.status === 'COMPLETED') return [f('head.completed'), who ? f('sub.completed', { name: who }) : f('sub.completedAnon')]
+      if (tracking.status === 'COMPLETED') return [f('head.completed'), shownName ? f('sub.completed', { name: shownName }) : f('sub.completedAnon')]
       if (tracking.status === 'READY') return [f('head.ready'), f('sub.ready')]
       return [f('head.paid'), tracking.estimatedReadyAt ? f('sub.paidEta', { time: time(tracking.estimatedReadyAt) }) : f('sub.paid')]
     }
@@ -322,6 +328,10 @@ export function TrackingScreen() {
   // Sin cobro, «Pagas al recoger» sólo en curso o entregado (la regla de hoy): no en cancelado, rechazado, vencido ni un estado nuevo.
   const pay = isFolio ? (tracking.status === 'PENDING_ACCEPTANCE' ? t('tracking.folio.tax') : folioPaid ? t('tracking.paid') : null) : card ? cardPay() : tracking.paid ? t('tracking.paid') : step !== undefined ? t('cart.taxPickup') : null
 
+  const paidWho = tracking.paidAt
+    ? shownName ? t('tracking.folio.paidByAt', { name: shownName, time: time(tracking.paidAt) }) : t('tracking.folio.paidTodayAt', { time: time(tracking.paidAt) })
+    : shownName ? t('tracking.folio.paidBy', { name: shownName }) : t('tracking.folio.paidToday')
+
   async function doCancel() {
     if (cancelling.current || !token) return
     cancelling.current = true
@@ -356,7 +366,7 @@ export function TrackingScreen() {
       <div class="avq-o-track__intro" role="status">
         <h2 ref={titleRef} class="avq-o-title" tabIndex={-1}>{head}</h2>
         {sub && <p>{sub}</p>}
-        {isFolio && !folioPaid && tracking.status === 'PENDING_ACCEPTANCE' && !offline && (
+        {isFolio && !folioPaid && tracking.status === 'PENDING_ACCEPTANCE' && !offline && msLeft > 0 && (
           <p class="avq-o-track__chip"><span class={left <= 5 ? 'avq-o-chip avq-o-chip--warn' : 'avq-o-chip'}><span aria-hidden="true">◷</span>{t('tracking.folio.left', { n: String(left) })}</span></p>
         )}
       </div>
@@ -386,9 +396,9 @@ export function TrackingScreen() {
               <span class="avq-o-paid__stamp">✓ {t('tracking.folio.stamp')}</span>
               <span class="avq-o-paid__n">{tracking.orderNumber}</span>
               <span class="avq-o-paid__items">{tracking.items.map(it => (it.quantity > 1 ? `${it.quantity} × ${it.name}` : it.name)).join(' · ')}</span>
-              <span class="avq-o-paid__who">{who ? t('tracking.folio.paidBy', { name: who }) : t('tracking.folio.paidToday')}</span>
+              <span class="avq-o-paid__who">{paidWho}</span>
             </div>
-            <p class="avq-o-live"><span class="avq-o-live__dot" aria-hidden="true" /><span>{t('tracking.folio.live', { time: clock })}</span></p>
+            {tracking.status !== 'COMPLETED' && <p class="avq-o-live"><span class="avq-o-live__dot" aria-hidden="true" /><span>{t('tracking.folio.live', { time: clock })}</span></p>}
           </>
         )}
         {tracking.orderNumber && !folioPaid && (
@@ -396,7 +406,7 @@ export function TrackingScreen() {
             <div class="avq-o-ticket__folio">
               <span class="avq-o-ticket__label">{t('tracking.folioLabel')}</span>
               <span class={isFolio ? `avq-o-ticket__n avq-o-ticket__n--folio${tracking.status === 'EXPIRED' ? ' avq-o-ticket__n--void' : ''}` : 'avq-o-ticket__n'}>{tracking.orderNumber}</span>
-              {isFolio && who && <span class="avq-o-ticket__who">{who}</span>}
+              {isFolio && shownName && <span class="avq-o-ticket__who">{shownName}</span>}
               {isFolio ? tracking.status === 'PENDING_ACCEPTANCE' && <span class="avq-o-ticket__say">{t('tracking.folio.say')}</span>
                 : toPickUp && <span class="avq-o-ticket__say">{t('tracking.sayAtCounter')}</span>}
             </div>
@@ -409,7 +419,7 @@ export function TrackingScreen() {
               const options = optionsText(it.modifiers)
               return (
                 <li key={i}>
-                  <span>{it.quantity} × {it.name}</span>
+                  <span>{it.quantity} × {it.name}{isFolio && it.total != null && <span class="avq-o-ticket__price">{formatMXN(it.total, store.locale)}</span>}</span>
                   {options && <span class="avq-o-ticket__sub">{options}</span>}
                   {it.note && <span class="avq-o-ticket__sub">{it.note}</span>}
                 </li>

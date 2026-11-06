@@ -36,6 +36,7 @@ beforeEach(() => {
 })
 afterEach(() => {
   cleanup()
+  localStorage.clear() // el último pedido (avq_order_last:*) no se hereda entre pruebas
   vi.restoreAllMocks()
   vi.useRealTimers()
   delete (Element.prototype as any).scrollIntoView
@@ -321,5 +322,27 @@ describe('W3: el aviso del menú con un folio (volvió a abrir el QR)', () => {
     vi.mocked(getTracking).mockResolvedValue(folio({ requiresAcceptance: true }))
     await open()
     expect(screen.getByText('Tienes un pedido en curso')).toBeTruthy()
+  })
+  it('m1: un folio vencido sin dinero NO borra el aviso: «Tu folio» y «Ver» llevan al seguimiento', async () => {
+    vi.setSystemTime(new Date('2026-10-17T19:50:00Z'))
+    vi.mocked(getTracking).mockResolvedValue(folio({ status: 'EXPIRED', canCancel: false }))
+    const s = await open()
+    expect(screen.getByText('Tu folio W7K3P')).toBeTruthy()
+    expect(localStorage.getItem(`avq_order_last:${s.slug}`)).not.toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Ver' }))
+    expect(s.screen.value).toBe('tracking')
+  })
+  it('m1: vencido pero con dinero llegado tarde: «Tu pedido W7K3P está pagado»', async () => {
+    vi.setSystemTime(new Date('2026-10-17T20:30:00Z'))
+    vi.mocked(getTracking).mockResolvedValue(folio({ status: 'EXPIRED', paid: true, canCancel: false }))
+    await open()
+    expect(screen.getByText('Tu pedido W7K3P está pagado')).toBeTruthy()
+  })
+  it('m1: pasadas 2 h de su hora, el vencido sí se olvida', async () => {
+    vi.setSystemTime(new Date('2026-10-17T21:45:00Z'))
+    vi.mocked(getTracking).mockResolvedValue(folio({ status: 'EXPIRED', canCancel: false }))
+    const s = await open()
+    expect(screen.queryByRole('button', { name: 'Ver' })).toBeNull()
+    expect(localStorage.getItem(`avq_order_last:${s.slug}`)).toBeNull()
   })
 })

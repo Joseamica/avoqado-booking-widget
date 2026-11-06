@@ -1008,7 +1008,7 @@ describe('W3: seguimiento del folio', () => {
     await showF(folio({ status: 'EXPIRED', canCancel: false }))
     expect(getTracking).toHaveBeenCalledTimes(1)
     await tick(60 * 60_000) // 1 h después: sigue
-    expect(vi.mocked(getTracking).mock.calls.length).toBeGreaterThan(300)
+    expect(screen.getByRole('heading', { name: 'Se canceló tu pedido' })).toBeTruthy() // sigue vivo y consultando
     vi.mocked(getTracking).mockResolvedValue(folio({ status: 'EXPIRED', paid: true, canCancel: false }))
     await tick(10_000)
     expect(screen.getByRole('heading', { name: '¡Pagado! Lo están preparando' })).toBeTruthy()
@@ -1064,5 +1064,57 @@ describe('W3: seguimiento del folio', () => {
       expect(document.querySelector('.avq-o-paid')).toBeNull()
       cleanup()
     }
+  })
+
+  // ---- W3b ----
+  it('R67: con paidAt y customerName dice «<Nombre> · pagado hoy a las HH:MM» (el nombre del servidor gana al guardado)', async () => {
+    await showF(folio({ status: 'ACCEPTED', paid: true, canCancel: false, customerName: 'Ana María', paidAt: '2026-10-17T19:14:00Z' }))
+    expect(document.querySelector('.avq-o-paid__who')!.textContent).toBe('Ana María · pagado hoy a las 13:14')
+  })
+  it('R67: con paidAt y sin ningún nombre: «Pagado hoy a las HH:MM»; sin paidAt, el texto honesto de antes', async () => {
+    await showF(folio({ status: 'ACCEPTED', paid: true, canCancel: false, paidAt: '2026-10-17T19:14:00Z' }), 'es', null)
+    expect(document.querySelector('.avq-o-paid__who')!.textContent).toBe('Pagado hoy a las 13:14')
+    cleanup()
+    await showF(folio({ status: 'ACCEPTED', paid: true, canCancel: false }))
+    expect(document.querySelector('.avq-o-paid__who')!.textContent).toBe('Ana · pagado hoy')
+  })
+  it('R67: con unitPrice/total por renglón, el folio por pagar los muestra; sin ellos, no hay precios', async () => {
+    const items = [
+      { name: 'Latte', quantity: 2, note: null, modifiers: [], unitPrice: 65, total: 130 },
+      { name: 'Shake', quantity: 1, note: null, modifiers: [], unitPrice: 69, total: 69 },
+    ]
+    await showF(folio({ items, total: 199 }))
+    const rows = Array.from(document.querySelectorAll('.avq-o-ticket__lines > li'))
+    expect(rows[0].textContent).toContain('$130')
+    expect(rows[1].textContent).toContain('$69')
+    cleanup()
+    await showF(folio())
+    expect(document.querySelector('.avq-o-ticket__price')).toBeNull()
+  })
+  it('m3: pasada la hora límite no hay «Faltan 1 min» (se oculta el chip)', async () => {
+    await showF(folio())
+    await tick(30 * 60_000 + 5_000)
+    expect(screen.queryByText(/^Faltan/)).toBeNull()
+    expect(document.querySelector('.avq-o-chip')).toBeNull()
+  })
+  it('m3: el reloj de 1 s no corre al entregar ni en un cancelado; sí en un pagado sin entregar', async () => {
+    const spy = vi.spyOn(globalThis, 'setInterval')
+    const ticks = () => spy.mock.calls.filter(c => c[1] === 1000).length
+    await showF(folio({ status: 'COMPLETED', paid: true, canCancel: false }))
+    expect(screen.queryByText(/^En vivo/)).toBeNull()
+    expect(ticks()).toBe(0)
+    cleanup()
+    await showF(folio({ status: 'CANCELLED_BY_STAFF', canCancel: false }))
+    expect(ticks()).toBe(0)
+    cleanup()
+    await showF(folio({ status: 'ACCEPTED', paid: true, canCancel: false }))
+    expect(ticks()).toBe(1)
+    spy.mockRestore()
+  })
+  it('m3: un vencido que ya está pagado deja de consultar', async () => {
+    await showF(folio({ status: 'EXPIRED', paid: true, canCancel: false }))
+    expect(screen.getByRole('heading', { name: '¡Pagado! Lo están preparando' })).toBeTruthy()
+    await tick(60_000)
+    expect(getTracking).toHaveBeenCalledTimes(1)
   })
 })

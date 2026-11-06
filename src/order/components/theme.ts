@@ -327,6 +327,7 @@ textarea.avq-o-input{min-height:0;padding:12px 14px;resize:none}
 .avq-o-ticket__n{max-width:100%;font-family:var(--avq-o-display);font-weight:800;font-size:64px;line-height:1;letter-spacing:.05em;overflow-wrap:anywhere}
 .avq-o-ticket__n--folio{letter-spacing:.14em;padding-left:.14em}
 .avq-o-ticket__n--void{text-decoration:line-through;color:${T.muted}}
+.avq-o-ticket__price{display:block;color:${T.text2}}
 .avq-o-ticket__who{margin-top:6px;font-size:16px;font-weight:600}
 .avq-o-ticket__say{margin-top:8px;color:${T.text2}}
 .avq-o-track__chip{margin-top:10px}
