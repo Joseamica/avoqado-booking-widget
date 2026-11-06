@@ -480,3 +480,19 @@ describe('«Nadie»: Tus datos (tienda híbrida, etapa 1)', () => {
     expect(screen.getByRole('button', { name: /^Order/ })).toBeTruthy()
   })
 })
+
+describe('R82 #6: aviso de cierre cercano también en «Tus datos»', () => {
+  const inMin = (m: number) => new Date(Date.now() + m * 60_000).toISOString()
+  it('«Nadie» y cierra en menos de 30 min: «Cerramos a las HH:MM» y su frase', () => {
+    show({ requiresAcceptance: false, closesAt: inMin(20) })
+    expect(screen.getByText(/^Cerramos a las \d{1,2}:\d{2}$/)).toBeTruthy()
+    expect(screen.getByText('Si no pasas a pagar antes, tu pedido se cancela.')).toBeTruthy()
+  })
+  it('a 30 min o más, o en «Mi equipo», no sale', () => {
+    show({ requiresAcceptance: false, closesAt: inMin(31) })
+    expect(screen.queryByText(/^Cerramos a las/)).toBeNull()
+    cleanup()
+    show({ requiresAcceptance: true, closesAt: inMin(20) })
+    expect(screen.queryByText(/^Cerramos a las/)).toBeNull()
+  })
+})

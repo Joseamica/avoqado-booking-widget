@@ -1185,4 +1185,17 @@ describe('W3: seguimiento del folio', () => {
     await flush()
     expect(document.querySelector('.avq-o-paid__who')!.textContent).toBe('Ana · paid on Nov 6 at 11:59 PM')
   })
+  it('Wc1-m1: un cancelado que dice `paid` sigue consultando hasta las 24 h de su hora y luego deja de consultar', async () => {
+    await showF(folio({ status: 'CANCELLED_BY_STAFF', paid: true, canCancel: false }))
+    vi.setSystemTime(new Date('2026-10-18T10:00:00Z')) // ~15 h después: sigue
+    await tick(10_000)
+    const n = vi.mocked(getTracking).mock.calls.length
+    await tick(10_000)
+    expect(vi.mocked(getTracking).mock.calls.length).toBeGreaterThan(n)
+    vi.setSystemTime(new Date('2026-10-18T20:00:00Z')) // > 24 h
+    await tick(10_000)
+    const m = vi.mocked(getTracking).mock.calls.length
+    await tick(60_000)
+    expect(getTracking).toHaveBeenCalledTimes(m)
+  })
 })

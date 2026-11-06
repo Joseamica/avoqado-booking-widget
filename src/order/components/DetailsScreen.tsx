@@ -7,7 +7,7 @@ import { buildOrderBody, checkoutOf, send } from '../checkout'
 import { formatMXN } from '../money'
 import { phoneE164 } from '../phone'
 import { CountryPhoneInput } from '../../components/ui/CountryPhoneInput'
-import { StoreStatusBanner } from './StoreStatusBanner'
+import { ClosingSoonNotice, StoreStatusBanner } from './StoreStatusBanner'
 import { CheckoutStatus } from './CheckoutStatus'
 import { Back } from './icons'
 import { tapTime } from './focus'
@@ -74,6 +74,7 @@ export function DetailsScreen() {
   return (
     <div class="avq-o-details">
       <StoreStatusBanner />
+      <ClosingSoonNotice />
       <button type="button" class="avq-o-back" aria-label={t('details.back')} onClick={() => store.go('cart')}><Back /></button>
       <div class="avq-o-form">
         <div class="avq-o-form__intro">

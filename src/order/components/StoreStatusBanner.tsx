@@ -95,6 +95,21 @@ export function storeStatus(info: StoreInfo, t: ReturnType<typeof createOrderT>,
   return { text, title, icon, tone }
 }
 
+/** «Nadie» y cierra en menos de 30 min (R56: en los últimos 10 el servidor ya dice CLOSED y manda «Ya no recibimos»). */
+const closesSoon = (info: StoreInfo) => {
+  const ms = info.closesAt ? new Date(info.closesAt).getTime() - Date.now() : NaN
+  return ms > 0 && ms < 30 * 60_000
+}
+
+/** «Cerramos a las HH:MM» / «Si no pasas a pagar antes, tu pedido se cancela.»: lo comparten la carta y «Tus datos». */
+export function ClosingSoonNotice() {
+  const store = useContext(OrderStoreContext)!
+  const info = store.info.value
+  if (!info || info.status !== 'OPEN' || info.requiresAcceptance !== false || !closesSoon(info)) return null
+  const t = createOrderT(store.locale)
+  return <Notice tone="warn" title={t('store.closingSoonTitle', { time: formatTime(info.closesAt!, info.venue.timezone ?? 'America/Mexico_City', store.locale) })} text={t('store.closingSoonText')} />
+}
+
 /** Aviso de por qué no se puede pedir ahora. Con la tienda abierta no pinta nada. */
 export function StoreStatusBanner() {
   const store = useContext(OrderStoreContext)!
