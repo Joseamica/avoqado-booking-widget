@@ -192,6 +192,9 @@ export interface Tracking {
   /** R67, opcionales: el nombre con que se pidió y cuándo quedó pagada la cuenta (ISO). */
   customerName?: string | null
   paidAt?: string | null
+  /** R79, opcionales (PESOS): lo ya abonado y lo que falta. Con abono la cuenta no vence (R18). */
+  amountPaid?: number
+  remaining?: number
 }
 
 export interface OrderingCustomer {

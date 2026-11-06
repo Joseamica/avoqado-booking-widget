@@ -668,6 +668,21 @@ describe('«Nadie»: pedido anónimo (sin teléfono)', () => {
     expect(loadLastOrder(store.slug)?.orderNumber).toBe('W7KQ2')
   })
 
+  it('R79 #1: el reintento recibe el folio REPETIDO (200 replay) tras pasar a «Mi equipo» ⇒ seguimiento de ESE folio, sin intento nuevo ni "needsPhone"', async () => {
+    const { store, body } = anon()
+    api.createOrder.mockRejectedValueOnce(offline())
+    await send(store, body)
+    api.getInfo.mockResolvedValue({ ...info, requiresAcceptance: true })
+    api.createOrder.mockResolvedValueOnce(created({ replay: true, orderNumber: 'W7KQ2' }))
+    const r = await retry(store)
+    expect(r?.kind).toBe('created')
+    expect(api.createOrder).toHaveBeenCalledTimes(2)
+    expect(pendingAttempt(store.slug)).toBeNull() // el intento se resolvió: no queda uno para crear otro folio
+    expect(loadLastOrder(store.slug)?.orderNumber).toBe('W7KQ2')
+    expect(store.screen.value).toBe('tracking')
+    expect(checkoutOf(store).feedback.value).not.toMatchObject({ kind: 'error' })
+  })
+
   it('401 PHONE_VERIFICATION_REQUIRED al reintento ⇒ suelta el intento y pide los datos de «Mi equipo»', async () => {
     const { store, body } = anon()
     api.createOrder.mockRejectedValueOnce(offline())

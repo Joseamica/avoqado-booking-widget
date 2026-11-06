@@ -353,4 +353,17 @@ describe('W3: el aviso del menú con un folio (volvió a abrir el QR)', () => {
     expect(screen.queryByRole('button', { name: 'Ver' })).toBeNull()
     expect(localStorage.getItem(`avq_order_last:${s.slug}`)).toBeNull()
   })
+  it('R79 #2: cancelado por el negocio sin dinero se recuerda («Se canceló…»), no dice «pagado»', async () => {
+    vi.setSystemTime(new Date('2026-10-17T19:50:00Z'))
+    vi.mocked(getTracking).mockResolvedValue(folio({ status: 'CANCELLED_BY_STAFF', canCancel: false }))
+    await open()
+    expect(screen.getByText('Tu folio W7K3P')).toBeTruthy()
+    expect(screen.getByText('Se canceló. Si ya pagaste en caja, ábrelo para ver si ya se registró.')).toBeTruthy()
+  })
+  it('R79 #4: con abono el aviso no promete que se cancela: «Ya pagaste $50 · Falta $84: págalo en caja»', async () => {
+    vi.mocked(getTracking).mockResolvedValue(folio({ amountPaid: 50, remaining: 84 }))
+    await open()
+    expect(screen.getByText('Ya pagaste $50 · Falta $84: págalo en caja')).toBeTruthy()
+    expect(document.body.textContent).not.toMatch(/antes de las/)
+  })
 })

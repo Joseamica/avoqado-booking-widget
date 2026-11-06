@@ -1126,4 +1126,63 @@ describe('W3: seguimiento del folio', () => {
     await tick(60_000)
     expect(getTracking).toHaveBeenCalledTimes(n) // sólo al entregar se detiene
   })
+
+  // ---- Codex r1 (R79) ----
+  it('#2: cancelado por el negocio sigue consultando 2 h y, si llega dinero (el servidor lo pasa a ACCEPTED), muestra «¡Pagado!»', async () => {
+    await showF(folio({ status: 'CANCELLED_BY_STAFF', canCancel: false }))
+    await tick(60 * 60_000)
+    expect(screen.getByRole('heading', { name: 'El negocio canceló tu pedido' })).toBeTruthy()
+    vi.mocked(getTracking).mockResolvedValue(folio({ status: 'ACCEPTED', paid: true, canCancel: false }))
+    await tick(10_000)
+    expect(screen.getByRole('heading', { name: '¡Pagado! Lo están preparando' })).toBeTruthy()
+    expect(screen.getByText(/^En vivo/)).toBeTruthy()
+  })
+  it('#2: cancelado por la clienta también sigue; pasadas 2 h sin dinero deja de consultar', async () => {
+    await showF(folio({ status: 'CANCELLED_BY_CUSTOMER', canCancel: false }))
+    await tick(60 * 60_000)
+    expect(vi.mocked(getTracking).mock.calls.length).toBeGreaterThan(1)
+    await tick(2 * 60 * 60_000)
+    const n = vi.mocked(getTracking).mock.calls.length
+    await tick(10 * 60_000)
+    expect(getTracking).toHaveBeenCalledTimes(n)
+  })
+  it('#4: con abono sin pagar del todo: sin cuenta regresiva ni «Se cancela solo», dice «Ya pagaste $50 · Falta $84: págalo en caja»', async () => {
+    await showF(folio({ amountPaid: 50, remaining: 84 }))
+    expect(screen.getByRole('heading', { name: 'Pasa a pagar en caja' })).toBeTruthy()
+    expect(screen.getByText('Ya pagaste $50 · Falta $84: págalo en caja')).toBeTruthy()
+    expect(document.body.textContent).not.toMatch(/Se cancela solo|Faltan \d+ min/)
+    expect(document.querySelector('.avq-o-chip')).toBeNull()
+    cleanup()
+    await showF(folio({ amountPaid: 50, remaining: 84 }), 'en')
+    expect(screen.getByText('You already paid $50 · $84 left: pay it at the counter')).toBeTruthy()
+  })
+  it('#4: sin los campos (o con abono 0) se comporta como hoy', async () => {
+    await showF(folio({ amountPaid: 0, remaining: 134 }))
+    expect(screen.getByText('Se cancela solo a las 13:30 si no pasas a pagar.')).toBeTruthy()
+    expect(screen.getByText('Faltan 30 min')).toBeTruthy()
+  })
+  it('#7: pagado el mismo día ⇒ «pagado hoy a las»; pasada la medianoche del negocio ⇒ con la fecha (en la zona del negocio)', async () => {
+    // 23:59 del 6 nov en CDMX = 05:59Z del 7. Ahora: 7 nov 13:00 CDMX.
+    vi.setSystemTime(new Date('2026-11-07T19:00:00Z'))
+    localStorage.clear()
+    const mk = (paidAt: string, locale: 'es' | 'en') => {
+      vi.mocked(getTracking).mockResolvedValue(folio({ status: 'ACCEPTED', paid: true, canCancel: false, paidAt }))
+      const st = makeStore(null, null, locale)
+      saveLastOrder(st.slug, { trackingToken: T32, orderNumber: 'W7K3P', name: 'Ana' })
+      st.trackingToken.value = T32
+      st.go('tracking')
+      render(withStore(st, <TrackingScreen />))
+    }
+    mk('2026-11-07T17:14:00Z', 'es') // 11:14 de hoy
+    await flush()
+    expect(document.querySelector('.avq-o-paid__who')!.textContent).toBe('Ana · pagado hoy a las 11:14')
+    cleanup()
+    mk('2026-11-07T05:59:00Z', 'es') // 23:59 de AYER en CDMX
+    await flush()
+    expect(document.querySelector('.avq-o-paid__who')!.textContent).toBe('Ana · pagado el 6 nov a las 23:59')
+    cleanup()
+    mk('2026-11-07T05:59:00Z', 'en')
+    await flush()
+    expect(document.querySelector('.avq-o-paid__who')!.textContent).toBe('Ana · paid on Nov 6 at 11:59 PM')
+  })
 })

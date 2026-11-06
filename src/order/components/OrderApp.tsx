@@ -12,7 +12,7 @@ import { CartScreen } from './CartScreen'
 import { DetailsScreen } from './DetailsScreen'
 import { OtpScreen } from './OtpScreen'
 import { CheckoutStatus } from './CheckoutStatus'
-import { TrackingScreen, lateWindowOpen } from './TrackingScreen'
+import { TrackingScreen, isLapsedFolio, lateWindowOpen, partialLine, partialOf } from './TrackingScreen'
 import { Notice } from './StoreStatusBanner'
 import { STORE_CSS, accentFor, loadStoreFonts } from './theme'
 import { VenueMark, logoOf } from './VenueMark'
@@ -71,7 +71,8 @@ export function OrderApp({ accentColor }: { accentColor?: string }) {
   // Un folio de «Nadie» dice cuál es y hasta qué hora; los demás pedidos, lo de siempre.
   const reminder = (r: Tracking): { title?: string; text: string } => {
     if (r.requiresAcceptance !== false || r.paymentMode === 'CARD_ONLINE') return { text: t('tracking.inProgress') }
-    if (r.status === 'EXPIRED' && !r.paid) return { title: t('tracking.folio.reminderTitle', { folio: r.orderNumber }), text: t('tracking.folio.reminderExpired') }
+    if (partialOf(r)) return { title: t('tracking.folio.reminderTitle', { folio: r.orderNumber }), text: partialLine(r, t, store.locale) }
+    if (isLapsedFolio(r) && !r.paid) return { title: t('tracking.folio.reminderTitle', { folio: r.orderNumber }), text: t('tracking.folio.reminderExpired') }
     if (r.paid || r.status !== 'PENDING_ACCEPTANCE') return { text: t('tracking.folio.reminderPaid', { folio: r.orderNumber }) }
     const tz = r.venueTimezone ?? store.info.value?.venue.timezone ?? 'America/Mexico_City'
     return { title: t('tracking.folio.reminderTitle', { folio: r.orderNumber }), text: t('tracking.folio.reminderText', { time: formatTime(r.acceptDeadlineAt, tz, store.locale) }) }
