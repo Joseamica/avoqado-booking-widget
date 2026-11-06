@@ -1211,6 +1211,37 @@ describe('«Nadie»: avisos del menú', () => {
     expect(screen.getByText(/^Ya no recibimos pedidos para pagar en caja hoy · cerramos a las \d{1,2}:\d{2}$/)).toBeTruthy()
   })
 
+  describe('W5: aviso de cierre cercano', () => {
+    const inMin = (m: number) => new Date(Date.now() + m * 60_000).toISOString()
+    it('abierta y cierra en menos de 30 min: «Cerramos a las HH:MM» y su frase, junto al aviso de caja', () => {
+      show(nadie({ closesAt: inMin(20) }))
+      expect(screen.getByText(/^Cerramos a las \d{1,2}:\d{2}$/)).toBeTruthy()
+      expect(screen.getByText('Si no pasas a pagar antes, tu pedido se cancela.')).toBeTruthy()
+      expect(screen.getByText('Paga en caja para que lo preparen')).toBeTruthy()
+    })
+    it('a 30 min o más, o sin cierre, no sale', () => {
+      show(nadie({ closesAt: inMin(31) }))
+      expect(screen.queryByText(/^Cerramos a las/)).toBeNull()
+      cleanup()
+      show(nadie({ closesAt: null }))
+      expect(screen.queryByText(/^Cerramos a las/)).toBeNull()
+    })
+    it('en los últimos 10 min manda sólo el mensaje de «ya no recibimos» (sin el aviso de cierre)', () => {
+      show(nadie({ status: 'CLOSED', reason: 'OUTSIDE_HOURS', closesAt: inMin(8) }))
+      expect(screen.getByText(/^Ya no recibimos pedidos para pagar en caja hoy/)).toBeTruthy()
+      expect(screen.queryByText(/^Cerramos a las/)).toBeNull()
+    })
+    it('«Mi equipo» no lo muestra', () => {
+      show(makeStore(infoOf({ requiresAcceptance: true, closesAt: inMin(20) }), menuOf(product())))
+      expect(screen.queryByText(/^Cerramos a las/)).toBeNull()
+    })
+    it('en inglés', () => {
+      show(makeStore(infoOf({ requiresAcceptance: false, closesAt: inMin(20) }), menuOf(product()), 'en'))
+      expect(screen.getByText(/^We close at \d{1,2}:\d{2}/)).toBeTruthy()
+      expect(screen.getByText("If you don't come to pay before then, your order is cancelled.")).toBeTruthy()
+    })
+  })
+
   it('cerrada de verdad (sin cierre futuro) conserva el texto de siempre', () => {
     show(nadie({ status: 'CLOSED', reason: 'OUTSIDE_HOURS', closesAt: null }))
     expect(screen.getByText('Cerrado ahora.')).toBeTruthy()

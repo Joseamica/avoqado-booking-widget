@@ -59,6 +59,7 @@ export function buildOrderBody(
     paymentMode: input.paymentMode ?? 'PAY_AT_PICKUP',
     expectedTotal: expectedTotalFromQuote(quote.total),
     customer: { name: input.customer.name.trim(), ...(input.customer.phone ? { phone: input.customer.phone } : {}), ...(email ? { email } : {}) },
+    channel: store.channel,
     ...(note ? { note } : {}),
   }
 }

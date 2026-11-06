@@ -65,6 +65,17 @@ beforeEach(() => {
 afterEach(() => vi.restoreAllMocks())
 
 describe('buildOrderBody', () => {
+  it('W4: con canal QR el pedido manda channel QR; sin él (la liga copiada), LINK', () => {
+    const mk = (channel?: 'QR' | 'LINK') => {
+      const store = createOrderStore(`chk${++n}`, { locale: 'es', ...(channel ? { channel } : {}) })
+      store.cart.value = [line()]
+      store.quote.value = quoteOf(170)
+      return buildOrderBody(store, { customer: { name: 'Ana' }, note: null }).channel
+    }
+    expect(mk('QR')).toBe('QR')
+    expect(mk()).toBe('LINK')
+    expect(mk('LINK')).toBe('LINK')
+  })
   it('el total que se manda es el de la cotización del servidor, con dos decimales; nombre recortado; sin correo ni nota vacíos', () => {
     const { store, body } = setup({ total: 206.5 })
     expect(body).toEqual({
@@ -72,6 +83,7 @@ describe('buildOrderBody', () => {
       paymentMode: 'PAY_AT_PICKUP',
       expectedTotal: '206.50',
       customer: { name: 'Ana López', phone: '+525544422262' },
+      channel: 'LINK',
     })
     const withAll = buildOrderBody(store, { customer: { name: 'Ana', phone: PHONE, email: ' ana@x.mx ' }, note: ' sin cebolla ' })
     expect(withAll.customer.email).toBe('ana@x.mx')
@@ -517,7 +529,7 @@ describe('fase 2: pagar con tarjeta', () => {
     const { store, body } = card()
     expect(body).toEqual({
       items: [{ productId: 'p-flauta', quantity: 2, modifiers: [{ modifierId: 'm-salsa', quantity: 1 }] }],
-      paymentMode: 'CARD_ONLINE', expectedTotal: '170.00', customer: { name: 'Ana López', phone: '+525544422262' },
+      paymentMode: 'CARD_ONLINE', expectedTotal: '170.00', customer: { name: 'Ana López', phone: '+525544422262' }, channel: 'LINK',
     })
     api.createOrder.mockResolvedValueOnce(draft())
     await send(store, body)

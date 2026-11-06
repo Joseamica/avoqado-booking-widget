@@ -55,6 +55,8 @@
     "offlineTitle": "The business is offline",
     "disabledTitle": "Online ordering is off",
     "payAtCounterChip": "You pay at the counter",
+    "closingSoonTitle": "We close at {{time}}",
+    "closingSoonText": "If you don't come to pay before then, your order is cancelled.",
     "counterNoticeTitle": "Pay at the counter so they prepare it",
     "counterNoticeText": "After ordering you have 30 min to come and pay.",
     "noDeviceChip": "Not taking orders right now",

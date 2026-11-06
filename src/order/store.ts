@@ -24,6 +24,8 @@ export interface OrderStore {
   trackingToken: Signal<string | null>
   /** Fase 2: de regreso de Stripe (`?pago=1` / `?pago=cancelado`). El seguimiento lo lee UNA vez y lo borra. */
   paymentReturn: PaymentReturn
+  /** De dónde llegó la clienta: el QR del DASHBOARD trae `?canal=qr`; la liga copiada no. Va en cada pedido. */
+  channel: 'QR' | 'LINK'
   notice: Signal<string | null>
   load(): Promise<void>
   refreshInfo(): Promise<void>
@@ -40,7 +42,7 @@ const asApiError = (e: unknown) => (e instanceof ApiError ? e : new ApiError(Str
 
 export function createOrderStore(
   slug: string,
-  opts: { locale: 'es' | 'en'; trackingToken?: string | null; host?: EventTarget; paymentReturn?: PaymentReturn },
+  opts: { locale: 'es' | 'en'; trackingToken?: string | null; host?: EventTarget; paymentReturn?: PaymentReturn; channel?: 'QR' | 'LINK' },
 ): OrderStore {
   const trackingToken = signal<string | null>(opts.trackingToken ?? null)
   const info = signal<StoreInfo | null>(null)
@@ -85,6 +87,7 @@ export function createOrderStore(
     productId: signal<string | null>(null),
     trackingToken,
     paymentReturn: opts.paymentReturn ?? null,
+    channel: opts.channel ?? 'LINK',
     notice: signal<string | null>(null),
     go: s => {
       screen.value = s

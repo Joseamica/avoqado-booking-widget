@@ -718,6 +718,8 @@
             } catch (err) { /* sin historial: recargar sólo vuelve a avisar; el servidor nunca cancela un pedido */ }
           }
         }
+        // El QR del panel trae `?canal=qr`; la liga copiada no. La barra conserva el `?` al crear el pedido, así recargar no lo pierde.
+        if (orderParams.get('canal') === 'qr') orderEl.setAttribute('channel', 'qr')
         if (orderParams.get('locale')) orderEl.setAttribute('locale', orderParams.get('locale'))
         // Cuando llega `/info`, el título lleva el nombre real del restaurante (el del slug es sólo un adelanto).
         orderEl.addEventListener('avoqado:tienda-cargada', function (e) {

@@ -88,6 +88,15 @@ describe('<avoqado-order>', () => {
     expect(text(b)).not.toContain('Ver pedido')
   })
 
+  it('W4: el atributo channel="qr" llega a la tienda y se queda al navegar; sin él, LINK', async () => {
+    const qr = await mount({ venue: 'a', channel: 'qr' })
+    const link = await mount({ venue: 'b' })
+    expect(storeOf(qr).channel).toBe('QR')
+    expect(storeOf(link).channel).toBe('LINK')
+    await act(async () => { storeOf(qr).go('cart'); storeOf(qr).go('details') })
+    expect(storeOf(qr).channel).toBe('QR')
+  })
+
   it('tracking="<token>" abre el seguimiento sin pedir /menu', async () => {
     const el = await mount({ venue: 'a', tracking: 'T'.repeat(32) })
     expect(getMenu).not.toHaveBeenCalled()
