@@ -1211,4 +1211,16 @@ describe('W3: seguimiento del folio', () => {
     await tick(60_000)
     expect(getTracking).toHaveBeenCalledTimes(m)
   })
+  it('R85 #4: un EXPIRED pagado recibido a las 23 h, y luego lecturas que fallan hasta pasar las 24 h ⇒ ya no se agenda ninguna', async () => {
+    await showF(folio({ status: 'EXPIRED', paid: true, canCancel: false })) // llega con la hora límite 13:30
+    vi.setSystemTime(new Date('2026-10-18T12:30:00Z')) // 23 h después de la hora límite
+    await tick(10_000)
+    vi.mocked(getTracking).mockRejectedValue(new ApiError('Sin conexión', 0, undefined, undefined, true))
+    await tick(10_000)
+    vi.setSystemTime(new Date('2026-10-18T20:00:00Z')) // > 24 h, sin una sola respuesta buena desde entonces
+    await tick(10_000)
+    const n = vi.mocked(getTracking).mock.calls.length
+    await tick(120_000)
+    expect(getTracking).toHaveBeenCalledTimes(n)
+  })
 })

@@ -8,7 +8,7 @@ vi.mock('../api', async () => {
   const actual = await vi.importActual<typeof import('../api')>('../api')
   return { ...actual, quote: vi.fn(), getInfo: vi.fn(), getMenu: vi.fn(), getTracking: vi.fn(), requestOrderingOtp: vi.fn() }
 })
-import { getTracking, quote, requestOrderingOtp } from '../api'
+import { ApiError, getTracking, quote, requestOrderingOtp } from '../api'
 import { checkoutOf } from '../checkout'
 import type { OrderStore, Screen } from '../store'
 import type { Tracking } from '../types'
@@ -416,5 +416,21 @@ describe('W3: el aviso del menú con un folio (volvió a abrir el QR)', () => {
     await act(async () => { slow(folio()) }) // llega tarde con el estado viejo
     await flush()
     expect(screen.getByText('Tu pedido W7K3P está pagado')).toBeTruthy()
+  })
+  it('R85 #4: el aviso de un EXPIRED pagado se borra al pasar las 24 h aunque las lecturas fallen', async () => {
+    vi.setSystemTime(new Date('2026-10-18T12:30:00Z')) // 23 h después de la hora límite (19:42Z)... aún dentro
+    vi.mocked(getTracking).mockResolvedValue(folio({ status: 'EXPIRED', paid: true, canCancel: false, acceptDeadlineAt: '2026-10-17T19:42:00Z' }))
+    const s = await open()
+    expect(screen.getByText('Tu pedido W7K3P está pagado')).toBeTruthy()
+    vi.mocked(getTracking).mockRejectedValue(new ApiError('Sin conexión', 0, undefined, undefined, true))
+    await act(async () => { await vi.advanceTimersByTimeAsync(30_000) })
+    expect(screen.getByText('Tu pedido W7K3P está pagado')).toBeTruthy() // la red falla pero aún no vence
+    vi.setSystemTime(new Date('2026-10-18T20:00:00Z'))
+    await act(async () => { await vi.advanceTimersByTimeAsync(30_000) })
+    expect(screen.queryByRole('button', { name: 'Ver' })).toBeNull()
+    expect(localStorage.getItem(`avq_order_last:${s.slug}`)).toBeNull()
+    const n = vi.mocked(getTracking).mock.calls.length
+    await act(async () => { await vi.advanceTimersByTimeAsync(120_000) })
+    expect(getTracking).toHaveBeenCalledTimes(n)
   })
 })

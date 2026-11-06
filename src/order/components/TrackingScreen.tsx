@@ -112,7 +112,9 @@ export function TrackingScreen() {
     let timer: ReturnType<typeof setTimeout> | null = null
     // Un solo temporizador: si ya hay uno agendado, se respeta.
     const later = () => { if (!stopped && !finished && !cancelling && !timer) timer = setTimeout(() => void run(), POLL_MS) }
+    let lastValid: Tracking | null = null // la última respuesta buena: con ella se vigila el tope aunque las lecturas fallen
     const apply = (r: Tracking) => {
+      lastValid = r
       setTracking(r)
       setProblem(null)
       if (done(r)) finished = true
@@ -126,6 +128,8 @@ export function TrackingScreen() {
       if (timer) clearTimeout(timer)
       timer = null
       if (stopped || finished || cancelling || document.visibilityState !== 'visible') return
+      // El tope de 24 h se evalúa ANTES de cada lectura, con la última respuesta buena: sin red o con 5xx nunca llegaría otra.
+      if (lastValid && done(lastValid)) { finished = true; return }
       // Una consulta vieja sigue en camino (salió antes de un abandono, o la red va lenta): se intenta en el siguiente tick, nunca se
       // deja el sondeo parado (fix ronda 2).
       if (inflight) return later()
