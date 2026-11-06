@@ -169,11 +169,14 @@ export function CartScreen() {
         })}
       </ul>
       <button ref={addMore} type="button" class="avq-o-btn avq-o-btn--quiet avq-o-more" onClick={() => store.go('menu')}><Plus />{t('cart.addMore')}</button>
-      <div class="avq-o-cart__note">
-        <label for={noteId}>{t('cart.note')}</label>
-        <textarea id={noteId} class="avq-o-input" rows={2} maxLength={300} value={draft.value.note}
-          onInput={(e: any) => { draft.value = { ...draft.value, note: e.currentTarget.value } }} />
-      </div>
+      {/* En «Nadie» la nota se escribe en «Tus datos» (una sola vez). */}
+      {store.info.value?.requiresAcceptance !== false && (
+        <div class="avq-o-cart__note">
+          <label for={noteId}>{t('cart.note')}</label>
+          <textarea id={noteId} class="avq-o-input" rows={2} maxLength={300} value={draft.value.note}
+            onInput={(e: any) => { draft.value = { ...draft.value, note: e.currentTarget.value } }} />
+        </div>
+      )}
       {q?.issues.filter(x => x.lineIndex === undefined).map((x, j) => <p key={j} role="alert" class="avq-o-issue">{issueText(t, x, q, store.menu.value, store.locale)}</p>)}
       {error && (
         <Notice tone={error.offline ? 'warn' : 'error'} icon={error.offline ? 'cloudOff' : 'alert'} text={error.text}

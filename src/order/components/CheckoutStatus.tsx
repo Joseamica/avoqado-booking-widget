@@ -26,7 +26,7 @@ export function CheckoutStatus() {
     // Por el texto (es lo único que trae): el envío sin red llega con `common.offline` (`errorText`), y «el precio cambió; revisa tu
     // pedido» (checkout.ts, un intento viejo con otro carrito) tampoco es un fallo. Los dos van en ámbar; lo demás, en rojo.
     const offline = f.message === t('common.offline')
-    const warn = offline || f.message === t('checkout.priceChangedReview')
+    const warn = offline || f.message === t('checkout.priceChangedReview') || f.message === t('checkout.needsPhone')
     return (
       <Notice role="alert" tone={warn ? 'warn' : 'error'} icon={offline ? 'cloudOff' : warn ? undefined : 'alert'} text={f.message}
         action={f.retryable ? { label: t('common.retry'), onClick: () => void retry(store) } : undefined} />

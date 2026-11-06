@@ -53,7 +53,14 @@
     "pausedTitle": "Pedidos en pausa",
     "closedTitle": "Cerrado ahora",
     "offlineTitle": "El negocio no está conectado",
-    "disabledTitle": "Pedidos en línea apagados"
+    "disabledTitle": "Pedidos en línea apagados",
+    "payAtCounterChip": "Pagas en caja",
+    "counterNoticeTitle": "Paga en caja para que lo preparen",
+    "counterNoticeText": "Después de pedir tienes 30 min para pasar a pagar.",
+    "noDeviceChip": "No está recibiendo pedidos ahora",
+    "noDeviceTitle": "Pide directo en caja",
+    "noDeviceText": "Puedes ver el menú, pero ahorita no se puede pedir por aquí.",
+    "lastOrder": "Ya no recibimos pedidos para pagar en caja hoy · cerramos a las {{time}}"
   },
   "menu": {
     "empty": "Todavía no hay productos en línea.",
@@ -142,7 +149,13 @@
     "payHow": "¿Cómo quieres pagar?",
     "payCard": "Pagar ahora con tarjeta",
     "payPickup": "Pagar al recoger",
-    "payCardNote": "Pagas ahora con tarjeta."
+    "payCardNote": "Pagas ahora con tarjeta.",
+    "helperNadie": "Con tu nombre te encuentran en caja y te entregan tu pedido.",
+    "note": "Nota para el negocio (opcional)",
+    "notePlaceholder": "Ej. sin azúcar",
+    "privacyNadie": "Al pedir aceptas el aviso de privacidad de {{venue}}.",
+    "confirmNadie": "Pedir",
+    "payAtCounter": "Pagas en caja: tarjeta o efectivo."
   },
   "otp": {
     "title": "Escribe tu código",
@@ -168,7 +181,10 @@
     "cardNotAccepted": "Este negocio ya no acepta tarjeta en línea. Elige pagar al recoger.",
     "cardNotAcceptedOnly": "Este negocio ya no acepta tarjeta en línea.",
     "cardAmountOutOfRange": "El total no se puede pagar con tarjeta en línea (mínimo $10, máximo $50,000).",
-    "cardProviderUnavailable": "No pudimos abrir el pago. Intenta de nuevo."
+    "cardProviderUnavailable": "No pudimos abrir el pago. Intenta de nuevo.",
+    "tooManyUnpaid": "Hay muchos pedidos esperando pago. Pide directo en caja.",
+    "zeroTotal": "Tu pedido no tiene costo: pídelo directo en caja.",
+    "needsPhone": "Este negocio cambió cómo recibe pedidos. Escribe tu WhatsApp para pedir."
   },
   "tracking": {
     "head": {

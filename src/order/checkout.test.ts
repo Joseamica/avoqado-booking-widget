@@ -613,3 +613,77 @@ describe('fase 2: pagar con tarjeta', () => {
     expect(sent(1).key).toBe(sent(0).key)
   })
 })
+
+describe('«Nadie»: pedido anónimo (sin teléfono)', () => {
+  const anon = () => {
+    const { store } = setup({ sessionPhone: null })
+    store.info.value = { ...info, requiresAcceptance: false } as StoreInfo
+    const body = buildOrderBody(store, { customer: { name: ' Ana ' }, note: null })
+    return { store, body }
+  }
+
+  it('el cuerpo no lleva teléfono, y se manda sin sesión ni token ni pasar por el código', async () => {
+    const { store, body } = anon()
+    expect(body.customer).toEqual({ name: 'Ana' })
+    api.createOrder.mockResolvedValueOnce(created())
+    expect((await submitOrder(store, body)).kind).toBe('created')
+    expect(sent().body.customer).toEqual({ name: 'Ana' })
+    expect(sent().token).toBeUndefined()
+  })
+
+  it('reintento anónimo: el negocio cambió a «Mi equipo» y la clienta recargó ⇒ MISMO cuerpo y MISMA llave, sin pedir código, y recibe SU folio', async () => {
+    const { store, body } = anon()
+    api.createOrder.mockRejectedValueOnce(offline())
+    await send(store, body)
+    const first = sent(0)
+    expect(pendingAttempt(store.slug)).not.toBeNull()
+    // Recarga: tienda nueva con el mismo slug, y /info ya dice «Mi equipo».
+    vi.resetModules()
+    const again = await import('./checkout')
+    const { createOrderStore: mk } = await import('./store')
+    const reloaded = mk(store.slug, { locale: 'es' })
+    reloaded.cart.value = [line()]
+    reloaded.quote.value = quoteOf(170)
+    reloaded.info.value = { ...info, requiresAcceptance: true } as StoreInfo
+    api.createOrder.mockResolvedValueOnce(created({ replay: true, orderNumber: 'W7KQ2' }))
+    const r = await again.retry(reloaded)
+    expect(r?.kind).toBe('created')
+    expect(api.createOrder).toHaveBeenCalledTimes(2)
+    expect(sent(1).body).toEqual(first.body)
+    expect(sent(1).key).toBe(first.key)
+    expect(sent(1).token).toBeUndefined()
+    expect(reloaded.screen.value).toBe('tracking')
+    expect(loadLastOrder(store.slug)?.orderNumber).toBe('W7KQ2')
+  })
+
+  it('401 PHONE_VERIFICATION_REQUIRED al reintento ⇒ suelta el intento y pide los datos de «Mi equipo»', async () => {
+    const { store, body } = anon()
+    api.createOrder.mockRejectedValueOnce(offline())
+    await send(store, body)
+    api.getInfo.mockResolvedValue({ ...info, requiresAcceptance: true })
+    api.createOrder.mockRejectedValueOnce(new ApiError('x', 401, 'PHONE_VERIFICATION_REQUIRED'))
+    const r = await retry(store)
+    expect(r?.kind).toBe('needsPhone')
+    expect(pendingAttempt(store.slug)).toBeNull()
+    expect(checkoutOf(store).pending.value).toBe(false)
+    expect(store.screen.value).toBe('details')
+    expect(store.info.value?.requiresAcceptance).toBe(true)
+    expect(checkoutOf(store).feedback.value).toEqual({ kind: 'error', message: expect.stringContaining('WhatsApp'), retryable: false })
+  })
+
+  it.each([
+    ['TOO_MANY_UNPAID_FOLIOS', 409, 'Hay muchos pedidos esperando pago. Pide directo en caja.'],
+    ['ZERO_TOTAL', 400, 'Tu pedido no tiene costo: pídelo directo en caja.'],
+  ])('%s ⇒ su texto, sin «Reintentar», y el intento se borra', async (code, status, text) => {
+    const { store, body } = anon()
+    api.createOrder.mockRejectedValueOnce(new ApiError('texto del servidor', status, code))
+    expect(await submitOrder(store, body)).toEqual({ kind: 'error', message: text, retryable: false })
+    expect(pendingAttempt(store.slug)).toBeNull()
+  })
+
+  it('409 ORDERING_OFFLINE con NO_DEVICE ⇒ tienda no disponible con su motivo', async () => {
+    const { store, body } = anon()
+    api.createOrder.mockRejectedValueOnce(new ApiError('x', 409, 'ORDERING_OFFLINE', { status: 'OFFLINE', reason: 'NO_DEVICE' }))
+    expect(await submitOrder(store, body)).toEqual({ kind: 'storeUnavailable', status: 'OFFLINE', reason: 'NO_DEVICE' })
+  })
+})

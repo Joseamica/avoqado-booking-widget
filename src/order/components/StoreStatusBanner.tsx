@@ -55,7 +55,12 @@ export function storeStatus(info: StoreInfo, t: ReturnType<typeof createOrderT>,
   let title: string | undefined
   let icon: NoticeIcon = 'clock'
   let tone: 'neutral' | 'warn' = 'warn'
-  if (info.status === 'CLOSED') {
+  const nadie = info.requiresAcceptance === false
+  // Último pedido para pagar en caja: la tienda de «Nadie» cierra los pedidos 10 min antes que la caja (el servidor ya dice `CLOSED`).
+  const lastOrderAt = nadie && info.status === 'CLOSED' && info.closesAt && new Date(info.closesAt).getTime() > Date.now() ? info.closesAt : null
+  if (lastOrderAt) {
+    text = t('store.lastOrder', { time: formatTime(lastOrderAt, tz, locale) })
+  } else if (info.status === 'CLOSED') {
     const ranges = todayRanges(info.hours, new Date(), tz)
     const label = (r: { open: string; close: string; overnight: boolean }) =>
       // «02:00» se dice «2:00» en la hora de cierre del día siguiente.
@@ -78,6 +83,11 @@ export function storeStatus(info: StoreInfo, t: ReturnType<typeof createOrderT>,
     title = t('store.disabledTitle')
     icon = 'lock'
     tone = 'neutral' // no es una pausa: el restaurante no vende en línea
+  } else if (nadie) {
+    // «Nadie» sin ningún aparato que cobre folios: se puede ver el menú, pero no pedir por aquí.
+    text = t('store.noDeviceText')
+    title = t('store.noDeviceTitle')
+    icon = 'cloudOff'
   } else {
     text = t('store.offline')
     icon = 'cloudOff'

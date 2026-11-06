@@ -420,3 +420,63 @@ describe('fase 2: cómo pagar', () => {
     expect(screen.getByText('You pay now by card.')).toBeTruthy()
   })
 })
+
+describe('«Nadie»: Tus datos (tienda híbrida, etapa 1)', () => {
+  const nadie = (over: Parameters<typeof infoOf>[0] = {}) => show({ requiresAcceptance: false, ...over })
+  const pedir = () => screen.getByRole('button', { name: /^Pedir/ }) as HTMLButtonElement
+
+  it('sólo pide nombre y nota, con «Al pedir aceptas el aviso de privacidad de <negocio>» y sin casilla, WhatsApp ni correo', () => {
+    nadie({ paymentModes: { payAtPickup: true, cardOnline: true } })
+    expect(screen.getByText('Con tu nombre te encuentran en caja y te entregan tu pedido.')).toBeTruthy()
+    expect(screen.getByLabelText('Nombre')).toBeTruthy()
+    expect(screen.getByLabelText('Nota para el negocio (opcional)')).toBeTruthy()
+    expect(screen.getByText('Al pedir aceptas el aviso de privacidad de Flautas.')).toBeTruthy()
+    expect(screen.getByRole('link', { name: 'Aviso de privacidad' })).toBeTruthy()
+    expect(screen.queryByLabelText('WhatsApp')).toBeNull()
+    expect(screen.queryByLabelText('Correo (opcional)')).toBeNull()
+    expect(screen.queryByRole('checkbox')).toBeNull()
+    // Sin medio de pago que elegir, aunque el negocio acepte tarjeta en línea.
+    expect(screen.queryByRole('radiogroup')).toBeNull()
+    expect(screen.getByText('Pagas en caja: tarjeta o efectivo.')).toBeTruthy()
+    expect(pedir().textContent).toContain('$170')
+  })
+
+  it('sin nombre dice «Escribe tu nombre (de 2 a 80 caracteres).» y no deja pedir', () => {
+    nadie()
+    expect(screen.getByText('Escribe tu nombre (de 2 a 80 caracteres).')).toBeTruthy()
+    expect(pedir().disabled).toBe(true)
+  })
+
+  it('manda el pedido sin teléfono ni token y sin pasar por el código', async () => {
+    const s = nadie()
+    vi.mocked(createOrder).mockReturnValue(new Promise(() => {}))
+    fireEvent.input(screen.getByLabelText('Nombre'), { target: { value: ' Ana ' } })
+    fireEvent.input(screen.getByLabelText('Nota para el negocio (opcional)'), { target: { value: 'sin azúcar' } })
+    await pastGuard()
+    fireEvent.click(pedir())
+    await flush()
+    expect(s.screen.value).toBe('details')
+    expect(createOrder).toHaveBeenCalledTimes(1)
+    const [, body, opts] = vi.mocked(createOrder).mock.calls[0]
+    expect(body.paymentMode).toBe('PAY_AT_PICKUP')
+    expect(body.customer).toEqual({ name: 'Ana' })
+    expect(body.note).toBe('sin azúcar')
+    expect(opts.token).toBeUndefined()
+  })
+
+  it('«Mi equipo» (requiresAcceptance true o un servidor viejo) sigue pidiendo WhatsApp y la casilla', () => {
+    show({ requiresAcceptance: true })
+    expect(screen.getByLabelText('WhatsApp')).toBeTruthy()
+    expect(screen.getByLabelText('Acepto el aviso de privacidad')).toBeTruthy()
+    expect(screen.getByRole('button', { name: /Confirmar pedido/ })).toBeTruthy()
+  })
+
+  it('en inglés', () => {
+    const s = makeStore(infoOf({ requiresAcceptance: false }), menuOf(), 'en')
+    s.quote.value = { ok: true, lines: [], subtotal: 170, total: 170, minOrderAmount: 0, issues: [] }
+    render(withStore(s, <DetailsScreen />))
+    expect(screen.getByLabelText('Note for the business (optional)')).toBeTruthy()
+    expect(screen.getByText('You pay at the counter: card or cash.')).toBeTruthy()
+    expect(screen.getByRole('button', { name: /^Order/ })).toBeTruthy()
+  })
+})

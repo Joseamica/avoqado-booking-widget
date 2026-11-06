@@ -83,10 +83,13 @@ export function OrderApp({ accentColor }: { accentColor?: string }) {
   // «Abierto hasta las 22:00» (el cierre de la franja de ahora); sin horario, o fuera de toda franja, «Abierto» a secas. Con la
   // tienda no abierta no hay chips: el aviso de abajo (pausa, cerrado…) ocupa su lugar.
   const chips = () => {
+    // «Nadie» sin aparato que cobre folios: sólo el chip que lo dice (el aviso de abajo explica qué hacer).
+    if (info?.status === 'OFFLINE' && info.requiresAcceptance === false)
+      return <div class="avq-o-chips"><span class="avq-o-chip">{t('store.noDeviceChip')}</span></div>
     if (info?.status !== 'OPEN') return null
     const until = closesAt(info.hours, new Date(), info.venue.timezone ?? 'America/Mexico_City')
     const { payAtPickup, cardOnline } = info.paymentModes ?? {}
-    const payChip = cardOnline ? (payAtPickup ? 'store.cardOrPickupChip' : 'store.cardChip') : payAtPickup ? 'store.payAtPickupChip' : null
+    const payChip = info.requiresAcceptance === false ? 'store.payAtCounterChip' : cardOnline ? (payAtPickup ? 'store.cardOrPickupChip' : 'store.cardChip') : payAtPickup ? 'store.payAtPickupChip' : null
     return (
       <div class="avq-o-chips">
         <span class="avq-o-chip avq-o-chip--ok">

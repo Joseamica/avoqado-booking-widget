@@ -1176,3 +1176,43 @@ describe('ficha de producto: foco y desplazamiento al abrir y al cerrar (spec §
     expect(scrollIntoView).not.toHaveBeenCalled()
   })
 })
+
+describe('«Nadie»: avisos del menú', () => {
+  const nadie = (over: Partial<StoreInfo> = {}) => makeStore(infoOf({ requiresAcceptance: false, ...over }), menuOf(product()))
+
+  it('abierta: «Paga en caja para que lo preparen» con los 30 min; en «Mi equipo» no sale', () => {
+    show(nadie())
+    expect(screen.getByText('Paga en caja para que lo preparen')).toBeTruthy()
+    expect(screen.getByText('Después de pedir tienes 30 min para pasar a pagar.')).toBeTruthy()
+    cleanup()
+    show(makeStore(infoOf({ requiresAcceptance: true }), menuOf(product())))
+    expect(screen.queryByText('Paga en caja para que lo preparen')).toBeNull()
+  })
+
+  it('el chip dice «Pagas en caja» en lugar del de pagar al recoger o tarjeta', () => {
+    const s = nadie({ paymentModes: { payAtPickup: true, cardOnline: true } })
+    render(withStore(s, <OrderApp />))
+    expect(screen.getByText('Pagas en caja')).toBeTruthy()
+    expect(screen.queryByText('Tarjeta o al recoger')).toBeNull()
+  })
+
+  it('sin aparato que cobre folios: chip «No está recibiendo pedidos ahora», «Pide directo en caja» y se puede ver el menú', () => {
+    const s = nadie({ status: 'OFFLINE', reason: 'NO_DEVICE' })
+    render(withStore(s, <OrderApp />))
+    expect(screen.getByText('No está recibiendo pedidos ahora')).toBeTruthy()
+    expect(screen.getByText('Pide directo en caja')).toBeTruthy()
+    expect(screen.getByText('Puedes ver el menú, pero ahorita no se puede pedir por aquí.')).toBeTruthy()
+    expect(screen.getByText('Flautas de pollo')).toBeTruthy()
+  })
+
+  it('último pedido (cerrada por R56 pero con cierre futuro) dice a qué hora cierran', () => {
+    const closesAt = new Date(Date.now() + 5 * 60_000).toISOString()
+    show(nadie({ status: 'CLOSED', reason: 'OUTSIDE_HOURS', closesAt }))
+    expect(screen.getByText(/^Ya no recibimos pedidos para pagar en caja hoy · cerramos a las \d{1,2}:\d{2}$/)).toBeTruthy()
+  })
+
+  it('cerrada de verdad (sin cierre futuro) conserva el texto de siempre', () => {
+    show(nadie({ status: 'CLOSED', reason: 'OUTSIDE_HOURS', closesAt: null }))
+    expect(screen.getByText('Cerrado ahora.')).toBeTruthy()
+  })
+})

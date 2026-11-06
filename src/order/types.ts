@@ -31,6 +31,13 @@ export interface StoreInfo {
   contact?: VenueContact
   /** Relativa al API público (`/venues/<venueId>/privacy-notice`): se le antepone `API_BASE`. */
   privacyNoticePath?: string
+  /**
+   * Tienda híbrida (etapa 1), aditivo: `false` = «Nadie» (nadie confirma; se pide con el nombre y se paga en caja con un folio).
+   * Falta en un servidor viejo: se lee como «Mi equipo» (`!== false`).
+   */
+  requiresAcceptance?: boolean
+  /** ISO del cierre de la franja de ahora (el último pedido para pagar en caja es 10 min antes); `null` sin horario. Aditivo. */
+  closesAt?: string | null
 }
 
 export interface MenuModifier { id: string; name: string; price: number }
@@ -104,9 +111,12 @@ export interface CreateOrderBody {
   paymentMode: PaymentMode
   /** El `total` de la última cotización con dos decimales: «206.00». */
   expectedTotal: string
-  customer: { name: string; phone: string; email?: string }
+  /** `phone` falta en «Nadie» (sólo el nombre); con tarjeta en línea o en «Mi equipo» sigue siendo obligatorio. */
+  customer: { name: string; phone?: string; email?: string }
   note?: string
   whatsappConsent?: boolean
+  /** De dónde pidió la clienta (el QR del negocio o una liga); aditivo, lo llena la tarea de la liga. */
+  channel?: 'QR' | 'LINK'
 }
 
 export type OnlineOrderStatus =
@@ -172,6 +182,9 @@ export interface Tracking {
   canCancel: boolean
   venueTimezone?: string
   venueContact?: VenueContact
+  /** Tienda híbrida (etapa 1), aditivos: un folio de «Nadie» tiene `requiresAcceptance: false`. */
+  requiresAcceptance?: boolean
+  channel?: 'QR' | 'LINK' | null
 }
 
 export interface OrderingCustomer {

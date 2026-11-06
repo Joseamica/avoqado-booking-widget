@@ -303,6 +303,7 @@ textarea.avq-o-input{min-height:0;padding:12px 14px;resize:none}
 .avq-o-confirm{display:flex;flex-direction:column;gap:10px}
 .avq-o-confirm .avq-o-notice,.avq-o-otp__code .avq-o-notice{margin:0}
 .avq-o-confirm__sum{display:flex;justify-content:space-between;gap:12px;margin:0;color:${T.text2};font-size:14px}
+.avq-o-confirm__pay{margin:0;color:${T.text2};font-size:14px;font-weight:600}
 .avq-o-confirm__msg{margin:0;color:${T.text2};font-size:14px;font-weight:600;overflow-wrap:anywhere}
 .avq-o-otp{padding-bottom:24px}
 .avq-o-otp__back{margin:12px 8px 0;gap:4px}

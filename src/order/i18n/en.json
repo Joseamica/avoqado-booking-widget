@@ -53,7 +53,14 @@
     "pausedTitle": "Orders paused",
     "closedTitle": "Closed now",
     "offlineTitle": "The business is offline",
-    "disabledTitle": "Online ordering is off"
+    "disabledTitle": "Online ordering is off",
+    "payAtCounterChip": "You pay at the counter",
+    "counterNoticeTitle": "Pay at the counter so they prepare it",
+    "counterNoticeText": "After ordering you have 30 min to come and pay.",
+    "noDeviceChip": "Not taking orders right now",
+    "noDeviceTitle": "Order directly at the counter",
+    "noDeviceText": "You can browse the menu, but ordering from here is not available right now.",
+    "lastOrder": "We are no longer taking orders to pay at the counter today · we close at {{time}}"
   },
   "menu": {
     "empty": "There are no online products yet.",
@@ -142,7 +149,13 @@
     "payHow": "How do you want to pay?",
     "payCard": "Pay now by card",
     "payPickup": "Pay at pickup",
-    "payCardNote": "You pay now by card."
+    "payCardNote": "You pay now by card.",
+    "helperNadie": "With your name they find you at the counter and hand you your order.",
+    "note": "Note for the business (optional)",
+    "notePlaceholder": "E.g. no sugar",
+    "privacyNadie": "By ordering you accept the privacy notice of {{venue}}.",
+    "confirmNadie": "Order",
+    "payAtCounter": "You pay at the counter: card or cash."
   },
   "otp": {
     "title": "Enter your code",
@@ -168,7 +181,10 @@
     "cardNotAccepted": "This business no longer takes cards online. Choose to pay at pickup.",
     "cardNotAcceptedOnly": "This business no longer takes cards online.",
     "cardAmountOutOfRange": "This total can't be paid by card online (minimum $10, maximum $50,000).",
-    "cardProviderUnavailable": "We couldn't open the payment. Try again."
+    "cardProviderUnavailable": "We couldn't open the payment. Try again.",
+    "tooManyUnpaid": "There are many orders waiting for payment. Order directly at the counter.",
+    "zeroTotal": "Your order has no cost: ask for it directly at the counter.",
+    "needsPhone": "This business changed how it takes orders. Enter your WhatsApp to order."
   },
   "tracking": {
     "head": {

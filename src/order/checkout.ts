@@ -2,6 +2,9 @@
 // - Un intento = una llave. Si hay un intento pendiente se manda ESE cuerpo con ESA llave (beginAttempt lo devuelve).
 // - Sólo una respuesta DEFINITIVA lo borra; red, 5xx, 408, 429, 401 y un 404 sin la marca `final` lo conservan y se reintenta igual.
 // - El teléfono que se verifica es el del cuerpo que se va a mandar (el del intento pendiente, si lo hay).
+// - «Nadie» (tienda híbrida): el pedido va sin teléfono, sin sesión y sin token; no pasa por el código. Un intento pendiente sin
+//   teléfono se reenvía tal cual (mismo cuerpo, misma llave) aunque el negocio ya sea «Mi equipo»; sólo un 401 PHONE_VERIFICATION_REQUIRED
+//   (nunca llegó a crearse) lo suelta y pide los datos de «Mi equipo».
 // - Fase 2: pagar con tarjeta no pide el código ni manda token; el pago en Stripe es la prueba. El modo es el del cuerpo que se manda.
 import { signal, type Signal } from '@preact/signals'
 import { ApiError, createOrder, verifyOrderingOtp } from './api'
@@ -17,6 +20,8 @@ import type { CreateOrderBody, CreatedCardOrder, CreatedOrder, PaymentMode, Quot
 export type SubmitResult =
   | { kind: 'created'; order: CreatedOrder | CreatedCardOrder }
   | { kind: 'needsOtp' }
+  /** El servidor exige teléfono verificado a un pedido anónimo (el negocio pasó a «Mi equipo»): el intento ya se soltó. */
+  | { kind: 'needsPhone' }
   /** `body` = el cuerpo enviado con el total nuevo: se manda (con OTRA llave) sólo si la persona confirma. */
   | { kind: 'priceChanged'; quote: Quote; body: CreateOrderBody }
   | { kind: 'cartInvalid'; issues: QuoteIssue[] }
@@ -43,7 +48,7 @@ export function errorText(t: T, e: unknown): string {
 
 export function buildOrderBody(
   store: OrderStore,
-  input: { customer: { name: string; phone: string; email?: string }; note: string | null; paymentMode?: PaymentMode },
+  input: { customer: { name: string; phone?: string; email?: string }; note: string | null; paymentMode?: PaymentMode },
 ): CreateOrderBody {
   const quote = store.quote.value
   if (!quote) throw new Error('buildOrderBody sin cotización')
@@ -53,7 +58,7 @@ export function buildOrderBody(
     items: toQuoteItems(store.cart.value),
     paymentMode: input.paymentMode ?? 'PAY_AT_PICKUP',
     expectedTotal: expectedTotalFromQuote(quote.total),
-    customer: { name: input.customer.name.trim(), phone: input.customer.phone, ...(email ? { email } : {}) },
+    customer: { name: input.customer.name.trim(), ...(input.customer.phone ? { phone: input.customer.phone } : {}), ...(email ? { email } : {}) },
     ...(note ? { note } : {}),
   }
 }
@@ -152,14 +157,16 @@ async function doSubmit(store: OrderStore, body: CreateOrderBody): Promise<Submi
   const session = loadSession(slug)
   const card = (pending?.body ?? body).paymentMode === 'CARD_ONLINE'
   const phone = (pending?.body ?? body).customer.phone
+  // Sin teléfono (el pedido de «Nadie») no hay nada que verificar: ni código, ni sesión, ni token.
+  const anon = !card && !phone
   // El mismo texto que se verificó cuenta siempre (samePhone pide 10 dígitos y no reconoce números más cortos).
-  if (!card && (!session || (session.phone !== phone && !samePhone(session.phone, phone)))) return { kind: 'needsOtp' }
+  if (!card && phone && (!session || (session.phone !== phone && !samePhone(session.phone, phone)))) return { kind: 'needsOtp' }
   const attempt = pending ?? beginAttempt(slug, body)
   if (!attempt) return { kind: 'error', message: t('checkout.noStorage'), retryable: false }
 
   let order: CreatedOrder | CreatedCardOrder
   try {
-    order = await createOrder(slug, attempt.body, { idempotencyKey: attempt.key, token: card ? undefined : session?.token })
+    order = await createOrder(slug, attempt.body, { idempotencyKey: attempt.key, token: card || anon ? undefined : session?.token })
     if (typeof order?.trackingToken !== 'string') throw new Error('respuesta sin pedido')
   } catch (e) {
     if (!(e instanceof ApiError) || !isDefinitive(e)) {
@@ -168,7 +175,12 @@ async function doSubmit(store: OrderStore, body: CreateOrderBody): Promise<Submi
       // hasta que se cierre la pestaña (sessionStorage); sólo una respuesta definitiva lo borra.
       if (e instanceof ApiError && e.code === 'CUSTOMER_INACTIVE')
         return { kind: 'error', message: t('checkout.inactive'), retryable: false }
-      if (e instanceof ApiError && e.status === 401 && !card) {
+      if (e instanceof ApiError && e.status === 401 && e.code === 'PHONE_VERIFICATION_REQUIRED' && anon) {
+        // Nunca llegó a crearse: se suelta el intento y la persona da los datos de «Mi equipo».
+        settleAttempt(slug)
+        return { kind: 'needsPhone' }
+      }
+      if (e instanceof ApiError && e.status === 401 && !card && !anon) {
         clearSession(slug)
         return { kind: 'needsOtp' }
       }
@@ -196,6 +208,8 @@ async function doSubmit(store: OrderStore, body: CreateOrderBody): Promise<Submi
       }
     const message =
       e.code === 'TOO_MANY_PENDING_ORDERS' ? t('checkout.tooManyPending')
+      : e.code === 'TOO_MANY_UNPAID_FOLIOS' ? t('checkout.tooManyUnpaid')
+      : e.code === 'ZERO_TOTAL' ? t('checkout.zeroTotal')
       : e.code === 'PLAN_REQUIRED' ? t('store.disabled')
       : e.code === 'VENUE_NOT_FOUND' ? t('store.notFound')
       : e.code === 'IDEMPOTENCY_KEY_CONFLICT' ? t('checkout.failed')
@@ -244,6 +258,13 @@ export async function send(store: OrderStore, body: CreateOrderBody): Promise<Su
       break
     case 'needsOtp':
       store.go('otp')
+      break
+    case 'needsPhone':
+      // Ahora la pantalla pide WhatsApp y la casilla: se cambia en el acto y se confirma con el servidor.
+      if (store.info.value) store.info.value = { ...store.info.value, requiresAcceptance: true }
+      void store.refreshInfo()
+      c.feedback.value = { kind: 'error', message: createOrderT(store.locale)('checkout.needsPhone'), retryable: false }
+      store.go('details')
       break
     case 'priceChanged':
       if (isSentCart()) {
