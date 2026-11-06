@@ -255,6 +255,44 @@
       "notCharged": "No se te cobró nada. Si viste un cargo, tu banco lo liberará en unos días.",
       "releasing": "Estamos liberando tu tarjeta…"
     },
-    "cancelPayment": "Cancelar el pago"
+    "cancelPayment": "Cancelar el pago",
+    "folio": {
+      "head": {
+        "pay": "Pasa a pagar en caja",
+        "paid": "¡Pagado! Lo están preparando",
+        "ready": "¡Listo para recoger!",
+        "completed": "Entregado",
+        "expired": "Se canceló tu pedido",
+        "staff": "El negocio canceló tu pedido"
+      },
+      "sub": {
+        "pay": "Se cancela solo a las {{time}} si no pasas a pagar.",
+        "paidEta": "Estará listo como a las {{time}}. Enseña esta pantalla al recoger.",
+        "paid": "Enseña esta pantalla al recoger.",
+        "ready": "Pasa por él y enseña esta pantalla.",
+        "completed": "¡Gracias, {{name}}!",
+        "completedAnon": "¡Gracias!",
+        "expired": "Se canceló porque no se registró el pago a tiempo. Si ya pagaste en caja, no pasa nada: muéstrale tu folio a la cajera.",
+        "staff": "Si tienes dudas, pregunta en caja."
+      },
+      "steps": { "order": "Pedido", "paid": "Pagado", "ready": "Listo", "completed": "Entregado" },
+      "left": "Faltan {{n}} min",
+      "say": "Enséñalo en caja o dile tu folio.",
+      "tax": "Pagas en caja: tarjeta o efectivo. IVA incluido.",
+      "closePage": "Si cierras esta página, en caja te encuentran por tu nombre.",
+      "cancel": "Cancelar mi pedido",
+      "cancelNote": "Tu folio {{folio}} deja de servir en caja.",
+      "againTitle": "¿Todavía lo quieres?",
+      "againHint": "Pídelo directo en caja.",
+      "stamp": "PAGADO",
+      "paidBy": "{{name}} · pagado hoy",
+      "paidToday": "Pagado hoy",
+      "live": "En vivo · {{time}}",
+      "offline": "Sin conexión: te enseñamos lo último que supimos; se actualiza solo al volver.",
+      "tab": "¡Listo! · {{venue}}",
+      "reminderTitle": "Tu folio {{folio}}",
+      "reminderText": "Paga en caja antes de las {{time}}.",
+      "reminderPaid": "Tu pedido {{folio}} está pagado"
+    }
   }
 }

@@ -289,3 +289,37 @@ describe('un doble toque no cae en lo que aparece: tras cambiar la vista, la tie
     expect(s.screen.value).toBe('cart')
   })
 })
+
+describe('W3: el aviso del menú con un folio (volvió a abrir el QR)', () => {
+  const folio = (over: Partial<Tracking> = {}) => ({
+    orderNumber: 'W7K3P', status: 'PENDING_ACCEPTANCE', paymentMode: 'PAY_AT_PICKUP', venueName: 'Flautas', venueSlug: 'a',
+    items: [], total: 134, paid: false, estimatedReadyAt: null, acceptDeadlineAt: '2026-10-17T19:42:00Z', rejectReason: null,
+    createdAt: '2026-10-17T19:12:00Z', canCancel: true, venueTimezone: 'America/Mexico_City', requiresAcceptance: false, ...over,
+  } as Tracking)
+  const open = async () => {
+    const s = makeStore(infoOf(), menuOf(product()))
+    localStorage.setItem(`avq_order_last:${s.slug}`, JSON.stringify({ trackingToken: 'T'.repeat(32), orderNumber: 'W7K3P' }))
+    render(withStore(s, <OrderApp />))
+    await flush()
+    return s
+  }
+  it('sin pagar: «Tu folio W7K3P» / «Paga en caja antes de las 13:42.» / «Ver», que lleva al seguimiento', async () => {
+    vi.mocked(getTracking).mockResolvedValue(folio())
+    const s = await open()
+    expect(screen.getByText('Tu folio W7K3P')).toBeTruthy()
+    expect(screen.getByText('Paga en caja antes de las 13:42.')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Ver' }))
+    expect(s.screen.value).toBe('tracking')
+  })
+  it('ya pagado: «Tu pedido W7K3P está pagado»', async () => {
+    vi.mocked(getTracking).mockResolvedValue(folio({ status: 'ACCEPTED', paid: true, canCancel: false }))
+    await open()
+    expect(screen.getByText('Tu pedido W7K3P está pagado')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Ver' })).toBeTruthy()
+  })
+  it('«Mi equipo» sigue con «Tienes un pedido en curso»', async () => {
+    vi.mocked(getTracking).mockResolvedValue(folio({ requiresAcceptance: true }))
+    await open()
+    expect(screen.getByText('Tienes un pedido en curso')).toBeTruthy()
+  })
+})

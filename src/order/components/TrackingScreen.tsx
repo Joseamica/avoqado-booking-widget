@@ -5,7 +5,7 @@ import { errorText } from '../checkout'
 import { formatTime } from '../hours'
 import { createOrderT } from '../i18n'
 import { formatMXN } from '../money'
-import { abandonPending, clearAbandon, clearLastOrder, markAbandon } from '../session'
+import { abandonPending, clearAbandon, clearLastOrder, loadLastOrder, markAbandon } from '../session'
 import { OrderStoreContext } from '../store'
 import { isFinalStatus, type OnlineOrderStatus, type Tracking } from '../types'
 import { focusLost } from './focus'
@@ -21,7 +21,15 @@ const STEP_OF: Partial<Record<OnlineOrderStatus, number>> = { PENDING_ACCEPTANCE
 const CLOSED: ReadonlySet<OnlineOrderStatus> = new Set(['REJECTED', 'EXPIRED', 'CANCELLED_BY_CUSTOMER', 'CANCELLED_BY_STAFF', 'PAYMENT_NOT_COMPLETED'])
 /** Fase 2: un pedido final cuyo dinero sigue en duda (apartado, cobrándose o liberándose) se sigue sondeando (Codex plan r1 #3). */
 const MONEY_IN_DOUBT: ReadonlySet<string> = new Set(['AUTHORIZED', 'CONFIRMING', 'RELEASING'])
-const done = (r: Tracking) => isFinalStatus(r.status) && !MONEY_IN_DOUBT.has(r.cardStatus ?? '')
+/** Un folio de «Nadie» vencido se sigue consultando 2 h después de su hora: un efectivo registrado tarde lo pasa a «PAGADO». */
+const LATE_MONEY_MS = 2 * 60 * 60_000
+const isFolioOf = (r: Tracking) => r.requiresAcceptance === false && r.paymentMode !== 'CARD_ONLINE'
+const done = (r: Tracking) =>
+  isFinalStatus(r.status) && !MONEY_IN_DOUBT.has(r.cardStatus ?? '')
+  && !(isFolioOf(r) && r.status === 'EXPIRED' && Date.now() < Date.parse(r.acceptDeadlineAt) + LATE_MONEY_MS)
+const FOLIO_STEPS = ['order', 'paid', 'ready', 'completed'] as const
+const FOLIO_PAID: ReadonlySet<OnlineOrderStatus> = new Set(['ACCEPTED', 'READY', 'COMPLETED'])
+const FOLIO_VOID: ReadonlySet<OnlineOrderStatus> = new Set(['CANCELLED_BY_CUSTOMER', 'CANCELLED_BY_STAFF', 'REJECTED', 'PAYMENT_NOT_COMPLETED'])
 
 // Íconos de «Cómo llegar» y «Llamar» (de la maqueta; sólo se usan aquí).
 const Pin = () => (
@@ -193,11 +201,34 @@ export function TrackingScreen() {
     if (settled && target && focusLost(target)) target.focus()
   }, [settled])
 
+  // Folio de «Nadie»: el reloj corre cada segundo (la cuenta regresiva y el «En vivo»), también con «reducir movimiento».
+  const folioMode = !!tracking && isFolioOf(tracking)
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    if (!folioMode) return
+    setNow(Date.now())
+    const id = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(id)
+  }, [folioMode])
+  // El seguimiento no trae el nombre: es el que se guardó al pedir (sin almacenamiento, no se muestra).
+  const [who] = useState(() => {
+    const last = loadLastOrder(store.slug)
+    return last && last.trackingToken === token ? last.name ?? null : null
+  })
+  // Con «¡Listo!» la pestaña lo dice, para verlo aunque esté en otra app; al salir vuelve su título.
+  const readyTab = tracking && isFolioOf(tracking) && tracking.status === 'READY' ? t('tracking.folio.tab', { venue: tracking.venueName }) : null
+  useEffect(() => {
+    if (!readyTab) return
+    const before = document.title
+    document.title = readyTab
+    return () => { document.title = before }
+  }, [readyTab])
+
   // De vuelta a la carta (el aviso «Tienes un pedido en curso · Ver» de OrderApp regresa aquí). Si el pago no se completó, «Volver al menú».
   const orderMore = (
     <div class="avq-o-track__more">
       <button type="button" class="avq-o-btn avq-o-btn--neutral" onClick={() => { store.trackingToken.value = null; store.go('menu') }}>
-        {t(tracking?.status === 'PAYMENT_NOT_COMPLETED' ? 'tracking.backToMenu' : 'tracking.orderMore')}
+        {t(tracking?.status === 'PAYMENT_NOT_COMPLETED' || (tracking?.status === 'CANCELLED_BY_STAFF' && tracking.requiresAcceptance === false) ? 'tracking.backToMenu' : 'tracking.orderMore')}
       </button>
     </div>
   )
@@ -223,7 +254,15 @@ export function TrackingScreen() {
 
   const tz = tracking.venueTimezone ?? store.info.value?.venue.timezone ?? 'America/Mexico_City'
   const time = (iso: string) => formatTime(iso, tz, store.locale)
-  const step = STEP_OF[tracking.status]
+  const isFolio = isFolioOf(tracking)
+  // Folio de «Nadie»: pagado en caja (o dinero que llegó tarde a uno vencido) pasa a «PAGADO»; cancelado por alguien, no.
+  const folioPaid = isFolio && !FOLIO_VOID.has(tracking.status) && (tracking.paid || FOLIO_PAID.has(tracking.status))
+  const step = isFolio
+    ? folioPaid ? (tracking.status === 'COMPLETED' ? 3 : tracking.status === 'READY' ? 2 : 1) : tracking.status === 'PENDING_ACCEPTANCE' ? 0 : undefined
+    : STEP_OF[tracking.status]
+  const offline = problem === 'store.reconnecting'
+  const left = Math.max(1, Math.ceil((Date.parse(tracking.acceptDeadlineAt) - now) / 60_000))
+  const clock = new Intl.DateTimeFormat(store.locale === 'en' ? 'en-US' : 'es-MX', { timeZone: tz, hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23' }).format(now)
   // Algo que recoger: esperando, en preparación o listo. Un estado que la tienda no conoce no se da por confirmado.
   const toPickUp = step !== undefined && tracking.status !== 'COMPLETED'
   const card = tracking.paymentMode === 'CARD_ONLINE'
@@ -232,7 +271,20 @@ export function TrackingScreen() {
   const released = !tracking.cardStatus || tracking.cardStatus === 'RELEASED'
   // Titular y su línea de hora; rechazado, vencido y cancelado dicen su frase de hoy, sin línea. Un estado nuevo del servidor, uno
   // neutro (y el sondeo sigue: no es final).
-  const [head, sub] = ((): [string, string | null] => {
+  const folioHead = (): [string, string | null] | null => {
+    if (!isFolio) return null
+    const f = (k: string, v?: Record<string, string>) => t(`tracking.folio.${k}`, v)
+    if (folioPaid) {
+      if (tracking.status === 'COMPLETED') return [f('head.completed'), who ? f('sub.completed', { name: who }) : f('sub.completedAnon')]
+      if (tracking.status === 'READY') return [f('head.ready'), f('sub.ready')]
+      return [f('head.paid'), tracking.estimatedReadyAt ? f('sub.paidEta', { time: time(tracking.estimatedReadyAt) }) : f('sub.paid')]
+    }
+    if (tracking.status === 'PENDING_ACCEPTANCE') return [f('head.pay'), f('sub.pay', { time: time(tracking.acceptDeadlineAt) })]
+    if (tracking.status === 'EXPIRED') return [f('head.expired'), f('sub.expired')]
+    if (tracking.status === 'CANCELLED_BY_STAFF') return [f('head.staff'), f('sub.staff')]
+    return null
+  }
+  const [head, sub] = folioHead() ?? ((): [string, string | null] => {
     switch (tracking.status) {
       case 'PENDING_ACCEPTANCE': return [t('tracking.head.PENDING_ACCEPTANCE'), t('tracking.sub.waiting', { time: time(tracking.acceptDeadlineAt) })]
       case 'ACCEPTED':
@@ -268,7 +320,7 @@ export function TrackingScreen() {
     return closed && tracking.status !== 'PAYMENT_NOT_COMPLETED' ? t('tracking.card.notCharged') : tracking.paid ? t('tracking.paid') : null
   }
   // Sin cobro, «Pagas al recoger» sólo en curso o entregado (la regla de hoy): no en cancelado, rechazado, vencido ni un estado nuevo.
-  const pay = card ? cardPay() : tracking.paid ? t('tracking.paid') : step !== undefined ? t('cart.taxPickup') : null
+  const pay = isFolio ? (tracking.status === 'PENDING_ACCEPTANCE' ? t('tracking.folio.tax') : folioPaid ? t('tracking.paid') : null) : card ? cardPay() : tracking.paid ? t('tracking.paid') : step !== undefined ? t('cart.taxPickup') : null
 
   async function doCancel() {
     if (cancelling.current || !token) return
@@ -299,12 +351,18 @@ export function TrackingScreen() {
         <VenueMark small name={tracking.venueName} />
         <span class="avq-o-head__name">{tracking.venueName}</span>
       </header>
-      {problemNotice}
+      {isFolio && offline ? <Notice tone="warn" icon="cloudOff" text={t('tracking.folio.offline')} /> : problemNotice}
       {/* Un cambio de estado se anuncia (como la frase de hoy, que era `role="status"`). */}
       <div class="avq-o-track__intro" role="status">
         <h2 ref={titleRef} class="avq-o-title" tabIndex={-1}>{head}</h2>
         {sub && <p>{sub}</p>}
+        {isFolio && !folioPaid && tracking.status === 'PENDING_ACCEPTANCE' && !offline && (
+          <p class="avq-o-track__chip"><span class={left <= 5 ? 'avq-o-chip avq-o-chip--warn' : 'avq-o-chip'}><span aria-hidden="true">◷</span>{t('tracking.folio.left', { n: String(left) })}</span></p>
+        )}
       </div>
+      {isFolio && tracking.status === 'EXPIRED' && !folioPaid && (
+        <div class="avq-o-track__again"><strong>{t('tracking.folio.againTitle')}</strong><span>{t('tracking.folio.againHint')}</span></div>
+      )}
       {/* Volvió de Stripe con «atrás» (sin `?pago`): puede soltar la página de pago; si ya pagó, el servidor responde el pedido. */}
       {tracking.status === 'AWAITING_PAYMENT' && (
         <div class="avq-o-track__cancel">
@@ -315,25 +373,38 @@ export function TrackingScreen() {
         <ol class="avq-o-steps" role="list" aria-label={t('tracking.progress')}>
           {STEPS.map((k, i) => (
             <li key={k} class={i <= step ? 'avq-o-step avq-o-step--done' : 'avq-o-step'} aria-current={i === step ? 'step' : undefined}>
-              {t(`tracking.steps.${k}`)}
+              {isFolio ? t(`tracking.folio.steps.${FOLIO_STEPS[i]}`) : t(`tracking.steps.${k}`)}
             </li>
           ))}
         </ol>
       )}
       <div class="avq-o-ticket">
         {/* El borrador de tarjeta no tiene folio todavía (nace al confirmarse el pago). */}
-        {tracking.orderNumber && (
+        {tracking.orderNumber && folioPaid && (
+          <>
+            <div class="avq-o-paid">
+              <span class="avq-o-paid__stamp">✓ {t('tracking.folio.stamp')}</span>
+              <span class="avq-o-paid__n">{tracking.orderNumber}</span>
+              <span class="avq-o-paid__items">{tracking.items.map(it => (it.quantity > 1 ? `${it.quantity} × ${it.name}` : it.name)).join(' · ')}</span>
+              <span class="avq-o-paid__who">{who ? t('tracking.folio.paidBy', { name: who }) : t('tracking.folio.paidToday')}</span>
+            </div>
+            <p class="avq-o-live"><span class="avq-o-live__dot" aria-hidden="true" /><span>{t('tracking.folio.live', { time: clock })}</span></p>
+          </>
+        )}
+        {tracking.orderNumber && !folioPaid && (
           <>
             <div class="avq-o-ticket__folio">
               <span class="avq-o-ticket__label">{t('tracking.folioLabel')}</span>
-              <span class="avq-o-ticket__n">{tracking.orderNumber}</span>
-              {toPickUp && <span class="avq-o-ticket__say">{t('tracking.sayAtCounter')}</span>}
+              <span class={isFolio ? `avq-o-ticket__n avq-o-ticket__n--folio${tracking.status === 'EXPIRED' ? ' avq-o-ticket__n--void' : ''}` : 'avq-o-ticket__n'}>{tracking.orderNumber}</span>
+              {isFolio && who && <span class="avq-o-ticket__who">{who}</span>}
+              {isFolio ? tracking.status === 'PENDING_ACCEPTANCE' && <span class="avq-o-ticket__say">{t('tracking.folio.say')}</span>
+                : toPickUp && <span class="avq-o-ticket__say">{t('tracking.sayAtCounter')}</span>}
             </div>
             <div class="avq-o-ticket__tear" aria-hidden="true" />
           </>
         )}
         <div class="avq-o-ticket__body">
-          <ul class="avq-o-ticket__lines" role="list">
+          {!folioPaid && <ul class="avq-o-ticket__lines" role="list">
             {tracking.items.map((it, i) => {
               const options = optionsText(it.modifiers)
               return (
@@ -344,11 +415,12 @@ export function TrackingScreen() {
                 </li>
               )
             })}
-          </ul>
+          </ul>}
           <div class="avq-o-ticket__sum">
             <p class="avq-o-total__row"><span>{t('cart.totalShort')}</span><span>{formatMXN(tracking.total, store.locale)}</span></p>
             {pay && <p class="avq-o-total__tax">{pay}</p>}
           </div>
+          {isFolio && tracking.status === 'PENDING_ACCEPTANCE' && <p class="avq-o-total__tax">{t('tracking.folio.closePage')}</p>}
         </div>
       </div>
       {(contact?.address || contact?.phone) && (
@@ -371,12 +443,13 @@ export function TrackingScreen() {
         <div class="avq-o-track__cancel">
           {cancelMsg && <Notice tone={cancelMsg.tone} icon={cancelMsg.icon} text={cancelMsg.text} />}
           {tracking.canCancel && !asking && (
-            <button ref={cancelBtn} type="button" class="avq-o-btn avq-o-btn--quiet" onClick={() => { setCancelMsg(null); setAsking(true) }}>{t('tracking.cancel')}</button>
+            <button ref={cancelBtn} type="button" class="avq-o-btn avq-o-btn--quiet" onClick={() => { setCancelMsg(null); setAsking(true) }}>{t(isFolio ? 'tracking.folio.cancel' : 'tracking.cancel')}</button>
           )}
           {/* La pantalla no tiene acción principal (§5.6): los dos botones pesan igual y el acento no «recomienda» cancelar. */}
           {tracking.canCancel && asking && (
             <div role="group" aria-label={t('tracking.cancelAsk')} class="avq-o-track__ask">
               <p>{t('tracking.cancelAsk')}</p>
+              {isFolio && <p class="avq-o-track__note">{t('tracking.folio.cancelNote', { folio: tracking.orderNumber })}</p>}
               <div>
                 <button type="button" class="avq-o-btn avq-o-btn--neutral" disabled={busy} onClick={() => void doCancel()}>{busy ? t('tracking.cancelling') : t('tracking.cancelYes')}</button>
                 <button ref={noBtn} type="button" class="avq-o-btn avq-o-btn--neutral" disabled={busy} onClick={() => { closedByNo.current = true; setAsking(false) }}>{t('tracking.cancelNo')}</button>

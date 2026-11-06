@@ -10,6 +10,7 @@ import { ApiError, abandonPayment, cancelOrder, getTracking } from '../api'
 import { TrackingScreen } from './TrackingScreen'
 import { STORE_CSS } from './theme'
 import { makeStore, withStore } from './testKit'
+import { saveLastOrder } from '../session'
 import type { OnlineOrderStatus, Tracking } from '../types'
 
 let visibility = 'visible'
@@ -886,5 +887,182 @@ describe('fix ronda 2 y 3: el sondeo nunca se queda parado; la intención de can
     expect(screen.getByRole('heading', { name: 'Confirmando tu pago…' })).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Cancelar el pago' })).toBeTruthy()
     vi.restoreAllMocks()
+  })
+})
+
+// Tienda híbrida, etapa 1 (W3): el folio de «Nadie» (requiresAcceptance === false), pagado en caja.
+describe('W3: seguimiento del folio', () => {
+  const NOW = '2026-10-17T19:00:00Z' // 13:00 en CDMX
+  const T32 = 'T'.repeat(32)
+  const folio = (over: Partial<Tracking> = {}): Tracking => tr({
+    orderNumber: 'W7K3P', requiresAcceptance: false, channel: 'QR', canCancel: true, total: 134,
+    acceptDeadlineAt: '2026-10-17T19:30:00Z',
+    items: [
+      { name: 'Latte', quantity: 1, note: null, modifiers: [{ name: 'Leche de almendra', quantity: 1 }] },
+      { name: 'Shake de proteína', quantity: 1, note: null, modifiers: [] },
+    ],
+    ...over,
+  })
+  async function showF(t: Tracking, locale: 'es' | 'en' = 'es', name: string | null = 'Ana') {
+    vi.setSystemTime(new Date(NOW))
+    localStorage.clear()
+    vi.mocked(getTracking).mockResolvedValue(t)
+    const s = makeStore(null, null, locale)
+    if (name) saveLastOrder(s.slug, { trackingToken: T32, orderNumber: 'W7K3P', name })
+    s.trackingToken.value = T32
+    s.go('tracking')
+    const r = render(withStore(s, <TrackingScreen />))
+    await flush()
+    return { s, r }
+  }
+
+  it('por pagar: «Pasa a pagar en caja», la hora, «Faltan 30 min», el folio en grande con el nombre, el total y el aviso de IVA', async () => {
+    await showF(folio())
+    expect(screen.getByRole('heading', { name: 'Pasa a pagar en caja' })).toBeTruthy()
+    expect(screen.getByText('Se cancela solo a las 13:30 si no pasas a pagar.')).toBeTruthy()
+    expect(screen.getByText('Faltan 30 min')).toBeTruthy()
+    expect(screen.getByText('Tu folio')).toBeTruthy()
+    const n = screen.getByText('W7K3P')
+    expect(n.classList.contains('avq-o-ticket__n')).toBe(true)
+    expect(screen.getByText('Ana').closest('.avq-o-ticket__folio')).toBeTruthy() // el nombre bajo el folio
+    expect(screen.getByText('Enséñalo en caja o dile tu folio.')).toBeTruthy()
+    expect(screen.getByText('Total').parentElement!.textContent).toContain('$134')
+    expect(screen.getByText('Pagas en caja: tarjeta o efectivo. IVA incluido.')).toBeTruthy()
+    expect(screen.getByText('Si cierras esta página, en caja te encuentran por tu nombre.')).toBeTruthy()
+    expect(screen.queryByText(/Esperando que el negocio acepte/)).toBeNull()
+    expect(screen.queryByText(/Dilo en el mostrador/)).toBeNull()
+    expect(progress()!.querySelector('[aria-current="step"]')!.textContent).toBe('Pedido')
+    expect(Array.from(progress()!.querySelectorAll('li')).map(li => li.textContent)).toEqual(['Pedido', 'Pagado', 'Listo', 'Entregado'])
+  })
+  it('sin nombre guardado, no inventa uno', async () => {
+    await showF(folio(), 'es', null)
+    expect(document.querySelector('.avq-o-ticket__folio')!.textContent).toBe('Tu folioW7K3PEnséñalo en caja o dile tu folio.')
+  })
+  it('«Faltan N min» baja cada minuto y se pone ámbar con 5 o menos (nunca rojo)', async () => {
+    await showF(folio())
+    expect(document.querySelector('.avq-o-chip--warn')).toBeNull()
+    await tick(26 * 60_000)
+    expect(screen.getByText('Faltan 4 min')).toBeTruthy()
+    const chip = screen.getByText('Faltan 4 min').closest('.avq-o-chip') as HTMLElement
+    expect(chip.classList.contains('avq-o-chip--warn')).toBe(true)
+    expect(document.querySelector('.avq-o-chip--error, .avq-o-notice--error')).toBeNull()
+  })
+  it('«Cancelar mi pedido» pregunta: «¿Cancelar tu pedido?» y «Tu folio W7K3P deja de servir en caja.»', async () => {
+    await showF(folio())
+    fireEvent.click(screen.getByRole('button', { name: 'Cancelar mi pedido' }))
+    expect(screen.getByText('¿Cancelar tu pedido?', { selector: 'p' })).toBeTruthy()
+    expect(screen.getByText('Tu folio W7K3P deja de servir en caja.')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Sí, cancelar' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'No' })).toBeTruthy()
+  })
+  it('pagado: «¡Pagado! Lo están preparando», pasos con «Pagado», «PAGADO» + folio + lo que pidió y el nombre', async () => {
+    await showF(folio({ status: 'ACCEPTED', paid: true, canCancel: false, estimatedReadyAt: '2026-10-17T19:30:00Z' }))
+    expect(screen.getByRole('heading', { name: '¡Pagado! Lo están preparando' })).toBeTruthy()
+    expect(screen.getByText('Estará listo como a las 13:30. Enseña esta pantalla al recoger.')).toBeTruthy()
+    expect(progress()!.querySelector('[aria-current="step"]')!.textContent).toBe('Pagado')
+    const card = document.querySelector('.avq-o-paid') as HTMLElement
+    expect(card.textContent).toContain('PAGADO')
+    expect(within(card).getByText('W7K3P').classList.contains('avq-o-paid__n')).toBe(true)
+    expect(card.textContent).toContain('Latte · Shake de proteína')
+    expect(card.textContent).toContain('Ana · pagado hoy')
+    expect(screen.queryByRole('button', { name: /Cancelar/ })).toBeNull()
+    expect(screen.queryByText(/Pagas en caja/)).toBeNull()
+  })
+  it('«En vivo · HH:MM:SS» avanza cada segundo (también con reducir movimiento: sólo el punto deja de latir)', async () => {
+    await showF(folio({ status: 'ACCEPTED', paid: true, canCancel: false }))
+    expect(screen.getByText('En vivo · 13:00:00')).toBeTruthy()
+    await tick(3000)
+    expect(screen.getByText('En vivo · 13:00:03')).toBeTruthy()
+    const css = STORE_CSS
+    expect(css).toMatch(/@media \(prefers-reduced-motion: reduce\)[^}]*\.avq-o-live__dot/)
+  })
+  it('listo: «¡Listo para recoger!», «Pasa por él y enseña esta pantalla.» y la pestaña «¡Listo! · Flautas» (se restaura al salir)', async () => {
+    document.title = 'Pedir'
+    const { r } = await showF(folio({ status: 'READY', paid: true, canCancel: false }))
+    expect(screen.getByRole('heading', { name: '¡Listo para recoger!' })).toBeTruthy()
+    expect(screen.getByText('Pasa por él y enseña esta pantalla.')).toBeTruthy()
+    expect(progress()!.querySelector('[aria-current="step"]')!.textContent).toBe('Listo')
+    expect(document.title).toBe('¡Listo! · Flautas')
+    r.unmount()
+    expect(document.title).toBe('Pedir')
+  })
+  it('entregado: «¡Gracias, Ana!», paso «Entregado» y deja de sondear', async () => {
+    await showF(folio({ status: 'COMPLETED', paid: true, canCancel: false }))
+    expect(screen.getByRole('heading', { name: 'Entregado' })).toBeTruthy()
+    expect(screen.getByText('¡Gracias, Ana!')).toBeTruthy()
+    expect(progress()!.querySelector('[aria-current="step"]')!.textContent).toBe('Entregado')
+    await tick(60_000)
+    expect(getTracking).toHaveBeenCalledTimes(1)
+  })
+  it('vencido en «Nadie»: su texto, «¿Todavía lo quieres?», folio tachado y NUNCA «No se te cobró nada»', async () => {
+    await showF(folio({ status: 'EXPIRED', canCancel: false }))
+    expect(screen.getByRole('heading', { name: 'Se canceló tu pedido' })).toBeTruthy()
+    expect(screen.getByText('Se canceló porque no se registró el pago a tiempo. Si ya pagaste en caja, no pasa nada: muéstrale tu folio a la cajera.')).toBeTruthy()
+    expect(screen.getByText('¿Todavía lo quieres?')).toBeTruthy()
+    expect(screen.getByText('Pídelo directo en caja.')).toBeTruthy()
+    expect(screen.getByText('W7K3P').classList.contains('avq-o-ticket__n--void')).toBe(true)
+    expect(document.body.textContent).not.toMatch(/No se te cobró nada/)
+    expect(progress()).toBeNull()
+  })
+  it('vencido: sigue consultando 2 h después de su hora, y cambia a «PAGADO» si llega el dinero', async () => {
+    await showF(folio({ status: 'EXPIRED', canCancel: false }))
+    expect(getTracking).toHaveBeenCalledTimes(1)
+    await tick(60 * 60_000) // 1 h después: sigue
+    expect(vi.mocked(getTracking).mock.calls.length).toBeGreaterThan(300)
+    vi.mocked(getTracking).mockResolvedValue(folio({ status: 'EXPIRED', paid: true, canCancel: false }))
+    await tick(10_000)
+    expect(screen.getByRole('heading', { name: '¡Pagado! Lo están preparando' })).toBeTruthy()
+    expect(document.querySelector('.avq-o-paid')!.textContent).toContain('PAGADO')
+    expect(document.body.textContent).not.toMatch(/Se canceló tu pedido/)
+  })
+  it('vencido: pasadas 2 h de su hora deja de consultar', async () => {
+    await showF(folio({ status: 'EXPIRED', canCancel: false }))
+    await tick(2 * 60 * 60_000 + 40 * 60_000) // 30 min de plazo + 2 h
+    const n = vi.mocked(getTracking).mock.calls.length
+    await tick(10 * 60_000)
+    expect(getTracking).toHaveBeenCalledTimes(n)
+  })
+  it('lo canceló el negocio: «Si tienes dudas, pregunta en caja.» y «Volver al menú»', async () => {
+    await showF(folio({ status: 'CANCELLED_BY_STAFF', canCancel: false }))
+    expect(screen.getByRole('heading', { name: 'El negocio canceló tu pedido' })).toBeTruthy()
+    expect(screen.getByText('Si tienes dudas, pregunta en caja.')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Volver al menú' })).toBeTruthy()
+  })
+  it('sin red: el folio sigue a la vista con «Sin conexión: te enseñamos lo último que supimos…», en ámbar, y sin cuenta regresiva', async () => {
+    await showF(folio())
+    vi.mocked(getTracking).mockRejectedValue(new ApiError('Sin conexión', 0, undefined, undefined, true))
+    await tick(10_000)
+    expect(screen.getByText(/Sin conexión: te enseñamos lo último que supimos/)).toBeTruthy()
+    expect(screen.getByText('W7K3P')).toBeTruthy()
+    expect(screen.getByText('Se cancela solo a las 13:30 si no pasas a pagar.')).toBeTruthy()
+    expect(screen.queryByText(/^Faltan/)).toBeNull()
+    expect(document.querySelector('.avq-o-notice--warn')).toBeTruthy()
+    expect(document.querySelector('.avq-o-notice--error')).toBeNull()
+  })
+  it('sin red y pagado: el «PAGADO» sigue a la vista', async () => {
+    await showF(folio({ status: 'ACCEPTED', paid: true, canCancel: false }))
+    vi.mocked(getTracking).mockRejectedValue(new ApiError('Sin conexión', 0, undefined, undefined, true))
+    await tick(10_000)
+    expect(screen.getByText(/lo último que supimos/)).toBeTruthy()
+    expect(document.querySelector('.avq-o-paid')!.textContent).toContain('PAGADO')
+  })
+  it('en inglés', async () => {
+    await showF(folio(), 'en')
+    expect(screen.getByRole('heading', { name: 'Go pay at the counter' })).toBeTruthy()
+    expect(screen.getByText('Your order number')).toBeTruthy()
+    cleanup()
+    await showF(folio({ status: 'ACCEPTED', paid: true, canCancel: false }), 'en')
+    expect(screen.getByRole('heading', { name: 'Paid! They are preparing it' })).toBeTruthy()
+    expect(document.querySelector('.avq-o-paid')!.textContent).toContain('PAID')
+  })
+  it('«Mi equipo» (requiresAcceptance true o ausente) no cambia', async () => {
+    for (const requiresAcceptance of [true, undefined]) {
+      await showF(tr({ requiresAcceptance }))
+      expect(screen.getByRole('heading', { name: 'Esperando que el negocio acepte' })).toBeTruthy()
+      expect(screen.getByText('Dilo en el mostrador al recoger.')).toBeTruthy()
+      expect(screen.getByRole('button', { name: 'Cancelar pedido' })).toBeTruthy()
+      expect(document.querySelector('.avq-o-paid')).toBeNull()
+      cleanup()
+    }
   })
 })

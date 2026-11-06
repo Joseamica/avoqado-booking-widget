@@ -131,6 +131,7 @@ export const STORE_CSS = `
 .avq-o-section-title{margin:0 0 2px;font-family:var(--avq-o-display);font-weight:700;font-size:22px;overflow-wrap:anywhere}
 .avq-o-row{display:flex;gap:16px;width:100%;min-width:0;margin:0;padding:16px 0;border:0;border-bottom:1px solid ${T.divider};background:transparent;color:inherit;font:inherit;text-align:left;text-decoration:none;word-break:break-word;overflow-wrap:anywhere;cursor:pointer}
 .avq-o-chip{display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 12px;border-radius:999px;background:${T.surface};color:#333333;font-size:14px;font-weight:500;white-space:nowrap}
+.avq-o-chip--warn{background:${T.warnBg};color:${T.warnFg};font-weight:600}
 .avq-o-chip--ok{background:${T.okBg};color:${T.okFg};font-weight:600}
 .avq-o-btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:52px;padding:0 20px;border:0;border-radius:14px;font:inherit;font-size:16px;font-weight:700;text-decoration:none;cursor:pointer}
 .avq-o-btn--primary{background:var(--avq-accent,${T.ink});color:#FFFFFF}
@@ -324,7 +325,22 @@ textarea.avq-o-input{min-height:0;padding:12px 14px;resize:none}
 .avq-o-ticket__folio{display:flex;flex-direction:column;align-items:center;gap:2px;padding:22px 20px 20px;text-align:center}
 .avq-o-ticket__label{color:${T.muted};font-size:14px}
 .avq-o-ticket__n{max-width:100%;font-family:var(--avq-o-display);font-weight:800;font-size:64px;line-height:1;letter-spacing:.05em;overflow-wrap:anywhere}
+.avq-o-ticket__n--folio{letter-spacing:.14em;padding-left:.14em}
+.avq-o-ticket__n--void{text-decoration:line-through;color:${T.muted}}
+.avq-o-ticket__who{margin-top:6px;font-size:16px;font-weight:600}
 .avq-o-ticket__say{margin-top:8px;color:${T.text2}}
+.avq-o-track__chip{margin-top:10px}
+.avq-o-track__again{display:flex;flex-direction:column;gap:2px;margin:18px 16px 0}
+.avq-o-track__again>strong{font-size:16px}
+.avq-o-track__note{margin:0 0 8px;color:${T.text2}}
+.avq-o-paid{display:flex;flex-direction:column;align-items:center;gap:6px;padding:20px;text-align:center;background:${T.okBg};color:${T.okFg}}
+.avq-o-paid__stamp{font-weight:800;font-size:22px;letter-spacing:.12em}
+.avq-o-paid__n{font-family:var(--avq-o-display);font-weight:800;font-size:56px;line-height:1;letter-spacing:.14em;padding-left:.14em;overflow-wrap:anywhere}
+.avq-o-paid__items,.avq-o-paid__who{font-size:16px;overflow-wrap:anywhere}
+.avq-o-live{display:flex;align-items:center;justify-content:center;gap:8px;padding:10px 20px 0;color:${T.text2};font-size:14px;font-variant-numeric:tabular-nums}
+.avq-o-live__dot{width:8px;height:8px;border-radius:50%;background:${T.okFg};animation:avq-o-pulse 1.6s ease-in-out infinite}
+@keyframes avq-o-pulse{0%,100%{opacity:1}50%{opacity:.25}}
+@media (prefers-reduced-motion: reduce){.avq-o-live__dot{animation:none}}
 .avq-o-ticket__tear{position:relative;margin:0 18px;border-top:2px dashed #D6D6D6}
 .avq-o-ticket__tear::before,.avq-o-ticket__tear::after{content:'';position:absolute;top:-13px;width:24px;height:24px;border-radius:50%;background:#FFFFFF}
 .avq-o-ticket__tear::before{left:-30px}

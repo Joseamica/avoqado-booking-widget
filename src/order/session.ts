@@ -1,7 +1,7 @@
 // Sesión de pedidos (token OTP de WhatsApp) y último pedido, por negocio, en localStorage. Todo con try/catch: sin
 // almacenamiento la tienda funciona igual, sólo que pide el código otra vez.
 export interface OrderingSession { token: string; phone: string; name: string | null; savedAt: number }
-export interface LastOrder { trackingToken: string; orderNumber: string }
+export interface LastOrder { trackingToken: string; orderNumber: string; /** Para el folio de «Nadie»: el nombre con que se pidió (el seguimiento no lo trae). */ name?: string }
 
 const TTL_MS = 29 * 24 * 60 * 60 * 1000
 const sKey = (slug: string) => `avq_order_session:${slug}`
@@ -50,7 +50,7 @@ export const saveLastOrder = (slug: string, o: LastOrder): void => write(lKey(sl
 export function loadLastOrder(slug: string): LastOrder | null {
   const o = read(lKey(slug))
   return o && typeof o.trackingToken === 'string' && typeof o.orderNumber === 'string'
-    ? { trackingToken: o.trackingToken, orderNumber: o.orderNumber }
+    ? { trackingToken: o.trackingToken, orderNumber: o.orderNumber, ...(typeof o.name === 'string' && o.name ? { name: o.name } : {}) }
     : null
 }
 export const clearLastOrder = (slug: string): void => remove(lKey(slug))

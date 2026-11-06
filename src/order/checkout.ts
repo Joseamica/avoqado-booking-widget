@@ -222,7 +222,7 @@ async function doSubmit(store: OrderStore, body: CreateOrderBody): Promise<Submi
   // El borrador de tarjeta todavía no tiene folio (nace con el pedido, al confirmarse el pago).
   const orderNumber = 'orderNumber' in order ? order.orderNumber : ''
   // Primero el pedido guardado y luego borrar el intento: si algo muere en medio, el reintento recupera el mismo pedido.
-  saveLastOrder(slug, { trackingToken: order.trackingToken, orderNumber })
+  saveLastOrder(slug, { trackingToken: order.trackingToken, orderNumber, ...(anon ? { name: attempt.body.customer.name } : {}) })
   settleAttempt(slug)
   // Aquí (una vez por respuesta del servidor) y no en `send`: un doble toque comparte esta petición y no repite el evento.
   if (store.host) emitOrderCreated(store.host, slug, { trackingToken: order.trackingToken, orderNumber })

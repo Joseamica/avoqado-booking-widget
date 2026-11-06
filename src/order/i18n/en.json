@@ -255,6 +255,44 @@
       "notCharged": "You were not charged. If you saw a charge, your bank will release it in a few days.",
       "releasing": "We are releasing your card…"
     },
-    "cancelPayment": "Cancel the payment"
+    "cancelPayment": "Cancel the payment",
+    "folio": {
+      "head": {
+        "pay": "Go pay at the counter",
+        "paid": "Paid! They are preparing it",
+        "ready": "Ready for pickup!",
+        "completed": "Picked up",
+        "expired": "Your order was cancelled",
+        "staff": "The business cancelled your order"
+      },
+      "sub": {
+        "pay": "It cancels itself at {{time}} if you don't pay.",
+        "paidEta": "Ready around {{time}}. Show this screen when you pick it up.",
+        "paid": "Show this screen when you pick it up.",
+        "ready": "Come get it and show this screen.",
+        "completed": "Thank you, {{name}}!",
+        "completedAnon": "Thank you!",
+        "expired": "It was cancelled because no payment was recorded in time. If you already paid at the counter, don't worry: show your order number to the cashier.",
+        "staff": "If you have questions, ask at the counter."
+      },
+      "steps": { "order": "Order", "paid": "Paid", "ready": "Ready", "completed": "Picked up" },
+      "left": "{{n}} min left",
+      "say": "Show it at the counter or tell them your number.",
+      "tax": "You pay at the counter: card or cash. Tax included.",
+      "closePage": "If you close this page, the counter can find you by your name.",
+      "cancel": "Cancel my order",
+      "cancelNote": "Your order number {{folio}} stops working at the counter.",
+      "againTitle": "Do you still want it?",
+      "againHint": "Order it directly at the counter.",
+      "stamp": "PAID",
+      "paidBy": "{{name}} · paid today",
+      "paidToday": "Paid today",
+      "live": "Live · {{time}}",
+      "offline": "No connection: we're showing you the last thing we knew; it updates by itself when you're back online.",
+      "tab": "Ready! · {{venue}}",
+      "reminderTitle": "Your order number {{folio}}",
+      "reminderText": "Pay at the counter before {{time}}.",
+      "reminderPaid": "Your order {{folio}} is paid"
+    }
   }
 }

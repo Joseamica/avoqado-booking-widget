@@ -4,9 +4,9 @@ import { OrderStoreContext } from '../store'
 import { ApiError, getTracking } from '../api'
 import { createOrderT } from '../i18n'
 import { clearLastOrder, loadLastOrder } from '../session'
-import { isFinalStatus } from '../types'
+import { isFinalStatus, type Tracking } from '../types'
 import { emitStoreLoaded } from '../events'
-import { closesAt } from '../hours'
+import { closesAt, formatTime } from '../hours'
 import { MenuScreen } from './MenuScreen'
 import { CartScreen } from './CartScreen'
 import { DetailsScreen } from './DetailsScreen'
@@ -45,7 +45,7 @@ export function OrderApp({ accentColor }: { accentColor?: string }) {
   // ¿Queda un pedido en curso de este comensal? Aquí y no en la carta: con el plan vencido, la tienda apagada o `/info`
   // caído también tiene que poder volver a su pedido. Final o 404 ⇒ se olvida (y el 404 se avisa). Se vuelve a mirar al
   // salir del seguimiento: el pedido que se acaba de hacer también es «el pedido en curso».
-  const [active, setActive] = useState<string | null>(null)
+  const [active, setActive] = useState<{ token: string; tracking: Tracking } | null>(null)
   useEffect(() => {
     const last = loadLastOrder(store.slug)
     if (!last) return void setActive(null)
@@ -57,7 +57,7 @@ export function OrderApp({ accentColor }: { accentColor?: string }) {
         if (isFinalStatus(r.status)) {
           clearLastOrder(store.slug)
           setActive(null)
-        } else setActive(last.trackingToken)
+        } else setActive({ token: last.trackingToken, tracking: r })
       },
       e => {
         if (off || !(e instanceof ApiError) || e.status !== 404) return
@@ -68,6 +68,13 @@ export function OrderApp({ accentColor }: { accentColor?: string }) {
     )
     return () => { off = true }
   }, [store, token])
+  // Un folio de «Nadie» dice cuál es y hasta qué hora; los demás pedidos, lo de siempre.
+  const reminder = (r: Tracking): { title?: string; text: string } => {
+    if (r.requiresAcceptance !== false || r.paymentMode === 'CARD_ONLINE') return { text: t('tracking.inProgress') }
+    if (r.paid || r.status !== 'PENDING_ACCEPTANCE') return { text: t('tracking.folio.reminderPaid', { folio: r.orderNumber }) }
+    const tz = r.venueTimezone ?? store.info.value?.venue.timezone ?? 'America/Mexico_City'
+    return { title: t('tracking.folio.reminderTitle', { folio: r.orderNumber }), text: t('tracking.folio.reminderText', { time: formatTime(r.acceptDeadlineAt, tz, store.locale) }) }
+  }
   const info = store.info.value
   const name = info?.venue.name || null
   // La página hospedada pone el nombre real en su título (no el que adivina del slug).
@@ -173,8 +180,8 @@ export function OrderApp({ accentColor }: { accentColor?: string }) {
       )}
       {notice && <Notice tone="neutral" text={notice} action={{ label: t('common.close'), onClick: () => { store.notice.value = null } }} />}
       {active && screen !== 'tracking' && (
-        <Notice tone="neutral" text={t('tracking.inProgress')}
-          action={{ label: t('tracking.view'), onClick: () => { store.trackingToken.value = active; store.go('tracking') } }} />
+        <Notice tone="neutral" {...reminder(active.tracking)}
+          action={{ label: t('tracking.view'), onClick: () => { store.trackingToken.value = active.token; store.go('tracking') } }} />
       )}
       {/* Datos y código pintan el estado del envío junto a su botón; las demás, arriba. */}
       {(screen === 'menu' || screen === 'product' || screen === 'cart') && <CheckoutStatus />}
