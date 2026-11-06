@@ -232,7 +232,7 @@ describe('submitOrder', () => {
     const { store, body } = setup()
     api.createOrder.mockRejectedValueOnce(new ApiError('x', 409, 'TOO_MANY_PENDING_ORDERS'))
     expect(await submitOrder(store, body)).toEqual({
-      kind: 'error', message: 'Ya tienes 3 pedidos esperando respuesta en este restaurante.', retryable: false,
+      kind: 'error', message: 'Ya tienes 3 pedidos esperando respuesta en este negocio.', retryable: false,
     })
     expect(pendingAttempt(store.slug)).toBeNull()
   })
@@ -248,7 +248,7 @@ describe('submitOrder', () => {
     const { store, body } = setup()
     api.createOrder.mockRejectedValueOnce(new ApiError('Negocio no encontrado', 404, 'VENUE_NOT_FOUND'))
     const r = await submitOrder(store, body)
-    expect(r).toEqual({ kind: 'error', message: 'No encontramos este restaurante.', retryable: true })
+    expect(r).toEqual({ kind: 'error', message: 'No encontramos este negocio.', retryable: true })
     expect(pendingAttempt(store.slug)?.key).toBe(sent(0).key)
     expect(loadLastOrder(store.slug)).toBeNull()
   })
@@ -267,7 +267,7 @@ describe('submitOrder', () => {
   it('W1: 404 con final:true ⇒ el intento SÍ se resuelve (el rechazo quedó guardado) y no hay «Reintentar»', async () => {
     const { store, body } = setup()
     api.createOrder.mockRejectedValueOnce(fin(404, 'VENUE_NOT_FOUND'))
-    expect(await submitOrder(store, body)).toEqual({ kind: 'error', message: 'No encontramos este restaurante.', retryable: false })
+    expect(await submitOrder(store, body)).toEqual({ kind: 'error', message: 'No encontramos este negocio.', retryable: false })
     expect(pendingAttempt(store.slug)).toBeNull()
   })
 
@@ -385,7 +385,7 @@ describe('send (lo que ve la tienda)', () => {
     const { store, body } = setup()
     api.createOrder.mockRejectedValueOnce(new ApiError('x', 404, 'VENUE_NOT_FOUND'))
     await send(store, body)
-    expect(checkoutOf(store).feedback.value).toEqual({ kind: 'error', message: 'No encontramos este restaurante.', retryable: true })
+    expect(checkoutOf(store).feedback.value).toEqual({ kind: 'error', message: 'No encontramos este negocio.', retryable: true })
     expect(checkoutOf(store).pending.value).toBe(true)
     api.createOrder.mockResolvedValueOnce(created({ replay: true }))
     await retry(store)
@@ -434,7 +434,7 @@ describe('ronda 1 de arreglos', () => {
     const { store, body } = setup()
     api.createOrder.mockRejectedValueOnce(new ApiError('Cuenta desactivada', 401, 'CUSTOMER_INACTIVE'))
     expect(await submitOrder(store, body)).toEqual({
-      kind: 'error', message: 'Tu cuenta está desactivada en este restaurante.', retryable: false,
+      kind: 'error', message: 'Tu cuenta está desactivada en este negocio.', retryable: false,
     })
     expect(pendingAttempt(store.slug)?.key).toBe(sent(0).key)
   })

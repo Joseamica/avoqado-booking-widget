@@ -75,8 +75,8 @@ describe('carrito cotizado por el servidor', () => {
       ],
     }))
     const tacosRow = rowOf('Tacos')
-    const rowIssue = within(tacosRow).getByText('Un platillo de tu pedido ya no está disponible.')
-    expect(within(rowOf('Flautas')).queryByText('Un platillo de tu pedido ya no está disponible.')).toBeNull()
+    const rowIssue = within(tacosRow).getByText('Un producto de tu pedido ya no está disponible.')
+    expect(within(rowOf('Flautas')).queryByText('Un producto de tu pedido ya no está disponible.')).toBeNull()
     // El de un renglón es un <p role="alert" class="avq-o-issue"> dentro del <li> (radio 12); el del pedido entero, el mismo <p>
     // pero hijo directo de la pantalla, que es lo que la hoja de estilos usa para darle el radio de los avisos (16).
     expect(rowIssue.tagName).toBe('P')
@@ -151,7 +151,7 @@ describe('carrito cotizado por el servidor', () => {
 
   it('W3: con la tienda DISABLED (p. ej. tras un 409 ORDERING_DISABLED) el carrito dice por qué y no deja continuar', async () => {
     await show([flautas], quoteOf(170), infoOf({ status: 'DISABLED', reason: 'NOT_ENABLED' }))
-    expect(screen.getByText('Este restaurante no recibe pedidos en línea por el momento.')).toBeTruthy()
+    expect(screen.getByText('Este negocio no recibe pedidos en línea por el momento.')).toBeTruthy()
     expect(continueBtn().disabled).toBe(true)
   })
 
@@ -160,7 +160,7 @@ describe('carrito cotizado por el servidor', () => {
     expect(screen.getByText('Pedidos en pausa')).toBeTruthy()
     expect(continueBtn().disabled).toBe(true)
     // Ver y editar: la nota, «Más», «Menos» y el bote funcionan como con la tienda abierta.
-    const note = screen.getByLabelText('Nota para el restaurante') as HTMLTextAreaElement
+    const note = screen.getByLabelText('Nota para el negocio') as HTMLTextAreaElement
     expect(note.disabled).toBe(false)
     fireEvent.click(within(rowOf('Flautas')).getByRole('button', { name: 'Más Flautas' }))
     expect(qtyOf(s, 'a')).toBe(3)
@@ -324,8 +324,8 @@ describe('carrito cotizado por el servidor', () => {
     expect(s.screen.value).toBe('menu')
     s.go('cart')
     // «Ver la carta» es del carrito vacío: con renglones, la flecha se llama «Volver a la carta» (como en la maqueta).
-    expect(screen.queryByRole('button', { name: 'Ver la carta' })).toBeNull()
-    const back = screen.getByRole('button', { name: 'Volver a la carta' })
+    expect(screen.queryByRole('button', { name: 'Ver el menú' })).toBeNull()
+    const back = screen.getByRole('button', { name: 'Volver al menú' })
     expect(back.classList.contains('avq-o-back')).toBe(true)
     expect(back.textContent).toBe('')
     fireEvent.click(back)
@@ -357,10 +357,10 @@ describe('carrito cotizado por el servidor', () => {
 
   it('carrito vacío: la misma flecha y el título «Tu pedido» de siempre, el mensaje centrado y «Ver la carta» (primario), que lleva a la carta (sin cotizar nada)', async () => {
     const s = await show([], quoteOf(0))
-    const back = screen.getByRole('button', { name: 'Volver a la carta' })
+    const back = screen.getByRole('button', { name: 'Volver al menú' })
     const title = screen.getByRole('heading', { name: 'Tu pedido' })
     const message = screen.getByText('Tu pedido está vacío.')
-    const goMenu = screen.getByRole('button', { name: 'Ver la carta' })
+    const goMenu = screen.getByRole('button', { name: 'Ver el menú' })
     // De arriba abajo, como el carrito con renglones: la flecha, el título, el mensaje y el botón.
     const order = [back, title, message, goMenu]
     for (let i = 1; i < order.length; i++) expect(order[i - 1].compareDocumentPosition(order[i]) & Node.DOCUMENT_POSITION_FOLLOWING, String(i)).toBeTruthy()
@@ -385,7 +385,7 @@ describe('carrito cotizado por el servidor', () => {
   it('texto fijo de pago y nota para el restaurante de hasta 300 caracteres', async () => {
     const s = await show([flautas], quoteOf(170))
     expect(screen.getByText('IVA incluido. Pagas al recoger.')).toBeTruthy()
-    const note = screen.getByLabelText('Nota para el restaurante') as HTMLTextAreaElement
+    const note = screen.getByLabelText('Nota para el negocio') as HTMLTextAreaElement
     expect(note.maxLength).toBe(300)
     fireEvent.input(note, { target: { value: 'Paso a las 2' } })
     expect(checkoutOf(s).draft.value.note).toBe('Paso a las 2')
@@ -425,7 +425,7 @@ describe('carrito cotizado por el servidor', () => {
     expect(within(flautasRow).getByText('In “Salsa” choose at least 2 options.')).toBeTruthy()
     expect(within(flautasRow).getByText('In “Salsa” you can choose up to 3.')).toBeTruthy()
     const tacosRow = rowOf('Tacos')
-    expect(within(tacosRow).getByText('A dish in your order is no longer available.')).toBeTruthy()
+    expect(within(tacosRow).getByText('A product in your order is no longer available.')).toBeTruthy()
     expect(within(tacosRow).getByText('The quantity must be a whole number from 1 to 20.')).toBeTruthy()
     expect(screen.getByText('The minimum order is $100.')).toBeTruthy()
     expect(screen.getByText('Aviso nuevo del servidor.')).toBeTruthy()
@@ -437,7 +437,7 @@ describe('carrito cotizado por el servidor', () => {
     // «Continuar» también va en inglés y lleva el total de la cotización.
     expect((screen.getByRole('button', { name: /^Continue/ }) as HTMLButtonElement).textContent).toBe('Continue $170')
     expect(screen.getByText('VAT included. Pay at pickup.')).toBeTruthy()
-    expect(screen.getByLabelText('Note for the restaurant')).toBeTruthy()
+    expect(screen.getByLabelText('Note for the business')).toBeTruthy()
     expect(screen.getByText('Total')).toBeTruthy()
     expect(document.body.textContent).not.toMatch(/elige|platillo|pedido mínimo|cart\./)
   })
@@ -544,12 +544,12 @@ describe('al quitar un renglón con el bote', () => {
       fireEvent.click(trashOf('Tacos'))
       expect(s.cart.value).toEqual([])
       expect(screen.getByText('Tu pedido está vacío.')).toBeTruthy()
-      const goMenu = screen.getByRole('button', { name: 'Ver la carta' })
+      const goMenu = screen.getByRole('button', { name: 'Ver el menú' })
       expect(document.activeElement).toBe(goMenu)
       expect(focus.mock.calls[focus.mock.contexts.lastIndexOf(goMenu)][0]).toEqual({ preventScroll: true })
       // El título y la flecha siguen ahí, y el foco no se fue a ninguno de los dos.
       expect(screen.getByRole('heading', { name: 'Tu pedido' })).toBeTruthy()
-      expect(screen.getByRole('button', { name: 'Volver a la carta' })).toBeTruthy()
+      expect(screen.getByRole('button', { name: 'Volver al menú' })).toBeTruthy()
     } finally {
       focus.mockRestore()
     }

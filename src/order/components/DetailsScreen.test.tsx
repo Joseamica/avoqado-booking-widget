@@ -51,7 +51,7 @@ describe('tus datos y aviso de privacidad', () => {
   it('el aviso simplificado nombra al restaurante, va antes de la casilla y liga al aviso integral', () => {
     show()
     const notice = screen.getByText(
-      'Flautas usará tu nombre y teléfono para preparar tu pedido, verificar tu número por WhatsApp, avisarte cómo va y contactarte sobre este pedido. Avoqado procesa estos datos por cuenta del restaurante.',
+      'Flautas usará tu nombre y teléfono para preparar tu pedido, verificar tu número por WhatsApp, avisarte cómo va y contactarte sobre este pedido. Avoqado procesa estos datos por cuenta del negocio.',
     )
     const link = screen.getByRole('link', { name: 'Aviso de privacidad' }) as HTMLAnchorElement
     expect(link.getAttribute('href')).toBe(API_BASE + '/venues/v1/privacy-notice')
@@ -59,7 +59,7 @@ describe('tus datos y aviso de privacidad', () => {
     expect(notice.compareDocumentPosition(box) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(screen.getByText('Av. Universidad 123, Coyoacán')).toBeTruthy()
     expect(screen.getByText('55 1234 5678')).toBeTruthy()
-    expect(screen.getByText('Puedes cancelar mientras el restaurante no acepte tu pedido; después, llama al restaurante.')).toBeTruthy()
+    expect(screen.getByText('Puedes cancelar mientras el negocio no acepte tu pedido; después, llama al negocio.')).toBeTruthy()
     expect(screen.getByText('Te avisaremos en la página de tu pedido (y por correo si lo diste).')).toBeTruthy()
   })
 
@@ -357,12 +357,12 @@ describe('fase 2: cómo pagar', () => {
     expect(pickup.closest('label')!.textContent).toBe('Pagar al recoger')
     expect([card.checked, pickup.checked]).toEqual([true, false])
     expect(within(foot()).getByText('Pagas ahora con tarjeta.')).toBeTruthy()
-    expect(within(foot()).queryByText('Pagas al recoger en el restaurante.')).toBeNull()
+    expect(within(foot()).queryByText('Pagas al recoger en el negocio.')).toBeNull()
     // Con tarjeta no se manda código: la ayuda del código no aplica.
     expect(screen.queryByText('Aquí te mandamos un código para confirmar tu pedido.')).toBeNull()
     fireEvent.click(pickup)
     expect([card.checked, pickup.checked]).toEqual([false, true])
-    expect(within(foot()).getByText('Pagas al recoger en el restaurante.')).toBeTruthy()
+    expect(within(foot()).getByText('Pagas al recoger en el negocio.')).toBeTruthy()
     expect(screen.getByText('Aquí te mandamos un código para confirmar tu pedido.')).toBeTruthy()
   })
 
@@ -377,7 +377,7 @@ describe('fase 2: cómo pagar', () => {
     for (const paymentModes of [{ payAtPickup: true, cardOnline: false }, { payAtPickup: true }]) {
       show({ paymentModes })
       expect(screen.queryByRole('radiogroup')).toBeNull()
-      expect(within(foot()).getByText('Pagas al recoger en el restaurante.')).toBeTruthy()
+      expect(within(foot()).getByText('Pagas al recoger en el negocio.')).toBeTruthy()
       cleanup()
     }
   })

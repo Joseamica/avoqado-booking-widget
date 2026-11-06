@@ -23,14 +23,14 @@ const show = (store: ReturnType<typeof makeStore>) => render(withStore(store, <M
 describe('estado de la tienda', () => {
   it('DISABLED: sin carta', () => {
     show(makeStore(infoOf({ status: 'DISABLED' }), menuOf(product())))
-    expect(screen.getByText('Este restaurante no recibe pedidos en línea por el momento.')).toBeTruthy()
+    expect(screen.getByText('Este negocio no recibe pedidos en línea por el momento.')).toBeTruthy()
     expect(screen.queryByText('Flautas de pollo')).toBeNull()
   })
   it('403 PLAN_REQUIRED: igual que DISABLED', () => {
     const s = makeStore(null, null)
     s.infoError.value = new ApiError('x', 403, 'PLAN_REQUIRED')
     show(s)
-    expect(screen.getByText('Este restaurante no recibe pedidos en línea por el momento.')).toBeTruthy()
+    expect(screen.getByText('Este negocio no recibe pedidos en línea por el momento.')).toBeTruthy()
   })
   it('CLOSED con horario de hoy, sin horario hoy y nocturno', () => {
     const day = (ranges: { open: string; close: string }[]) => ({ enabled: ranges.length > 0, ranges })
@@ -53,7 +53,7 @@ describe('estado de la tienda', () => {
     expect(screen.getByText('Muchos pedidos en este momento. Intenta en unos minutos.')).toBeTruthy()
     cleanup()
     show(makeStore(infoOf({ status: 'OFFLINE', reason: 'NO_DEVICE' }), menuOf(product())))
-    expect(screen.getByText('El restaurante no está conectado. Intenta en unos minutos.')).toBeTruthy()
+    expect(screen.getByText('El negocio no está conectado. Intenta en unos minutos.')).toBeTruthy()
   })
   it('W6: pausa con hora (pausedUntil) dice a qué hora vuelve, en la zona del negocio; sin hora, el texto de siempre', () => {
     const paused = (pausedUntil: string | null, locale: 'es' | 'en' = 'es') =>
@@ -91,7 +91,7 @@ describe('errores de carga', () => {
   it('404 VENUE_NOT_FOUND', () => {
     const s = makeStore(null, null); s.infoError.value = new ApiError('no', 404, 'VENUE_NOT_FOUND')
     show(s)
-    expect(screen.getByText('No encontramos este restaurante.')).toBeTruthy()
+    expect(screen.getByText('No encontramos este negocio.')).toBeTruthy()
   })
   it('5xx: mensaje del servidor (o genérico) + Reintentar que llama a load()', async () => {
     vi.mocked(getInfo).mockResolvedValue(infoOf()); vi.mocked(getMenu).mockResolvedValue(menuOf(product()))
@@ -147,7 +147,7 @@ describe('refresco fallido con la carta ya cargada', () => {
   it('un 404 que no es VENUE_NOT_FOUND cae en el genérico con Reintentar', () => {
     const s = makeStore(null, null); s.infoError.value = new ApiError('', 404, 'OTRA')
     show(s)
-    expect(screen.queryByText('No encontramos este restaurante.')).toBeNull()
+    expect(screen.queryByText('No encontramos este negocio.')).toBeNull()
     expect(screen.getByText('No pudimos cargar la tienda.')).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Reintentar' })).toBeTruthy()
   })
@@ -170,7 +170,7 @@ describe('carta', () => {
     expect(screen.getByText('Todavía no hay productos en línea.')).toBeTruthy()
     cleanup()
     show(makeStore(infoOf(), { ...menuOf(product()), truncated: true }))
-    expect(screen.getByText('Esta carta es muy grande; algunos productos no se muestran aquí.')).toBeTruthy()
+    expect(screen.getByText('Este menú es muy grande; algunos productos no se muestran aquí.')).toBeTruthy()
   })
   it('producto con nombre, descripción, precio e imagen si hay', () => {
     show(makeStore(infoOf(), menuOf(product({ imageUrl: 'https://x/y.png' }), product({ id: 'p2', name: 'Agua', description: null, price: 25.5 }))))
@@ -215,7 +215,7 @@ describe('carta al estilo de las apps de comida: pestañas, filas y barra del ca
     Object.fromEntries(['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'].map(k => [k, { enabled: true, ranges: [{ open, close }] }])) as any
   const line2 = { lineId: 'l', productId: 'p1', name: 'Flautas', unitPrice: 92, quantity: 2, modifiers: [], note: null }
   const withCart = (s: ReturnType<typeof makeStore>) => { s.cart.value = [line2]; return s }
-  const tabsNav = () => screen.getByRole('navigation', { name: 'Categorías de la carta' })
+  const tabsNav = () => screen.getByRole('navigation', { name: 'Categorías del menú' })
   const tabOf = (name: string) => within(tabsNav()).getByRole('link', { name }) as HTMLElement
   const sectionOf = (tab: HTMLElement) => document.getElementById(tab.getAttribute('href')!.slice(1)) as HTMLElement
   const bar = () => screen.getByRole('button', { name: /^Ver pedido/ }) as HTMLButtonElement
@@ -426,7 +426,7 @@ describe('carta al estilo de las apps de comida: pestañas, filas y barra del ca
       const m = menuOf(product())
       m.categories[0].name = name
       render(withStore(makeStore(infoOf(), m), <OrderApp />))
-      const tab = within(screen.getByRole('navigation', { name: 'Categorías de la carta' })).getByRole('link', { name })
+      const tab = within(screen.getByRole('navigation', { name: 'Categorías del menú' })).getByRole('link', { name })
       expect(tab.textContent).toBe(name)
       expect(getComputedStyle(tab).maxWidth).toBe('240px')
       // `text-overflow` no actúa sobre un contenedor flex: el corte vive en el texto, un hijo de bloque que puede encogerse.
@@ -545,7 +545,7 @@ describe('carta al estilo de las apps de comida: pestañas, filas y barra del ca
       const cases: [Partial<StoreInfo>, string][] = [
         [{ status: 'PAUSED', reason: 'MANUAL_PAUSE', pausedUntil: null }, 'Hoy no estamos recibiendo pedidos en línea.'],
         [{ status: 'PAUSED', reason: 'TOO_BUSY' }, 'Muchos pedidos en este momento. Intenta en unos minutos.'],
-        [{ status: 'OFFLINE', reason: 'NO_DEVICE' }, 'El restaurante no está conectado. Intenta en unos minutos.'],
+        [{ status: 'OFFLINE', reason: 'NO_DEVICE' }, 'El negocio no está conectado. Intenta en unos minutos.'],
       ]
       for (const [over, sentence] of cases) {
         const s = withCart(makeStore(infoOf(over), menuOf(product())))
@@ -584,7 +584,7 @@ describe('carta al estilo de las apps de comida: pestañas, filas y barra del ca
     })
     it('los avisos de la carta (recortada, sin conexión, fallo de carga) usan las tarjetas de la tienda y «Reintentar» su botón', () => {
       const trunc = show(makeStore(infoOf(), { ...menuOf(product()), truncated: true }))
-      expect(trunc.container.querySelector('.avq-o-notice')!.textContent).toBe('Esta carta es muy grande; algunos productos no se muestran aquí.')
+      expect(trunc.container.querySelector('.avq-o-notice')!.textContent).toBe('Este menú es muy grande; algunos productos no se muestran aquí.')
       cleanup()
       const failed = makeStore(null, null); failed.infoError.value = new ApiError('', 500)
       const f = show(failed)
@@ -607,7 +607,7 @@ describe('carta al estilo de las apps de comida: pestañas, filas y barra del ca
       expect(document.querySelector('.avq-o-foot')).toBeNull() // sin renglones no hay nota de precios
       cleanup()
       const off = show(makeStore(infoOf({ status: 'DISABLED' }), menuOf(product())))
-      expect(off.container.querySelector('.avq-o-notice')!.textContent).toBe('Este restaurante no recibe pedidos en línea por el momento.')
+      expect(off.container.querySelector('.avq-o-notice')!.textContent).toBe('Este negocio no recibe pedidos en línea por el momento.')
     })
   })
 })
@@ -805,9 +805,9 @@ describe('encabezado de la tienda: portada, logo, chips y avisos', () => {
     const cases: [Partial<StoreInfo>, [string | null, string], [string | null, string]][] = [
       [{ status: 'PAUSED', reason: 'MANUAL_PAUSE' }, ['Pedidos en pausa', 'Hoy no estamos recibiendo pedidos en línea.'], ['Orders paused', 'We are not taking online orders today.']],
       [{ status: 'PAUSED', reason: 'TOO_BUSY' }, ['Pedidos en pausa', 'Muchos pedidos en este momento. Intenta en unos minutos.'], ['Orders paused', 'Lots of orders right now. Try again in a few minutes.']],
-      [{ status: 'DISABLED', reason: 'NOT_ENABLED' }, ['Pedidos en línea apagados', 'Este restaurante no recibe pedidos en línea por el momento.'], ['Online ordering is off', 'This restaurant is not taking online orders right now.']],
+      [{ status: 'DISABLED', reason: 'NOT_ENABLED' }, ['Pedidos en línea apagados', 'Este negocio no recibe pedidos en línea por el momento.'], ['Online ordering is off', 'This business is not taking online orders right now.']],
       [{ status: 'CLOSED', reason: 'OUTSIDE_HOURS' }, [null, 'Cerrado ahora.'], [null, 'Closed now.']],
-      [{ status: 'OFFLINE', reason: 'NO_DEVICE' }, [null, 'El restaurante no está conectado. Intenta en unos minutos.'], [null, 'The restaurant is not connected. Try again in a few minutes.']],
+      [{ status: 'OFFLINE', reason: 'NO_DEVICE' }, [null, 'El negocio no está conectado. Intenta en unos minutos.'], [null, 'The business is not connected. Try again in a few minutes.']],
     ]
     for (const [over, es, en] of cases) {
       for (const [locale, [title, sentence]] of [['es', es], ['en', en]] as const) {
@@ -908,7 +908,7 @@ describe('pedido en curso (lo pinta OrderApp: se ve en TODAS las ramas)', () => 
     vi.mocked(getTracking).mockResolvedValue(trk('PENDING_ACCEPTANCE'))
     const s = makeStore(null, null); withLast(s)
     app(s); await flush()
-    expect(screen.getByText('Este restaurante no recibe pedidos en línea por el momento.')).toBeTruthy()
+    expect(screen.getByText('Este negocio no recibe pedidos en línea por el momento.')).toBeTruthy()
     expect(screen.getByText('Tienes un pedido en curso')).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: 'Ver' }))
     expect(s.screen.value).toBe('tracking')
@@ -987,7 +987,7 @@ describe('ficha de producto: foco y desplazamiento al abrir y al cerrar (spec §
   // Flautas de pollo (p1) y Tostadas (p2).
   const two = () => menuOf(product(), product({ id: 'p2', name: 'Tostadas', description: null, price: 60 }))
   const row = (name: string) => screen.getByRole('button', { name: `Agregar ${name}` }) as HTMLButtonElement
-  const closeX = () => fireEvent.click(screen.getByRole('button', { name: 'Cerrar y volver a la carta' }))
+  const closeX = () => fireEvent.click(screen.getByRole('button', { name: 'Cerrar y volver al menú' }))
   // jsdom no maqueta: la prueba decide el `top` de cada elemento en la ventana (0 si no dice nada).
   const place = (topOf: (el: Element) => number | undefined) =>
     vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (this: Element) {
@@ -1086,7 +1086,7 @@ describe('ficha de producto: foco y desplazamiento al abrir y al cerrar (spec §
     fireEvent.click(q.getByRole('button', { name: 'Agregar Tostadas' }))
     // Desde el documento sólo se ve el host: document.activeElement no sirve para saber si el foco estaba en la ficha.
     expect(document.activeElement).toBe(host)
-    fireEvent.click(q.getByRole('button', { name: 'Cerrar y volver a la carta' }))
+    fireEvent.click(q.getByRole('button', { name: 'Cerrar y volver al menú' }))
     expect(host.shadowRoot!.activeElement).toBe(q.getByRole('button', { name: 'Agregar Tostadas' }))
     host.remove()
   })
