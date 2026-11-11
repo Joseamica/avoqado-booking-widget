@@ -30,6 +30,7 @@ beforeEach(() => {
   localStorage.clear()
   borrarSesion('testarudo')
   state.bindCustomerSessionToVenue('testarudo')
+  state.clearCustomerSession('testarudo') // la página empieza sin sesión
   state.customerToken.value = null
   state.customerInfo.value = null
   state.portalData.value = null
@@ -80,24 +81,42 @@ describe('CustomerPortal: entrar con la sesión única (W2)', () => {
     await waitFor(() => expect(api.getCustomerPortal).toHaveBeenCalledTimes(2))
   })
 
-  it('codex-r2 #5: un 401 tardío que ya encuentra otra sesión guardada la adopta y carga su portal (no «Entra a tu cuenta»)', async () => {
+  it('alcance A: un 401 tardío de A con B ya guardada deja la página sin sesión, sin rojo; B queda intacta para la próxima carga', async () => {
     guardarSesion('testarudo', { token: 'tok-A', customer: CLIENTE, contactos: [TEL], guardadaEn: Date.now() })
     state.bindCustomerSessionToVenue('testarudo')
     const BEA = { ...CLIENTE, id: 'c2', firstName: 'Bea' }
-    vi.mocked(api.getCustomerPortal)
-      .mockImplementationOnce(async () => {
-        // Mientras «Mi cuenta» de A espera, otra página entra como B; luego llega el 401 de A.
-        guardarSesion('testarudo', { token: 'tok-B', customer: BEA, contactos: [TEL], guardadaEn: Date.now() })
-        throw Object.assign(new Error('Sesión vieja'), { status: 401, data: { message: 'Sesión vieja' }, enviado: 'tok-A' })
-      })
-      .mockResolvedValueOnce({
-        customer: { ...BEA, loyaltyPoints: 0, totalVisits: 0 }, credits: { purchases: [] }, reservations: { upcoming: [], past: [] },
-      } as any)
+    vi.mocked(api.getCustomerPortal).mockImplementationOnce(async () => {
+      guardarSesion('testarudo', { token: 'tok-B', customer: BEA, contactos: [TEL], guardadaEn: Date.now() })
+      throw Object.assign(new Error('Sesión vieja'), { status: 401, data: { message: 'Sesión vieja' }, enviado: 'tok-A' })
+    })
     renderPortal()
-    expect(await screen.findByText('Hola, Bea')).toBeTruthy()
-    expect(screen.queryByRole('heading', { name: 'Entra a tu cuenta' })).toBeNull()
-    expect(vi.mocked(api.getCustomerPortal).mock.calls.map(c => c[1])).toEqual(['tok-A', 'tok-B'])
+    expect(await screen.findByRole('heading', { name: 'Entra a tu cuenta' })).toBeTruthy()
+    expect(vi.mocked(api.getCustomerPortal).mock.calls.map(c => c[1])).toEqual(['tok-A'])
+    expect(screen.queryByText('Hola, Bea')).toBeNull()
+    expect(screen.queryByRole('alert')).toBeNull()
     expect(leerSesion('testarudo')?.token).toBe('tok-B')
+  })
+
+  it('codex-r4 R4-2: el perfil que responde después de «Cerrar sesión» no revive la sesión', async () => {
+    guardarSesion('testarudo', { token: 'tok-A', customer: CLIENTE, contactos: [TEL], guardadaEn: Date.now() })
+    state.bindCustomerSessionToVenue('testarudo')
+    state.portalData.value = {
+      customer: { ...CLIENTE, loyaltyPoints: 0, totalVisits: 0 }, credits: { purchases: [] }, reservations: { upcoming: [], past: [] },
+    } as any
+    let responder: (r: any) => void = () => {}
+    vi.mocked(api.updateCustomerProfile).mockImplementationOnce(() => new Promise(ok => { responder = ok }))
+    renderPortal()
+    fireEvent.click(screen.getByTitle('Editar Perfil'))
+    escribir(screen.getByPlaceholderText('Nombre'), 'Anita')
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar' }))
+    await waitFor(() => expect(api.updateCustomerProfile).toHaveBeenCalled())
+    fireEvent.click(screen.getByTitle('Cerrar Sesión'))
+    await act(async () => { responder({ customer: { ...CLIENTE, firstName: 'Anita' } }) })
+    expect(leerSesion('testarudo')).toBeNull()
+    expect(localStorage.getItem('avq_customer_token:testarudo')).toBeNull()
+    expect(localStorage.getItem('avq_customer_info:testarudo')).toBeNull()
+    expect(state.customerToken.value).toBeNull()
+    expect(api.getCustomerPortal).not.toHaveBeenCalled()
   })
 
   it('codex-r3 H1: «Mi cuenta» de Ana que responde después de «Salir» no vuelve a aparecer', async () => {
@@ -124,7 +143,6 @@ describe('CustomerPortal: entrar con la sesión única (W2)', () => {
     const BEA = { ...CLIENTE, id: 'c2', firstName: 'Bea', phone: '+525599998888' }
     vi.mocked(api.updateCustomerProfile).mockImplementationOnce(async () => {
       guardarSesion('testarudo', { token: 'tok-B', customer: BEA, contactos: [TEL], guardadaEn: Date.now() })
-      state.refrescarSesion('testarudo')
       return { customer: { ...CLIENTE, firstName: 'Anita' } }
     })
     renderPortal()
@@ -149,6 +167,7 @@ describe('CustomerPortal: entrar con la sesión única (W2)', () => {
 
   it('los datos al día de la ficha (perfil, portal) no pisan un token que ya se renovó', () => {
     guardarSesion('testarudo', { token: 'tok-renovado', customer: CLIENTE, contactos: [TEL], guardadaEn: Date.now() })
+    state.bindCustomerSessionToVenue('testarudo')
     state.setCustomerSession('testarudo', 'tok-que-leyo-la-pantalla', { ...CLIENTE, firstName: 'Anita' })
     expect(leerSesion('testarudo')).toMatchObject({ token: 'tok-renovado', customer: { firstName: 'Anita' }, contactos: [TEL] })
     expect(localStorage.getItem('avq_customer_token:testarudo')).toBeNull()

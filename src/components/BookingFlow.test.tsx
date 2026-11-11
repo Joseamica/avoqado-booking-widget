@@ -162,15 +162,15 @@ describe('BookingFlow booking repair', () => {
     expect(api.createReservation).not.toHaveBeenCalled()
   })
 
-  it('codex-r3 H3: una sesión que entró en otra pestaña o página no reserva sola: el formulario dice a nombre de quién y espera', async () => {
+  it('alcance A: una sesión que entró en otra pestaña no cambia la pestaña abierta ni reserva sola (se toma al recargar)', async () => {
     vi.mocked(api.getVenueInfo).mockResolvedValue({ ...venue, products: [{ ...venue.products[0], id: 'class-a', name: 'Clase propia', type: 'CLASS' }] })
     vi.mocked(api.getClassSessionsRange).mockResolvedValue({ dateFrom: '2026-10-06', dateTo: '2026-11-05', slots: [{
       startsAt: '2026-10-08T17:00:00Z', endsAt: '2026-10-08T18:00:00Z', available: true,
       classSessionId: 'session-otra', productId: 'class-a', productName: 'Clase propia', remaining: 8, capacity: 10, enrolled: 2,
     }] })
-    window.history.replaceState({}, '', '/studio-a/classes')
     vi.mocked(api.getCustomerCredits).mockResolvedValue({ purchases: [] } as any)
     vi.mocked(api.getCustomerPortal).mockReturnValue(new Promise(() => {}))
+    window.history.replaceState({}, '', '/studio-a/classes')
     state.bindCustomerSessionToVenue('studio-a')
     render(<BookingFlow props={{ ...props(), flowType: 'classes' }} />); await flush()
     fireEvent.click(screen.getByRole('button', { name: /Clase propia.*11:00/ })); await flush()
@@ -180,10 +180,37 @@ describe('BookingFlow booking repair', () => {
       contactos: [{ tipo: 'PHONE', valor: '+525511112222', metodo: 'WHATSAPP', probadoEn: 1 }], guardadaEn: Date.now(),
     })
     await act(async () => { document.dispatchEvent(new Event('visibilitychange')) }); await flush()
-    expect(state.customerInfo.value?.firstName).toBe('Bea')
+    expect(state.customerInfo.value).toBeNull()
     expect(api.createReservation).not.toHaveBeenCalled()
-    expect(screen.getByText(/Bea/)).toBeTruthy()
-    borrarSesion('studio-a')
+    state.clearCustomerSession('studio-a')
+  })
+
+  it('alcance A (1): la sesión de la pestaña dejó de valer a media reserva ⇒ 401, «sin sesión» con calma, sin rojo, sin perder lo escrito ni reintentar', async () => {
+    guardarSesion('studio-a', {
+      token: 'tok-ana', customer: { id: 'c1', firstName: 'Ana', lastName: 'Ruiz', email: null, phone: '5512345678' },
+      contactos: [{ tipo: 'PHONE', valor: '+525512345678', metodo: 'WHATSAPP', probadoEn: 1 }], guardadaEn: Date.now(),
+    })
+    state.bindCustomerSessionToVenue('studio-a')
+    expect(state.customerToken.value).toBe('tok-ana')
+    vi.mocked(api.getCustomerCredits).mockResolvedValue({ purchases: [] } as any)
+    vi.mocked(api.getCustomerPortal).mockReturnValue(new Promise(() => {}))
+    vi.mocked(api.createReservation).mockImplementationOnce(async () => {
+      // Lo que hace `request` cuando otra pestaña salió o el SERVIDOR la rechazó: la página queda sin sesión.
+      state.clearCustomerSession('studio-a', 'tok-ana')
+      throw Object.assign(new Error('Tu sesión se cerró. Entra otra vez.'), {
+        status: 401, data: { message: 'Tu sesión se cerró. Entra otra vez.', code: 'CUSTOMER_SESSION_CLOSED' }, enviado: 'tok-ana',
+      })
+    })
+    await openAppointmentForm()
+    expect(screen.getByText('Reservando como Ana Ruiz')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Reserva cita' })); await flush()
+    expect(api.createReservation).toHaveBeenCalledTimes(1)
+    expect(state.toastMessage.value).toEqual({ text: 'Tu sesión se cerró. Puedes seguir sin cuenta o entrar otra vez.', type: 'success' })
+    expect(state.customerToken.value).toBeNull()
+    // Ya sin sesión, el formulario enseña los campos con lo que traía: puede seguir sin cuenta sin volver a escribir.
+    expect((screen.getByLabelText(/Nombre/) as HTMLInputElement).value).toBe('Ana Ruiz')
+    expect((screen.getByLabelText(/Teléfono/) as HTMLInputElement).value).toBe('5512345678')
+    expect(state.selectedSlot.value).not.toBeNull()
   })
 
   it.each(['', '5512345678'])('optional phone %j reaches the public contract', async phone => {

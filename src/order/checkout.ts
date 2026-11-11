@@ -153,7 +153,7 @@ export function submitOrder(store: OrderStore, body: CreateOrderBody): Promise<S
   return p
 }
 
-async function doSubmit(store: OrderStore, body: CreateOrderBody, reenviado = false): Promise<SubmitResult> {
+async function doSubmit(store: OrderStore, body: CreateOrderBody): Promise<SubmitResult> {
   const { slug } = store
   const t = createOrderT(store.locale)
   const pending = pendingAttempt(slug)
@@ -178,20 +178,19 @@ async function doSubmit(store: OrderStore, body: CreateOrderBody, reenviado = fa
       // Desenlace desconocido: el intento queda tal cual.
       // 401 CUSTOMER_INACTIVE: volver a verificar no sirve (el servidor contesta lo mismo). El intento NO se resuelve: queda
       // hasta que se cierre la pestaña (sessionStorage); sólo una respuesta definitiva lo borra.
-      if (e instanceof ApiError && e.code === 'CUSTOMER_INACTIVE')
+      if (e instanceof ApiError && e.code === 'CUSTOMER_INACTIVE') {
+        // codex-r4 R4-4: la sesión rechazada no se queda guardada (el intento sí, como cualquier respuesta no definitiva).
+        clearSession(slug, session?.token)
         return { kind: 'error', message: t('checkout.inactive'), retryable: false }
+      }
       if (e instanceof ApiError && e.status === 401 && e.code === 'PHONE_VERIFICATION_REQUIRED' && anon) {
         // Nunca llegó a crearse: se suelta el intento y la persona da los datos de «Mi equipo».
         settleAttempt(slug)
         return { kind: 'needsPhone' }
       }
       if (e instanceof ApiError && e.status === 401 && !card && !anon) {
+        // W1 (alcance A): se suelta esa sesión y se pide el código; nunca se reintenta con la vieja ni se toma otra a medio pedido.
         clearSession(slug, session?.token)
-        // codex-r3 H4: si mientras tanto otra pestaña guardó otra sesión que sirve para este teléfono, se reenvía UNA vez con ella
-        // (el mismo intento: misma llave). Si no, se pide el código.
-        const otra = loadSession(slug)
-        if (!reenviado && otra && otra.token !== session?.token && phone && (otra.phone === phone || samePhone(otra.phone, phone)))
-          return doSubmit(store, body, true)
         return { kind: 'needsOtp' }
       }
       const message =

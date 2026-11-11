@@ -430,6 +430,7 @@
     "esteNegocio": "this business",
     "muchosIntentos": "Too many attempts. Wait a minute.",
     "noSeGuardo": "We couldn't save your session in this browser.",
-    "sesionCerrada": "Your session ended. Sign in again."
+    "sesionCerrada": "Your session ended. Sign in again.",
+    "sesionCerradaSigue": "Your session ended. You can continue without an account or sign in again."
   }
 }

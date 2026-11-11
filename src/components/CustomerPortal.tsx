@@ -167,6 +167,8 @@ export function CustomerPortal({ venueSlug, timezone, venuePhone, t, onBack, onM
     if (!token) return
     setProfileSaving(true)
     setProfileSuccess(false)
+    // codex-r4 R4-2: si la página salió (o cambió de sesión) mientras se guardaba, la respuesta ya no es de nadie que esté adentro.
+    const epoca = epocaDe(venueSlug)
     try {
       const updates: Record<string, string> = {}
       const c = data?.customer
@@ -182,6 +184,7 @@ export function CustomerPortal({ venueSlug, timezone, venuePhone, t, onBack, onM
 
       // Sólo la ficha que respondió: `setCustomerSession` la escribe si sigue siendo la vigente (codex-r3 H2: otra página pudo entrar
       // con otra ficha mientras se guardaba; nunca se le pegan los datos de ésta).
+      if (epocaDe(venueSlug) !== epoca) return
       if (result.customer?.id) setCustomerSession(venueSlug, token, result.customer)
       // Reload portal data to refresh everything
       await loadPortal()

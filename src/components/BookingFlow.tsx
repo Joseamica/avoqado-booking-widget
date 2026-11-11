@@ -10,7 +10,7 @@ import {
   selectedSpotIds, bookingResult, isLoading, apiError, manageSecret,
   hasServiceStep, hasStaffStep, getStepConfig, resetBooking, showToast,
   creditPacks, customerCredits, selectedCreditBalance, creditPacksLoading, creditPacksLoaded,
-  showPortal, portalData, customerToken, customerInfo, setCustomerSession, clearCustomerSession, entradasAqui,
+  showPortal, portalData, customerToken, customerInfo, setCustomerSession, clearCustomerSession,
   bookingAccess,
   flowType, visibleProducts,
   selectedProducts, selectedStaffId, totalDuration, totalPrice, selectedModifiers,
@@ -208,6 +208,8 @@ export function BookingFlow({ props }: BookingFlowProps) {
   // handleFormSubmit short-circuits its own credit-check API call and submits
   // straight to /reservations with the chosen balance (or no balance for cash).
   const [inlinePayment, setInlinePayment] = useState<InlineChoice>(null)
+  // codex-r4 R4-5: lo que se eligió pagar con los créditos de una sesión no sigue a otra (salió o entró aquí).
+  useEffect(() => { setInlinePayment(null) }, [customerInfo.value?.id ?? null])
   // Visibility of the top-nav-triggered "Comprar créditos" modal. The host
   // page calls widget.showCreditPacks() → the widget dispatches
   // _avq_show_credit_packs on its host element → this flag flips on. Picking
@@ -804,6 +806,8 @@ export function BookingFlow({ props }: BookingFlowProps) {
           showToast(t('errors.slotTaken'), 'error')
           return
         }
+        // W1: la sesión de la pestaña dejó de valer: queda «sin sesión» con calma (el apartado es opcional; la reserva lo intenta igual).
+        if (err?.status === 401) return
         if (err?.status && err.status !== 404) {
           showToast(err?.data?.message ?? t('errors.generic'), 'error')
         }
@@ -1257,14 +1261,7 @@ export function BookingFlow({ props }: BookingFlowProps) {
   // Mindbody) where the form never re-appears once the account is known.
   // EXCEPT on the Square /appointments wizard — there the customer expects
   // a review screen with "Reserva cita" before the booking actually creates.
-  // codex-r3 H3: si la sesión cambió por OTRA pestaña o página (no por entrar aquí), no se reserva sola a nombre de quien entró: el
-  // formulario ya dice «Reservando como …» y espera el toque de la clienta.
-  const sesionVista = useRef({ id: customerInfo.value?.id ?? null, entradas: entradasAqui.value })
   useEffect(() => {
-    const id = customerInfo.value?.id ?? null
-    const cambioDeOtraPagina = id !== sesionVista.current.id && entradasAqui.value === sesionVista.current.entradas
-    sesionVista.current = { id, entradas: entradasAqui.value }
-    if (cambioDeOtraPagina) return
     if (step.value !== config.formStep) return
     if (flowType.value === 'appointments') return
     if (showCreditSelector || showNoCreditsBuyPrompt || showPaymentSelector) return
@@ -1297,7 +1294,7 @@ export function BookingFlow({ props }: BookingFlowProps) {
     // Eslint exhaustive-deps would want handleFormSubmit + info, but those
     // are stable for the lifetime of a non-changing booking session.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [step.value, customerInfo.value?.id, entradasAqui.value, showCreditSelector, showNoCreditsBuyPrompt, showPaymentSelector])
+  }, [step.value, customerInfo.value?.id, showCreditSelector, showNoCreditsBuyPrompt, showPaymentSelector])
 
   // The global back button is suppressed inside the ClassDetailView (which has
   // its own Atrás link) and on the listing itself. It still fires for the
@@ -1417,7 +1414,8 @@ export function BookingFlow({ props }: BookingFlowProps) {
         window.location.href = result.checkoutUrl
       }
     } catch (err: any) {
-      showToast(err.data?.message ?? t('errors.generic'), 'error')
+      if (err?.status === 401) showToast(t('entrar.sesionCerradaSigue'))
+      else showToast(err.data?.message ?? t('errors.generic'), 'error')
     } finally {
       setBuyingPackId(null)
     }
@@ -1545,6 +1543,11 @@ export function BookingFlow({ props }: BookingFlowProps) {
           blockedBy: 'APPROVAL',
         }
         step.value = config.formStep
+      } else if (err?.status === 401) {
+        // W1 (alcance A): la sesión de esta pestaña dejó de valer (salió en otra, venció o la revocaron). `request` ya la dejó sin
+        // sesión; aquí no se reintenta con la vieja ni se pinta rojo: el formulario, el horario y lo escrito se quedan.
+        showToast(t('entrar.sesionCerradaSigue'))
+        expireAfterError = holdHasExpired()
       } else if (err.status === 409) {
         const continueAfterSlotConflict = () => {
           showToast(t('errors.slotTaken'), 'error')
@@ -1652,17 +1655,18 @@ export function BookingFlow({ props }: BookingFlowProps) {
           showToast(err.data?.message ?? t('errors.generic'), 'error')
           return
         }
-        // W1: la sesión cambió mientras se consultaban los créditos: la pantalla ya se releyó; la clienta confirma otra vez.
+        // W1: la sesión de la página cambió mientras se consultaban los créditos (entró o salió aquí): se confirma otra vez.
         if (err?.data?.code === 'CUSTOMER_SESSION_CHANGED') {
-          showToast(err.data.message, 'error')
+          showToast(err.data.message)
           return
         }
         // Session expired / invalid mid-flow: the server said who we are is
         // not trusted anymore. Drop it and ask to sign in again — never fall
         // through to a guest booking the customer didn't intend.
         if (err?.status === 401) {
+          // W1: «sin sesión» con calma (sin rojo): para usar sus créditos, que entre otra vez.
           clearCustomerSession(props.venue, err.enviado ?? sessionToken)
-          showToast(t('creditPacks.loginToUseCredits'), 'error')
+          showToast(t('creditPacks.loginToUseCredits'))
           showPortal.value = true
           return
         }

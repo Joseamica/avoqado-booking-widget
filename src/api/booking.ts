@@ -11,7 +11,7 @@ import type {
   ModifierSelection,
 } from '../types'
 import { aplicarRenovacion, type FichaNueva, type SesionEmitida } from '../lib/sesionDeCliente'
-import { clearCustomerSession, epocaDe, refrescarSesion, tokenParaMandar } from '../state/booking'
+import { adoptarRenovacion, clearCustomerSession, epocaDe, tokenParaMandar } from '../state/booking'
 
 const BASE = (import.meta.env?.VITE_API_URL as string | undefined)
   || 'https://api.avoqado.io/api/v1/public'
@@ -20,32 +20,17 @@ const fallaDeSesion = (status: number, code: string, message: string, enviado: s
   Object.assign(new Error(message), { status, data: { message, code }, enviado })
 
 /**
- * `sesion`: la llamada puede ir con la sesión de la clienta (`token` = el que la pantalla enseña; vacío = invitada). W1, una sola
- * fuente de verdad (codex-r2 y r3):
- * - el token que se MANDA es el vigente al momento de mandar (`tokenParaMandar`), aunque la pantalla se crea invitada (H3);
- * - `confirma` (reservar, comprar un paquete, guardar el perfil): si la sesión vigente no es la que la pantalla enseñaba, no se manda
- *   nada; la pantalla ya se releyó («Reservando como…») y la clienta confirma otra vez (H3). Nadie reserva a nombre de otra sin verlo;
- * - si la pantalla tenía sesión y ya no hay ninguna (salió en otra pestaña o página), responde como un 401, sin red;
- * - todo 401 de una llamada con sesión la cierra, o adopta la que ya esté guardada (H4);
- * - una LECTURA que se pidió en otra época de la sesión no se publica (H1). Una escritura nunca se descarta (duplicaría);
- * - si el SERVIDOR la renueva (`x-customer-session`, S6), se guarda. Los errores llevan `enviado`.
+ * `sesion`: la pantalla manda con la sesión de la página (`token` vacío = invitada: sigue invitada). W1, alcance A:
+ * - se manda con la sesión de ESTA página mientras siga guardada (`tokenParaMandar`; la renovada si otra pestaña la renovó). Si ya no
+ *   está (salió en otra pestaña o página, entró otra ficha), la página queda sin sesión y se responde un 401 sin tocar la red;
+ * - todo 401 de una llamada con sesión la cierra (codex-r3 H4);
+ * - una LECTURA que se pidió en otra época de la sesión de la página no se publica (codex-r3 H1). Una escritura nunca se descarta;
+ * - si el SERVIDOR la renueva (`x-customer-session`, S6), se guarda y la página sigue con la renovada. Los errores llevan `enviado`.
  */
-async function request<T>(
-  url: string,
-  init?: RequestInit,
-  sesion?: { slug: string; token?: string | null; confirma?: boolean },
-): Promise<T> {
-  let enviado: string | null = null
-  let epoca = 0
-  if (sesion) {
-    const r = tokenParaMandar(sesion.slug, sesion.token)
-    enviado = r.token
-    epoca = epocaDe(sesion.slug)
-    if (sesion.confirma && r.cambio) {
-      throw fallaDeSesion(428, 'CUSTOMER_SESSION_CHANGED', 'Tu sesión cambió: revisa a nombre de quién va y confirma otra vez.', enviado)
-    }
-    if (sesion.token && !enviado) throw fallaDeSesion(401, 'CUSTOMER_SESSION_CLOSED', 'Tu sesión se cerró. Entra otra vez.', sesion.token)
-  }
+async function request<T>(url: string, init?: RequestInit, sesion?: { slug: string; token?: string | null }): Promise<T> {
+  const enviado = sesion?.token ? tokenParaMandar(sesion.slug) : null
+  const epoca = sesion ? epocaDe(sesion.slug) : 0
+  if (sesion?.token && !enviado) throw fallaDeSesion(401, 'CUSTOMER_SESSION_CLOSED', 'Tu sesión se cerró. Entra otra vez.', sesion.token)
   const res = await fetch(url, {
     ...init,
     headers: {
@@ -55,7 +40,7 @@ async function request<T>(
       ...(enviado ? { Authorization: `Bearer ${enviado}` } : {}),
     },
   })
-  if (sesion && enviado && aplicarRenovacion(sesion.slug, res.headers, enviado)) refrescarSesion(sesion.slug)
+  if (sesion && enviado && aplicarRenovacion(sesion.slug, res.headers, enviado)) adoptarRenovacion(sesion.slug, enviado)
   if (!res.ok) {
     let err: any
     try { err = await res.json() } catch { err = { message: `HTTP ${res.status}` } }
@@ -63,7 +48,7 @@ async function request<T>(
     const e = Object.assign(new Error(err.message ?? 'Request failed'), { status: res.status, data: err, enviado })
     throw e
   }
-  if (sesion && (init?.method ?? 'GET') === 'GET' && epocaDe(sesion.slug) !== epoca) {
+  if (sesion && enviado && (init?.method ?? 'GET') === 'GET' && epocaDe(sesion.slug) !== epoca) {
     throw fallaDeSesion(409, 'CUSTOMER_SESSION_CHANGED', 'Tu sesión cambió mientras cargaba.', enviado)
   }
   if (res.status === 204) return undefined as T
@@ -130,14 +115,14 @@ export function getClassSessionsRange(slug: string, params: {
 export function createReservation(
   slug: string,
   data: PublicCreateReservationRequest,
-  /** The session the screen shows (empty = guest). W1: the request goes with the session vigente at send time; if it is not
-   *  the one the screen showed, nothing is sent (428 CUSTOMER_SESSION_CHANGED) and the customer confirms again. */
+  /** The page's session (empty = guest, stays guest). W1 (scope A): sent with the page's session while it is still stored;
+   *  if not, the page drops to guest and this rejects with a local 401 (nothing is sent). */
   token?: string,
 ): Promise<PublicBookingResult> {
   return request(`${BASE}/venues/${slug}/reservations`, {
     method: 'POST',
     body: JSON.stringify(data),
-  }, { slug, token, confirma: true })
+  }, { slug, token })
 }
 
 // ==================== Slot Hold (Square countdown UX) ====================
@@ -299,7 +284,7 @@ export function createPackCheckout(slug: string, packId: string, data: {
   return request(`${BASE}/venues/${slug}/credit-packs/${packId}/checkout`, {
     method: 'POST',
     body: JSON.stringify(data),
-  }, { slug, token, confirma: true })
+  }, { slug, token })
 }
 
 // ==================== Customer Portal ====================
@@ -392,7 +377,7 @@ export function updateCustomerProfile(slug: string, token: string, data: {
   return request(`${BASE}/venues/${slug}/customer/profile`, {
     method: 'PATCH',
     body: JSON.stringify(data),
-  }, { slug, token, confirma: true })
+  }, { slug, token })
 }
 
 /**

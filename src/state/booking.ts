@@ -168,23 +168,20 @@ export const showPortal = signal(false)
 export const bookingAccess = signal<BookingAccessState | null>(null)
 
 /**
- * Época de la sesión de cada negocio: sube cada vez que cambia QUIÉN está adentro (otra ficha, otros contactos probados, «Salir»).
- * Una respuesta que se pidió en otra época ya no es de la sesión vigente y no se publica (codex-r3 H1).
+ * Época de la sesión de la PÁGINA en cada negocio: sube cada vez que cambia quién está adentro en esta página (entró aquí, salió, o
+ * su sesión dejó de valer). Una respuesta que se pidió en otra época no se publica (codex-r3 H1).
  */
 const epocas = new Map<string, number>()
 export const epocaDe = (slug: string): number => epocas.get(slug) ?? 0
 
-/** Cuántas veces se entró en ESTA página (no en otra pestaña): reservar solo por la clienta sólo sigue a una entrada de aquí. */
-export const entradasAqui = signal(0)
+type Vigente = ReturnType<typeof vigente>
 
 /**
- * Las señales son sólo la VISTA de lo guardado (W1, rediseño codex-r2): se releen al usarse (cada petición autenticada pasa por
- * `tokenParaMandar`), al volver a la pestaña y cuando otra pestaña cambia el `localStorage`. «Misma sesión» = misma ficha con los
- * mismos contactos probados: si cambió, lo cargado de la anterior se suelta (portal, acceso, créditos y su selección; codex-r3 H5) y el
- * portal se vuelve a pedir. Devuelve el token vigente.
+ * W1, alcance A (conductor, 10-nov): la sesión se comparte entre tienda y reservas SÓLO AL ABRIR LA PÁGINA (o al entrar en ella). La
+ * página sigue con SU sesión y nunca toma la de otra pestaña o página; una pestaña vieja se pone al día al recargar. `fijarPagina` es
+ * el único que la cambia; si cambia quién está adentro, sube la época y se suelta lo cargado (portal, acceso, créditos y su selección).
  */
-export function refrescarSesion(slug: string): string | null {
-  const v = vigente(slug)
+function fijarPagina(slug: string, v: Vigente): void {
   const antes = sessionByVenue.get(slug)
   const identidad = v?.identidad ?? null
   const misma = !!antes && (antes.identidad ?? null) === identidad
@@ -206,116 +203,112 @@ export function refrescarSesion(slug: string): string | null {
       selectedCreditBalance.value = null
     }
   }
-  return v?.token ?? null
 }
 
 /**
- * El token para MANDAR una petición: el vigente en este momento (la pantalla queda al día). `cambio`: la sesión vigente no es la que
- * la pantalla enseñaba al tocar (`deLaPantalla`; vacío = invitada). Lo que se confirma no sale así: se relee y se confirma otra vez.
+ * El token con que esta página MANDA: el suyo, mientras su sesión siga guardada (si otra pestaña la renovó, el renovado: es la misma
+ * sesión). Si ya no está (salió en otra pestaña o página, entró otra ficha, se borró), la página queda sin sesión y no manda nada;
+ * nunca toma otra.
  */
-export function tokenParaMandar(slug: string, deLaPantalla?: string | null): { token: string | null; cambio: boolean } {
-  const antes = sessionByVenue.get(slug)
-  const token = refrescarSesion(slug)
-  const ahora = sessionByVenue.get(slug)?.identidad ?? null
-  const enseñada = !deLaPantalla ? null
-    : deLaPantalla === token ? ahora
-    : deLaPantalla === antes?.token ? (antes.identidad ?? null)
-    : '?'
-  return { token, cambio: enseñada !== ahora }
+export function tokenParaMandar(slug: string): string | null {
+  const pagina = sessionByVenue.get(slug)
+  if (!pagina?.token) return null
+  const v = vigente(slug)
+  if (v && v.identidad === pagina.identidad) {
+    if (v.token !== pagina.token) fijarPagina(slug, v)
+    return v.token
+  }
+  fijarPagina(slug, null)
+  return null
 }
 
-/** Entró en esta página (código, Google, ficha nueva): la vista toma la sesión guardada. */
+/** Entró en ESTA página (código, Google, ficha nueva, contraseña): la página toma la sesión que acaba de guardarse. */
 export function entroAqui(slug: string): void {
-  entradasAqui.value++
-  refrescarSesion(slug)
+  fijarPagina(slug, vigente(slug))
 }
 
-let escuchando = false
-function escucharOtrasPestanas() {
-  if (escuchando || typeof window === 'undefined') return
-  escuchando = true
-  const releer = () => { if (activeVenueSlug.value) refrescarSesion(activeVenueSlug.value) }
-  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') releer() })
-  window.addEventListener('storage', releer)
+/** El SERVIDOR renovó (`x-customer-session`) el token que mandó esta página: sigue con el renovado (la misma sesión). */
+export function adoptarRenovacion(slug: string, enviado: string): void {
+  if (sessionByVenue.get(slug)?.token === enviado) fijarPagina(slug, vigente(slug))
 }
 
 /**
  * Point the session signals at `slug`. Idempotent; call it from every element
  * that mounts with a `venue` attribute, BEFORE any authenticated request.
+ * W1 (alcance A): abrir la página lee la sesión guardada. Montar otro elemento del mismo negocio sólo la lee si la página no tiene una;
+ * nunca cambia la que ya tiene.
  */
 export function bindCustomerSessionToVenue(slug: string) {
   if (!slug) return
   dropLegacyGlobalKeys()
-  escucharOtrasPestanas()
   const prev = activeVenueSlug.value
-  if (prev !== slug) {
-    // Park the outgoing venue's in-memory bits (portalData/bookingAccess aren't persisted).
-    if (prev) {
-      sessionByVenue.set(prev, {
-        ...sessionByVenue.get(prev),
-        token: customerToken.value,
-        info: customerInfo.value,
-        portalData: portalData.value,
-        bookingAccess: bookingAccess.value,
-      })
-    }
-    const next = sessionByVenue.get(slug) ?? { token: null, info: null, portalData: null, bookingAccess: null }
-    activeVenueSlug.value = slug
-    customerToken.value = next.token
-    customerInfo.value = next.info
-    portalData.value = next.portalData
-    bookingAccess.value = next.bookingAccess
+  if (prev === slug) {
+    if (!customerToken.value) fijarPagina(slug, vigente(slug))
+    return
   }
-  refrescarSesion(slug)
+  // Park the outgoing venue's in-memory bits (portalData/bookingAccess aren't persisted).
+  if (prev) {
+    sessionByVenue.set(prev, {
+      ...sessionByVenue.get(prev),
+      token: customerToken.value,
+      info: customerInfo.value,
+      portalData: portalData.value,
+      bookingAccess: bookingAccess.value,
+    })
+  }
+  activeVenueSlug.value = slug
+  const next = sessionByVenue.get(slug)
+  if (!next?.token) return fijarPagina(slug, vigente(slug))
+  customerToken.value = next.token
+  customerInfo.value = next.info
+  portalData.value = next.portalData
+  bookingAccess.value = next.bookingAccess
 }
 
 /**
  * Save a customer session FOR `slug` (the caller always knows its venue: `props.venue` /
- * `venueSlug`). Writes that venue's storage; the live signals only change when
- * `slug` is the active one — so a login finished in venue A's portal can never be stored
- * under venue B's key, nor repaint B's UI (auditoría 4).
+ * `venueSlug`). The live signals only change when `slug` is the active one — so a login
+ * finished in venue A's portal can never be stored under venue B's key, nor repaint B's UI (auditoría 4).
+ * W1: con `contactos` es una entrada en esta página (se guarda y la página la toma). Sin ellos son los datos al día de la ficha de
+ * ESTA página (perfil, portal): sólo tocan lo guardado si sigue siendo su sesión; nunca otra ficha, nunca un token, y nada si la
+ * página ya salió (codex-r3 H2, codex-r4 R4-2).
  */
 export function setCustomerSession(
   slug: string,
   token: string,
   customer: CustomerInfo,
   access?: BookingAccessState | null,
-  /** W1: viene de una entrada (código, Google, ficha nueva, contraseña): se guarda como la sesión única. */
   contactos?: ContactoProbado[],
 ) {
-  // W1: una entrada nueva va a la sesión única. Los datos al día de la ficha vigente sólo actualizan su `customer` (su token pudo
-  // renovarse después de que la pantalla leyó el suyo: se conserva el guardado). Sólo un token de hoy, sin sesión única ni marca de
-  // salida, sigue en sus llaves de siempre. La pantalla se relee de lo guardado.
-  const nueva = leerSesion(slug)
+  const pagina = sessionByVenue.get(slug)
   if (contactos) {
     guardarSesion(slug, { token, customer, contactos, guardadaEn: Date.now() })
-    entradasAqui.value++
-  } else if (nueva) {
-    if (nueva.customer.id === customer.id) guardarSesion(slug, { ...nueva, customer })
-  } else if (!salioEnOtraPagina(slug)) {
-    try {
-      localStorage.setItem(tokenKey(slug), token)
-      localStorage.setItem(customerKey(slug), JSON.stringify(customer))
-    } catch { /* storage blocked */ }
+    fijarPagina(slug, vigente(slug))
+  } else if (pagina?.token && pagina.identidad && (pagina.token === token || pagina.info?.id === customer.id)) {
+    const nueva = leerSesion(slug)
+    if (nueva) {
+      if (`${nueva.customer.id}|${JSON.stringify(nueva.contactos)}` === pagina.identidad) guardarSesion(slug, { ...nueva, customer })
+    } else if (pagina.identidad.startsWith('hoy|')) {
+      try { localStorage.setItem(customerKey(slug), JSON.stringify(customer)) } catch { /* storage blocked */ }
+    }
+    fijarPagina(slug, { token: pagina.token, info: customer, identidad: pagina.identidad })
   }
-  refrescarSesion(slug)
   if (access === undefined) return
   if (activeVenueSlug.value === slug) bookingAccess.value = access
-  else sessionByVenue.set(slug, { ...sessionByVenue.get(slug)!, bookingAccess: access })
+  else if (sessionByVenue.get(slug)) sessionByVenue.get(slug)!.bookingAccess = access
 }
 
 /**
  * Clear the customer session OF `slug` only. A 401 raised by venue A's widget must never
  * wipe venue B's stored session (auditoría 4). Signals are cleared only if `slug` is active.
  *
- * W1: un 401 o «Cerrar sesión» se lleva la sesión única (también la de pedidos: no se queda adentro en la otra página) y los tokens
- * de hoy. `tokenQueFallo` (un 401): si mientras tanto se guardó OTRA sesión, ésa sigue; la pantalla la adopta y, como cambió la
- * ficha, el portal se vuelve a pedir con ella (codex-r1 #3, codex-r2 #5).
+ * W1 (alcance A): «Cerrar sesión» (sin token) borra lo guardado (con la marca de salida y los tokens de hoy) y deja la página sin
+ * sesión. Un 401 (`tokenQueFallo`) borra lo guardado sólo si es esa misma sesión (otra página pudo entrar con otra), y deja sin sesión
+ * a la página sólo si era la suya (una respuesta tardía de una sesión anterior no saca a la de ahora). Nunca adopta otra.
  */
 export function clearCustomerSession(slug: string, tokenQueFallo?: string) {
-  const guardada = vigente(slug)
-  if (!(tokenQueFallo !== undefined && guardada && guardada.token !== tokenQueFallo)) borrarSesion(slug)
-  refrescarSesion(slug)
+  if (tokenQueFallo === undefined || vigente(slug)?.token === tokenQueFallo) borrarSesion(slug)
+  if (tokenQueFallo === undefined || sessionByVenue.get(slug)?.token === tokenQueFallo) fijarPagina(slug, null)
 }
 
 /**

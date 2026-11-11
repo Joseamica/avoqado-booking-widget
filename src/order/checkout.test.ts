@@ -221,19 +221,27 @@ describe('submitOrder', () => {
     expect(pendingAttempt(store.slug)).not.toBeNull()
   })
 
-  it('codex-r3 H4: un 401 con una sesión vieja, si ya hay otra guardada que sirve para ese teléfono, reenvía una vez con ella', async () => {
+  it('alcance A: un 401 con la sesión vieja pide el código sin reenviar (ni con otra sesión ni con la vieja) y conserva carrito e intento', async () => {
     const { store, body } = setup({ sessionPhone: null })
     guardarSesion(store.slug, { ...sesion('tok-vieja'), guardadaEn: Date.now() } as any)
     api.createOrder.mockImplementationOnce(async () => {
       guardarSesion(store.slug, { ...sesion('tok-nueva'), guardadaEn: Date.now() } as any) // otra pestaña entró
       throw new ApiError('Sesión vieja', 401, 'CUSTOMER_TOKEN_INVALID')
     })
-    api.createOrder.mockResolvedValueOnce(created())
-    expect((await submitOrder(store, body)).kind).toBe('created')
-    expect(sent(0).token).toBe('tok-vieja')
-    expect(sent(1).token).toBe('tok-nueva')
-    expect(sent(1).key).toBe(sent(0).key)
-    expect(leerSesion(store.slug)?.token).toBe('tok-nueva')
+    expect(await submitOrder(store, body)).toEqual({ kind: 'needsOtp' })
+    expect(api.createOrder).toHaveBeenCalledTimes(1)
+    expect(pendingAttempt(store.slug)?.key).toBe(sent(0).key)
+    expect(store.cart.value).toHaveLength(1)
+    expect(leerSesion(store.slug)?.token).toBe('tok-nueva') // la de la otra pestaña no se borra
+  })
+
+  it('codex-r4 R4-4: 401 CUSTOMER_INACTIVE también suelta la sesión rechazada (el intento queda)', async () => {
+    const { store, body } = setup({ sessionPhone: null })
+    guardarSesion(store.slug, { ...sesion('tok-1'), guardadaEn: Date.now() } as any)
+    api.createOrder.mockRejectedValueOnce(new ApiError('Esta cuenta está desactivada', 401, 'CUSTOMER_INACTIVE'))
+    expect((await submitOrder(store, body)).kind).toBe('error')
+    expect(leerSesion(store.slug)).toBeNull()
+    expect(pendingAttempt(store.slug)).not.toBeNull()
   })
 
   it('codex-r2: pedir en «Mi equipo» manda la sesión vigente al momento de mandar', async () => {
