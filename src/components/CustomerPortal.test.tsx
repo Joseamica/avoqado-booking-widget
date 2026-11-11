@@ -83,7 +83,7 @@ describe('CustomerPortal: entrar con la sesión única (W2)', () => {
 
   it('alcance A: un 401 tardío de A con B ya guardada deja la página sin sesión, sin rojo; B queda intacta para la próxima carga', async () => {
     guardarSesion('testarudo', { token: 'tok-A', customer: CLIENTE, contactos: [TEL], guardadaEn: Date.now() })
-    state.entroAqui('testarudo') // la página ya tiene la sesión guardada
+    state.entroAqui('testarudo', leerSesion('testarudo')!) // la página ya tiene la sesión guardada
     const BEA = { ...CLIENTE, id: 'c2', firstName: 'Bea' }
     vi.mocked(api.getCustomerPortal).mockImplementationOnce(async () => {
       guardarSesion('testarudo', { token: 'tok-B', customer: BEA, contactos: [TEL], guardadaEn: Date.now() })
@@ -99,7 +99,7 @@ describe('CustomerPortal: entrar con la sesión única (W2)', () => {
 
   it('codex-r4 R4-2: el perfil que responde después de «Cerrar sesión» no revive la sesión', async () => {
     guardarSesion('testarudo', { token: 'tok-A', customer: CLIENTE, contactos: [TEL], guardadaEn: Date.now() })
-    state.entroAqui('testarudo') // la página ya tiene la sesión guardada
+    state.entroAqui('testarudo', leerSesion('testarudo')!) // la página ya tiene la sesión guardada
     state.portalData.value = {
       customer: { ...CLIENTE, loyaltyPoints: 0, totalVisits: 0 }, credits: { purchases: [] }, reservations: { upcoming: [], past: [] },
     } as any
@@ -121,7 +121,7 @@ describe('CustomerPortal: entrar con la sesión única (W2)', () => {
 
   it('codex-r3 H1: «Mi cuenta» de Ana que responde después de «Salir» no vuelve a aparecer', async () => {
     guardarSesion('testarudo', { token: 'tok-A', customer: CLIENTE, contactos: [TEL], guardadaEn: Date.now() })
-    state.entroAqui('testarudo') // la página ya tiene la sesión guardada
+    state.entroAqui('testarudo', leerSesion('testarudo')!) // la página ya tiene la sesión guardada
     let responder: (d: any) => void = () => {}
     vi.mocked(api.getCustomerPortal).mockImplementationOnce(() => new Promise(ok => { responder = ok }))
     renderPortal()
@@ -136,7 +136,7 @@ describe('CustomerPortal: entrar con la sesión única (W2)', () => {
 
   it('codex-r3 H2: guardar el perfil de Ana mientras otra página entra como Bea no mezcla sus datos', async () => {
     guardarSesion('testarudo', { token: 'tok-A', customer: CLIENTE, contactos: [TEL], guardadaEn: Date.now() })
-    state.entroAqui('testarudo') // la página ya tiene la sesión guardada
+    state.entroAqui('testarudo', leerSesion('testarudo')!) // la página ya tiene la sesión guardada
     state.portalData.value = {
       customer: { ...CLIENTE, loyaltyPoints: 0, totalVisits: 0 }, credits: { purchases: [] }, reservations: { upcoming: [], past: [] },
     } as any
@@ -188,7 +188,7 @@ describe('CustomerPortal: entrar con la sesión única (W2)', () => {
 
   it('los datos al día de la ficha (perfil, portal) no pisan un token que ya se renovó', () => {
     guardarSesion('testarudo', { token: 'tok-renovado', customer: CLIENTE, contactos: [TEL], guardadaEn: Date.now() })
-    state.entroAqui('testarudo') // la página ya tiene la sesión guardada
+    state.entroAqui('testarudo', leerSesion('testarudo')!) // la página ya tiene la sesión guardada
     state.setCustomerSession('testarudo', 'tok-que-leyo-la-pantalla', { ...CLIENTE, firstName: 'Anita' })
     expect(leerSesion('testarudo')).toMatchObject({ token: 'tok-renovado', customer: { firstName: 'Anita' }, contactos: [TEL] })
     expect(localStorage.getItem('avq_customer_token:testarudo')).toBeNull()
@@ -197,7 +197,7 @@ describe('CustomerPortal: entrar con la sesión única (W2)', () => {
   it('«Cerrar sesión» borra la sesión única y las llaves de hoy', async () => {
     guardarSesion('testarudo', { token: 'tok', customer: CLIENTE, contactos: [TEL], guardadaEn: Date.now() })
     localStorage.setItem('avq_order_session:testarudo', '{"token":"pedidos-de-hoy"}')
-    state.entroAqui('testarudo') // la página tiene esa sesión (Cerrar sesión borra lo guardado sólo si sigue siendo la suya)
+    state.entroAqui('testarudo', leerSesion('testarudo')!) // la página tiene esa sesión (Cerrar sesión borra lo guardado sólo si sigue siendo la suya)
     state.customerToken.value = 'tok'
     state.portalData.value = {
       customer: { ...CLIENTE, loyaltyPoints: 0, totalVisits: 0 }, credits: { purchases: [] }, reservations: { upcoming: [], past: [] },

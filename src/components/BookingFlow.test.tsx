@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { BookingFlow } from './BookingFlow'
 import * as api from '../api/booking'
 import * as state from '../state/booking'
-import { borrarSesion, guardarSesion } from '../lib/sesionDeCliente'
+import { borrarSesion, guardarSesion, leerSesion } from '../lib/sesionDeCliente'
 import type { PublicVenueInfo, PublicReservationDetail, WidgetProps } from '../types'
 
 vi.mock('../api/booking', () => ({
@@ -191,7 +191,7 @@ describe('BookingFlow booking repair', () => {
       contactos: [{ tipo: 'PHONE', valor: '+525512345678', metodo: 'WHATSAPP', probadoEn: 1 }], guardadaEn: Date.now(),
     })
     state.bindCustomerSessionToVenue('studio-a')
-    state.entroAqui('studio-a') // la pestaña abrió con la sesión de Ana
+    state.entroAqui('studio-a', leerSesion('studio-a')!) // la pestaña abrió con la sesión de Ana
     expect(state.customerToken.value).toBe('tok-ana')
     vi.mocked(api.getCustomerCredits).mockResolvedValue({ purchases: [] } as any)
     vi.mocked(api.getCustomerPortal).mockReturnValue(new Promise(() => {}))
@@ -220,7 +220,7 @@ describe('BookingFlow booking repair', () => {
       contactos: [{ tipo: 'PHONE', valor: '+525512345678', metodo: 'WHATSAPP', probadoEn: 1 }], guardadaEn: Date.now(),
     })
     state.bindCustomerSessionToVenue('studio-a')
-    state.entroAqui('studio-a')
+    state.entroAqui('studio-a', leerSesion('studio-a')!)
     vi.mocked(api.getCustomerPortal).mockReturnValue(new Promise(() => {}))
     vi.mocked(api.getCustomerCredits).mockRejectedValue(Object.assign(new Error('x'), { status: 401, data: { message: 'x' }, enviado: 'tok-ana' }))
     window.history.replaceState({}, '', '/studio-a/appointments?avq_credits=success')

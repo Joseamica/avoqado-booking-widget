@@ -9,8 +9,8 @@
 import { signal, type Signal } from '@preact/signals'
 import { ApiError, createOrder, quote, verifyOrderingOtp } from './api'
 import { beginAttempt, pendingAttempt, settleAttempt } from './attempt'
-import { loadSession, samePhone, saveLastOrder, type OrderingSession } from './session'
-import { abrirPagina, epocaDelNegocio, fijarPagina, guardarSesion, soltarLaPagina, tokenDeLaPagina } from '../lib/sesionDeCliente'
+import { desdeUnica, loadSession, samePhone, saveLastOrder, type OrderingSession } from './session'
+import { abrirPagina, entrarAqui, epocaDelNegocio, fijarPagina, paginaDe, sesionParaMandar, soltarLaPagina, type SesionEmitida } from '../lib/sesionDeCliente'
 import { toQuoteItems } from './cart'
 import { expectedTotalFromQuote } from './money'
 import { createOrderT } from './i18n'
@@ -166,8 +166,8 @@ export async function verifyPhone(store: OrderStore, phone: string, code: string
   const r = await verifyOrderingOtp(store.slug, phone, code)
   // codex-r8 H3: llegó después de «Cerrar sesión» u otro cambio de sesión en la página: no guarda, no revive y no se manda el pedido.
   if (epocaDelNegocio(store.slug) !== antes) return false
-  guardarSesion(store.slug, { token: r.token, customer: r.customer, contactos: r.contactos, guardadaEn: Date.now() })
-  fijarPagina(store.slug, 'pedidos', loadSession(store.slug)) // entró aquí
+  // Entró aquí: la tienda adopta EXACTAMENTE la que guardó (r11), nunca una que otra pestaña escriba después.
+  entrarAqui(store.slug, 'pedidos', { token: r.token, customer: r.customer, contactos: r.contactos, guardadaEn: Date.now() }, desdeUnica)
   return true
 }
 
@@ -178,8 +178,13 @@ const leerPedidos = (slug: string) => () => loadSession(slug)
  * la misma). Si ya no (salió en otra pestaña, entró otra ficha u otra prueba del teléfono), queda sin sesión; nunca toma otra.
  */
 function sesionDeLaTienda(store: OrderStore): OrderingSession | null {
-  checkoutOf(store) // abre la página si la tienda todavía no se pintó
-  return tokenDeLaPagina(store.slug, 'pedidos', leerPedidos(store.slug)) ? loadSession(store.slug) : null
+  const c = checkoutOf(store) // abre la página si la tienda todavía no se pintó
+  const tenia = !!paginaDe(store.slug, 'pedidos')
+  // r11: UNA lectura; lo que se valida es lo que se manda.
+  const s = sesionParaMandar(store.slug, 'pedidos', leerPedidos(store.slug))
+  // r11, la pantalla no miente: perdió su sesión (salió en otra pestaña, entró otra): deja de enseñar lo de esa sesión y lo dice con calma.
+  if (tenia && !s) c.sesionCerrada.value = true
+  return s
 }
 
 /** Un 401 de la sesión con que pidió la tienda: el guardián la suelta (también su renovación) y la página queda sin sesión. */
@@ -203,9 +208,10 @@ export async function cotizar(store: OrderStore, items: QuoteItem[]): Promise<Qu
 }
 
 /** (e) Entró otra vez desde la tienda (`EntrarConCuenta`): la página toma esa sesión y se vuelve al carrito, que cotiza con ella. */
-export function entroEnLaTienda(store: OrderStore): void {
+export function entroEnLaTienda(store: OrderStore, r: SesionEmitida): void {
   const c = checkoutOf(store)
-  fijarPagina(store.slug, 'pedidos', loadSession(store.slug))
+  // r11: adopta la sesión con que entró (`EntrarConCuenta` ya la guardó), sin releer lo guardado.
+  fijarPagina(store.slug, 'pedidos', desdeUnica({ token: r.token, customer: r.customer, contactos: r.contactos, guardadaEn: Date.now() }))
   c.sesionCerrada.value = false
   c.feedback.value = null
   store.go('cart')

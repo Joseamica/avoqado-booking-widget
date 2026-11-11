@@ -2,7 +2,7 @@
 // almacenamiento la tienda funciona igual, sólo que pide el código otra vez.
 // W1: la sesión ÚNICA (`lib/sesionDeCliente`) manda; la de pedidos de hoy (`avq_order_session`) sólo queda para quien entró antes y no
 // tiene la nueva. Con QUÉ sesión pide la tienda lo decide el guardián de la página (`tokenDeLaPagina`), no esta lectura.
-import { identidadDe, leerSesion, salioEnOtraPagina, type Lectura } from '../lib/sesionDeCliente'
+import { identidadDe, leerSesion, salioEnOtraPagina, type Lectura, type SesionDeCliente } from '../lib/sesionDeCliente'
 
 /** La de pedidos de hoy, tal como se guardó. */
 export interface SesionDeHoy { token: string; phone: string; name: string | null; savedAt: number }
@@ -40,13 +40,16 @@ const remove = (key: string) => {
   }
 }
 
+/** Lo que la tienda adopta y manda de una sesión única: la leída o la que acaba de guardar (r11: sin volver a leer). */
+export function desdeUnica(nueva: SesionDeCliente): OrderingSession {
+  const telefono = nueva.contactos.find(c => c.tipo === 'PHONE')?.valor ?? null
+  return { token: nueva.token, phone: telefono, name: nueva.customer.firstName, savedAt: nueva.guardadaEn, identidad: identidadDe(nueva), datos: nueva.customer }
+}
+
 export function loadSession(slug: string): OrderingSession | null {
   const nueva = leerSesion(slug)
-  if (nueva) {
-    // Con una sesión única guardada, el token de hoy (quizá de otra ficha) nunca se usa (codex-r2 #3).
-    const telefono = nueva.contactos.find(c => c.tipo === 'PHONE')?.valor ?? null
-    return { token: nueva.token, phone: telefono, name: nueva.customer.firstName, savedAt: nueva.guardadaEn, identidad: identidadDe(nueva), datos: nueva.customer }
-  }
+  // Con una sesión única guardada, el token de hoy (quizá de otra ficha) nunca se usa (codex-r2 #3).
+  if (nueva) return desdeUnica(nueva)
   // Salió en reservas (la otra página): su token de hoy de aquí tampoco vale (codex-r1 #1).
   if (salioEnOtraPagina(slug)) {
     remove(sKey(slug))

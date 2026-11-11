@@ -8,7 +8,7 @@ vi.mock('../api', async () => {
 })
 import { ApiError, quote } from '../api'
 import { checkoutOf } from '../checkout'
-import { fijarPagina, guardarSesion, leerSesion, paginaDe } from '../../lib/sesionDeCliente'
+import { borrarSesion, fijarPagina, guardarSesion, leerSesion, paginaDe } from '../../lib/sesionDeCliente'
 import { setCustomerSession } from '../../state/booking'
 import { loadSession } from '../session'
 import { CartScreen } from './CartScreen'
@@ -707,6 +707,19 @@ describe('W3: el carrito con sus beneficios', () => {
     return s
   }
   const optsOf = (i: number) => vi.mocked(quote).mock.calls[i][2] ?? {}
+
+  it('r11 la pantalla no miente: si la tienda perdió su sesión (otra pestaña salió), deja de enseñar sus premios y lo dice con calma', async () => {
+    const s = await conSesion(opts => quoteOf(170, opts.token ? { oferta: oferta() } : {}))
+    expect(screen.getByText('¡Tienes café gratis! ¿Lo usas?')).toBeTruthy()
+    await act(async () => { borrarSesion(s.slug) }) // salió en otra pestaña
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Sí' })) })
+    await flush()
+    expect(vi.mocked(quote).mock.lastCall![2]?.token).toBeFalsy()
+    expect(screen.queryByText('¡Tienes café gratis! ¿Lo usas?')).toBeNull()
+    expect(screen.queryByText('Café gratis en tu pedido')).toBeNull()
+    expect(screen.getByText('Tu sesión se cerró')).toBeTruthy()
+    expect(document.querySelector('.avq-o-notice--error')).toBeNull()
+  })
 
   it('codex-r8 H2 (A refinada): Bea entra en reservas mientras vuela la cotización de Ana; la tienda sigue con Ana y nunca manda con Bea', async () => {
     let llega!: (q: Quote) => void

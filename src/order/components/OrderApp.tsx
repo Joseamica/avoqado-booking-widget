@@ -213,7 +213,7 @@ export function OrderApp({ accentColor }: { accentColor?: string }) {
       {screen === 'entrar' && (
         <div class="avq-o-entrar">
           <button type="button" class="avq-o-back" aria-label={t('entrar.back')} onClick={() => store.go('cart')}><Back /></button>
-          <EntrarConCuenta slug={store.slug} negocio={name} t={createT(store.locale)} onEntro={() => entroEnLaTienda(store)} />
+          <EntrarConCuenta slug={store.slug} negocio={name} t={createT(store.locale)} onEntro={r => entroEnLaTienda(store, r)} />
         </div>
       )}
       {screen === 'tracking' && <TrackingScreen />}

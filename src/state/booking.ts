@@ -1,7 +1,8 @@
 import { signal, computed } from '@preact/signals'
 import {
-  abrirPagina, alCambiarLaPagina, borrarSesion, epocaDe as epocaDeLaPagina, fijarPagina, guardarSesion, identidadDe, leerSesion, paginaDe,
-  renovarLaPagina, salioEnOtraPagina, soltarLaPagina, tokenDeLaPagina, type ContactoProbado, type Lectura, type Pagina,
+  abrirPagina, alCambiarLaPagina, borrarSesion, entrarAqui, epocaDe as epocaDeLaPagina, fijarPagina, guardarSesion, identidadDe, lecturaDe,
+  leerSesion, paginaDe, renovarLaPagina, salioEnOtraPagina, soltarLaPagina, tokenDeLaPagina, type ContactoProbado, type Lectura, type Pagina,
+  type SesionDeCliente,
 } from '../lib/sesionDeCliente'
 import type { PublicVenueInfo, Product, PublicSlot, PublicBookingResult, CreditPackPublic, CustomerCreditBalance, CustomerPortalData, FlowType, ModifierSelection, ReservationBranding } from '../types'
 
@@ -199,9 +200,12 @@ export function tokenParaMandar(slug: string, delLlamador?: string | null): stri
   return tokenDeLaPagina(slug, 'reservas', leer(slug), delLlamador)
 }
 
-/** Entró en ESTA página (código, Google, ficha nueva, contraseña): la página toma la sesión que acaba de guardarse. */
-export function entroAqui(slug: string): void {
-  fijarPagina(slug, 'reservas', vigente(slug))
+/**
+ * Entró en ESTA página por `EntrarConCuenta` (que ya la guardó): reservas adopta EXACTAMENTE esa sesión, sin releer lo guardado (r11:
+ * otra pestaña pudo escribir otra justo después).
+ */
+export function entroAqui(slug: string, sesion: Pick<SesionDeCliente, 'token' | 'customer' | 'contactos'>): void {
+  fijarPagina(slug, 'reservas', lecturaDe(sesion))
 }
 
 /** El SERVIDOR renovó (`x-customer-session`) el token que mandó esta página: sigue con el renovado (la misma sesión). */
@@ -246,11 +250,12 @@ export function setCustomerSession(
   customer: CustomerInfo,
   access?: BookingAccessState | null,
   contactos?: ContactoProbado[],
-) {
+): 'guardada' | 'memoria' | 'fallo' | undefined {
   const p = mia(slug)
+  let guardada: ReturnType<typeof entrarAqui> | undefined
   if (contactos) {
-    guardarSesion(slug, { token, customer, contactos, guardadaEn: Date.now() })
-    fijarPagina(slug, 'reservas', vigente(slug))
+    // r11: guarda y adopta EXACTAMENTE ésa, sin releer.
+    guardada = entrarAqui(slug, 'reservas', { token, customer, contactos, guardadaEn: Date.now() })
   } else if (p && (p.token === token || (p.datos as CustomerInfo | null | undefined)?.id === customer.id)) {
     const nueva = leerSesion(slug)
     if (nueva) {
@@ -260,9 +265,10 @@ export function setCustomerSession(
     }
     fijarPagina(slug, 'reservas', { token: p.token, identidad: p.identidad, datos: customer })
   }
-  if (access === undefined) return
+  if (access === undefined) return guardada
   if (activeVenueSlug.value === slug) bookingAccess.value = access
   else if (mia(slug)) uiByVenue.set(slug, { portalData: uiByVenue.get(slug)?.portalData ?? null, bookingAccess: access })
+  return guardada
 }
 
 /**

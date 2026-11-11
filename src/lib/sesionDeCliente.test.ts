@@ -80,7 +80,7 @@ describe('W1: una sola sesión de cliente por negocio', () => {
       new Response(JSON.stringify({ customer: S.customer }), { status: 200, headers: { 'x-customer-session': 'tok-3' } }),
     )
     estado.bindCustomerSessionToVenue('mindform')
-    estado.entroAqui('mindform') // la página de reservas tiene la sesión (ya renovada)
+    estado.entroAqui('mindform', leerSesion('mindform')!) // la página de reservas tiene la sesión (ya renovada)
     await getCustomerPortal('mindform', estado.customerToken.value!)
     expect(leerSesion('mindform')!.token).toBe('tok-3')
   })
@@ -405,5 +405,34 @@ describe('W1: una sola sesión de cliente por negocio', () => {
       expect(fetchMock).not.toHaveBeenCalled()
       expect(estado.customerToken.value).toBe('tok-B')
     })
+  })
+})
+
+describe('r11: reservas adopta la sesión que guardó, no la B que otra pestaña escribió justo después', () => {
+  afterEach(() => vi.restoreAllMocks())
+  const B = { ...S, token: 'tok-B', customer: { ...S.customer, id: 'ficha-B' }, contactos: [{ ...S.contactos[0], probadoEn: 2 }] }
+  function despuesDeEscribir() {
+    const set = Storage.prototype.setItem
+    let listo = false
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (this: Storage, k: string, v: string) {
+      set.call(this, k, v)
+      if (k === 'avq_sesion:r11' && !listo) { listo = true; set.call(localStorage, k, JSON.stringify({ ...B, guardadaEn: Date.now() })) }
+    })
+  }
+
+  it('entrar con código o contraseña (setCustomerSession con contactos)', () => {
+    estado.bindCustomerSessionToVenue('r11')
+    despuesDeEscribir()
+    estado.setCustomerSession('r11', 'tok-1', S.customer, null, S.contactos)
+    expect(estado.customerToken.value).toBe('tok-1')
+    expect(estado.tokenParaMandar('r11')).toBeNull() // lo guardado ya es B: no se manda ni la suya ni B
+  })
+
+  it('entrar con EntrarConCuenta (entroAqui con la sesión emitida)', () => {
+    estado.bindCustomerSessionToVenue('r11')
+    guardarSesion('r11', { ...S, guardadaEn: Date.now() })
+    guardarSesion('r11', { ...B, guardadaEn: Date.now() }) // otra pestaña escribió B entre guardar y adoptar
+    estado.entroAqui('r11', S)
+    expect(estado.customerToken.value).toBe('tok-1')
   })
 })

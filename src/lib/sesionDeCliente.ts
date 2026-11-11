@@ -57,7 +57,7 @@ function versionDelToken(token: string): number | null {
  * Qué sesión es: la ficha, la versión con que se firmó y los contactos probados. Una renovación (`x-customer-session`) conserva los
  * tres; otra entrada (otra versión tras revocar, otra prueba del contacto, otra ficha) no (codex-r5 E3).
  */
-export const identidadDe = (s: SesionDeCliente): string =>
+export const identidadDe = (s: Pick<SesionDeCliente, 'token' | 'customer' | 'contactos'>): string =>
   `${s.customer.id}|v${versionDelToken(s.token) ?? ''}|${JSON.stringify(s.contactos)}`
 const enMemoria = new Map<string, SesionDeCliente>()
 
@@ -262,22 +262,42 @@ export function abrirPagina(slug: string, s: Superficie, leer: () => Lectura | n
   if (!paginas.has(clave(slug, s))) fijarPagina(slug, s, leer())
 }
 
+/** Lo que una superficie adopta de una sesión única que tiene en la mano (la que acaba de guardar o de recibir al entrar). */
+export const lecturaDe = (x: Pick<SesionDeCliente, 'token' | 'customer' | 'contactos'>): Lectura =>
+  ({ token: x.token, identidad: identidadDe(x), datos: x.customer })
+
 /**
- * El token con que MANDA la página desde `s`: el suyo mientras su sesión siga guardada (si otra pestaña la renovó, el renovado: es la
- * misma sesión). Si ya no (salió, entró otra ficha, se borró), queda sin sesión; nunca toma otra. `delLlamador`: un token de una sesión
- * que ya no es la de la página (un sondeo de antes de salir y volver a entrar) no sale, ni con la de ahora (codex-r5 E6).
+ * «Leer y validar UNA vez» (r11): la sesión con que MANDA la superficie `s`, de UNA sola lectura de lo guardado, y ESA misma lectura es
+ * la que se devuelve para mandar (validar A y volver a leer podía mandar B si otra pestaña escribía en medio; codex-r10). Es la suya
+ * mientras siga guardada (si otra pestaña la renovó, la renovada: es la misma sesión). Si ya no (salió, entró otra ficha, se borró),
+ * queda sin sesión; nunca toma otra. `delLlamador`: un token de una sesión que ya no es la de la superficie (un sondeo de antes de salir
+ * y volver a entrar) no sale, ni con la de ahora (codex-r5 E6). Nadie fuera de aquí valida y luego relee.
  */
-export function tokenDeLaPagina(slug: string, s: Superficie, leer: () => Lectura | null, delLlamador?: string | null): string | null {
+export function sesionParaMandar<L extends Lectura>(slug: string, s: Superficie, leer: () => L | null, delLlamador?: string | null): L | null {
   const p = paginaDe(slug, s)
   if (!p) return null
   if (delLlamador && !p.linaje.includes(delLlamador)) return null
   const l = leer()
   if (l && l.identidad === p.identidad) {
     if (l.token !== p.token) fijarPagina(slug, s, l)
-    return l.token
+    return l
   }
   fijarPagina(slug, s, null)
   return null
+}
+export const tokenDeLaPagina = (slug: string, s: Superficie, leer: () => Lectura | null, delLlamador?: string | null): string | null =>
+  sesionParaMandar(slug, s, leer, delLlamador)?.token ?? null
+
+/**
+ * «Entró aquí» (r11): guarda la sesión y la superficie adopta EXACTAMENTE ésa, sin volver a leer (otra pestaña pudo escribir otra
+ * justo después). Si no se pudo guardar, no la adopta.
+ */
+export function entrarAqui(
+  slug: string, s: Superficie, sesion: SesionDeCliente, comoLectura: (x: SesionDeCliente) => Lectura = lecturaDe,
+): 'guardada' | 'memoria' | 'fallo' {
+  const r = guardarSesion(slug, sesion)
+  if (r !== 'fallo') fijarPagina(slug, s, comoLectura(sesion))
+  return r
 }
 
 /** El SERVIDOR renovó (`x-customer-session`) un token que mandó la página: sigue con el renovado. */

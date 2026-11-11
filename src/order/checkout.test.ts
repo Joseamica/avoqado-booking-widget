@@ -12,10 +12,10 @@ const api = vi.hoisted(() => ({
 vi.mock('./api', async () => ({ ...(await vi.importActual<typeof import('./api')>('./api')), ...api }))
 
 import { ApiError } from './api'
-import { buildOrderBody, checkoutOf, isDefinitive, nav, phoneToVerify, retry, send, storageWorks, submitOrder, verifyPhone } from './checkout'
+import { buildOrderBody, checkoutOf, entroEnLaTienda, isDefinitive, nav, phoneToVerify, retry, send, storageWorks, submitOrder, verifyPhone } from './checkout'
 import { createOrderStore, type OrderStore } from './store'
 import { loadLastOrder, loadSession, saveSession } from './session'
-import { guardarSesion, leerSesion } from '../lib/sesionDeCliente'
+import { guardarSesion, leerSesion, paginaDe } from '../lib/sesionDeCliente'
 import { setCustomerSession, tokenParaMandar } from '../state/booking'
 import { pendingAttempt } from './attempt'
 import { phoneE164 } from './phone'
@@ -782,6 +782,63 @@ describe('«Nadie»: pedido anónimo (sin teléfono)', () => {
     const { store, body } = anon()
     api.createOrder.mockRejectedValueOnce(new ApiError('x', 409, 'ORDERING_OFFLINE', { status: 'OFFLINE', reason: 'NO_DEVICE' }))
     expect(await submitOrder(store, body)).toEqual({ kind: 'storeUnavailable', status: 'OFFLINE', reason: 'NO_DEVICE' })
+  })
+})
+
+/** Otra pestaña escribe B en el almacenamiento justo DESPUÉS de la siguiente lectura (o escritura) de la sesión de `slug`. */
+function intercalar(slug: string, b: Record<string, unknown>, tras: 'leer' | 'escribir') {
+  const llave = `avq_sesion:${slug}`
+  const get = Storage.prototype.getItem
+  const set = Storage.prototype.setItem
+  let listo = false
+  const meteB = () => { listo = true; set.call(localStorage, llave, JSON.stringify(b)) }
+  if (tras === 'leer')
+    vi.spyOn(Storage.prototype, 'getItem').mockImplementation(function (this: Storage, k: string) {
+      const v = get.call(this, k)
+      if (k === llave && !listo) meteB()
+      return v
+    })
+  else
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (this: Storage, k: string, v: string) {
+      set.call(this, k, v)
+      if (k === llave && !listo) meteB()
+    })
+}
+const sesionB = () => ({
+  token: 'tok-B', customer: { id: 'c2', firstName: 'Bea', lastName: null, email: null, phone: '+525599998888' },
+  contactos: [{ tipo: 'PHONE', valor: '+525599998888', metodo: 'WHATSAPP', probadoEn: 2 }], guardadaEn: Date.now(),
+})
+
+describe('r11: leer y validar UNA vez (otra pestaña escribe B en medio)', () => {
+  afterEach(() => vi.restoreAllMocks())
+
+  it('codex-r10: la tienda manda EXACTAMENTE la sesión que validó, aunque B se escriba justo después de leerla', async () => {
+    const slug = `r11a${++n}`
+    guardarSesion(slug, { ...sesion('tok-A'), guardadaEn: Date.now() } as any)
+    const store = createOrderStore(slug, { locale: 'es' })
+    store.cart.value = [line()]
+    store.info.value = { ...info, requiresAcceptance: false } as StoreInfo
+    store.quote.value = quoteOf(170)
+    const body = buildOrderBody(store, { customer: { name: 'Ana' }, note: null })
+    api.createOrder.mockResolvedValueOnce(created())
+    intercalar(slug, sesionB(), 'leer')
+    await submitOrder(store, body)
+    expect(sent().token).not.toBe('tok-B')
+  })
+
+  it('el código de «Mi equipo»: la tienda adopta la sesión que guardó, no la B que otra pestaña escribió justo después', async () => {
+    const { store } = setup({ sessionPhone: null })
+    api.verifyOrderingOtp.mockResolvedValueOnce(sesion('tok-2'))
+    intercalar(store.slug, sesionB(), 'escribir')
+    expect(await verifyPhone(store, PHONE, '123456')).toBe(true)
+    expect(paginaDe(store.slug, 'pedidos')?.token).toBe('tok-2')
+  })
+
+  it('«Entrar otra vez» en la tienda adopta la sesión con que entró, no la que esté guardada después', () => {
+    const { store } = setup({ sessionPhone: null })
+    guardarSesion(store.slug, sesionB() as any) // otra pestaña ya escribió B
+    entroEnLaTienda(store, { ...sesion('tok-2') } as any)
+    expect(paginaDe(store.slug, 'pedidos')?.token).toBe('tok-2')
   })
 })
 

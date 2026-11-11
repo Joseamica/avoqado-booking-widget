@@ -10,7 +10,7 @@ import * as api from '../api/booking'
 import {
   portalData, portalLoading, customerToken, setCustomerSession, clearCustomerSession, bookingAccess, venueInfo, epocaDe, entroAqui,
 } from '../state/booking'
-import { leerSesion } from '../lib/sesionDeCliente'
+import type { SesionEmitida } from '../lib/sesionDeCliente'
 
 interface CustomerPortalProps {
   venueSlug: string
@@ -131,9 +131,8 @@ export function CustomerPortal({ venueSlug, timezone, venuePhone, t, onBack, onM
       const result = await api.customerLogin(venueSlug, { email: email.trim(), password: password.trim() })
       // S7: la contraseña ya entrega la sesión única, SIN contactos probados (prueba la ficha, no su correo).
       const antes = customerToken.value
-      setCustomerSession(venueSlug, result.token, result.customer, result.bookingAccess ?? null, [])
-      // codex-r3 H7: si el navegador no la dejó guardar, no se entra.
-      if (!leerSesion(venueSlug)) return setError(t('entrar.noSeGuardo'))
+      // codex-r3 H7: si el navegador no la dejó guardar, no se entra (r11: lo dice el guardado mismo, sin releer).
+      if (setCustomerSession(venueSlug, result.token, result.customer, result.bookingAccess ?? null, []) === 'fallo') return setError(t('entrar.noSeGuardo'))
       // El efecto pide «Mi cuenta» al cambiar el token; si es el mismo (misma ficha, mismo segundo), se pide aquí.
       if (customerToken.value === antes) await loadPortal()
     } catch (err: any) {
@@ -144,12 +143,12 @@ export function CustomerPortal({ venueSlug, timezone, venuePhone, t, onBack, onM
   }
 
   /**
-   * W2: ya entró por `EntrarConCuenta`, que guardó la sesión única: la pantalla la RELEE de lo guardado (nunca vuelve a guardar una
-   * copia que pudo envejecer; codex-r3 H6) y se pide «Mi cuenta».
+   * W2: ya entró por `EntrarConCuenta`, que guardó la sesión única: reservas adopta ESA sesión (r11: sin releer lo guardado; tampoco la
+   * vuelve a guardar, codex-r3 H6) y se pide «Mi cuenta».
    */
-  async function handleEntro() {
+  async function handleEntro(r: SesionEmitida) {
     const antes = customerToken.value
-    entroAqui(venueSlug)
+    entroAqui(venueSlug, r)
     if (customerToken.value && customerToken.value === antes) await loadPortal()
   }
 
@@ -252,7 +251,7 @@ export function CustomerPortal({ venueSlug, timezone, venuePhone, t, onBack, onM
     if (!showEmailLogin) {
       return (
         <div class="avq-animate-in">
-          <EntrarConCuenta slug={venueSlug} negocio={venueInfo.value?.name} t={t} onEntro={() => void handleEntro()} />
+          <EntrarConCuenta slug={venueSlug} negocio={venueInfo.value?.name} t={t} onEntro={r => void handleEntro(r)} />
 
           {/* Reveal the email/password login as a secondary option */}
           <div style={{ textAlign: 'center', marginTop: '16px' }}>
