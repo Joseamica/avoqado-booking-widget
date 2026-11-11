@@ -253,6 +253,18 @@ describe('W2: entrar a la cuenta', () => {
     await screen.findByText('Te enviamos un código por WhatsApp')
   })
 
+  it('codex-r2 #6: sin red al verificar, el código escrito se queda (sólo un rechazo del servidor lo borra)', async () => {
+    vi.mocked(api.verifyOtp).mockRejectedValueOnce(new TypeError('Failed to fetch'))
+    show()
+    await codigoPorWhatsApp()
+    teclearCodigo('123456')
+    expect(await screen.findByText('Sin conexión. Revisa tu internet y vuelve a intentar.')).toBeTruthy()
+    expect(screen.getAllByRole('textbox').map(c => (c as HTMLInputElement).value).join('')).toBe('123456')
+    vi.mocked(api.verifyOtp).mockResolvedValueOnce(sesion() as any)
+    fireEvent.click(boton('Entrar'))
+    await waitFor(() => expect(onEntro).toHaveBeenCalledTimes(1))
+  })
+
   it('campo vacío ⇒ dice qué falta (no un botón gris mudo); código equivocado ⇒ el mensaje y otra oportunidad', async () => {
     show()
     fireEvent.click(boton('Seguir con WhatsApp'))

@@ -133,7 +133,8 @@ export function EntrarConCuenta({ slug, negocio, t, onEntro }: Props) {
       await fn()
     } catch (e) {
       fallar(e)
-      setCodigo('')
+      // Sólo un rechazo del SERVIDOR invalida lo escrito; sin red el mismo código sigue sirviendo (codex-r2 #6).
+      if ((e as any)?.status) setCodigo('')
     } finally {
       setOcupado(false)
     }
