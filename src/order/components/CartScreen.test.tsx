@@ -8,7 +8,8 @@ vi.mock('../api', async () => {
 })
 import { ApiError, quote } from '../api'
 import { checkoutOf } from '../checkout'
-import { fijarPagina, guardarSesion, leerSesion } from '../../lib/sesionDeCliente'
+import { fijarPagina, guardarSesion, leerSesion, paginaDe } from '../../lib/sesionDeCliente'
+import { setCustomerSession } from '../../state/booking'
 import { loadSession } from '../session'
 import { CartScreen } from './CartScreen'
 import { OrderApp } from './OrderApp'
@@ -706,6 +707,22 @@ describe('W3: el carrito con sus beneficios', () => {
     return s
   }
   const optsOf = (i: number) => vi.mocked(quote).mock.calls[i][2] ?? {}
+
+  it('codex-r8 H2 (A refinada): Bea entra en reservas mientras vuela la cotización de Ana; la tienda sigue con Ana y nunca manda con Bea', async () => {
+    let llega!: (q: Quote) => void
+    const s = await conSesion(opts => opts.token === 'tok-A' && !llega ? new Promise<Quote>(r => { llega = r }) : quoteOf(170))
+    const bea = { token: 'tok-B', customer: { id: 'c2', firstName: 'Bea', lastName: null, email: null, phone: '+525599998888' },
+      contactos: [{ tipo: 'PHONE' as const, valor: '+525599998888', metodo: 'WHATSAPP' as const, probadoEn: 2 }] }
+    await act(async () => { setCustomerSession(s.slug, bea.token, bea.customer, null, bea.contactos) }) // entró Bea en reservas
+    await act(async () => { llega(quoteOf(170, { oferta: oferta() })) })
+    await flush()
+    // La tienda montada no cambió de sesión: lo que pinta es de SU sesión (Ana); se entera de Bea al recargar.
+    expect(paginaDe(s.slug, 'pedidos')?.token).toBe('tok-A')
+    expect(paginaDe(s.slug, 'reservas')?.token).toBe('tok-B')
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Sí' })) })
+    await flush()
+    expect(vi.mocked(quote).mock.calls.map(c => c[2]?.token)).not.toContain('tok-B')
+  })
 
   it('con sesión y premio: «¡Tienes café gratis! ¿Lo usas?»; «Sí» cotiza con el premio y enseña el desglose y «Quitar»', async () => {
     await conSesion(opts =>

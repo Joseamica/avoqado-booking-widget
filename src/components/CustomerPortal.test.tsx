@@ -197,6 +197,7 @@ describe('CustomerPortal: entrar con la sesión única (W2)', () => {
   it('«Cerrar sesión» borra la sesión única y las llaves de hoy', async () => {
     guardarSesion('testarudo', { token: 'tok', customer: CLIENTE, contactos: [TEL], guardadaEn: Date.now() })
     localStorage.setItem('avq_order_session:testarudo', '{"token":"pedidos-de-hoy"}')
+    state.entroAqui('testarudo') // la página tiene esa sesión (Cerrar sesión borra lo guardado sólo si sigue siendo la suya)
     state.customerToken.value = 'tok'
     state.portalData.value = {
       customer: { ...CLIENTE, loyaltyPoints: 0, totalVisits: 0 }, credits: { purchases: [] }, reservations: { upcoming: [], past: [] },

@@ -216,69 +216,50 @@ export function aplicarRenovacion(slug: string, headers: Headers | undefined, en
   return nuevo
 }
 
-// ── El guardián de la página (W1, alcance A; rediseño tras codex-r6 y r7) ─────────────────────────────────────────────────────────
-// UNA sesión por negocio y por documento. Se toma al ABRIR: al crear o montar cada elemento (reservas, portal, tienda, seguimiento),
-// nunca al primer uso, y sobrevive a que un elemento se vuelva a crear (idioma, venue, pedido, canal). La sesión ÚNICA se comparte entre
-// superficies; el token de hoy es de su superficie (negocio + superficie, codex-r7 H2). Nunca toma la de otra pestaña: una pestaña vieja
-// se pone al día al recargar.
+// ── El guardián de la página (W1, «A refinada», founder 11-nov) ───────────────────────────────────────────────────────────────────
+// Cada SUPERFICIE (reservas y portal; tienda y seguimiento) toma la sesión UNA vez al montarse (al crear o montar su elemento, nunca al
+// primer uso) y después vive sola, aunque el elemento se vuelva a crear (idioma, venue, pedido, canal). Entrar o salir en una superficie
+// guarda en el almacenamiento para las páginas que se abran después, pero NO cambia a las otras superficies ya montadas en el mismo
+// documento: ésas nunca toman la nueva (se enteran al recargar). Entre páginas se comparte sólo al abrir. Así un pedido o una cotización
+// de una superficie nunca sale con la sesión que entró en otra (codex-r8 H1 y H2, imposibles por construcción).
 
 /** Lo que una superficie lee AHORA de lo guardado: la sesión única (`identidadDe`) o su token de hoy (`hoy:<superficie>|<token>`). */
 export interface Lectura { token: string; identidad: string; datos?: unknown }
 export type Superficie = 'reservas' | 'pedidos'
-/** `linaje`: los tokens de ESTA sesión en la página (el de la entrada y sus renovaciones). */
+/** `linaje`: los tokens de ESTA sesión en la superficie (el de la entrada y sus renovaciones). */
 export interface Pagina { token: string; identidad: string; linaje: string[]; datos?: unknown }
-/** `unica`: la sesión única de la página (compartida). `hoy`: el token de hoy de cada superficie que se abrió sin sesión única. */
-interface Estado { unica: Pagina | null; hoy: Partial<Record<Superficie, Pagina | null>> }
 
-const paginas = new Map<string, Estado>()
+/** Una entrada por negocio y superficie (`<slug>|<superficie>`). */
+const paginas = new Map<string, Pagina | null>()
 const epocas = new Map<string, number>()
 const oyentes: Array<(slug: string, afecta: Superficie[], misma: boolean) => void> = []
-const SUPERFICIES: Superficie[] = ['reservas', 'pedidos']
-const esDeHoy = (identidad: string) => identidad.startsWith('hoy:')
+const clave = (slug: string, s: Superficie) => `${slug}|${s}`
 
 /** Época de la sesión de `s` en ese negocio: sube cada vez que cambia quién está adentro. Una respuesta de otra época no se pinta. */
-export const epocaDe = (slug: string, s: Superficie): number => epocas.get(`${slug}|${s}`) ?? 0
+export const epocaDe = (slug: string, s: Superficie): number => epocas.get(clave(slug, s)) ?? 0
 /**
  * La época de TODO el negocio en la página (cualquier superficie). Una entrada que se pidió antes de que cambiara (salió, entró otra,
  * se soltó) llega tarde: no guarda nada (codex-r8 H3).
  */
 export const epocaDelNegocio = (slug: string): string => `${epocaDe(slug, 'reservas')}|${epocaDe(slug, 'pedidos')}`
-/** La sesión de la página para `s`: la única (compartida) o, sin ella, el token de hoy de `s`. */
-export function paginaDe(slug: string, s: Superficie): Pagina | null {
-  const e = paginas.get(slug)
-  return e ? e.unica ?? e.hoy[s] ?? null : null
-}
-/** Reservas repinta sus señales con cada cambio que la afecta. */
+/** La sesión de la superficie `s` en esta página (sólo suya). */
+export const paginaDe = (slug: string, s: Superficie): Pagina | null => paginas.get(clave(slug, s)) ?? null
+/** Reservas repinta sus señales con cada cambio de SU superficie. */
 export const alCambiarLaPagina = (f: (slug: string, afecta: Superficie[], misma: boolean) => void): void => { oyentes.push(f) }
 
-/** El único que cambia la página de `s`. Una sesión única (o soltarla) afecta a todas las superficies; un token de hoy, sólo a `s`. */
+/** El único que cambia la sesión de la superficie `s`: sólo la de `s`, nunca la de otra. */
 export function fijarPagina(slug: string, s: Superficie, l: Lectura | null): void {
-  const e = paginas.get(slug) ?? { unica: null, hoy: {} }
-  const antes = e.unica ?? e.hoy[s] ?? null
+  const antes = paginaDe(slug, s)
   const misma = (antes?.identidad ?? null) === (l?.identidad ?? null)
   const linaje = !l ? [] : misma && antes ? [...antes.linaje.filter(t => t !== l.token), l.token] : [l.token]
-  const nueva = l && { token: l.token, identidad: l.identidad, linaje, datos: l.datos }
-  const unica = !!e.unica || (!!l && !esDeHoy(l.identidad))
-  // Entrar con la única deja atrás los tokens de hoy de la página: si la única se suelta, ninguno revive.
-  if (nueva && !esDeHoy(nueva.identidad)) Object.assign(e, { unica: nueva, hoy: { reservas: null, pedidos: null } })
-  else if (nueva) e.hoy[s] = nueva
-  else if (e.unica) e.unica = null
-  else e.hoy[s] = null
-  paginas.set(slug, e)
-  const afecta = unica ? SUPERFICIES : [s]
-  if (!misma) for (const x of afecta) epocas.set(`${slug}|${x}`, epocaDe(slug, x) + 1)
-  for (const f of oyentes) f(slug, afecta, misma)
+  paginas.set(clave(slug, s), l && { token: l.token, identidad: l.identidad, linaje, datos: l.datos })
+  if (!misma) epocas.set(clave(slug, s), epocaDe(slug, s) + 1)
+  for (const f of oyentes) f(slug, [s], misma)
 }
 
-/**
- * Abrir: al crear o montar un elemento. La PRIMERA vez del negocio en el documento se toma lo guardado. Otra superficie que se abre
- * después comparte la única; si no hay única, toma SÓLO su token de hoy (nunca una sesión única que apareció después).
- */
+/** Abrir: al crear o montar el elemento de `s`. La PRIMERA vez de esa superficie en el documento toma lo guardado; después, nunca. */
 export function abrirPagina(slug: string, s: Superficie, leer: () => Lectura | null): void {
-  const e = paginas.get(slug)
-  if (e && (e.unica || s in e.hoy)) return
-  const l = leer()
-  fijarPagina(slug, s, !e || (l && l.identidad.startsWith(`hoy:${s}|`)) ? l : null)
+  if (!paginas.has(clave(slug, s))) fijarPagina(slug, s, leer())
 }
 
 /**
@@ -307,16 +288,18 @@ export function renovarLaPagina(slug: string, s: Superficie, enviado: string, le
 }
 
 /**
- * Sin `tokenQueFallo`: «Cerrar sesión» (borra lo guardado y deja la página sin sesión). Con él (un 401): si es un token de la sesión
- * de la página, se borra esa sesión guardada, también su renovación (misma identidad; codex-r5 E5, r6 #2), y la página queda sin
- * sesión. Lo guardado de otra sesión no se toca, y una respuesta tardía de una sesión anterior no saca a la de ahora.
+ * Sin `tokenQueFallo`: «Cerrar sesión». Con él: un 401. La superficie queda sin sesión (si era suya), y lo guardado se borra SÓLO si
+ * sigue siendo esa misma sesión: el token que falló, o la sesión de la superficie con su renovación (misma identidad; codex-r5 E5,
+ * r6 #2). Una sesión más nueva que guardó otra superficie u otra pestaña nunca se borra, y una respuesta tardía de una sesión anterior
+ * no saca a la de ahora.
  */
 export function soltarLaPagina(slug: string, s: Superficie, tokenQueFallo: string | undefined, leer: () => Lectura | null): void {
   const p = paginaDe(slug, s)
-  const deLaPagina = !!tokenQueFallo && !!p?.linaje.includes(tokenQueFallo)
+  const deLaPagina = tokenQueFallo === undefined || !!p?.linaje.includes(tokenQueFallo)
   const l = leer()
-  if (tokenQueFallo === undefined || l?.token === tokenQueFallo || (deLaPagina && l?.identidad === p!.identidad)) borrarSesion(slug)
-  if (tokenQueFallo === undefined || deLaPagina) fijarPagina(slug, s, null)
+  const laMismaGuardada = !!p && !!l && l.identidad === p.identidad
+  if ((!!tokenQueFallo && l?.token === tokenQueFallo) || (deLaPagina && laMismaGuardada)) borrarSesion(slug)
+  if (deLaPagina) fijarPagina(slug, s, null)
 }
 
 /** Sólo para pruebas: un documento nuevo (cada prueba es una carga de página). */

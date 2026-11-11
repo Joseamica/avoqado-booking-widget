@@ -163,9 +163,9 @@ describe('W1: una sola sesión de cliente por negocio', () => {
       estado.clearCustomerSession('mindform', 'tok-1')
       expect(leerSesion('mindform')?.token).toBe('tok-B')
       expect(estado.customerToken.value).toBeNull()
-      // «Cerrar sesión» (sin token) sí borra lo guardado.
+      // A refinada: «Cerrar sesión» en una página que ya no tiene sesión no borra la B que guardó otra página (es más nueva).
       estado.clearCustomerSession('mindform')
-      expect(leerSesion('mindform')).toBeNull()
+      expect(leerSesion('mindform')?.token).toBe('tok-B')
     })
 
     it('#4 la renovación también cambia el token que usa la pantalla de reservas', async () => {

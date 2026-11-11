@@ -16,6 +16,7 @@ import { buildOrderBody, checkoutOf, isDefinitive, nav, phoneToVerify, retry, se
 import { createOrderStore, type OrderStore } from './store'
 import { loadLastOrder, loadSession, saveSession } from './session'
 import { guardarSesion, leerSesion } from '../lib/sesionDeCliente'
+import { setCustomerSession, tokenParaMandar } from '../state/booking'
 import { pendingAttempt } from './attempt'
 import { phoneE164 } from './phone'
 import type { CartLine } from './cart'
@@ -803,6 +804,23 @@ describe('W3: pedir con beneficios', () => {
     })
     return { store, body, c }
   }
+
+  it('codex-r8 H1 (A refinada): Bea entra en reservas a medio pedido; el 401 de Ana reenvía SIN sesión, nunca con Bea, y Bea sigue guardada', async () => {
+    const { store, body } = nadie({ eleccion: { premioId: 'pr1' } })
+    const bea = { token: 'tok-B', customer: { id: 'c2', firstName: 'Bea', lastName: null, email: null, phone: '+525599998888' },
+      contactos: [{ tipo: 'PHONE' as const, valor: '+525599998888', metodo: 'WHATSAPP' as const, probadoEn: 2 }] }
+    api.createOrder
+      .mockImplementationOnce(async () => {
+        setCustomerSession(store.slug, bea.token, bea.customer, null, bea.contactos) // entró Bea en reservas, en la misma página
+        throw new ApiError('Sesión vencida', 401, 'CUSTOMER_TOKEN_INVALID')
+      })
+      .mockRejectedValueOnce(fin(409, 'PRICE_CHANGED', { quote: quoteOf(170), motivo: 'SIN_SESION' }))
+    await send(store, body)
+    expect(sent(0).token).toBe('tok-A')
+    expect(sent(1).token).toBeUndefined()
+    expect(leerSesion(store.slug)?.token).toBe('tok-B') // nunca se borra la sesión más nueva que guardó otra superficie
+    expect(tokenParaMandar(store.slug)).toBe('tok-B') // reservas sigue con Bea
+  })
 
   it('el cuerpo lleva lo elegido que la cotización ofreció y el total de la cotización con lo elegido', () => {
     const { body } = nadie({ eleccion: { premioId: 'pr1', puntos: 340 } })

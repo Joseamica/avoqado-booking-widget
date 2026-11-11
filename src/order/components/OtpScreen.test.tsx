@@ -116,7 +116,8 @@ describe('código de WhatsApp', () => {
   it('codex-r8 H3: un código que se verifica después de «Cerrar sesión» no guarda, no revive la sesión ni manda el pedido', async () => {
     const s = makeStore(infoOf(), menuOf())
     guardarSesion(s.slug, { ...sesion, token: 'tok-A', guardadaEn: Date.now() } as any)
-    fijarPagina(s.slug, 'pedidos', loadSession(s.slug)) // la página abierta con A (el portal de al lado la comparte)
+    fijarPagina(s.slug, 'pedidos', loadSession(s.slug)) // la tienda abierta con A
+    fijarPagina(s.slug, 'reservas', loadSession(s.slug)) // y el portal de al lado, abierto con la misma A
     checkoutOf(s).lastBody.value = body
     s.go('otp')
     render(withStore(s, <OtpScreen />))
@@ -125,11 +126,12 @@ describe('código de WhatsApp', () => {
     vi.mocked(verifyOrderingOtp).mockImplementationOnce(() => new Promise(r => { llega = r }) as any)
     fireEvent.input(screen.getAllByRole('textbox')[0], { target: { value: '123456' } })
     await flush()
-    await act(async () => { soltarLaPagina(s.slug, 'reservas', undefined, () => null) }) // «Cerrar sesión» en el portal
+    await act(async () => { soltarLaPagina(s.slug, 'reservas', undefined, () => loadSession(s.slug)) }) // «Cerrar sesión» en el portal
     await act(async () => { llega(sesion) })
     await flush()
     expect(leerSesion(s.slug)).toBeNull()
-    expect(paginaDe(s.slug, 'pedidos')).toBeNull()
+    // A refinada: la tienda montada no cambia por el portal (se entera en su siguiente petición), pero la verificación tardía no la revive.
+    expect(paginaDe(s.slug, 'pedidos')?.token).not.toBe('tok-otp')
     expect(createOrder).not.toHaveBeenCalled()
   })
 
