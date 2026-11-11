@@ -981,6 +981,16 @@ describe('W6: «Cambiar mi número» (S8)', () => {
     expect(screen.queryByText(/tu número ahora es/)).toBeNull()
   })
 
+  it('con la lada repetida («52 55 9876 5432») se lee y se manda como 55 9876 5432; el «Listo» dice el número que guardó el SERVIDOR', async () => {
+    anaAdentro()
+    await abrir()
+    await pedir('52 55 9876 5432')
+    expect(api.pedirCambioDeNumero).toHaveBeenCalledWith('testarudo', 'tok-A', NUEVO, 'reservas')
+    expect(screen.getByText('55 9876 5432')).toBeTruthy()
+    codigo()
+    expect(await screen.findByText('Listo: tu número ahora es 55 9876 5432.')).toBeTruthy()
+  })
+
   it('una cuenta sin teléfono no ve «Cambiar mi número»', async () => {
     anaAdentro()
     vi.mocked(api.getCustomerPortal).mockResolvedValue(PORTAL({ customer: { ...CLIENTE, phone: null, email: 'ana@x.mx', loyaltyPoints: 0, totalVisits: 0 } }))

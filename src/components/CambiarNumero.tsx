@@ -32,6 +32,8 @@ interface Props {
 }
 
 const ESPERA_S = 30
+/** Como se lee en México: «+525598765432» ⇒ «55 9876 5432»; de otro país, tal cual. */
+const comoSeLee = (e164: string) => (/^\+52\d{10}$/.test(e164) ? e164.slice(3).replace(/(\d{2})(\d{4})(\d{4})/, '$1 $2 $3') : e164)
 const titulo = { fontSize: '18px', fontWeight: '700', color: 'var(--avq-fg, #111827)', margin: '0 0 6px' }
 const texto = { fontSize: '14px', color: 'var(--avq-muted-fg, #6b7280)', margin: 0 }
 const etiqueta = { display: 'block', fontSize: '13px', fontWeight: '500', color: 'var(--avq-fg, #111827)', marginBottom: '6px' }
@@ -64,7 +66,8 @@ export function CambiarNumero({ slug, superficie, t, token, onListo, onReentrar,
   }, [paso])
 
   const digitos = numero.replace(/\D/g, '')
-  const visible = dial === '52' && digitos.length === 10 ? digitos.replace(/(\d{2})(\d{4})(\d{4})/, '$1 $2 $3') : `+${dial} ${digitos}`
+  // El mismo número que se manda (`phoneE164` quita la lada que la persona repitió).
+  const nuevo = phoneE164(dial, numero)
 
   function fallar(e: any, tkn: string, enCodigo: boolean) {
     const code = e?.data?.code
@@ -106,7 +109,7 @@ export function CambiarNumero({ slug, superficie, t, token, onListo, onReentrar,
   }
 
   const pedirCodigo = (alLlegar: () => void) =>
-    void intentar(tkn => api.pedirCambioDeNumero(slug, tkn, phoneE164(dial, numero), superficie), alLlegar)
+    void intentar(tkn => api.pedirCambioDeNumero(slug, tkn, nuevo, superficie), alLlegar)
   const enviar = (e: Event) => {
     e.preventDefault()
     if (!digitos) return setError({ texto: t('entrar.faltaTelefono'), sinRed: false })
@@ -118,12 +121,12 @@ export function CambiarNumero({ slug, superficie, t, token, onListo, onReentrar,
   }
   const verificar = (valor: string) => {
     if (valor.length < 6) return
-    void intentar(tkn => api.confirmarCambioDeNumero(slug, tkn, phoneE164(dial, numero), valor, superficie), r => {
+    void intentar(tkn => api.confirmarCambioDeNumero(slug, tkn, nuevo, valor, superficie), r => {
       // codex-r3 H7: si el navegador no la deja guardar, no se adopta una sesión que nadie recordará.
       if (guardarSesion(slug, { token: r.token, customer: r.customer, contactos: r.contactos, guardadaEn: Date.now() }) === 'fallo') {
         return setError({ texto: t('entrar.noSeGuardo'), sinRed: false })
       }
-      onListo(r, visible)
+      onListo(r, comoSeLee(r.customer.phone || nuevo))
     })
   }
 
@@ -172,7 +175,7 @@ export function CambiarNumero({ slug, superficie, t, token, onListo, onReentrar,
         {cabeza(t('cambiarNumero.titulo'))}
         <div style={{ textAlign: 'center' }}>
           <p style={texto}>{t('otp.sent')}</p>
-          <p style={{ ...texto, fontWeight: '600', color: 'var(--avq-fg, #111827)' }}>{visible}</p>
+          <p style={{ ...texto, fontWeight: '600', color: 'var(--avq-fg, #111827)' }}>{comoSeLee(nuevo)}</p>
         </div>
         <div>
           <label style={etiqueta}>{t('otp.codeLabel')}</label>
