@@ -629,7 +629,11 @@ export function BookingFlow({ props }: BookingFlowProps) {
           }
           return
         }
-      } catch { /* keep polling */ }
+      } catch (err: any) {
+        // codex-r5 E6: con un 401 (o si la sesión de la página cambió) se acaba: no sigue ni pasa a otra sesión.
+        if (err?.status === 401 || err?.data?.code === 'CUSTOMER_SESSION_CHANGED') return
+      }
+      if (attempts >= maxAttempts) return
       setTimeout(tick, 1500)
     }
     tick()

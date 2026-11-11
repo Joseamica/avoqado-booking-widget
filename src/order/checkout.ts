@@ -9,7 +9,7 @@
 import { signal, type Signal } from '@preact/signals'
 import { ApiError, createOrder, verifyOrderingOtp } from './api'
 import { beginAttempt, pendingAttempt, settleAttempt } from './attempt'
-import { clearSession, loadSession, samePhone, saveLastOrder } from './session'
+import { clearSession, loadSession, samePhone, saveLastOrder, type OrderingSession } from './session'
 import { guardarSesion } from '../lib/sesionDeCliente'
 import { toQuoteItems } from './cart'
 import { expectedTotalFromQuote } from './money'
@@ -83,6 +83,8 @@ export interface Checkout {
   draft: Signal<CheckoutDraft>
   /** Hora (ms) del último código de WhatsApp pedido por teléfono: volver a la pantalla del código no manda otro antes de 30 s. */
   otpSentAt: Map<string, number>
+  /** W1 (alcance A): la sesión con que se abrió la tienda (o con la que se entró aquí). Nunca toma la de otra pestaña o página. */
+  sesion: OrderingSession | null
 }
 const checkouts = new WeakMap<OrderStore, Checkout>()
 export function checkoutOf(store: OrderStore): Checkout {
@@ -96,6 +98,7 @@ export function checkoutOf(store: OrderStore): Checkout {
       lastBody: signal(null),
       draft: signal({ note: '', name: '', dial: '52', national: '', email: '', accepted: false }),
       otpSentAt: new Map(),
+      sesion: loadSession(store.slug),
     }
     // La cotización y la pregunta de «el precio cambió» valen sólo para el carrito que se cotizó: si cambia (también desde
     // la carta), ya no valen y «Continuar» espera la cotización nueva. OrderApp crea esto en su primer pintado.
@@ -122,6 +125,18 @@ export const phoneToVerify = (store: OrderStore): string | null =>
 export async function verifyPhone(store: OrderStore, phone: string, code: string): Promise<void> {
   const r = await verifyOrderingOtp(store.slug, phone, code)
   guardarSesion(store.slug, { token: r.token, customer: r.customer, contactos: r.contactos, guardadaEn: Date.now() })
+  checkoutOf(store).sesion = loadSession(store.slug) // entró aquí
+}
+
+/**
+ * La sesión con que pide la tienda: la suya mientras siga guardada (la renovada cuenta como la misma). Si ya no (salió en otra pestaña,
+ * entró otra ficha u otra prueba del teléfono), la tienda queda sin sesión y se pide el código; nunca toma otra (codex-r5 E1).
+ */
+function sesionDeLaTienda(store: OrderStore): OrderingSession | null {
+  const c = checkoutOf(store)
+  const actual = c.sesion ? loadSession(store.slug) : null
+  c.sesion = actual && actual.identidad === c.sesion!.identidad ? actual : null
+  return c.sesion
 }
 
 /** ¿Se puede guardar? Sin sessionStorage no hay intento y sin localStorage no hay sesión: pedir código sería en balde. */
@@ -159,7 +174,7 @@ async function doSubmit(store: OrderStore, body: CreateOrderBody): Promise<Submi
   const pending = pendingAttempt(slug)
   // Con el almacenamiento bloqueado la sesión no se guardaría: se pediría un código tras otro sin poder pedir nunca.
   if (!pending && !storageWorks()) return { kind: 'error', message: t('checkout.noStorage'), retryable: false }
-  const session = loadSession(slug)
+  const session = sesionDeLaTienda(store)
   const card = (pending?.body ?? body).paymentMode === 'CARD_ONLINE'
   const phone = (pending?.body ?? body).customer.phone
   // Sin teléfono (el pedido de «Nadie») no hay nada que verificar: ni código, ni sesión, ni token.
@@ -181,6 +196,7 @@ async function doSubmit(store: OrderStore, body: CreateOrderBody): Promise<Submi
       if (e instanceof ApiError && e.code === 'CUSTOMER_INACTIVE') {
         // codex-r4 R4-4: la sesión rechazada no se queda guardada (el intento sí, como cualquier respuesta no definitiva).
         clearSession(slug, session?.token)
+        checkoutOf(store).sesion = null
         return { kind: 'error', message: t('checkout.inactive'), retryable: false }
       }
       if (e instanceof ApiError && e.status === 401 && e.code === 'PHONE_VERIFICATION_REQUIRED' && anon) {
@@ -191,6 +207,7 @@ async function doSubmit(store: OrderStore, body: CreateOrderBody): Promise<Submi
       if (e instanceof ApiError && e.status === 401 && !card && !anon) {
         // W1 (alcance A): se suelta esa sesión y se pide el código; nunca se reintenta con la vieja ni se toma otra a medio pedido.
         clearSession(slug, session?.token)
+        checkoutOf(store).sesion = null
         return { kind: 'needsOtp' }
       }
       const message =

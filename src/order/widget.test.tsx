@@ -15,8 +15,8 @@ vi.mock('./api', async () => {
 import '../widget'
 import * as booking from '../state/booking'
 import { ApiError, abandonPayment, createOrder, getInfo, getMenu, getTracking } from './api'
-import { buildOrderBody, send } from './checkout'
-import { saveSession } from './session'
+import { buildOrderBody, checkoutOf, send } from './checkout'
+import { loadSession, saveSession } from './session'
 import type { OrderStore } from './store'
 import type { CreatedOrder, Tracking } from './types'
 import { infoOf, menuOf, product } from './components/testKit'
@@ -141,6 +141,7 @@ describe('<avoqado-order>', () => {
     const el = await mount({ venue: 'flautas' })
     const s = storeOf(el)
     saveSession('flautas', { token: 'tok', phone: '+525512345678', name: 'Ana', savedAt: Date.now() })
+    checkoutOf(s).sesion = loadSession('flautas') // alcance A: la tienda abierta ya tenía esta sesión
     await act(async () => { s.cart.value = [line] })
     s.quote.value = { ok: true, lines: [], subtotal: 170, total: 170, minOrderAmount: 0, issues: [] }
     const body = buildOrderBody(s, { customer: { name: 'Ana', phone: '+525512345678' }, note: null })

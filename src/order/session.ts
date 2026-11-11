@@ -2,9 +2,10 @@
 // almacenamiento la tienda funciona igual, sólo que pide el código otra vez.
 // W1: la sesión ÚNICA (`lib/sesionDeCliente`) manda cuando trae un teléfono probado; la de pedidos de hoy (`avq_order_session`) sólo
 // queda para quien entró antes y no tiene la nueva.
-import { borrarSesion, leerSesion, salioEnOtraPagina } from '../lib/sesionDeCliente'
+import { borrarSesion, identidadDe, leerSesion, salioEnOtraPagina } from '../lib/sesionDeCliente'
 
-export interface OrderingSession { token: string; phone: string; name: string | null; savedAt: number }
+/** `identidad`: qué sesión es (la única: `identidadDe`; la de hoy: su token). La tienda abierta sólo sigue con la misma (alcance A). */
+export interface OrderingSession { token: string; phone: string; name: string | null; savedAt: number; identidad?: string }
 export interface LastOrder { trackingToken: string; orderNumber: string; /** Para el folio de «Nadie»: el nombre con que se pidió (el seguimiento no lo trae). */ name?: string }
 
 const TTL_MS = 29 * 24 * 60 * 60 * 1000
@@ -40,7 +41,9 @@ export function loadSession(slug: string): OrderingSession | null {
     // «Mi equipo» pide un teléfono probado: una sesión que sólo probó un correo (Google, código por correo) no sirve aquí y se pide
     // el código. Con una sesión única guardada, el token de hoy (quizá de otra ficha) nunca se usa (codex-r2 #3).
     const telefono = nueva.contactos.find(c => c.tipo === 'PHONE')?.valor
-    return telefono ? { token: nueva.token, phone: telefono, name: nueva.customer.firstName, savedAt: nueva.guardadaEn } : null
+    return telefono
+      ? { token: nueva.token, phone: telefono, name: nueva.customer.firstName, savedAt: nueva.guardadaEn, identidad: identidadDe(nueva) }
+      : null
   }
   // Salió en reservas (la otra página): su token de hoy de aquí tampoco vale (codex-r1 #1).
   if (salioEnOtraPagina(slug)) {
@@ -53,7 +56,7 @@ export function loadSession(slug: string): OrderingSession | null {
     remove(sKey(slug))
     return null
   }
-  return { token: s.token, phone: s.phone, name: typeof s.name === 'string' ? s.name : null, savedAt: s.savedAt }
+  return { token: s.token, phone: s.phone, name: typeof s.name === 'string' ? s.name : null, savedAt: s.savedAt, identidad: `hoy|${s.token}` }
 }
 export const saveSession = (slug: string, s: OrderingSession): void => write(sKey(slug), s)
 /** Tras un 401: se olvida el token que lo recibió. Si era el de la sesión única, se va entera (también para reservas: ya no vale). */

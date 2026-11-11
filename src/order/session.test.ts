@@ -69,12 +69,12 @@ describe('sesión de pedidos', () => {
 
     it('con la sesión de pedidos de hoy y sin la nueva, pedir sigue usando la de hoy', () => {
       saveSession('a', s)
-      expect(loadSession('a')).toEqual(s)
+      expect(loadSession('a')).toEqual({ ...s, identidad: 'hoy|t' })
     })
     it('con la nueva y su teléfono probado, pedir usa la nueva', () => {
       saveSession('a', s)
       guardarSesion('a', nueva([correo, tel]))
-      expect(loadSession('a')).toEqual({ token: 'nueva', phone: '+525511112222', name: 'Ana', savedAt: expect.any(Number) })
+      expect(loadSession('a')).toMatchObject({ token: 'nueva', phone: '+525511112222', name: 'Ana', savedAt: expect.any(Number) })
     })
     it('una nueva sin teléfono probado no sirve para «Mi equipo» y el token de hoy tampoco se usa: se pide el código (codex-r2 #3)', () => {
       guardarSesion('a', nueva([correo]))

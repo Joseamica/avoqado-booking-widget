@@ -7,7 +7,7 @@ vi.mock('../api', async () => {
   return { ...actual, createOrder: vi.fn(), requestOrderingOtp: vi.fn(), verifyOrderingOtp: vi.fn(), getInfo: vi.fn(), getMenu: vi.fn() }
 })
 import { API_BASE, createOrder } from '../api'
-import { saveSession } from '../session'
+import { loadSession, saveSession } from '../session'
 import { beginAttempt, pendingAttempt } from '../attempt'
 import { checkoutOf } from '../checkout'
 import { DetailsScreen } from './DetailsScreen'
@@ -66,6 +66,7 @@ describe('tus datos y aviso de privacidad', () => {
   it('sin la casilla no se continúa', async () => {
     const s = show()
     saveSession(s.slug, { token: 't', phone: '+525544422262', name: null, savedAt: Date.now() })
+    checkoutOf(s).sesion = loadSession(s.slug) // alcance A: la tienda abierta ya tenía esta sesión
     fill()
     expect(confirmBtn().disabled).toBe(true)
     fireEvent.click(confirmBtn())
@@ -87,6 +88,7 @@ describe('tus datos y aviso de privacidad', () => {
   it('doble clic en «Confirmar pedido» ⇒ una sola llamada, con «Enviando…»; el teléfono va armado con phoneE164 (lada 52)', async () => {
     const s = show()
     saveSession(s.slug, { token: 'tok', phone: '+525544422262', name: 'Ana', savedAt: Date.now() })
+    checkoutOf(s).sesion = loadSession(s.slug) // alcance A: la tienda abierta ya tenía esta sesión
     vi.mocked(createOrder).mockReturnValue(new Promise(() => {}))
     fill('Ana López', '525544422262')
     accept()
@@ -140,6 +142,7 @@ const line = (over: Partial<CartLine> = {}): CartLine =>
 function ready(cart: CartLine[] = [line()], total = 170, locale: 'es' | 'en' = 'es') {
   const s = makeStore(infoOf(), menuOf(), locale)
   saveSession(s.slug, { token: 'tok', phone: '+525544422262', name: 'Ana', savedAt: Date.now() })
+  checkoutOf(s).sesion = loadSession(s.slug) // alcance A: la tienda abierta ya tenía esta sesión
   checkoutOf(s).draft.value = { note: '', name: 'Ana López', dial: '52', national: '5544422262', email: '', accepted: true }
   s.cart.value = cart
   s.quote.value = { ok: true, lines: [], subtotal: total, total, minOrderAmount: 0, issues: [] }
@@ -277,6 +280,7 @@ describe('«Confirmar pedido» en un pie fijo', () => {
   it('lo que falta y el aviso del envío van en el pie, arriba del botón; «Confirmar» del precio cambiado manda el total nuevo', async () => {
     const s = show()
     saveSession(s.slug, { token: 'tok', phone: '+525544422262', name: 'Ana', savedAt: Date.now() })
+    checkoutOf(s).sesion = loadSession(s.slug) // alcance A: la tienda abierta ya tenía esta sesión
     const foot = () => confirmBtn().closest('.avq-o-cartfoot') as HTMLElement
     const above = (el: Element) => !!(el.compareDocumentPosition(confirmBtn()) & Node.DOCUMENT_POSITION_FOLLOWING)
     const missing = (text: string) => expect(above(within(foot()).getByText(text))).toBe(true)

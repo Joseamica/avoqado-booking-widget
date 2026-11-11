@@ -191,6 +191,7 @@ describe('BookingFlow booking repair', () => {
       contactos: [{ tipo: 'PHONE', valor: '+525512345678', metodo: 'WHATSAPP', probadoEn: 1 }], guardadaEn: Date.now(),
     })
     state.bindCustomerSessionToVenue('studio-a')
+    state.entroAqui('studio-a') // la pestaña abrió con la sesión de Ana
     expect(state.customerToken.value).toBe('tok-ana')
     vi.mocked(api.getCustomerCredits).mockResolvedValue({ purchases: [] } as any)
     vi.mocked(api.getCustomerPortal).mockReturnValue(new Promise(() => {}))
@@ -211,6 +212,22 @@ describe('BookingFlow booking repair', () => {
     expect((screen.getByLabelText(/Nombre/) as HTMLInputElement).value).toBe('Ana Ruiz')
     expect((screen.getByLabelText(/Teléfono/) as HTMLInputElement).value).toBe('5512345678')
     expect(state.selectedSlot.value).not.toBeNull()
+  })
+
+  it('codex-r5 E6: el sondeo de créditos al volver de Stripe se detiene con un 401 (no sigue ni pasa a otra sesión)', async () => {
+    guardarSesion('studio-a', {
+      token: 'tok-ana', customer: { id: 'c1', firstName: 'Ana', lastName: null, email: null, phone: '5512345678' },
+      contactos: [{ tipo: 'PHONE', valor: '+525512345678', metodo: 'WHATSAPP', probadoEn: 1 }], guardadaEn: Date.now(),
+    })
+    state.bindCustomerSessionToVenue('studio-a')
+    state.entroAqui('studio-a')
+    vi.mocked(api.getCustomerPortal).mockReturnValue(new Promise(() => {}))
+    vi.mocked(api.getCustomerCredits).mockRejectedValue(Object.assign(new Error('x'), { status: 401, data: { message: 'x' }, enviado: 'tok-ana' }))
+    window.history.replaceState({}, '', '/studio-a/appointments?avq_credits=success')
+    render(<BookingFlow props={props()} />); await flush()
+    await advance(10000); await flush()
+    expect(api.getCustomerCredits).toHaveBeenCalledTimes(1)
+    state.clearCustomerSession('studio-a')
   })
 
   it.each(['', '5512345678'])('optional phone %j reaches the public contract', async phone => {

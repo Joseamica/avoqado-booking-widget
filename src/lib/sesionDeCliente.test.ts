@@ -79,7 +79,8 @@ describe('W1: una sola sesión de cliente por negocio', () => {
     fetchMock.mockResolvedValueOnce(
       new Response(JSON.stringify({ customer: S.customer }), { status: 200, headers: { 'x-customer-session': 'tok-3' } }),
     )
-    estado.bindCustomerSessionToVenue('mindform') // la página de reservas abre con la sesión (ya renovada)
+    estado.bindCustomerSessionToVenue('mindform')
+    estado.entroAqui('mindform') // la página de reservas tiene la sesión (ya renovada)
     await getCustomerPortal('mindform', estado.customerToken.value!)
     expect(leerSesion('mindform')!.token).toBe('tok-3')
   })
@@ -251,7 +252,7 @@ describe('W1: una sola sesión de cliente por negocio', () => {
       expect((fetchMock.mock.calls[1][1] as RequestInit).headers).not.toHaveProperty('Authorization')
     })
 
-    it('(alcance A) con el token de reservas de hoy y una sesión única guardada después: no la adopta; al mandar queda sin sesión y la toma al abrir', async () => {
+    it('(alcance A) con el token de reservas de hoy y una sesión única guardada después: no la adopta; al mandar queda sin sesión y la única sigue para la próxima carga', async () => {
       localStorage.setItem('avq_customer_token:legado', 'reservas-de-hoy')
       estado.bindCustomerSessionToVenue('legado')
       expect(estado.customerToken.value).toBe('reservas-de-hoy')
@@ -261,8 +262,8 @@ describe('W1: una sola sesión de cliente por negocio', () => {
       vi.stubGlobal('fetch', vi.fn())
       await expect(getCustomerPortal('legado', 'reservas-de-hoy')).rejects.toMatchObject({ status: 401 })
       expect(estado.customerToken.value).toBeNull()
-      estado.bindCustomerSessionToVenue('legado') // abrir otra vez
-      expect(estado.customerToken.value).toBe('tok-nueva')
+      // La única sigue guardada para cuando la página se abra otra vez.
+      expect(leerSesion('legado')?.token).toBe('tok-nueva')
       estado.clearCustomerSession('legado')
       estado.bindCustomerSessionToVenue('mindform')
     })
@@ -339,6 +340,69 @@ describe('W1: una sola sesión de cliente por negocio', () => {
       expect(estado.customerToken.value).toBeNull()
       expect(localStorage.getItem('avq_customer_token:mindform')).toBeNull()
       void TEL
+    })
+  })
+
+  describe('codex-r5: alcance A', () => {
+    /** Un token con la forma de los del SERVIDOR (la firma no importa aquí: la tienda sólo lee su versión). */
+    const jwt = (p: object) => `h.${btoa(JSON.stringify({ type: 'customer_session', ...p })).replace(/=+$/, '').replace(/\+/g, '-').replace(/\//g, '_')}.f`
+
+    it('E2 un atributo que cambia (otro render) no hace que una página invitada tome la sesión de otra página: sólo al abrirse', () => {
+      estado.bindCustomerSessionToVenue('abre-invitada')
+      expect(estado.customerToken.value).toBeNull()
+      guardarSesion('abre-invitada', S)
+      estado.bindCustomerSessionToVenue('abre-invitada')
+      expect(estado.customerToken.value).toBeNull()
+      estado.clearCustomerSession('abre-invitada')
+      estado.bindCustomerSessionToVenue('mindform')
+    })
+
+    it('E3 otra entrada con contraseña a la misma ficha, con la versión nueva, no es una renovación: la página revocada queda sin sesión', () => {
+      const A = jwt({ sub: S.customer.id, v: 1, contactos: [] })
+      const B = jwt({ sub: S.customer.id, v: 2, contactos: [] })
+      estado.bindCustomerSessionToVenue('mindform')
+      estado.setCustomerSession('mindform', A, S.customer, null, [])
+      const epoca = estado.epocaDe('mindform')
+      guardarSesion('mindform', { ...S, token: B, contactos: [] })
+      expect(estado.tokenParaMandar('mindform')).toBeNull()
+      expect(estado.customerToken.value).toBeNull()
+      expect(estado.epocaDe('mindform')).toBe(epoca + 1)
+    })
+
+    it('E4 la época se revisa DESPUÉS de leer el cuerpo: salir mientras llega no publica los datos de antes', async () => {
+      estado.bindCustomerSessionToVenue('mindform')
+      estado.setCustomerSession('mindform', 'tok-1', S.customer, null, S.contactos)
+      let cuerpo: (v: unknown) => void = () => {}
+      vi.stubGlobal('fetch', vi.fn(async () => ({
+        ok: true, status: 200, headers: new Headers(), json: () => new Promise(ok => { cuerpo = ok }),
+      })))
+      const pendiente = getCustomerCredits('mindform', {}, 'tok-1')
+      await new Promise(r => setTimeout(r, 0)) // ya llegaron las cabeceras; el cuerpo todavía no
+      estado.clearCustomerSession('mindform')
+      cuerpo({ purchases: [{ id: 'saldo-de-A' }] })
+      await expect(pendiente).rejects.toMatchObject({ data: { code: 'CUSTOMER_SESSION_CHANGED' } })
+    })
+
+    it('E5 el 401 tardío de A también cierra su copia renovada A2 (la misma sesión), en la página y guardada', () => {
+      estado.bindCustomerSessionToVenue('mindform')
+      estado.setCustomerSession('mindform', 'tok-A', S.customer, null, S.contactos)
+      guardarSesion('mindform', { ...S, token: 'tok-A2' }) // la renovación
+      expect(estado.tokenParaMandar('mindform')).toBe('tok-A2')
+      estado.clearCustomerSession('mindform', 'tok-A')
+      expect(estado.customerToken.value).toBeNull()
+      expect(leerSesion('mindform')).toBeNull()
+    })
+
+    it('E6 una petición que trae el token de una sesión anterior no sale con la sesión que la página tenga ahora', async () => {
+      estado.bindCustomerSessionToVenue('mindform')
+      estado.setCustomerSession('mindform', 'tok-A', S.customer, null, S.contactos)
+      estado.clearCustomerSession('mindform', 'tok-A')
+      estado.setCustomerSession('mindform', 'tok-B', { ...S.customer, id: 'ficha-B' }, null, S.contactos) // entró B aquí
+      const fetchMock = vi.fn()
+      vi.stubGlobal('fetch', fetchMock)
+      await expect(getCustomerCredits('mindform', {}, 'tok-A')).rejects.toMatchObject({ status: 401 })
+      expect(fetchMock).not.toHaveBeenCalled()
+      expect(estado.customerToken.value).toBe('tok-B')
     })
   })
 })

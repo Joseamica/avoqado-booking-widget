@@ -28,7 +28,7 @@ const fallaDeSesion = (status: number, code: string, message: string, enviado: s
  * - si el SERVIDOR la renueva (`x-customer-session`, S6), se guarda y la página sigue con la renovada. Los errores llevan `enviado`.
  */
 async function request<T>(url: string, init?: RequestInit, sesion?: { slug: string; token?: string | null }): Promise<T> {
-  const enviado = sesion?.token ? tokenParaMandar(sesion.slug) : null
+  const enviado = sesion?.token ? tokenParaMandar(sesion.slug, sesion.token) : null
   const epoca = sesion ? epocaDe(sesion.slug) : 0
   if (sesion?.token && !enviado) throw fallaDeSesion(401, 'CUSTOMER_SESSION_CLOSED', 'Tu sesión se cerró. Entra otra vez.', sesion.token)
   const res = await fetch(url, {
@@ -48,11 +48,12 @@ async function request<T>(url: string, init?: RequestInit, sesion?: { slug: stri
     const e = Object.assign(new Error(err.message ?? 'Request failed'), { status: res.status, data: err, enviado })
     throw e
   }
+  const datos = res.status === 204 ? undefined : await res.json()
+  // Después de leer el cuerpo (codex-r5 E4): lo último que pudo cambiar antes de entregarlo.
   if (sesion && enviado && (init?.method ?? 'GET') === 'GET' && epocaDe(sesion.slug) !== epoca) {
     throw fallaDeSesion(409, 'CUSTOMER_SESSION_CHANGED', 'Tu sesión cambió mientras cargaba.', enviado)
   }
-  if (res.status === 204) return undefined as T
-  return res.json()
+  return datos as T
 }
 
 /**

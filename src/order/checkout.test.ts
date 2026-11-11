@@ -235,6 +235,15 @@ describe('submitOrder', () => {
     expect(leerSesion(store.slug)?.token).toBe('tok-nueva') // la de la otra pestaña no se borra
   })
 
+  it('codex-r5 E1: la tienda pide con la sesión con que se abrió; si otra pestaña entró con otra, no la toma: pide el código', async () => {
+    const { store, body } = setup({ sessionPhone: null })
+    guardarSesion(store.slug, { ...sesion('tok-A'), guardadaEn: Date.now() } as any)
+    checkoutOf(store) // abrir la tienda: toma A
+    guardarSesion(store.slug, { ...sesion('tok-B'), contactos: [{ tipo: 'PHONE', valor: PHONE, metodo: 'WHATSAPP', probadoEn: 2 }], guardadaEn: Date.now() } as any)
+    expect(await submitOrder(store, body)).toEqual({ kind: 'needsOtp' })
+    expect(api.createOrder).not.toHaveBeenCalled()
+  })
+
   it('codex-r4 R4-4: 401 CUSTOMER_INACTIVE también suelta la sesión rechazada (el intento queda)', async () => {
     const { store, body } = setup({ sessionPhone: null })
     guardarSesion(store.slug, { ...sesion('tok-1'), guardadaEn: Date.now() } as any)

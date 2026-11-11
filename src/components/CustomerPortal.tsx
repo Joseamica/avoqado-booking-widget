@@ -63,6 +63,14 @@ export function CustomerPortal({ venueSlug, timezone, venuePhone, t, onBack, onM
   const data = portalData.value
   const token = customerToken.value
 
+  // codex-r5 E7: si la página se queda sin sesión (401, salió), vuelve a «Entra a tu cuenta», sin el formulario de contraseña ni su error.
+  useEffect(() => {
+    if (!token) {
+      setShowEmailLogin(false)
+      setError(null)
+    }
+  }, [token])
+
   // W1 (rediseño codex-r2): con sesión y sin «Mi cuenta» cargada, se pide. También cuando la sesión cambia de ficha (entró, otra
   // página entró con otra, o un 401 tardío adoptó la guardada): la vista se relee y el portal se vuelve a pedir con la vigente.
   useEffect(() => {
@@ -192,7 +200,8 @@ export function CustomerPortal({ venueSlug, timezone, venuePhone, t, onBack, onM
       setProfileSuccess(true)
       setTimeout(() => setProfileSuccess(false), 3000)
     } catch (err: any) {
-      setError(err.data?.message ?? t('errors.generic'))
+      // codex-r5 E7: un 401 ya dejó la página sin sesión; no se pinta como error.
+      if (err?.status !== 401) setError(err.data?.message ?? t('errors.generic'))
     } finally {
       setProfileSaving(false)
     }
@@ -213,7 +222,7 @@ export function CustomerPortal({ venueSlug, timezone, venuePhone, t, onBack, onM
       }, customerToken.value)
       window.location.href = result.checkoutUrl
     } catch (err: any) {
-      setError(err.data?.message ?? t('errors.generic'))
+      if (err?.status !== 401) setError(err.data?.message ?? t('errors.generic'))
       setCheckoutLoading(null)
     }
   }

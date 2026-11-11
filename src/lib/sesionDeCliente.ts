@@ -41,6 +41,24 @@ export interface FichaNueva {
 }
 
 const TREINTA_DIAS_S = 30 * 24 * 60 * 60
+
+/** La versión de sesión que firmó el SERVIDOR (`v` del token; S6). `null` si el token no trae una legible. */
+function versionDelToken(token: string): number | null {
+  try {
+    const p = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')
+    const v = JSON.parse(atob(p + '==='.slice((p.length + 3) % 4))).v
+    return Number.isInteger(v) ? v : null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Qué sesión es: la ficha, la versión con que se firmó y los contactos probados. Una renovación (`x-customer-session`) conserva los
+ * tres; otra entrada (otra versión tras revocar, otra prueba del contacto, otra ficha) no (codex-r5 E3).
+ */
+export const identidadDe = (s: SesionDeCliente): string =>
+  `${s.customer.id}|v${versionDelToken(s.token) ?? ''}|${JSON.stringify(s.contactos)}`
 const enMemoria = new Map<string, SesionDeCliente>()
 
 export const esDeAvoqado = (host: string = location.hostname): boolean => host === 'avoqado.io' || host.endsWith('.avoqado.io')
