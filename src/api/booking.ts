@@ -31,8 +31,10 @@ async function request<T>(url: string, init?: RequestInit, sesion?: { slug: stri
   const enviado = sesion?.token ? tokenParaMandar(sesion.slug, sesion.token) : null
   const epoca = sesion ? epocaDe(sesion.slug) : 0
   if (sesion?.token && !enviado) throw fallaDeSesion(401, 'CUSTOMER_SESSION_CLOSED', 'Tu sesión se cerró. Entra otra vez.', sesion.token)
+  // codex-r7 H3: lo autenticado nunca espera más de 20 s (sin red o un cuerpo que no llega dicen «sin conexión», no giran).
   const res = await fetch(url, {
     ...init,
+    ...(sesion?.token && !init?.signal ? { signal: conTope() } : {}),
     headers: {
       'Content-Type': 'application/json',
       'ngrok-skip-browser-warning': '1',
@@ -42,9 +44,10 @@ async function request<T>(url: string, init?: RequestInit, sesion?: { slug: stri
   })
   if (sesion && enviado && aplicarRenovacion(sesion.slug, res.headers, enviado)) adoptarRenovacion(sesion.slug, enviado)
   if (!res.ok) {
+    // codex-r7 H3: el 401 suelta la sesión ANTES de leer el cuerpo (un cuerpo que no llega no la deja activa).
+    if (res.status === 401 && sesion && enviado) clearCustomerSession(sesion.slug, enviado)
     let err: any
     try { err = await res.json() } catch { err = { message: `HTTP ${res.status}` } }
-    if (res.status === 401 && sesion && enviado) clearCustomerSession(sesion.slug, enviado)
     const e = Object.assign(new Error(err.message ?? 'Request failed'), { status: res.status, data: err, enviado })
     throw e
   }

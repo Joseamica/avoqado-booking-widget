@@ -1,6 +1,6 @@
 import { signal, computed } from '@preact/signals'
 import {
-  abrirPagina, alCambiarLaPagina, borrarSesion, deOtraSuperficie, epocaDe, fijarPagina, guardarSesion, identidadDe, leerSesion, paginaDe,
+  abrirPagina, alCambiarLaPagina, borrarSesion, epocaDe as epocaDeLaPagina, fijarPagina, guardarSesion, identidadDe, leerSesion, paginaDe,
   renovarLaPagina, salioEnOtraPagina, soltarLaPagina, tokenDeLaPagina, type ContactoProbado, type Lectura, type Pagina,
 } from '../lib/sesionDeCliente'
 import type { PublicVenueInfo, Product, PublicSlot, PublicBookingResult, CreditPackPublic, CustomerCreditBalance, CustomerPortalData, FlowType, ModifierSelection, ReservationBranding } from '../types'
@@ -167,20 +167,19 @@ export const showPortal = signal(false)
 /** Fase 0.B — "¿puedo reservar aquí?", as the server computed it at login/portal. */
 export const bookingAccess = signal<BookingAccessState | null>(null)
 
-export { epocaDe }
+/** Época de la sesión de reservas en la página (el guardián): una respuesta de otra época no se pinta. */
+export const epocaDe = (slug: string): number => epocaDeLaPagina(slug, 'reservas')
 
-/** La sesión de la página vista desde reservas: la de hoy de la tienda no es suya. */
-function mia(slug: string): Pagina | null {
-  const p = paginaDe(slug)
-  return p && !deOtraSuperficie(p, 'reservas') ? p : null
-}
+/** La sesión de la página vista desde reservas: la única o su token de hoy (el de la tienda no es suyo). */
+const mia = (slug: string): Pagina | null => paginaDe(slug, 'reservas')
 
 /**
  * W1, alcance A: la sesión de la página es la del guardián (`lib/sesionDeCliente`), una por negocio y documento, compartida con la
  * tienda. Cada cambio repinta las señales del negocio a la vista; si cambió quién está adentro, se suelta lo cargado (portal, acceso,
  * créditos y su selección).
  */
-alCambiarLaPagina((slug, misma) => {
+alCambiarLaPagina((slug, afecta, misma) => {
+  if (!afecta.includes('reservas')) return
   if (!misma) uiByVenue.delete(slug)
   if (activeVenueSlug.value !== slug) return
   const p = mia(slug)
@@ -202,12 +201,12 @@ export function tokenParaMandar(slug: string, delLlamador?: string | null): stri
 
 /** Entró en ESTA página (código, Google, ficha nueva, contraseña): la página toma la sesión que acaba de guardarse. */
 export function entroAqui(slug: string): void {
-  fijarPagina(slug, vigente(slug))
+  fijarPagina(slug, 'reservas', vigente(slug))
 }
 
 /** El SERVIDOR renovó (`x-customer-session`) el token que mandó esta página: sigue con el renovado (la misma sesión). */
 export function adoptarRenovacion(slug: string, enviado: string): void {
-  renovarLaPagina(slug, enviado, leer(slug))
+  renovarLaPagina(slug, 'reservas', enviado, leer(slug))
 }
 
 /**
@@ -223,7 +222,7 @@ export function bindCustomerSessionToVenue(slug: string) {
   // Park the outgoing venue's in-memory bits (portalData/bookingAccess aren't persisted).
   if (prev && prev !== slug) uiByVenue.set(prev, { portalData: portalData.value, bookingAccess: bookingAccess.value })
   activeVenueSlug.value = slug
-  abrirPagina(slug, leer(slug))
+  abrirPagina(slug, 'reservas', leer(slug))
   if (prev === slug) return
   const p = mia(slug)
   const ui = uiByVenue.get(slug)
@@ -251,7 +250,7 @@ export function setCustomerSession(
   const p = mia(slug)
   if (contactos) {
     guardarSesion(slug, { token, customer, contactos, guardadaEn: Date.now() })
-    fijarPagina(slug, vigente(slug))
+    fijarPagina(slug, 'reservas', vigente(slug))
   } else if (p && (p.token === token || (p.datos as CustomerInfo | null | undefined)?.id === customer.id)) {
     const nueva = leerSesion(slug)
     if (nueva) {
@@ -259,7 +258,7 @@ export function setCustomerSession(
     } else if (p.identidad.startsWith('hoy:')) {
       try { localStorage.setItem(customerKey(slug), JSON.stringify(customer)) } catch { /* storage blocked */ }
     }
-    fijarPagina(slug, { token: p.token, identidad: p.identidad, datos: customer })
+    fijarPagina(slug, 'reservas', { token: p.token, identidad: p.identidad, datos: customer })
   }
   if (access === undefined) return
   if (activeVenueSlug.value === slug) bookingAccess.value = access
@@ -272,7 +271,7 @@ export function setCustomerSession(
  * W1 (alcance A): «Cerrar sesión» (sin token) o un 401 (`tokenQueFallo`), por el guardián (`soltarLaPagina`).
  */
 export function clearCustomerSession(slug: string, tokenQueFallo?: string) {
-  soltarLaPagina(slug, tokenQueFallo, leer(slug))
+  soltarLaPagina(slug, 'reservas', tokenQueFallo, leer(slug))
 }
 
 /**

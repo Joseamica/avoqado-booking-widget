@@ -4,6 +4,8 @@ import { createContext } from 'preact'
 import { signal, type Signal } from '@preact/signals'
 import { ApiError, getInfo, getMenu } from './api'
 import { loadCart, saveCart, type Cart } from './cart'
+import { loadSession } from './session'
+import { abrirPagina } from '../lib/sesionDeCliente'
 import type { Menu, Quote, StoreInfo } from './types'
 
 /** `entrar` (W3): «Entrar otra vez» dentro de la tienda (`EntrarConCuenta`). */
@@ -50,6 +52,8 @@ export function createOrderStore(
   const infoError = signal<ApiError | null>(null)
   const menu = signal<Menu | null>(null)
   const cart = signal<Cart>(loadCart(slug))
+  // W1 (codex-r7 H1): crear la tienda ABRE la página de ese negocio (también si abre directo en el seguimiento), nunca al primer uso.
+  abrirPagina(slug, 'pedidos', () => loadSession(slug))
   const screen = signal<Screen>(trackingToken.value ? 'tracking' : 'menu')
   let timer: ReturnType<typeof setTimeout> | null = null
   let disposed = false

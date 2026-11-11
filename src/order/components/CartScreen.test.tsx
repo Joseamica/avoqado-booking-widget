@@ -8,7 +8,8 @@ vi.mock('../api', async () => {
 })
 import { ApiError, quote } from '../api'
 import { checkoutOf } from '../checkout'
-import { guardarSesion, leerSesion } from '../../lib/sesionDeCliente'
+import { fijarPagina, guardarSesion, leerSesion } from '../../lib/sesionDeCliente'
+import { loadSession } from '../session'
 import { CartScreen } from './CartScreen'
 import { OrderApp } from './OrderApp'
 import { STORE_CSS } from './theme'
@@ -696,7 +697,7 @@ describe('W3: el carrito con sus beneficios', () => {
   async function conSesion(responder: (opts: any) => Quote | Promise<Quote>, info: StoreInfo = infoOf()) {
     const s = makeStore(info, menuOf())
     guardarSesion(s.slug, unica('tok-A'))
-    checkoutOf(s) // abrir la página
+    fijarPagina(s.slug, 'pedidos', loadSession(s.slug)) // la página abierta ya tenía esta sesión
     s.cart.value = [flautas]
     vi.mocked(quote).mockImplementation(async (_slug, _items, opts) => responder(opts ?? {}))
     s.go('cart')
@@ -796,7 +797,7 @@ describe('W3: el carrito con sus beneficios', () => {
   it('paridad en inglés: el premio y el desglose', async () => {
     const s = makeStore(infoOf(), menuOf(), 'en')
     guardarSesion(s.slug, unica('tok-A'))
-    checkoutOf(s)
+    fijarPagina(s.slug, 'pedidos', loadSession(s.slug))
     s.cart.value = [flautas]
     vi.mocked(quote).mockResolvedValue(quoteOf(170, { oferta: oferta() }))
     render(withStore(s, <CartScreen />))

@@ -47,13 +47,16 @@ const fin = (status: number, code: string, details?: unknown) => new ApiError('x
 const flush = async () => { for (let i = 0; i < 10; i++) await Promise.resolve() }
 
 let n = 0
-function setup(opts: { total?: number; sessionPhone?: string | null } = {}) {
-  const store = createOrderStore(`chk${++n}`, { locale: 'es' })
+/** `antes`: lo guardado ANTES de abrir la tienda (crearla abre la página y toma lo guardado en ese momento). */
+function setup(opts: { total?: number; sessionPhone?: string | null; antes?: (slug: string) => void } = {}) {
+  const slug = `chk${++n}`
+  const sessionPhone = opts.sessionPhone === undefined ? PHONE : opts.sessionPhone
+  if (sessionPhone) saveSession(slug, { token: 'tok-1', phone: sessionPhone, name: 'Ana', savedAt: Date.now() })
+  opts.antes?.(slug)
+  const store = createOrderStore(slug, { locale: 'es' })
   store.cart.value = [line()]
   store.quote.value = quoteOf(opts.total ?? 170)
   store.info.value = info
-  const sessionPhone = opts.sessionPhone === undefined ? PHONE : opts.sessionPhone
-  if (sessionPhone) saveSession(store.slug, { token: 'tok-1', phone: sessionPhone, name: 'Ana', savedAt: Date.now() })
   const body = buildOrderBody(store, { customer: { name: ' Ana López ', phone: PHONE }, note: null })
   return { store, body }
 }
@@ -222,8 +225,7 @@ describe('submitOrder', () => {
   })
 
   it('alcance A: un 401 con la sesión vieja pide el código sin reenviar (ni con otra sesión ni con la vieja) y conserva carrito e intento', async () => {
-    const { store, body } = setup({ sessionPhone: null })
-    guardarSesion(store.slug, { ...sesion('tok-vieja'), guardadaEn: Date.now() } as any)
+    const { store, body } = setup({ sessionPhone: null, antes: slug => guardarSesion(slug, { ...sesion('tok-vieja'), guardadaEn: Date.now() } as any) })
     api.createOrder.mockImplementationOnce(async () => {
       // Otra pestaña entró (otra prueba del teléfono: otra sesión, no una renovación).
       guardarSesion(store.slug, { ...sesion('tok-nueva'), contactos: [{ tipo: 'PHONE', valor: PHONE, metodo: 'WHATSAPP', probadoEn: 2 }], guardadaEn: Date.now() } as any)
@@ -237,8 +239,7 @@ describe('submitOrder', () => {
   })
 
   it('codex-r5 E1: la tienda pide con la sesión con que se abrió; si otra pestaña entró con otra, no la toma: pide el código', async () => {
-    const { store, body } = setup({ sessionPhone: null })
-    guardarSesion(store.slug, { ...sesion('tok-A'), guardadaEn: Date.now() } as any)
+    const { store, body } = setup({ sessionPhone: null, antes: slug => guardarSesion(slug, { ...sesion('tok-A'), guardadaEn: Date.now() } as any) })
     checkoutOf(store) // abrir la tienda: toma A
     guardarSesion(store.slug, { ...sesion('tok-B'), contactos: [{ tipo: 'PHONE', valor: PHONE, metodo: 'WHATSAPP', probadoEn: 2 }], guardadaEn: Date.now() } as any)
     expect(await submitOrder(store, body)).toEqual({ kind: 'needsOtp' })
@@ -246,8 +247,7 @@ describe('submitOrder', () => {
   })
 
   it('codex-r6 #2: el 401 de A también suelta su renovación A2 (la misma sesión): no queda guardada ni vuelve al recargar', async () => {
-    const { store, body } = setup({ sessionPhone: null })
-    guardarSesion(store.slug, { ...sesion('tok-A'), guardadaEn: Date.now() } as any)
+    const { store, body } = setup({ sessionPhone: null, antes: slug => guardarSesion(slug, { ...sesion('tok-A'), guardadaEn: Date.now() } as any) })
     api.createOrder.mockImplementationOnce(async () => {
       // Otra petición, autenticada antes de revocar, renovó A (misma ficha, contactos y versión).
       guardarSesion(store.slug, { ...sesion('tok-A2'), guardadaEn: Date.now() } as any)
@@ -260,8 +260,7 @@ describe('submitOrder', () => {
   })
 
   it('codex-r4 R4-4: 401 CUSTOMER_INACTIVE también suelta la sesión rechazada (el intento queda)', async () => {
-    const { store, body } = setup({ sessionPhone: null })
-    guardarSesion(store.slug, { ...sesion('tok-1'), guardadaEn: Date.now() } as any)
+    const { store, body } = setup({ sessionPhone: null, antes: slug => guardarSesion(slug, { ...sesion('tok-1'), guardadaEn: Date.now() } as any) })
     api.createOrder.mockRejectedValueOnce(new ApiError('Esta cuenta está desactivada', 401, 'CUSTOMER_INACTIVE'))
     expect((await submitOrder(store, body)).kind).toBe('error')
     expect(leerSesion(store.slug)).toBeNull()
@@ -269,9 +268,7 @@ describe('submitOrder', () => {
   })
 
   it('codex-r2: pedir en «Mi equipo» manda la sesión vigente al momento de mandar', async () => {
-    const { store, body } = setup({ sessionPhone: null })
-    guardarSesion(store.slug, { ...sesion('tok-vieja'), guardadaEn: Date.now() } as any)
-    guardarSesion(store.slug, { ...sesion('tok-vigente'), guardadaEn: Date.now() } as any)
+    const { store, body } = setup({ sessionPhone: null, antes: slug => { guardarSesion(slug, { ...sesion('tok-vieja'), guardadaEn: Date.now() } as any); guardarSesion(slug, { ...sesion('tok-vigente'), guardadaEn: Date.now() } as any) } })
     api.createOrder.mockResolvedValueOnce(created())
     expect((await submitOrder(store, body)).kind).toBe('created')
     expect(sent().token).toBe('tok-vigente')
@@ -791,10 +788,11 @@ describe('W3: pedir con beneficios', () => {
   const nadieInfo = { ...info, requiresAcceptance: false } as StoreInfo
   /** «Nadie» con la sesión única de la página y lo elegido. */
   function nadie(opts: { eleccion?: Record<string, unknown>; q?: Partial<Quote>; total?: number; mode?: 'CARD_ONLINE' } = {}) {
-    const store = createOrderStore(`ben${++n}`, { locale: 'es' })
+    const slug = `ben${++n}`
+    guardarSesion(slug, { ...sesion('tok-A'), guardadaEn: Date.now() } as any)
+    const store = createOrderStore(slug, { locale: 'es' }) // abrir la página
     store.cart.value = [line()]
     store.info.value = opts.mode ? ({ ...info, paymentModes: { payAtPickup: true, cardOnline: true } } as StoreInfo) : nadieInfo
-    guardarSesion(store.slug, { ...sesion('tok-A'), guardadaEn: Date.now() } as any)
     const c = checkoutOf(store) // abrir la página
     if (opts.eleccion) c.eleccion.value = opts.eleccion
     store.quote.value = quoteOf(opts.total ?? 105, {

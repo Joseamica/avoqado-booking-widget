@@ -138,7 +138,7 @@ export function checkoutOf(store: OrderStore): Checkout {
       sesionCerrada: signal(false),
     }
     // W1 (alcance A): abrir la tienda abre la página de ese negocio (la primera vez en el documento; recrear la tienda no relee).
-    abrirPagina(store.slug, leerPedidos(store.slug))
+    abrirPagina(store.slug, 'pedidos', leerPedidos(store.slug))
     // La cotización y la pregunta de «el precio cambió» valen sólo para el carrito que se cotizó: si cambia (también desde
     // la carta), ya no valen y «Continuar» espera la cotización nueva. OrderApp crea esto en su primer pintado.
     let first = true
@@ -164,7 +164,7 @@ export const phoneToVerify = (store: OrderStore): string | null =>
 export async function verifyPhone(store: OrderStore, phone: string, code: string): Promise<void> {
   const r = await verifyOrderingOtp(store.slug, phone, code)
   guardarSesion(store.slug, { token: r.token, customer: r.customer, contactos: r.contactos, guardadaEn: Date.now() })
-  fijarPagina(store.slug, loadSession(store.slug)) // entró aquí
+  fijarPagina(store.slug, 'pedidos', loadSession(store.slug)) // entró aquí
 }
 
 const leerPedidos = (slug: string) => () => loadSession(slug)
@@ -179,7 +179,7 @@ function sesionDeLaTienda(store: OrderStore): OrderingSession | null {
 }
 
 /** Un 401 de la sesión con que pidió la tienda: el guardián la suelta (también su renovación) y la página queda sin sesión. */
-const soltar401 = (store: OrderStore, s: OrderingSession | null) => { if (s) soltarLaPagina(store.slug, s.token, leerPedidos(store.slug)) }
+const soltar401 = (store: OrderStore, s: OrderingSession | null) => { if (s) soltarLaPagina(store.slug, 'pedidos', s.token, leerPedidos(store.slug)) }
 
 /**
  * W3: cotiza con la sesión de la página y lo elegido (sin sesión, como hoy). (b) Un 401 suelta la sesión por el guardián y se vuelve a
@@ -201,7 +201,7 @@ export async function cotizar(store: OrderStore, items: QuoteItem[]): Promise<Qu
 /** (e) Entró otra vez desde la tienda (`EntrarConCuenta`): la página toma esa sesión y se vuelve al carrito, que cotiza con ella. */
 export function entroEnLaTienda(store: OrderStore): void {
   const c = checkoutOf(store)
-  fijarPagina(store.slug, loadSession(store.slug))
+  fijarPagina(store.slug, 'pedidos', loadSession(store.slug))
   c.sesionCerrada.value = false
   c.feedback.value = null
   store.go('cart')
