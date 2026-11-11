@@ -567,8 +567,9 @@ export function BookingFlow({ props }: BookingFlowProps) {
           const { id, firstName, lastName, email, phone } = data.customer
           setCustomerSession(props.venue, customerToken.value!, { id, firstName, lastName, email, phone })
         }
-      }).catch(() => {
-        clearCustomerSession(props.venue)
+      }).catch((err: any) => {
+        // W1: sólo un 401 dice que la sesión ya no vale. Sin red (o un 5xx) no se saca a nadie: la sesión es la misma en pedidos.
+        if (err?.status === 401) clearCustomerSession(props.venue)
       })
     }
   }, [props.venue])

@@ -164,16 +164,19 @@ describe('código de WhatsApp (responde sin `success`)', () => {
     expect(call().body).toEqual({ phone: '+525512345678' })
   })
 
-  it('verifyOrderingOtp manda {phone, code, purpose:"ORDERING"} y devuelve token y cliente', async () => {
+  it('W2: verifyOrderingOtp manda {phone, code, purpose:"SESSION"} y devuelve la sesión única (token, cliente y contactos)', async () => {
     const res = {
-      token: 'jwt.del.pedido',
+      token: 'jwt.de.la.sesion',
       customer: { id: 'ccust0000000000000000001', firstName: 'Ana', lastName: null, email: null, phone: '+525512345678' },
+      contactos: [{ tipo: 'PHONE', valor: '+525512345678', metodo: 'WHATSAPP', probadoEn: 1794000000 }],
+      otraFicha: null,
     }
     fetchMock.mockResolvedValue(json(200, res))
 
     await expect(verifyOrderingOtp('flautas', '+525512345678', '123456')).resolves.toEqual(res)
     expect(call().url).toBe(`${API_BASE}/venues/flautas/auth/otp/verify`)
-    expect(call().body).toEqual({ phone: '+525512345678', code: '123456', purpose: 'ORDERING' })
+    // Sin `alNoEncontrar`: un teléfono sin ficha la crea como hoy (el pedido está esperando; la pregunta vive en «Entrar»).
+    expect(call().body).toEqual({ phone: '+525512345678', code: '123456', purpose: 'SESSION' })
   })
 })
 

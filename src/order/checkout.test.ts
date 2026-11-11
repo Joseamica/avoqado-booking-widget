@@ -15,6 +15,7 @@ import { ApiError } from './api'
 import { buildOrderBody, checkoutOf, isDefinitive, nav, phoneToVerify, retry, send, storageWorks, submitOrder, verifyPhone } from './checkout'
 import { createOrderStore, type OrderStore } from './store'
 import { loadLastOrder, loadSession, saveSession } from './session'
+import { leerSesion } from '../lib/sesionDeCliente'
 import { pendingAttempt } from './attempt'
 import { phoneE164 } from './phone'
 import type { CartLine } from './cart'
@@ -36,6 +37,11 @@ const created = (over: Partial<CreatedOrder> = {}): CreatedOrder => ({
   total: '170.00', acceptDeadlineAt: '2026-10-17T19:00:00Z', replay: false, ...over,
 })
 const offline = () => new ApiError('Sin conexión', 0, undefined, undefined, true)
+/** W2: lo que responde el código con `purpose: 'SESSION'` (la sesión única de S7). */
+const sesion = (token: string) => ({
+  token, customer: { id: 'c1', firstName: 'Ana', lastName: null, email: null, phone: PHONE },
+  contactos: [{ tipo: 'PHONE', valor: PHONE, metodo: 'WHATSAPP', probadoEn: 1 }], otraFicha: null,
+})
 /** Un rechazo con la marca `final: true` que el servidor pone a lo que dejó guardado. */
 const fin = (status: number, code: string, details?: unknown) => new ApiError('x', status, code, details, false, true)
 const flush = async () => { for (let i = 0; i < 10; i++) await Promise.resolve() }
@@ -196,13 +202,23 @@ describe('submitOrder', () => {
     expect(loadSession(store.slug)).toBeNull()
     expect(pendingAttempt(store.slug)?.key).toBe(sent(0).key)
 
-    api.verifyOrderingOtp.mockResolvedValueOnce({ token: 'tok-2', customer: { id: 'c1' } })
+    api.verifyOrderingOtp.mockResolvedValueOnce(sesion('tok-2'))
     await verifyPhone(store, phoneToVerify(store)!, '123456')
     api.createOrder.mockResolvedValueOnce(created())
     expect((await submitOrder(store, body)).kind).toBe('created')
     expect(sent(1).key).toBe(sent(0).key)
     expect(sent(1).body).toEqual(sent(0).body)
     expect(sent(1).token).toBe('tok-2')
+    // W2: el código deja la sesión ÚNICA (la que también abre «Mi cuenta» y reservas), no la de pedidos de hoy.
+    expect(leerSesion(store.slug)).toMatchObject({ token: 'tok-2', contactos: [{ tipo: 'PHONE', valor: PHONE }] })
+    expect(localStorage.getItem(`avq_order_session:${store.slug}`)).toBeNull()
+
+    // W1: un 401 con la sesión única la borra (y se pide el código otra vez), sin perder el intento.
+    api.createOrder.mockRejectedValueOnce(new ApiError('Sesión vieja', 401, 'CUSTOMER_TOKEN_INVALID'))
+    expect(await submitOrder(store, body)).toEqual({ kind: 'needsOtp' })
+    expect(sent(2).token).toBe('tok-2')
+    expect(leerSesion(store.slug)).toBeNull()
+    expect(pendingAttempt(store.slug)).not.toBeNull()
   })
 
   it('200 replay:true (el reintento recupera su pedido, aun con el plan vencido) ⇒ created', async () => {
@@ -329,7 +345,7 @@ describe('send (lo que ve la tienda)', () => {
     expect(store.screen.value).toBe('otp')
     const phone = phoneToVerify(store)!
     expect(phone).toBe('+525544422262')
-    api.verifyOrderingOtp.mockResolvedValueOnce({ token: 'tok-otp', customer: { id: 'c1' } })
+    api.verifyOrderingOtp.mockResolvedValueOnce(sesion('tok-otp'))
     await verifyPhone(store, phone, '654321')
     expect(api.verifyOrderingOtp).toHaveBeenCalledWith(store.slug, '+525544422262', '654321')
     expect(loadSession(store.slug)).toMatchObject({ token: 'tok-otp', phone: '+525544422262' })
@@ -487,7 +503,7 @@ describe('ronda 1 de arreglos', () => {
     const { store, body } = setup({ sessionPhone: null })
     await send(store, body)
     expect(store.screen.value).toBe('otp')
-    api.verifyOrderingOtp.mockResolvedValueOnce({ token: 'tok-otp', customer: { id: 'c1' } })
+    api.verifyOrderingOtp.mockResolvedValueOnce(sesion('tok-otp'))
     await verifyPhone(store, phoneToVerify(store)!, '123456')
     api.getInfo.mockResolvedValueOnce({ ...info, status: 'PAUSED', reason: 'MANUAL_PAUSE' })
     api.createOrder.mockRejectedValueOnce(new ApiError('Pausado', 409, 'ORDERING_PAUSED', { status: 'PAUSED', reason: 'MANUAL_PAUSE' }))

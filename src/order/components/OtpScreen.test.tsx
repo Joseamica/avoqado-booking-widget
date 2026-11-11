@@ -38,6 +38,11 @@ function show() {
   render(withStore(s, <OtpScreen />))
   return s
 }
+/** W2: la sesión única que responde el código (S7). */
+const sesion = {
+  token: 'tok-otp', customer: { id: 'c1', firstName: 'Ana', lastName: null, email: null, phone: '+525544422262' },
+  contactos: [{ tipo: 'PHONE', valor: '+525544422262', metodo: 'WHATSAPP', probadoEn: 1 }], otraFicha: null,
+}
 const resend = () => screen.getByRole('button', { name: /Reenviar código/ }) as HTMLButtonElement
 
 describe('código de WhatsApp', () => {
@@ -82,7 +87,7 @@ describe('código de WhatsApp', () => {
 
   it('M1: tras verificar bien, si un 401 regresa a esta pantalla antes de 30 s, sí se pide un código nuevo', async () => {
     const s = show()
-    vi.mocked(verifyOrderingOtp).mockResolvedValue({ token: 'tok-otp', customer: { id: 'c1' } } as any)
+    vi.mocked(verifyOrderingOtp).mockResolvedValue(sesion as any)
     vi.mocked(createOrder).mockRejectedValue(new ApiError('Token inválido', 401, 'CUSTOMER_TOKEN_INVALID'))
     await flush()
     expect(requestOrderingOtp).toHaveBeenCalledTimes(1)
@@ -109,7 +114,7 @@ describe('código de WhatsApp', () => {
 
   it('al completar el código verifica, guarda la sesión con ESE teléfono y manda el pedido', async () => {
     const s = show()
-    vi.mocked(verifyOrderingOtp).mockResolvedValue({ token: 'tok-otp', customer: { id: 'c1' } } as any)
+    vi.mocked(verifyOrderingOtp).mockResolvedValue(sesion as any)
     vi.mocked(createOrder).mockResolvedValue({
       orderId: 'o1', onlineOrderId: 'oo1', trackingToken: 'T'.repeat(32), status: 'PENDING_ACCEPTANCE', orderNumber: '7',
       total: '170.00', acceptDeadlineAt: '', replay: false,
@@ -137,7 +142,7 @@ describe('código de WhatsApp', () => {
 
   it('si tras verificar bien el pedido vuelve a pedir código, lo dice claro (no se queda callado en esta pantalla)', async () => {
     const s = show()
-    vi.mocked(verifyOrderingOtp).mockResolvedValue({ token: 'tok-otp', customer: { id: 'c1' } } as any)
+    vi.mocked(verifyOrderingOtp).mockResolvedValue(sesion as any)
     vi.mocked(createOrder).mockRejectedValue(new ApiError('Verifica tu teléfono', 401, 'PHONE_VERIFICATION_REQUIRED'))
     await flush()
     fireEvent.input(screen.getAllByRole('textbox')[0], { target: { value: '123456' } })

@@ -10,11 +10,15 @@ import type {
   CustomerPortalData,
   ModifierSelection,
 } from '../types'
+import { aplicarRenovacion, type FichaNueva, type SesionEmitida } from '../lib/sesionDeCliente'
 
 const BASE = (import.meta.env?.VITE_API_URL as string | undefined)
   || 'https://api.avoqado.io/api/v1/public'
 
-async function request<T>(url: string, init?: RequestInit): Promise<T> {
+/**
+ * `sesion`: la petición va con el token de esa sesión; si el SERVIDOR lo renueva (`x-customer-session`, S6), se guarda (W1).
+ */
+async function request<T>(url: string, init?: RequestInit, sesion?: { slug: string; token: string }): Promise<T> {
   const res = await fetch(url, {
     ...init,
     headers: {
@@ -23,6 +27,7 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
       ...(init?.headers ?? {}),
     },
   })
+  if (sesion) aplicarRenovacion(sesion.slug, res.headers, sesion.token)
   if (!res.ok) {
     let err: any
     try { err = await res.json() } catch { err = { message: `HTTP ${res.status}` } }
@@ -102,7 +107,7 @@ export function createReservation(
     method: 'POST',
     body: JSON.stringify(data),
     headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-  })
+  }, token ? { slug, token } : undefined)
 }
 
 // ==================== Slot Hold (Square countdown UX) ====================
@@ -146,7 +151,7 @@ export function createHold(
     method: 'POST',
     body: JSON.stringify(data),
     headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-  })
+  }, token ? { slug, token } : undefined)
 }
 
 /** Releases a hold the customer no longer needs (e.g. went back to pick a
@@ -253,7 +258,7 @@ export function getCustomerCredits(slug: string, params: {
   }
   return request(`${BASE}/venues/${slug}/credit-packs/balance?${q}`, {
     headers: { Authorization: `Bearer ${token}` },
-  })
+  }, { slug, token })
 }
 
 /**
@@ -268,7 +273,7 @@ export function createPackCheckout(slug: string, packId: string, data: {
     method: 'POST',
     headers: token ? { Authorization: `Bearer ${token}` } : undefined,
     body: JSON.stringify(data),
-  })
+  }, token ? { slug, token } : undefined)
 }
 
 // ==================== Customer Portal ====================
@@ -305,22 +310,54 @@ export function customerLogin(slug: string, data: { email: string; password: str
   })
 }
 
+/**
+ * Entrar nunca gira para siempre: sin respuesta en 20 s se corta y la pantalla dice «Sin conexión». Repetir no duplica nada: un
+ * código ya usado se rechaza y una ficha nueva repetida encuentra la que ya se creó (S7).
+ */
+function conTope(): AbortSignal {
+  const c = new AbortController()
+  setTimeout(() => c.abort(), 20_000)
+  return c.signal
+}
+
 export function requestOtp(slug: string, data: { phone?: string; email?: string }): Promise<{ ok: true }> {
-  return request(`${BASE}/venues/${slug}/auth/otp/request`, { method: 'POST', body: JSON.stringify(data) })
+  return request(`${BASE}/venues/${slug}/auth/otp/request`, { method: 'POST', body: JSON.stringify(data), signal: conTope() })
 }
 
 /**
- * `firstName` (14-oct-2026): lo que la persona escribió en «¿Cómo te llamas?». El servidor lo pone sólo si el cliente
- * no tenía nombre (nunca pisa uno existente). Un servidor viejo lo ignora: su zod de verify no es estricto.
+ * W2 (S7): entrar a la sesión ÚNICA con el código. Sin ficha con ese contacto, el SERVIDOR no crea nada y devuelve la prueba para
+ * preguntar «¿Ya eres cliente?». `vincular` = la prueba del PRIMER contacto: se liga a la ficha que encuentre éste. No activa
+ * reservas (el SERVIDOR lo hace al reservar o abrir el portal).
  */
-export function verifyOtp(slug: string, data: { phone?: string; email?: string; code: string; firstName?: string }): Promise<AuthResponse> {
-  return request(`${BASE}/venues/${slug}/auth/otp/verify`, { method: 'POST', body: JSON.stringify(data) })
+export function verifyOtp(
+  slug: string,
+  data: { phone?: string; email?: string; code: string; vincular?: string },
+): Promise<SesionEmitida | FichaNueva> {
+  return request(`${BASE}/venues/${slug}/auth/otp/verify`, {
+    method: 'POST',
+    body: JSON.stringify({ ...data, purpose: 'SESSION', alNoEncontrar: 'PREGUNTAR' }),
+    signal: conTope(),
+  })
+}
+
+/** W2 (S7): Google. Un correo que Google no da por suyo responde 409 `GOOGLE_EMAIL_NOT_TRUSTED` y el código ya va a ese correo. */
+export function entrarConGoogle(slug: string, data: { idToken: string; vincular?: string }): Promise<SesionEmitida | FichaNueva> {
+  return request(`${BASE}/venues/${slug}/auth/google`, {
+    method: 'POST',
+    body: JSON.stringify({ ...data, alNoEncontrar: 'PREGUNTAR' }),
+    signal: conTope(),
+  })
+}
+
+/** W2 (S7): «No, es mi primera vez». La identidad sale sólo de la prueba firmada; `firstName` es obligatorio en la tienda (14-oct). */
+export function crearFichaNueva(slug: string, data: { pruebaPendiente: string; firstName: string }): Promise<SesionEmitida> {
+  return request(`${BASE}/venues/${slug}/auth/session/nueva-ficha`, { method: 'POST', body: JSON.stringify(data), signal: conTope() })
 }
 
 export function getCustomerPortal(slug: string, token: string): Promise<CustomerPortalData> {
   return request(`${BASE}/venues/${slug}/customer/portal`, {
     headers: { Authorization: `Bearer ${token}` },
-  })
+  }, { slug, token })
 }
 
 export function updateCustomerProfile(slug: string, token: string, data: {
@@ -330,7 +367,7 @@ export function updateCustomerProfile(slug: string, token: string, data: {
     method: 'PATCH',
     headers: { Authorization: `Bearer ${token}` },
     body: JSON.stringify(data),
-  })
+  }, { slug, token })
 }
 
 /**

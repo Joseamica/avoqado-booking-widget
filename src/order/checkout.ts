@@ -9,7 +9,8 @@
 import { signal, type Signal } from '@preact/signals'
 import { ApiError, createOrder, verifyOrderingOtp } from './api'
 import { beginAttempt, pendingAttempt, settleAttempt } from './attempt'
-import { clearSession, loadSession, samePhone, saveLastOrder, saveSession } from './session'
+import { clearSession, loadSession, samePhone, saveLastOrder } from './session'
+import { guardarSesion } from '../lib/sesionDeCliente'
 import { toQuoteItems } from './cart'
 import { expectedTotalFromQuote } from './money'
 import { createOrderT } from './i18n'
@@ -114,10 +115,13 @@ export function checkoutOf(store: OrderStore): Checkout {
 export const phoneToVerify = (store: OrderStore): string | null =>
   (pendingAttempt(store.slug)?.body ?? checkoutOf(store).lastBody.value)?.customer.phone ?? null
 
-/** Verifica el código y guarda la sesión con ESE teléfono (el mismo texto que viaja en `customer.phone`). */
+/**
+ * Verifica el código y guarda la sesión ÚNICA (W2: también abre «Mi cuenta» y reservas). `loadSession` la usa con el teléfono que el
+ * SERVIDOR probó, que es este mismo número en su forma canónica (`samePhone`).
+ */
 export async function verifyPhone(store: OrderStore, phone: string, code: string): Promise<void> {
   const r = await verifyOrderingOtp(store.slug, phone, code)
-  saveSession(store.slug, { token: r.token, phone, name: checkoutOf(store).draft.value.name.trim() || null, savedAt: Date.now() })
+  guardarSesion(store.slug, { token: r.token, customer: r.customer, contactos: r.contactos, guardadaEn: Date.now() })
 }
 
 /** ¿Se puede guardar? Sin sessionStorage no hay intento y sin localStorage no hay sesión: pedir código sería en balde. */
@@ -182,7 +186,7 @@ async function doSubmit(store: OrderStore, body: CreateOrderBody): Promise<Submi
         return { kind: 'needsPhone' }
       }
       if (e instanceof ApiError && e.status === 401 && !card && !anon) {
-        clearSession(slug)
+        clearSession(slug, session?.token)
         return { kind: 'needsOtp' }
       }
       const message =

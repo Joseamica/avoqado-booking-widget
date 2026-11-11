@@ -1,4 +1,5 @@
 import { signal, computed } from '@preact/signals'
+import { borrarSesion, guardarSesion, leerSesion, type ContactoProbado } from '../lib/sesionDeCliente'
 import type { PublicVenueInfo, Product, PublicSlot, PublicBookingResult, CreditPackPublic, CustomerCreditBalance, CustomerPortalData, FlowType, ModifierSelection, ReservationBranding } from '../types'
 
 /** Reservation branding defaults — used until the venue payload arrives (and as
@@ -132,8 +133,13 @@ function dropLegacyGlobalKeys() {
   try { LEGACY_GLOBAL_KEYS.forEach(k => localStorage.removeItem(k)) } catch { /* storage blocked */ }
 }
 
-/** Read ONE venue's session from localStorage (synchronous — no race conditions). */
+/**
+ * Read ONE venue's session (synchronous — no race conditions). W1: la sesión única (cookie de avoqado.io, o `localStorage` incrustado)
+ * manda; sin ella, el token de reservas de hoy.
+ */
 function hydrateCustomer(slug: string): VenueSession {
+  const nueva = leerSesion(slug)
+  if (nueva) return { token: nueva.token, info: nueva.customer, portalData: null, bookingAccess: null }
   try {
     const token = localStorage.getItem(tokenKey(slug))
     const raw = localStorage.getItem(customerKey(slug))
@@ -189,7 +195,14 @@ export function bindCustomerSessionToVenue(slug: string) {
  * `slug` is the active one — so a login finished in venue A's portal can never be stored
  * under venue B's key, nor repaint B's UI (auditoría 4).
  */
-export function setCustomerSession(slug: string, token: string, customer: CustomerInfo, access?: BookingAccessState | null) {
+export function setCustomerSession(
+  slug: string,
+  token: string,
+  customer: CustomerInfo,
+  access?: BookingAccessState | null,
+  /** W1: viene de una entrada (código, Google, ficha nueva, contraseña): se guarda como la sesión única. */
+  contactos?: ContactoProbado[],
+) {
   const isActive = activeVenueSlug.value === slug
   const prev = sessionByVenue.get(slug)
   const next: VenueSession = {
@@ -204,6 +217,11 @@ export function setCustomerSession(slug: string, token: string, customer: Custom
     customerInfo.value = customer
     if (access !== undefined) bookingAccess.value = access
   }
+  // W1: una entrada nueva va a la sesión única. Los datos al día de la misma ficha sólo actualizan su `customer` (su token pudo
+  // renovarse después de que la pantalla leyó el suyo: se conserva el guardado). Sólo un token de hoy sigue en sus llaves de siempre.
+  const nueva = leerSesion(slug)
+  if (contactos) return guardarSesion(slug, { token, customer, contactos, guardadaEn: Date.now() })
+  if (nueva?.customer.id === customer.id) return guardarSesion(slug, { ...nueva, customer })
   try {
     localStorage.setItem(tokenKey(slug), token)
     localStorage.setItem(customerKey(slug), JSON.stringify(customer))
@@ -222,10 +240,8 @@ export function clearCustomerSession(slug: string) {
     portalData.value = null
     bookingAccess.value = null
   }
-  try {
-    localStorage.removeItem(tokenKey(slug))
-    localStorage.removeItem(customerKey(slug))
-  } catch { /* storage blocked */ }
+  // W1: un 401 o «Cerrar sesión» se lleva la sesión única (también la de pedidos: no se queda adentro en la otra página) y los tokens de hoy.
+  borrarSesion(slug)
 }
 
 /**

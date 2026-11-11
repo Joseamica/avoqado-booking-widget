@@ -5,10 +5,11 @@ import { CustomerPortal } from './CustomerPortal'
 import * as api from '../api/booking'
 import * as state from '../state/booking'
 import { createT } from '../i18n'
+import { borrarSesion, guardarSesion, leerSesion } from '../lib/sesionDeCliente'
 
 vi.mock('../api/booking', async importOriginal => {
   const real = await importOriginal<typeof import('../api/booking')>()
-  return { ...real, requestOtp: vi.fn(), verifyOtp: vi.fn(), getCustomerPortal: vi.fn(), getCreditPacks: vi.fn() }
+  return { ...real, requestOtp: vi.fn(), verifyOtp: vi.fn(), customerLogin: vi.fn(), getCustomerPortal: vi.fn(), getCreditPacks: vi.fn() }
 })
 
 function renderPortal(locale: 'es' | 'en' = 'es') {
@@ -19,9 +20,12 @@ function renderPortal(locale: 'es' | 'en' = 'es') {
 function escribir(el: HTMLElement, value: string) {
   fireEvent.input(el, { target: { value } })
 }
+const CLIENTE = { id: 'c1', firstName: 'Ana', lastName: null, email: null, phone: '+525544422262' }
+const TEL = { tipo: 'PHONE' as const, valor: '+525544422262', metodo: 'WHATSAPP' as const, probadoEn: 1 }
 
 beforeEach(() => {
   localStorage.clear()
+  borrarSesion('testarudo')
   state.bindCustomerSessionToVenue('testarudo')
   state.customerToken.value = null
   state.customerInfo.value = null
@@ -29,65 +33,64 @@ beforeEach(() => {
   state.portalLoading.value = false
   state.bookingAccess.value = null
   vi.mocked(api.requestOtp).mockResolvedValue({ ok: true })
-  vi.mocked(api.verifyOtp).mockResolvedValue({
-    token: 'tok', customer: { id: 'c1', firstName: 'Ana', lastName: null, email: null, phone: '+525544422262' },
-  })
-  // La prueba se queda en el alta: el portal ya cargado no es lo que se mide aquí.
+  vi.mocked(api.verifyOtp).mockResolvedValue({ token: 'tok', customer: CLIENTE, contactos: [TEL], otraFicha: null })
+  // La prueba se queda en la entrada: el portal ya cargado no es lo que se mide aquí.
   vi.mocked(api.getCustomerPortal).mockRejectedValue(new Error('la prueba no carga el portal'))
   vi.mocked(api.getCreditPacks).mockResolvedValue([])
 })
 afterEach(() => cleanup())
 
-describe('CustomerPortal: «¿Cómo te llamas?» en el alta por código', () => {
-  it('sin nombre no pide el código y lo dice en español', async () => {
+describe('CustomerPortal: entrar con la sesión única (W2)', () => {
+  it('el teléfono siempre sale con lada (quita el 52 que la persona repitió: antes salía +52525544422262)', async () => {
     renderPortal()
-    escribir(screen.getByPlaceholderText('Tu número de teléfono'), '5544422262')
+    fireEvent.click(screen.getByRole('button', { name: 'Seguir con WhatsApp' }))
+    escribir(screen.getByPlaceholderText('Tu número de teléfono'), '52 55 4442 2262')
     fireEvent.click(screen.getByRole('button', { name: 'Enviar código' }))
-    expect(await screen.findByText('Escribe tu nombre.')).toBeTruthy()
-    expect(api.requestOtp).not.toHaveBeenCalled()
+    await waitFor(() => expect(api.requestOtp).toHaveBeenCalledWith('testarudo', { phone: '+525544422262' }))
   })
 
-  it('por WhatsApp manda el nombre recortado como firstName al verificar', async () => {
+  it('al entrar, la cuenta queda en pantalla con ESA sesión y el portal se pide con su token', async () => {
     renderPortal()
-    escribir(screen.getByLabelText('¿Cómo te llamas?'), '  Ana  ')
+    fireEvent.click(screen.getByRole('button', { name: 'Seguir con WhatsApp' }))
     escribir(screen.getByPlaceholderText('Tu número de teléfono'), '5544422262')
     fireEvent.click(screen.getByRole('button', { name: 'Enviar código' }))
     await screen.findByText('Te enviamos un código por WhatsApp')
     escribir(screen.getAllByRole('textbox')[0], '123456')
-    await waitFor(() =>
-      expect(api.verifyOtp).toHaveBeenCalledWith('testarudo', { phone: '+525544422262', code: '123456', firstName: 'Ana' }),
-    )
+    await waitFor(() => expect(api.getCustomerPortal).toHaveBeenCalledWith('testarudo', 'tok'))
+    expect(state.customerToken.value).toBe('tok')
+    expect(state.customerInfo.value).toEqual(CLIENTE)
+    expect(leerSesion('testarudo')).toMatchObject({ token: 'tok', contactos: [TEL] })
   })
 
-  it('por correo también lo pide y lo manda', async () => {
+  it('con contraseña (legado) también queda la sesión única, sin contactos probados', async () => {
+    vi.mocked(api.customerLogin).mockResolvedValue({ token: 'tok-pass', customer: CLIENTE })
     renderPortal()
-    fireEvent.click(screen.getByRole('button', { name: 'Usar correo' }))
+    fireEvent.click(screen.getByRole('button', { name: 'o entra con correo y contraseña' }))
     escribir(screen.getByPlaceholderText('tucorreo@email.com'), 'ana@correo.mx')
-    fireEvent.click(screen.getByRole('button', { name: 'Enviar código' }))
-    expect(await screen.findByText('Escribe tu nombre.')).toBeTruthy()
-    expect(api.requestOtp).not.toHaveBeenCalled()
-    escribir(screen.getByLabelText('¿Cómo te llamas?'), 'Ana')
-    fireEvent.click(screen.getByRole('button', { name: 'Enviar código' }))
-    await screen.findByText('Te enviamos un código a tu correo')
-    escribir(screen.getAllByRole('textbox')[0], '123456')
-    await waitFor(() =>
-      expect(api.verifyOtp).toHaveBeenCalledWith('testarudo', { email: 'ana@correo.mx', code: '123456', firstName: 'Ana' }),
-    )
+    escribir(screen.getByPlaceholderText('••••••'), 'secreta')
+    fireEvent.click(screen.getByRole('button', { name: 'Iniciar Sesión' }))
+    await waitFor(() => expect(leerSesion('testarudo')).toMatchObject({ token: 'tok-pass', contactos: [] }))
+    expect(localStorage.getItem('avq_customer_token:testarudo')).toBeNull()
   })
 
-  it('en inglés el campo dice «What\'s your name?» y tiene tope de 60', () => {
-    renderPortal('en')
-    const campo = screen.getByLabelText("What's your name?") as HTMLInputElement
-    expect(campo.maxLength).toBe(60)
+  it('los datos al día de la ficha (perfil, portal) no pisan un token que ya se renovó', () => {
+    guardarSesion('testarudo', { token: 'tok-renovado', customer: CLIENTE, contactos: [TEL], guardadaEn: Date.now() })
+    state.setCustomerSession('testarudo', 'tok-que-leyo-la-pantalla', { ...CLIENTE, firstName: 'Anita' })
+    expect(leerSesion('testarudo')).toMatchObject({ token: 'tok-renovado', customer: { firstName: 'Anita' }, contactos: [TEL] })
+    expect(localStorage.getItem('avq_customer_token:testarudo')).toBeNull()
   })
-})
 
-describe('CustomerPortal: el teléfono siempre sale con lada', () => {
-  it('quita el 52 que la persona repitió en el número (antes salía +52525544422262)', async () => {
+  it('«Cerrar sesión» borra la sesión única y las llaves de hoy', async () => {
+    guardarSesion('testarudo', { token: 'tok', customer: CLIENTE, contactos: [TEL], guardadaEn: Date.now() })
+    localStorage.setItem('avq_order_session:testarudo', '{"token":"pedidos-de-hoy"}')
+    state.customerToken.value = 'tok'
+    state.portalData.value = {
+      customer: { ...CLIENTE, loyaltyPoints: 0, totalVisits: 0 }, credits: { purchases: [] }, reservations: { upcoming: [], past: [] },
+    } as any
     renderPortal()
-    escribir(screen.getByLabelText('¿Cómo te llamas?'), 'Ana')
-    escribir(screen.getByPlaceholderText('Tu número de teléfono'), '52 55 4442 2262')
-    fireEvent.click(screen.getByRole('button', { name: 'Enviar código' }))
-    await waitFor(() => expect(api.requestOtp).toHaveBeenCalledWith('testarudo', { phone: '+525544422262' }))
+    fireEvent.click(screen.getByTitle('Cerrar Sesión'))
+    expect(leerSesion('testarudo')).toBeNull()
+    expect(localStorage.getItem('avq_order_session:testarudo')).toBeNull()
+    expect(state.customerToken.value).toBeNull()
   })
 })

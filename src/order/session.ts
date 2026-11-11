@@ -1,5 +1,9 @@
 // Sesión de pedidos (token OTP de WhatsApp) y último pedido, por negocio, en localStorage. Todo con try/catch: sin
 // almacenamiento la tienda funciona igual, sólo que pide el código otra vez.
+// W1: la sesión ÚNICA (`lib/sesionDeCliente`) manda cuando trae un teléfono probado; la de pedidos de hoy (`avq_order_session`) sólo
+// queda para quien entró antes y no tiene la nueva.
+import { borrarSesion, leerSesion } from '../lib/sesionDeCliente'
+
 export interface OrderingSession { token: string; phone: string; name: string | null; savedAt: number }
 export interface LastOrder { trackingToken: string; orderNumber: string; /** Para el folio de «Nadie»: el nombre con que se pidió (el seguimiento no lo trae). */ name?: string }
 
@@ -31,6 +35,10 @@ const remove = (key: string) => {
 }
 
 export function loadSession(slug: string): OrderingSession | null {
+  const nueva = leerSesion(slug)
+  // «Mi equipo» pide un teléfono probado: una sesión que sólo probó un correo (Google, código por correo) no sirve aquí.
+  const telefono = nueva?.contactos.find(c => c.tipo === 'PHONE')?.valor
+  if (nueva && telefono) return { token: nueva.token, phone: telefono, name: nueva.customer.firstName, savedAt: nueva.guardadaEn }
   const s = read(sKey(slug))
   if (!s || typeof s.token !== 'string' || typeof s.phone !== 'string' || !Number.isFinite(s.savedAt)) return null
   if (Date.now() - s.savedAt >= TTL_MS) {
@@ -40,7 +48,11 @@ export function loadSession(slug: string): OrderingSession | null {
   return { token: s.token, phone: s.phone, name: typeof s.name === 'string' ? s.name : null, savedAt: s.savedAt }
 }
 export const saveSession = (slug: string, s: OrderingSession): void => write(sKey(slug), s)
-export const clearSession = (slug: string): void => remove(sKey(slug))
+/** Tras un 401: se olvida el token que lo recibió. Si era el de la sesión única, se va entera (también para reservas: ya no vale). */
+export function clearSession(slug: string, token?: string): void {
+  if (token && leerSesion(slug)?.token === token) borrarSesion(slug)
+  remove(sKey(slug))
+}
 
 /** Mismo teléfono = mismos últimos 10 dígitos (con o sin lada de país). */
 const last10 = (p: string) => p.replace(/\D/g, '').slice(-10)
