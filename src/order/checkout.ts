@@ -8,7 +8,7 @@
 // - Fase 2: pagar con tarjeta no pide el código ni manda token; el pago en Stripe es la prueba. El modo es el del cuerpo que se manda.
 import { signal, type Signal } from '@preact/signals'
 import { ApiError, createOrder, quote, verifyOrderingOtp } from './api'
-import { beginAttempt, marcarIdentidad, pendingAttempt, settleAttempt } from './attempt'
+import { autorizarIntento, beginAttempt, pendingAttempt, reautorizarIntento, settleAttempt } from './attempt'
 import { desdeUnica, loadSession, samePhone, saveLastOrder, type OrderingSession } from './session'
 import {
   abrirPagina, alCambiarLaPagina, entrarAqui, epocaDe, epocaDelNegocio, fijarPagina, paginaDe, sesionParaMandar, soltarLaPagina, type SesionEmitida,
@@ -28,13 +28,13 @@ export type SubmitResult =
   | { kind: 'needsOtp' }
   /** El servidor exige teléfono verificado a un pedido anónimo (el negocio pasó a «Mi equipo»): el intento ya se soltó. */
   | { kind: 'needsPhone' }
-  /** codex-w3-r1 #1: el intento pudo crearse con OTRA sesión (la de entonces) y ésa ya no está: entrar otra vez para terminarlo. */
+  /** W3-r3: el token con que salió el intento recibió 401: sólo entrar otra vez lo termina (el intento se queda). */
   | { kind: 'needsSesion' }
   /**
    * `body` = el cuerpo enviado con el total nuevo (sin lo que ya no está): se manda (con OTRA llave) sólo si la persona confirma.
    * `motivo` (W3): `SIN_SESION` = la sesión se cerró (va sin beneficios); un beneficio = ése ya no está (p. ej. el premio se usó).
    */
-  | { kind: 'priceChanged'; quote: Quote; body: CreateOrderBody; motivo?: Motivo }
+  | { kind: 'priceChanged'; quote: Quote; body: CreateOrderBody; motivo?: Motivo; descartados?: BeneficioElegido[] }
   | { kind: 'cartInvalid'; issues: QuoteIssue[] }
   | { kind: 'storeUnavailable'; status: StoreStatus; reason: StoreReason }
   | { kind: 'error'; message: string; retryable: boolean }
@@ -186,7 +186,8 @@ export async function verifyPhone(store: OrderStore, phone: string, code: string
   // codex-r8 H3: llegó después de «Cerrar sesión» u otro cambio de sesión en la página: no guarda, no revive y no se manda el pedido.
   if (epocaDelNegocio(store.slug) !== antes) return false
   // Entró aquí: la tienda adopta EXACTAMENTE la que guardó (r11), nunca una que otra pestaña escriba después.
-  entrarAqui(store.slug, 'pedidos', { token: r.token, customer: r.customer, contactos: r.contactos, guardadaEn: Date.now() }, desdeUnica)
+  if (entrarAqui(store.slug, 'pedidos', { token: r.token, customer: r.customer, contactos: r.contactos, guardadaEn: Date.now() }, desdeUnica) !== 'fallo')
+    reautorizarIntento(store.slug, r.token)
   return true
 }
 
@@ -202,11 +203,10 @@ function sesionDeLaTienda(store: OrderStore): OrderingSession | null {
   return sesionParaMandar(store.slug, 'pedidos', leerPedidos(store.slug))
 }
 
-/** La clienta de una identidad: la ficha de una sesión única; el token entero de una de hoy. */
-const clientaDe = (identidad: string) => (identidad.startsWith('hoy:') ? identidad : identidad.split('|')[0])
-
-/** Un 401 de la sesión con que pidió la tienda: el guardián la suelta (también su renovación) y la página queda sin sesión. */
-const soltar401 = (store: OrderStore, s: OrderingSession | null) => { if (s) soltarLaPagina(store.slug, 'pedidos', s.token, leerPedidos(store.slug)) }
+/** Un 401 del token con que pidió la tienda: el guardián lo suelta (si es de su sesión, también la renovación) y queda sin sesión. */
+const soltar401 = (store: OrderStore, token: string | undefined) => {
+  if (token) soltarLaPagina(store.slug, 'pedidos', token, leerPedidos(store.slug))
+}
 
 /**
  * W3: cotiza con la sesión de la página y lo elegido (sin sesión, como hoy). (b) Un 401 suelta la sesión por el guardián y se vuelve a
@@ -221,7 +221,7 @@ export async function cotizar(store: OrderStore, items: QuoteItem[]): Promise<Qu
     q = await quote(store.slug, items, s ? { token: s.token, beneficios: c.eleccion.value } : {})
   } catch (e) {
     if (!s || !(e instanceof ApiError) || e.status !== 401) throw e
-    soltar401(store, s)
+    soltar401(store, s.token)
     return cotizar(store, items)
   }
   // r12: la sesión de la tienda cambió mientras volaba (se perdió, o entró otra): esa respuesta ya no es de nadie; se cotiza de nuevo.
@@ -233,6 +233,7 @@ export function entroEnLaTienda(store: OrderStore, r: SesionEmitida): void {
   const c = checkoutOf(store)
   // r11: adopta la sesión con que entró (`EntrarConCuenta` ya la guardó), sin releer lo guardado.
   fijarPagina(store.slug, 'pedidos', desdeUnica({ token: r.token, customer: r.customer, contactos: r.contactos, guardadaEn: Date.now() }))
+  reautorizarIntento(store.slug, r.token) // un intento que esperaba entrar sale con ésta (misma llave y cuerpo)
   c.sesionCerrada.value = false
   c.feedback.value = null
   store.go('cart')
@@ -273,22 +274,23 @@ async function doSubmit(store: OrderStore, body: CreateOrderBody): Promise<Submi
   const pending = pendingAttempt(slug)
   // Con el almacenamiento bloqueado la sesión no se guardaría: se pediría un código tras otro sin poder pedir nunca.
   if (!pending && !storageWorks()) return { kind: 'error', message: t('checkout.noStorage'), retryable: false }
-  const session = sesionDeLaTienda(store)
   const card = (pending?.body ?? body).paymentMode === 'CARD_ONLINE'
   const phone = (pending?.body ?? body).customer.phone
   // Sin teléfono (el pedido de «Nadie») no hay nada que verificar ni código; si la página tiene sesión, va con ella (W3: sus beneficios).
   const anon = !card && !phone
-  // El mismo texto que se verificó cuenta siempre (samePhone pide 10 dígitos y no reconoce números más cortos).
-  if (!card && phone && (!session?.phone || (session.phone !== phone && !samePhone(session.phone, phone)))) return { kind: 'needsOtp' }
-  const attempt = pending ?? beginAttempt(slug, body)
-  if (!attempt) return { kind: 'error', message: t('checkout.noStorage'), retryable: false }
-  // codex-w3-r1 #1: si ya salió sin desenlace, se reenvía con la MISMA clienta (la huella del SERVIDOR la lleva) o sin sesión si salió
-  // sin ella; nunca con otra ni sin ella, que crearía otro pedido. «Mi equipo» ya lo asegura con el teléfono probado.
-  let token = session?.token
-  if ((card || anon) && attempt.identidad !== undefined) {
-    if (attempt.identidad === '') token = undefined
-    else if (!session || clientaDe(attempt.identidad) !== clientaDe(session.identidad)) return { kind: 'needsSesion' }
+  let attempt = pending
+  if (attempt?.requiereEntrar) return card || anon ? { kind: 'needsSesion' } : { kind: 'needsOtp' }
+  if (!attempt) {
+    const session = sesionDeLaTienda(store)
+    // El mismo texto que se verificó cuenta siempre (samePhone pide 10 dígitos y no reconoce números más cortos).
+    if (!card && phone && (!session?.phone || (session.phone !== phone && !samePhone(session.phone, phone)))) return { kind: 'needsOtp' }
+    // W3-r3: ANTES de mandar se guarda todo lo que sale: llave, cuerpo y token (o sin sesión).
+    attempt = beginAttempt(slug, body, session?.token ?? null)
+    if (!attempt) return { kind: 'error', message: t('checkout.noStorage'), retryable: false }
   }
+  // W3-r3: un reintento reenvía EXACTAMENTE lo guardado, nunca la sesión de ahora. Un intento de antes de este cambio (sin `token`)
+  // sale con la sesión de ahora, como entonces.
+  const token = attempt.token === undefined ? sesionDeLaTienda(store)?.token : attempt.token ?? undefined
 
   let order: CreatedOrder | CreatedCardOrder
   try {
@@ -302,7 +304,7 @@ async function doSubmit(store: OrderStore, body: CreateOrderBody): Promise<Submi
       // hasta que se cierre la pestaña (sessionStorage); sólo una respuesta definitiva lo borra.
       if (e instanceof ApiError && e.code === 'CUSTOMER_INACTIVE') {
         // codex-r4 R4-4: la sesión rechazada no se queda guardada (el intento sí, como cualquier respuesta no definitiva).
-        soltar401(store, session)
+        soltar401(store, token)
         return { kind: 'error', message: t('checkout.inactive'), retryable: false }
       }
       if (e instanceof ApiError && e.status === 401 && e.code === 'PHONE_VERIFICATION_REQUIRED' && anon) {
@@ -310,19 +312,13 @@ async function doSubmit(store: OrderStore, body: CreateOrderBody): Promise<Submi
         settleAttempt(slug)
         return { kind: 'needsPhone' }
       }
-      if (e instanceof ApiError && e.status === 401 && session && (card || anon)) {
-        // W3: la sesión de la página ya no vale y aquí no hace falta: se suelta y se manda el MISMO intento (misma llave) sin ella. Si
-        // llevaba beneficios, el SERVIDOR responde `PRICE_CHANGED` con `motivo: 'SIN_SESION'` y la tienda pregunta.
-        soltar401(store, session)
-        return doSubmit(store, body)
+      if (e instanceof ApiError && e.status === 401 && token) {
+        // W3-r3: el token guardado ya no vale (vencido o revocado). El SERVIDOR lo rechazó antes de tocar el pedido; el intento se queda y
+        // sólo entrar otra vez lo termina («Mi equipo», con el código): nunca se reintenta con la vieja ni sale sin ella.
+        soltar401(store, token)
+        autorizarIntento(slug, { requiereEntrar: true })
+        return card || anon ? { kind: 'needsSesion' } : { kind: 'needsOtp' }
       }
-      if (e instanceof ApiError && e.status === 401 && !card && !anon) {
-        // W1 (alcance A): se suelta esa sesión y se pide el código; nunca se reintenta con la vieja ni se toma otra a medio pedido.
-        soltar401(store, session)
-        return { kind: 'needsOtp' }
-      }
-      // Sin desenlace: pudo crearse. Se anota con qué sesión salió (codex-w3-r1 #1).
-      marcarIdentidad(slug, token ? session!.identidad : '')
       const message =
         e instanceof ApiError && e.code === 'VENUE_NOT_FOUND' ? t('store.notFound')
         // 502 de Stripe: no es definitivo, el reintento con la MISMA llave recupera la página de pago.
@@ -344,7 +340,7 @@ async function doSubmit(store: OrderStore, body: CreateOrderBody): Promise<Submi
         kind: 'priceChanged',
         quote,
         body: { ...resto, ...(beneficios ? { beneficios } : {}), expectedTotal: expectedTotalFromQuote(quote.total) },
-        ...(sinSesion ? { motivo: 'SIN_SESION' as const } : fuera[0] ? { motivo: fuera[0] } : {}),
+        ...(sinSesion ? { motivo: 'SIN_SESION' as const } : fuera[0] ? { motivo: fuera[0], descartados: fuera } : {}),
       }
     }
     if (e.code === 'CART_INVALID') return { kind: 'cartInvalid', issues: details.issues ?? [] }
@@ -421,7 +417,8 @@ export async function send(store: OrderStore, body: CreateOrderBody): Promise<Su
       if (isSentCart()) {
         // W3: lo que ya no está sale de la elección (el siguiente «Pedir» ya no lo manda); la etiqueta del premio, para decirlo.
         const premio = store.quote.value?.oferta?.premio?.etiqueta
-        if (r.motivo && r.motivo !== 'SIN_SESION') c.eleccion.value = sinLosDe(c.eleccion.value, [r.motivo]) ?? {}
+        // codex-w3-r2 #4: TODOS los descartados salen de la elección.
+        if (r.descartados?.length) c.eleccion.value = sinLosDe(c.eleccion.value, r.descartados) ?? {}
         store.quote.value = r.quote
         c.feedback.value = {
           kind: 'priceChanged', total: r.quote.total, body: r.body,

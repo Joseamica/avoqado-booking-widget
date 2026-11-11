@@ -4,10 +4,15 @@
 import type { CreateOrderBody } from './types'
 
 /**
- * `identidad` (codex-w3-r1 #1): con qué sesión salió la vez que quedó sin desenlace (`''` = sin sesión). El SERVIDOR mete a la clienta
- * en la huella de la llave: un intento que pudo crearse sólo se reenvía con la misma clienta (o sin sesión, si salió sin ella).
+ * W3-r3: un reintento es REENVIAR LA MISMA PETICIÓN (la regla de Stripe y Square). Con la llave y el cuerpo se guarda, ANTES de mandar,
+ * la autorización exacta con que sale: `token` (`null` = sin sesión). Todo reintento manda eso, nunca la sesión de ahora: la huella del
+ * SERVIDOR (llave, cuerpo y la clienta que resuelve ESE token) es la misma por construcción. Se borra con el intento al resolverse.
+ * `requiereEntrar`: ese token recibió 401 (vencido o revocado); sólo entrar otra vez lo reemplaza. Un intento de antes de este cambio
+ * no trae `token` (`undefined`): sale con la sesión de ahora, como entonces.
  */
-export interface PendingAttempt { key: string; body: CreateOrderBody; startedAt: number; identidad?: string }
+export interface PendingAttempt {
+  key: string; body: CreateOrderBody; startedAt: number; token?: string | null; requiereEntrar?: boolean
+}
 
 const KEY_RE = /^[A-Za-z0-9_-]{32,64}$/
 const storageKey = (slug: string) => `avq_order_attempt:${slug}`
@@ -22,12 +27,12 @@ export function newAttemptKey(): string {
  * Guarda el intento y lo devuelve; `null` si no se pudo guardar (y entonces NO se envía). Si ya hay uno sin desenlace devuelve
  * ESE (su llave y su cuerpo): nunca hay dos llaves vivas para el mismo negocio.
  */
-export function beginAttempt(slug: string, body: CreateOrderBody): PendingAttempt | null {
+export function beginAttempt(slug: string, body: CreateOrderBody, token: string | null = null): PendingAttempt | null {
   const pending = pendingAttempt(slug)
   if (pending) return pending
   try {
     // Dentro del try: sin `crypto` tampoco hay llave, y sin llave no se envía.
-    const attempt: PendingAttempt = { key: newAttemptKey(), body, startedAt: Date.now() }
+    const attempt: PendingAttempt = { key: newAttemptKey(), body, startedAt: Date.now(), token }
     sessionStorage.setItem(storageKey(slug), JSON.stringify(attempt))
     return attempt
   } catch {
@@ -44,15 +49,19 @@ export function pendingAttempt(slug: string): PendingAttempt | null {
   }
 }
 
-/** El intento salió y no hubo desenlace: se anota con qué sesión (la primera vez; después ya no cambia). */
-export function marcarIdentidad(slug: string, identidad: string): void {
+/** Cambia la autorización del intento pendiente: `requiereEntrar` tras un 401; o, al entrar otra vez, el token nuevo. */
+export function autorizarIntento(slug: string, cambio: { token?: string; requiereEntrar?: boolean }): void {
   const a = pendingAttempt(slug)
-  if (!a || a.identidad !== undefined) return
+  if (!a) return
   try {
-    sessionStorage.setItem(storageKey(slug), JSON.stringify({ ...a, identidad }))
+    sessionStorage.setItem(storageKey(slug), JSON.stringify({ ...a, ...cambio }))
   } catch {
     /* sin almacenamiento no hubo intento guardado */
   }
+}
+/** Al entrar otra vez: si el intento pendiente esperaba una sesión (su token recibió 401), sale con ésta (misma llave y cuerpo). */
+export function reautorizarIntento(slug: string, token: string): void {
+  if (pendingAttempt(slug)?.requiereEntrar) autorizarIntento(slug, { token, requiereEntrar: false })
 }
 
 /** Sólo ante una respuesta DEFINITIVA del servidor (creado, precio cambiado, carrito inválido, tienda no disponible…). */

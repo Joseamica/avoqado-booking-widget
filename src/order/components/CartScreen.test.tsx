@@ -722,15 +722,17 @@ describe('W3: el carrito con sus beneficios', () => {
     expect(document.querySelector('.avq-o-notice--error')).toBeNull()
   })
 
-  it('r12 «Reintentar» tras perder la sesión (otra pestaña la cerró): el carrito deja de enseñar los premios y recotiza sin sesión', async () => {
-    vi.stubGlobal('fetch', vi.fn(() => Promise.reject(new Error('sin red'))))
+  it('r12/W3-r3 «Reintentar» reenvía con el token guardado; si el SERVIDOR lo rechaza (401), el carrito deja de enseñar los premios y recotiza sin sesión', async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ message: 'Sesión revocada', code: 'CUSTOMER_TOKEN_INVALID' }), { status: 401, headers: { 'Content-Type': 'application/json' } }))
+    vi.stubGlobal('fetch', fetchMock)
     try {
       const s = await conSesion(opts => quoteOf(170, opts.token ? { oferta: oferta() } : {}), infoOf({ requiresAcceptance: false }))
       expect(screen.getByText('¡Tienes café gratis! ¿Lo usas?')).toBeTruthy()
-      beginAttempt(s.slug, { items: [{ productId: 'p1', quantity: 2, modifiers: [] }], paymentMode: 'PAY_AT_PICKUP', expectedTotal: '170.00', customer: { name: 'Ana' } })
-      await act(async () => { borrarSesion(s.slug) }) // otra pestaña cerró su sesión
-      await act(async () => { await retry(s) }) // «Reintentar»: vuelve a fallar la red
+      beginAttempt(s.slug, { items: [{ productId: 'p1', quantity: 2, modifiers: [] }], paymentMode: 'PAY_AT_PICKUP', expectedTotal: '170.00', customer: { name: 'Ana' } }, 'tok-A')
+      await act(async () => { await retry(s) }) // «Reintentar»
       await flush()
+      await flush()
+      expect((fetchMock.mock.calls[0] as any)[1].headers.Authorization).toBe('Bearer tok-A') // la misma petición
       expect(screen.queryByText('¡Tienes café gratis! ¿Lo usas?')).toBeNull()
       expect(screen.getByText('Tu sesión se cerró')).toBeTruthy()
       expect(vi.mocked(quote).mock.lastCall![2]?.token).toBeFalsy()
