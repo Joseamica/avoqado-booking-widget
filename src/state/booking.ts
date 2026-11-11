@@ -1,5 +1,5 @@
 import { signal, computed } from '@preact/signals'
-import { borrarSesion, guardarSesion, leerSesion, type ContactoProbado } from '../lib/sesionDeCliente'
+import { borrarSesion, guardarSesion, leerSesion, salioEnOtraPagina, type ContactoProbado } from '../lib/sesionDeCliente'
 import type { PublicVenueInfo, Product, PublicSlot, PublicBookingResult, CreditPackPublic, CustomerCreditBalance, CustomerPortalData, FlowType, ModifierSelection, ReservationBranding } from '../types'
 
 /** Reservation branding defaults — used until the venue payload arrives (and as
@@ -140,6 +140,11 @@ function dropLegacyGlobalKeys() {
 function hydrateCustomer(slug: string): VenueSession {
   const nueva = leerSesion(slug)
   if (nueva) return { token: nueva.token, info: nueva.customer, portalData: null, bookingAccess: null }
+  // Salió en pedidos (la otra página): su token de hoy de aquí tampoco vale (codex-r1 #1).
+  if (salioEnOtraPagina(slug)) {
+    borrarSesion(slug)
+    return { token: null, info: null, portalData: null, bookingAccess: null }
+  }
   try {
     const token = localStorage.getItem(tokenKey(slug))
     const raw = localStorage.getItem(customerKey(slug))
@@ -231,17 +236,28 @@ export function setCustomerSession(
 /**
  * Clear the customer session OF `slug` only. A 401 raised by venue A's widget must never
  * wipe venue B's stored session (auditoría 4). Signals are cleared only if `slug` is active.
+ *
+ * W1: un 401 o «Cerrar sesión» se lleva la sesión única (también la de pedidos: no se queda adentro en la otra página) y los tokens
+ * de hoy. `tokenQueFallo` (un 401): si mientras tanto otra página guardó OTRA sesión, ésa sigue y la pantalla la adopta (codex-r1 #3).
  */
-export function clearCustomerSession(slug: string) {
-  sessionByVenue.set(slug, { token: null, info: null, portalData: null, bookingAccess: null })
+export function clearCustomerSession(slug: string, tokenQueFallo?: string) {
+  const guardada = leerSesion(slug)
+  const sigue = tokenQueFallo !== undefined && guardada && guardada.token !== tokenQueFallo ? guardada : null
+  sessionByVenue.set(slug, { token: sigue?.token ?? null, info: sigue?.customer ?? null, portalData: null, bookingAccess: null })
   if (activeVenueSlug.value === slug) {
-    customerToken.value = null
-    customerInfo.value = null
+    customerToken.value = sigue?.token ?? null
+    customerInfo.value = sigue?.customer ?? null
     portalData.value = null
     bookingAccess.value = null
   }
-  // W1: un 401 o «Cerrar sesión» se lleva la sesión única (también la de pedidos: no se queda adentro en la otra página) y los tokens de hoy.
-  borrarSesion(slug)
+  if (!sigue) borrarSesion(slug)
+}
+
+/** W1: el token renovado (`x-customer-session`) también lo usa la pantalla, si es el mismo que se mandó (codex-r1 #4). */
+export function adoptarRenovacion(slug: string, enviado: string, nuevo: string) {
+  const s = sessionByVenue.get(slug)
+  if (s?.token === enviado) s.token = nuevo
+  if (activeVenueSlug.value === slug && customerToken.value === enviado) customerToken.value = nuevo
 }
 
 /**

@@ -46,6 +46,9 @@ const enMemoria = new Map<string, SesionDeCliente>()
 export const esDeAvoqado = (host: string = location.hostname): boolean => host === 'avoqado.io' || host.endsWith('.avoqado.io')
 
 const nombreCookie = (slug: string) => `avq_sesion_${encodeURIComponent(slug)}`
+// «Salió»: el localStorage de la OTRA página (book. o pedidos.) no se puede borrar desde ésta. Esta marca compartida le dice que
+// no use su token de hoy. Dura lo que vive un token de hoy (30 días): la tienda nueva ya no fabrica tokens de hoy.
+const nombreSalida = (slug: string) => `avq_salio_${encodeURIComponent(slug)}`
 const llaveLocal = (slug: string) => `avq_sesion:${slug}`
 
 function leerCookie(nombre: string): string | null {
@@ -67,14 +70,24 @@ function valida(x: any): SesionDeCliente | null {
 }
 
 export function leerSesion(slug: string): SesionDeCliente | null {
+  // La de memoria sólo existe si guardarla falló: es más nueva que cualquier copia guardada (codex-r1 #2).
+  const deMemoria = valida(enMemoria.get(slug))
+  if (deMemoria) return deMemoria
   try {
     const crudo = esDeAvoqado() ? leerCookie(nombreCookie(slug)) : localStorage.getItem(llaveLocal(slug))
-    const s = crudo ? valida(JSON.parse(crudo)) : null
-    if (s) return s
+    return crudo ? valida(JSON.parse(crudo)) : null
   } catch {
-    /* sin almacenamiento o basura */
+    return null // sin almacenamiento o basura
   }
-  return valida(enMemoria.get(slug))
+}
+
+/** ¿«Salir» (o un 401) pasó en la otra página de avoqado.io? Entonces el token de hoy de ésta ya no se usa. */
+export function salioEnOtraPagina(slug: string): boolean {
+  try {
+    return esDeAvoqado() && leerCookie(nombreSalida(slug)) !== null
+  } catch {
+    return false
+  }
 }
 
 export function guardarSesion(slug: string, s: SesionDeCliente): void {
@@ -92,15 +105,25 @@ export function guardarSesion(slug: string, s: SesionDeCliente): void {
   } catch {
     /* sin almacenamiento */
   }
-  if (guardada) enMemoria.delete(slug)
-  else enMemoria.set(slug, s)
+  if (guardada) return void enMemoria.delete(slug)
+  enMemoria.set(slug, s)
+  // Y la copia guardada (de otra ficha, quizá) se quita si se puede: que ninguna página la siga usando.
+  try {
+    if (esDeAvoqado()) escribirCookie(nombreCookie(slug), null)
+    else localStorage.removeItem(llaveLocal(slug))
+  } catch {
+    /* sin almacenamiento */
+  }
 }
 
 /** «Salir»: la sesión única y los dos tokens de hoy de ese negocio. */
 export function borrarSesion(slug: string): void {
   enMemoria.delete(slug)
   try {
-    if (esDeAvoqado()) escribirCookie(nombreCookie(slug), null)
+    if (esDeAvoqado()) {
+      escribirCookie(nombreCookie(slug), null)
+      escribirCookie(nombreSalida(slug), '1')
+    }
   } catch {
     /* sin cookies */
   }
@@ -117,9 +140,10 @@ export function borrarSesion(slug: string): void {
  * S6: una sesión de más de un día vuelve con otra de 30 días en `x-customer-session` (mismos contactos y versión). Sólo reemplaza a la
  * guardada si es la que se mandó (`enviado`): una respuesta tardía de una sesión que ya cambió (otra ficha, otra versión) no la pisa.
  */
-export function aplicarRenovacion(slug: string, headers: Headers | undefined, enviado: string): void {
+export function aplicarRenovacion(slug: string, headers: Headers | undefined, enviado: string): string | null {
   const nuevo = headers?.get?.('x-customer-session')
   const actual = nuevo ? leerSesion(slug) : null
-  if (!nuevo || !actual || actual.token !== enviado) return
+  if (!nuevo || !actual || actual.token !== enviado) return null
   guardarSesion(slug, { ...actual, token: nuevo, guardadaEn: Date.now() })
+  return nuevo
 }

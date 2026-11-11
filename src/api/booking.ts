@@ -11,6 +11,7 @@ import type {
   ModifierSelection,
 } from '../types'
 import { aplicarRenovacion, type FichaNueva, type SesionEmitida } from '../lib/sesionDeCliente'
+import { adoptarRenovacion } from '../state/booking'
 
 const BASE = (import.meta.env?.VITE_API_URL as string | undefined)
   || 'https://api.avoqado.io/api/v1/public'
@@ -27,7 +28,8 @@ async function request<T>(url: string, init?: RequestInit, sesion?: { slug: stri
       ...(init?.headers ?? {}),
     },
   })
-  if (sesion) aplicarRenovacion(sesion.slug, res.headers, sesion.token)
+  const renovado = sesion ? aplicarRenovacion(sesion.slug, res.headers, sesion.token) : null
+  if (renovado) adoptarRenovacion(sesion!.slug, sesion!.token, renovado)
   if (!res.ok) {
     let err: any
     try { err = await res.json() } catch { err = { message: `HTTP ${res.status}` } }
@@ -357,6 +359,7 @@ export function crearFichaNueva(slug: string, data: { pruebaPendiente: string; f
 export function getCustomerPortal(slug: string, token: string): Promise<CustomerPortalData> {
   return request(`${BASE}/venues/${slug}/customer/portal`, {
     headers: { Authorization: `Bearer ${token}` },
+    signal: conTope(), // codex-r1 #5: recién entrada, «Mi cuenta» no gira para siempre
   }, { slug, token })
 }
 

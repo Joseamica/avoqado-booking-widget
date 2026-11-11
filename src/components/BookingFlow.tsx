@@ -557,8 +557,9 @@ export function BookingFlow({ props }: BookingFlowProps) {
 
   // Load full portal data in background if customer is logged in
   useEffect(() => {
-    if (customerToken.value && !portalData.value) {
-      api.getCustomerPortal(props.venue, customerToken.value).then(data => {
+    const enviado = customerToken.value
+    if (enviado && !portalData.value) {
+      api.getCustomerPortal(props.venue, enviado).then(data => {
         portalData.value = data
         // Fase 0.B: the portal carries "¿puedo reservar aquí?" — keep it fresh.
         if (data.bookingAccess) bookingAccess.value = data.bookingAccess
@@ -569,7 +570,7 @@ export function BookingFlow({ props }: BookingFlowProps) {
         }
       }).catch((err: any) => {
         // W1: sólo un 401 dice que la sesión ya no vale. Sin red (o un 5xx) no se saca a nadie: la sesión es la misma en pedidos.
-        if (err?.status === 401) clearCustomerSession(props.venue)
+        if (err?.status === 401) clearCustomerSession(props.venue, enviado)
       })
     }
   }, [props.venue])
@@ -1646,7 +1647,7 @@ export function BookingFlow({ props }: BookingFlowProps) {
         // not trusted anymore. Drop it and ask to sign in again — never fall
         // through to a guest booking the customer didn't intend.
         if (err?.status === 401) {
-          clearCustomerSession(props.venue)
+          clearCustomerSession(props.venue, sessionToken)
           showToast(t('creditPacks.loginToUseCredits'), 'error')
           showPortal.value = true
           return

@@ -2,6 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { aplicarRenovacion, borrarSesion, guardarSesion, leerSesion, type SesionDeCliente } from './sesionDeCliente'
 import { createOrder } from '../order/api'
 import { getCustomerPortal } from '../api/booking'
+import { loadSession } from '../order/session'
+import * as estado from '../state/booking'
 
 // La ventana de jsdom de vitest: cambiar de página sin perder las cookies (el mismo «navegador»).
 const dom = (globalThis as any).jsdom as { reconfigure(o: { url: string }): void; cookieJar: any }
@@ -90,7 +92,8 @@ describe('W1: una sola sesión de cliente por negocio', () => {
     localStorage.setItem('avq_customer_token:flautas', 'otro-negocio')
     borrarSesion('mindform')
     expect(leerSesion('mindform')).toBeNull()
-    expect(dom.cookieJar.getCookiesSync('https://pedidos.avoqado.io/')).toEqual([])
+    // Sólo queda la marca «salió» (para que la otra página suelte su token de hoy), no la sesión.
+    expect(dom.cookieJar.getCookiesSync('https://pedidos.avoqado.io/').map((c: any) => c.key)).toEqual(['avq_salio_mindform'])
     expect(localStorage.getItem('avq_order_session:mindform')).toBeNull()
     expect(localStorage.getItem('avq_customer_token:mindform')).toBeNull()
     expect(localStorage.getItem('avq_customer_info:mindform')).toBeNull()
@@ -119,5 +122,64 @@ describe('W1: una sola sesión de cliente por negocio', () => {
     expect(leerSesion('mindform')).toBeNull()
     guardarSesion('mindform', { ...S, guardadaEn: Date.now() - 30 * 24 * 60 * 60 * 1000 })
     expect(leerSesion('mindform')).toBeNull()
+  })
+
+  describe('codex-r1', () => {
+    it('#1 «Salir» en book.avoqado.io también saca a pedidos.avoqado.io de su token de hoy (y al revés)', () => {
+      irA('https://book.avoqado.io/mindform')
+      guardarSesion('mindform', S)
+      borrarSesion('mindform')
+      // El localStorage de la OTRA página no se puede borrar desde aquí: lo que dejó ahí sigue (se simula escribiéndolo después).
+      irA('https://pedidos.avoqado.io/mindform')
+      localStorage.setItem('avq_order_session:mindform', JSON.stringify({ token: 'pedidos-de-hoy', phone: '+525512345678', name: 'Ana', savedAt: Date.now() }))
+      expect(loadSession('mindform')).toBeNull()
+      expect(localStorage.getItem('avq_order_session:mindform')).toBeNull()
+      localStorage.setItem('avq_customer_token:mindform', 'reservas-de-hoy')
+      estado.bindCustomerSessionToVenue('mindform-otra-vez')
+      estado.bindCustomerSessionToVenue('mindform')
+      expect(estado.customerToken.value).toBeNull()
+      // Una entrada nueva después de salir sí cuenta.
+      guardarSesion('mindform', S)
+      expect(loadSession('mindform')?.token).toBe('tok-1')
+    })
+
+    it('#2 si no se puede guardar la ficha nueva, la vieja guardada no reaparece', () => {
+      irA('https://www.mindform.mx/')
+      guardarSesion('mindform', S)
+      vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('cuota') })
+      const B = { ...S, token: 'tok-B', customer: { ...S.customer, id: 'otra-ficha' } }
+      guardarSesion('mindform', B)
+      expect(leerSesion('mindform')).toEqual(B)
+      vi.restoreAllMocks()
+      irA('https://book.avoqado.io/')
+      guardarSesion('mindform', S)
+      vi.spyOn(Document.prototype, 'cookie', 'set').mockImplementation(() => {})
+      guardarSesion('mindform', B)
+      expect(leerSesion('mindform')).toEqual(B)
+    })
+
+    it('#3 un 401 tardío de la sesión A no borra la B que otra página guardó mientras: la pantalla adopta B', () => {
+      estado.bindCustomerSessionToVenue('mindform')
+      estado.setCustomerSession('mindform', 'tok-1', S.customer, null, S.contactos)
+      guardarSesion('mindform', { ...S, token: 'tok-B' })
+      estado.clearCustomerSession('mindform', 'tok-1')
+      expect(leerSesion('mindform')?.token).toBe('tok-B')
+      expect(estado.customerToken.value).toBe('tok-B')
+      // El 401 de la que sí está guardada (o «Cerrar sesión», sin token) la borra.
+      estado.clearCustomerSession('mindform', 'tok-B')
+      expect(leerSesion('mindform')).toBeNull()
+      expect(estado.customerToken.value).toBeNull()
+    })
+
+    it('#4 la renovación también cambia el token que usa la pantalla de reservas', async () => {
+      estado.bindCustomerSessionToVenue('mindform')
+      estado.setCustomerSession('mindform', 'tok-1', S.customer, null, S.contactos)
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({ customer: S.customer }), { status: 200, headers: { 'x-customer-session': 'tok-2' } }),
+      ))
+      await getCustomerPortal('mindform', 'tok-1')
+      expect(estado.customerToken.value).toBe('tok-2')
+      expect(leerSesion('mindform')?.token).toBe('tok-2')
+    })
   })
 })

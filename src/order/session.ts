@@ -2,7 +2,7 @@
 // almacenamiento la tienda funciona igual, sólo que pide el código otra vez.
 // W1: la sesión ÚNICA (`lib/sesionDeCliente`) manda cuando trae un teléfono probado; la de pedidos de hoy (`avq_order_session`) sólo
 // queda para quien entró antes y no tiene la nueva.
-import { borrarSesion, leerSesion } from '../lib/sesionDeCliente'
+import { borrarSesion, leerSesion, salioEnOtraPagina } from '../lib/sesionDeCliente'
 
 export interface OrderingSession { token: string; phone: string; name: string | null; savedAt: number }
 export interface LastOrder { trackingToken: string; orderNumber: string; /** Para el folio de «Nadie»: el nombre con que se pidió (el seguimiento no lo trae). */ name?: string }
@@ -39,6 +39,11 @@ export function loadSession(slug: string): OrderingSession | null {
   // «Mi equipo» pide un teléfono probado: una sesión que sólo probó un correo (Google, código por correo) no sirve aquí.
   const telefono = nueva?.contactos.find(c => c.tipo === 'PHONE')?.valor
   if (nueva && telefono) return { token: nueva.token, phone: telefono, name: nueva.customer.firstName, savedAt: nueva.guardadaEn }
+  // Salió en reservas (la otra página): su token de hoy de aquí tampoco vale (codex-r1 #1).
+  if (salioEnOtraPagina(slug)) {
+    remove(sKey(slug))
+    return null
+  }
   const s = read(sKey(slug))
   if (!s || typeof s.token !== 'string' || typeof s.phone !== 'string' || !Number.isFinite(s.savedAt)) return null
   if (Date.now() - s.savedAt >= TTL_MS) {

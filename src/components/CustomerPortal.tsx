@@ -43,6 +43,8 @@ export function CustomerPortal({ venueSlug, timezone, venuePhone, t, onBack, onM
 
   // W2: entrar es `EntrarConCuenta` (WhatsApp, correo o Google, sin contraseña). Correo y contraseña quedan como opción secundaria.
   const [showEmailLogin, setShowEmailLogin] = useState(false)
+  // Ya entró (hay token) pero «Mi cuenta» no cargó por red o por el servidor: se dice y se reintenta, sin volver a pedir que entre.
+  const [fallaCarga, setFallaCarga] = useState<string | null>(null)
 
   // Profile edit state
   const [editingProfile, setEditingProfile] = useState(false)
@@ -76,6 +78,7 @@ export function CustomerPortal({ venueSlug, timezone, venuePhone, t, onBack, onM
 
   async function loadPortal(tkn: string) {
     portalLoading.value = true
+    setFallaCarga(null)
     try {
       const result = await api.getCustomerPortal(venueSlug, tkn)
       portalData.value = result
@@ -83,7 +86,8 @@ export function CustomerPortal({ venueSlug, timezone, venuePhone, t, onBack, onM
       if (result.bookingAccess) bookingAccess.value = result.bookingAccess
     } catch (err: any) {
       // W1: sólo un 401 (token vencido o inválido) cierra la sesión; sin red no se saca a nadie de las dos páginas.
-      if (err?.status === 401) clearCustomerSession(venueSlug)
+      if (err?.status === 401) clearCustomerSession(venueSlug, tkn)
+      else setFallaCarga(err?.status ? t('errors.generic') : t('entrar.sinRed'))
     } finally {
       portalLoading.value = false
     }
@@ -131,6 +135,7 @@ export function CustomerPortal({ venueSlug, timezone, venuePhone, t, onBack, onM
     setError(null)
     setEditingProfile(false)
     setShowEmailLogin(false)
+    setFallaCarga(null)
   }
 
   function startEditProfile() {
@@ -205,6 +210,16 @@ export function CustomerPortal({ venueSlug, timezone, venuePhone, t, onBack, onM
     return (
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '64px 0' }}>
         <Spinner size={28} />
+      </div>
+    )
+  }
+
+  if (!data && token && fallaCarga) {
+    return (
+      <div class="avq-animate-in" style={{ display: 'flex', flexDirection: 'column', gap: '12px', padding: '32px 0', textAlign: 'center' }}>
+        <p role="alert" style={{ fontSize: '14px', color: 'var(--avq-fg, #111827)', margin: 0 }}>{fallaCarga}</p>
+        <Button fullWidth onClick={() => void loadPortal(token)}>{t('actions.retry')}</Button>
+        <Button variant="ghost" fullWidth onClick={handleLogout}>{t('portal.logout')}</Button>
       </div>
     )
   }

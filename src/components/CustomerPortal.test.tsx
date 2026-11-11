@@ -62,6 +62,21 @@ describe('CustomerPortal: entrar con la sesión única (W2)', () => {
     expect(leerSesion('testarudo')).toMatchObject({ token: 'tok', contactos: [TEL] })
   })
 
+  it('codex-r1 #5: ya entró pero el portal no carga (sin red) ⇒ lo dice y deja reintentar; no vuelve a «Entra a tu cuenta»', async () => {
+    vi.mocked(api.getCustomerPortal).mockRejectedValueOnce(new TypeError('Failed to fetch'))
+    renderPortal()
+    fireEvent.click(screen.getByRole('button', { name: 'Seguir con WhatsApp' }))
+    escribir(screen.getByPlaceholderText('Tu número de teléfono'), '5544422262')
+    fireEvent.click(screen.getByRole('button', { name: 'Enviar código' }))
+    await screen.findByText('Te enviamos un código por WhatsApp')
+    escribir(screen.getAllByRole('textbox')[0], '123456')
+    expect(await screen.findByText('Sin conexión. Revisa tu internet y vuelve a intentar.')).toBeTruthy()
+    expect(screen.queryByRole('heading', { name: 'Entra a tu cuenta' })).toBeNull()
+    expect(leerSesion('testarudo')?.token).toBe('tok')
+    fireEvent.click(screen.getByRole('button', { name: 'Intentar de Nuevo' }))
+    await waitFor(() => expect(api.getCustomerPortal).toHaveBeenCalledTimes(2))
+  })
+
   it('con contraseña (legado) también queda la sesión única, sin contactos probados', async () => {
     vi.mocked(api.customerLogin).mockResolvedValue({ token: 'tok-pass', customer: CLIENTE })
     renderPortal()
