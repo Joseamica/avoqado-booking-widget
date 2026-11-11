@@ -347,7 +347,7 @@
     },
     "loyalty": {
       "stamp": "You earned 1 stamp ({{n}} of {{meta}})",
-      "stampFull": "With this purchase you completed your card",
+      "stampFull": "You earned 1 stamp (card complete)",
       "points": "You earned {{n}} points",
       "point": "You earned 1 point"
     },

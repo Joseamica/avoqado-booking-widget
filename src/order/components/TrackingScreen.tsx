@@ -362,7 +362,8 @@ export function TrackingScreen() {
   // W5 (S14, mockups 1i, 1i·2 y 1j): lo que sumó, si su premio regresó y sus beneficios en el ticket; sólo lo que el SERVIDOR manda.
   const l = tracking.lealtad
   const sumaste = [
-    // La cartilla que esta compra llenó dice «10 de 10» del avance de ESA cartilla, no de hoy: se dice que la completó (nota de S14).
+    // `ganados` es el contador de HOY de la cartilla donde cayó el sello (S14): llena puede ser por una compra posterior. No se dice
+    // «10 de 10» como avance de hoy (nota de S14) ni que ESTA compra la completó (codex-w5w6-r1 #3): sólo que la cartilla está completa.
     l?.sello && (l.sello.ganados >= l.sello.meta
       ? t('tracking.loyalty.stampFull')
       : t('tracking.loyalty.stamp', { n: l.sello.ganados, meta: l.sello.meta })),

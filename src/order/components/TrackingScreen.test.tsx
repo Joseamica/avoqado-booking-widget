@@ -1272,9 +1272,11 @@ describe('W5: el seguimiento dice lo que ganó y lo que regresó (S14)', () => {
     const t = screen.getByText('Sumaste 1 sello (7 de 10)')
     expect(t.closest('.avq-o-notice--ok')).toBeTruthy()
   })
-  it('la compra llenó la cartilla ⇒ «Con esta compra completaste tu cartilla», nunca «10 de 10»', async () => {
+  it('codex-w5w6-r1 #3: la cartilla de ese sello ya está llena ⇒ «Sumaste 1 sello (cartilla completa)»; nunca dice que ESTA compra la completó', async () => {
+    // El SERVIDOR manda el contador de HOY de la cartilla donde cayó el sello: la compra 1 vista después de que la 10 la llenó dice 10/10.
     await showW(pagado({ lealtad: { sello: { ganados: 10, meta: 10 } } }))
-    expect(screen.getByText('Con esta compra completaste tu cartilla')).toBeTruthy()
+    expect(screen.getByText('Sumaste 1 sello (cartilla completa)')).toBeTruthy()
+    expect(screen.queryByText(/completaste/)).toBeNull()
     expect(screen.queryByText(/10 de 10/)).toBeNull()
   })
   it('con puntos ⇒ «Sumaste 42 puntos»; con sello y puntos, las dos', async () => {
@@ -1360,7 +1362,7 @@ describe('W5: el seguimiento dice lo que ganó y lo que regresó (S14)', () => {
     await showW(folio({ status: 'EXPIRED', canCancel: false, beneficioRegresado: true, beneficios: [{ nombre: 'Café gratis', monto: 65 }], beneficiosTotal: 1, lealtad: { sello: { ganados: 10, meta: 10 } } }), 'en')
     expect(screen.getByText('Your rewards went back to your account')).toBeTruthy()
     expect(screen.getByText('Use them on your next order.')).toBeTruthy()
-    expect(screen.getByText('With this purchase you completed your card')).toBeTruthy()
+    expect(screen.getByText('You earned 1 stamp (card complete)')).toBeTruthy()
     cleanup()
     await showW(folio({ beneficios: [{ nombre: 'Café gratis', monto: 65 }], beneficiosTotal: 1 }), 'en')
     expect(fila('Total to pay')).toBe('Total to pay$69')

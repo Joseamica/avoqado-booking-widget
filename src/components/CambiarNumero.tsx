@@ -3,7 +3,8 @@ import { useEffect, useRef, useState } from 'preact/hooks'
 import type { TFunction } from '../i18n'
 import * as api from '../api/booking'
 import { DEFAULT_DIAL, phoneE164 } from '../data/countries'
-import { epocaDelNegocio, guardarSesion, type SesionEmitida, type Superficie } from '../lib/sesionDeCliente'
+import { epocaDelNegocio, guardarSesion, paginaDe, type SesionEmitida, type Superficie } from '../lib/sesionDeCliente'
+import { lectorDe } from '../state/booking'
 import { Button } from './ui/Button'
 import { CountryPhoneInput } from './ui/CountryPhoneInput'
 import { OtpInput } from './ui/OtpInput'
@@ -27,7 +28,7 @@ interface Props {
   /** «Entrar otra vez» (sesión sin contacto probado) o «Entrar con mi teléfono» (el número es de otra ficha). */
   onReentrar: () => void
   onVolver: () => void
-  /** Un 401 que no es `CUSTOMER_REAUTH_REQUIRED`: la sesión ya no vale y se suelta (nunca la de otra persona). */
+  /** Un 401 que no es `CUSTOMER_REAUTH_REQUIRED`, o la sesión que lo pidió ya no está guardada: se suelta (nunca la de otra persona). */
   on401: (err: any, token: string) => void
 }
 
@@ -48,6 +49,8 @@ export function CambiarNumero({ slug, superficie, t, token, onListo, onReentrar,
   const [dial, setDial] = useState(DEFAULT_DIAL)
   const [numero, setNumero] = useState('')
   const [codigo, setCodigo] = useState('')
+  // codex-w5w6-r1 #2: el número al que SÍ se pidió el código, fijado al pedirlo; reenviar y confirmar van a ése, no al del campo.
+  const [destino, setDestino] = useState('')
   const [espera, setEspera] = useState(0)
   const [ocupado, setOcupado] = useState(false)
   // `sinRed`: no hubo respuesta (o pasaron 20 s). Es un estado normal: ámbar, no rojo.
@@ -88,18 +91,22 @@ export function CambiarNumero({ slug, superficie, t, token, onListo, onReentrar,
     )
   }
 
-  /** Una petición a la vez, con el token de la superficie. Si mientras iba salió o entró otra persona (época), no pinta ni guarda. */
-  async function intentar<T>(llamar: (tkn: string) => Promise<T>, listo: (r: T) => void) {
+  /**
+   * Una petición a la vez, con el token de la superficie. Si mientras iba salió o entró otra persona en este documento (época), no pinta
+   * ni guarda. `identidad`: la sesión de la superficie al mandarla.
+   */
+  async function intentar<T>(llamar: (tkn: string) => Promise<T>, listo: (r: T, tkn: string, identidad: string | undefined) => void) {
     const tkn = token()
     if (!tkn || enVuelo.current) return
     enVuelo.current = true
     const epoca = epocaDelNegocio(slug)
+    const identidad = paginaDe(slug, superficie)?.identidad
     const enCodigo = paso === 'codigo'
     setOcupado(true)
     setError(null)
     try {
       const r = await llamar(tkn)
-      if (epocaDelNegocio(slug) === epoca) listo(r)
+      if (epocaDelNegocio(slug) === epoca) listo(r, tkn, identidad)
     } catch (e) {
       if (epocaDelNegocio(slug) === epoca) fallar(e, tkn, enCodigo)
     } finally {
@@ -108,12 +115,14 @@ export function CambiarNumero({ slug, superficie, t, token, onListo, onReentrar,
     }
   }
 
-  const pedirCodigo = (alLlegar: () => void) =>
-    void intentar(tkn => api.pedirCambioDeNumero(slug, tkn, nuevo, superficie), alLlegar)
+  const pedirCodigo = (tel: string, alLlegar: () => void) =>
+    void intentar(tkn => api.pedirCambioDeNumero(slug, tkn, tel, superficie), alLlegar)
   const enviar = (e: Event) => {
     e.preventDefault()
     if (!digitos) return setError({ texto: t('entrar.faltaTelefono'), sinRed: false })
-    pedirCodigo(() => {
+    const tel = nuevo // el que sale en ESTA petición, aunque el campo cambie mientras va
+    pedirCodigo(tel, () => {
+      setDestino(tel)
       setCodigo('')
       setEspera(ESPERA_S)
       setPaso('codigo')
@@ -121,12 +130,18 @@ export function CambiarNumero({ slug, superficie, t, token, onListo, onReentrar,
   }
   const verificar = (valor: string) => {
     if (valor.length < 6) return
-    void intentar(tkn => api.confirmarCambioDeNumero(slug, tkn, nuevo, valor, superficie), r => {
+    const tel = destino
+    void intentar(tkn => api.confirmarCambioDeNumero(slug, tkn, tel, valor, superficie), (r, tkn, identidad) => {
+      // codex-w5w6-r1 #1: se escribe sólo si lo guardado sigue siendo la sesión que lo pidió (o su renovación, misma identidad), en UNA
+      // lectura justo antes de escribir. Otra persona que entró, o una salida, en otra pestaña ganan: no se pisan; esta página queda sin
+      // sesión (la suya ya no vale en el SERVIDOR).
+      const guardada = lectorDe(slug, superficie)()
+      if (!guardada || !identidad || guardada.identidad !== identidad) return on401(null, tkn)
       // codex-r3 H7: si el navegador no la deja guardar, no se adopta una sesión que nadie recordará.
       if (guardarSesion(slug, { token: r.token, customer: r.customer, contactos: r.contactos, guardadaEn: Date.now() }) === 'fallo') {
         return setError({ texto: t('entrar.noSeGuardo'), sinRed: false })
       }
-      onListo(r, comoSeLee(r.customer.phone || nuevo))
+      onListo(r, comoSeLee(r.customer.phone || tel))
     })
   }
 
@@ -175,7 +190,7 @@ export function CambiarNumero({ slug, superficie, t, token, onListo, onReentrar,
         {cabeza(t('cambiarNumero.titulo'))}
         <div style={{ textAlign: 'center' }}>
           <p style={texto}>{t('otp.sent')}</p>
-          <p style={{ ...texto, fontWeight: '600', color: 'var(--avq-fg, #111827)' }}>{comoSeLee(nuevo)}</p>
+          <p style={{ ...texto, fontWeight: '600', color: 'var(--avq-fg, #111827)' }}>{comoSeLee(destino)}</p>
         </div>
         <div>
           <label style={etiqueta}>{t('otp.codeLabel')}</label>
@@ -185,7 +200,7 @@ export function CambiarNumero({ slug, superficie, t, token, onListo, onReentrar,
         {avisoDeError}
         <Button type="submit" fullWidth disabled={ocupado || codigo.length < 6}>{ocupado ? <Spinner size={18} /> : t('cambiarNumero.confirmar')}</Button>
         <button type="button" style={{ ...enlace, alignSelf: 'center', ...(espera > 0 ? { color: 'var(--avq-muted-fg, #6b7280)', cursor: 'default' } : {}) }}
-          disabled={espera > 0 || ocupado} onClick={() => pedirCodigo(() => setEspera(ESPERA_S))}>
+          disabled={espera > 0 || ocupado} onClick={() => pedirCodigo(destino, () => setEspera(ESPERA_S))}>
           {espera > 0 ? t('otp.resendIn', { s: espera }) : t('otp.resend')}
         </button>
       </form>

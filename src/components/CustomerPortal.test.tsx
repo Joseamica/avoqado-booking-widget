@@ -991,6 +991,66 @@ describe('W6: «Cambiar mi número» (S8)', () => {
     expect(await screen.findByText('Listo: tu número ahora es 55 9876 5432.')).toBeTruthy()
   })
 
+  it('codex-w5w6-r1 #2: el número que se verifica es el que se pidió, aunque lo editen mientras se mandaba', async () => {
+    anaAdentro()
+    let responder: (r: any) => void = () => {}
+    vi.mocked(api.pedirCambioDeNumero).mockImplementationOnce(() => new Promise(ok => { responder = ok }))
+    await abrir()
+    escribir(screen.getByPlaceholderText('Tu número de teléfono'), '5598765432')
+    fireEvent.click(screen.getByRole('button', { name: 'Enviar código' }))
+    escribir(screen.getByPlaceholderText('Tu número de teléfono'), '5511112222') // la editó mientras iba
+    await act(async () => { responder({ ok: true }) })
+    expect(screen.getByText('55 9876 5432')).toBeTruthy()
+    codigo()
+    await waitFor(() => expect(api.confirmarCambioDeNumero).toHaveBeenCalledWith('testarudo', 'tok-A', NUEVO, '123456', 'reservas'))
+  })
+
+  it('codex-w5w6-r1 #1: si mientras confirmaba otra pestaña guardó la sesión de otra persona, no la pisa ni la adopta; la página queda sin sesión', async () => {
+    anaAdentro()
+    let responder: (r: any) => void = () => {}
+    vi.mocked(api.confirmarCambioDeNumero).mockImplementationOnce(() => new Promise(ok => { responder = ok }))
+    await abrir()
+    await pedir()
+    codigo()
+    await waitFor(() => expect(api.confirmarCambioDeNumero).toHaveBeenCalled())
+    // Otra pestaña (no este documento: la época no cambia) entra como Bea.
+    guardarSesion('testarudo', { token: 'tok-B', customer: { ...CLIENTE, id: 'c2', firstName: 'Bea' }, contactos: [TEL], guardadaEn: Date.now() })
+    await act(async () => { responder(NUEVA) })
+    expect(leerSesion('testarudo')?.token).toBe('tok-B')
+    expect(state.customerToken.value).toBeNull()
+    expect(await screen.findByRole('heading', { name: 'Entra a tu cuenta' })).toBeTruthy()
+    expect(screen.queryByText(/tu número ahora es/)).toBeNull()
+  })
+
+  it('codex-w5w6-r1 #1: si otra pestaña salió mientras confirmaba, la salida gana: no se guarda la de reemplazo', async () => {
+    anaAdentro()
+    let responder: (r: any) => void = () => {}
+    vi.mocked(api.confirmarCambioDeNumero).mockImplementationOnce(() => new Promise(ok => { responder = ok }))
+    await abrir()
+    await pedir()
+    codigo()
+    await waitFor(() => expect(api.confirmarCambioDeNumero).toHaveBeenCalled())
+    borrarSesion('testarudo') // «Cerrar sesión» en otra pestaña
+    await act(async () => { responder(NUEVA) })
+    expect(leerSesion('testarudo')).toBeNull()
+    expect(state.customerToken.value).toBeNull()
+  })
+
+  it('codex-w5w6-r1 #1: si otra pestaña sólo RENOVÓ su sesión (la misma), la de reemplazo sí se guarda y se adopta', async () => {
+    anaAdentro()
+    let responder: (r: any) => void = () => {}
+    vi.mocked(api.confirmarCambioDeNumero).mockImplementationOnce(() => new Promise(ok => { responder = ok }))
+    await abrir()
+    await pedir()
+    codigo()
+    await waitFor(() => expect(api.confirmarCambioDeNumero).toHaveBeenCalled())
+    guardarSesion('testarudo', { token: 'tok-A2', customer: CLIENTE, contactos: [TEL], guardadaEn: Date.now() }) // la misma, renovada
+    await act(async () => { responder(NUEVA) })
+    expect(leerSesion('testarudo')?.token).toBe('tok-N')
+    expect(state.customerToken.value).toBe('tok-N')
+    expect(await screen.findByText('Listo: tu número ahora es 55 9876 5432.')).toBeTruthy()
+  })
+
   it('una cuenta sin teléfono no ve «Cambiar mi número»', async () => {
     anaAdentro()
     vi.mocked(api.getCustomerPortal).mockResolvedValue(PORTAL({ customer: { ...CLIENTE, phone: null, email: 'ana@x.mx', loyaltyPoints: 0, totalVisits: 0 } }))

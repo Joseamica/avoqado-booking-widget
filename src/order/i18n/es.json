@@ -347,7 +347,7 @@
     },
     "loyalty": {
       "stamp": "Sumaste 1 sello ({{n}} de {{meta}})",
-      "stampFull": "Con esta compra completaste tu cartilla",
+      "stampFull": "Sumaste 1 sello (cartilla completa)",
       "points": "Sumaste {{n}} puntos",
       "point": "Sumaste 1 punto"
     },
