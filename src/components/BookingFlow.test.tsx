@@ -4,11 +4,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { BookingFlow } from './BookingFlow'
 import * as api from '../api/booking'
 import * as state from '../state/booking'
+import { borrarSesion, guardarSesion } from '../lib/sesionDeCliente'
 import type { PublicVenueInfo, PublicReservationDetail, WidgetProps } from '../types'
 
 vi.mock('../api/booking', () => ({
   getVenueInfo: vi.fn(), getCreditPacks: vi.fn(), getReservation: vi.fn(),
   getAvailability: vi.fn(), getClassSessionsRange: vi.fn(), createReservation: vi.fn(), createHold: vi.fn(), cancelHold: vi.fn(),
+  getCustomerCredits: vi.fn(), getCustomerPortal: vi.fn(),
 }))
 const venue: PublicVenueInfo = {
   slug: 'studio-a', name: 'Studio A', type: 'SALON', logo: null, address: null, phone: null,
@@ -158,6 +160,30 @@ describe('BookingFlow booking repair', () => {
     expect(api.createHold).not.toHaveBeenCalled()
     expect(api.cancelHold).not.toHaveBeenCalled()
     expect(api.createReservation).not.toHaveBeenCalled()
+  })
+
+  it('codex-r3 H3: una sesión que entró en otra pestaña o página no reserva sola: el formulario dice a nombre de quién y espera', async () => {
+    vi.mocked(api.getVenueInfo).mockResolvedValue({ ...venue, products: [{ ...venue.products[0], id: 'class-a', name: 'Clase propia', type: 'CLASS' }] })
+    vi.mocked(api.getClassSessionsRange).mockResolvedValue({ dateFrom: '2026-10-06', dateTo: '2026-11-05', slots: [{
+      startsAt: '2026-10-08T17:00:00Z', endsAt: '2026-10-08T18:00:00Z', available: true,
+      classSessionId: 'session-otra', productId: 'class-a', productName: 'Clase propia', remaining: 8, capacity: 10, enrolled: 2,
+    }] })
+    window.history.replaceState({}, '', '/studio-a/classes')
+    vi.mocked(api.getCustomerCredits).mockResolvedValue({ purchases: [] } as any)
+    vi.mocked(api.getCustomerPortal).mockReturnValue(new Promise(() => {}))
+    state.bindCustomerSessionToVenue('studio-a')
+    render(<BookingFlow props={{ ...props(), flowType: 'classes' }} />); await flush()
+    fireEvent.click(screen.getByRole('button', { name: /Clase propia.*11:00/ })); await flush()
+    fireEvent.click(screen.getByRole('button', { name: 'Reservar lugar' })); await flush()
+    guardarSesion('studio-a', {
+      token: 'tok-otra', customer: { id: 'c9', firstName: 'Bea', lastName: null, email: 'bea@correo.mx', phone: '5511112222' },
+      contactos: [{ tipo: 'PHONE', valor: '+525511112222', metodo: 'WHATSAPP', probadoEn: 1 }], guardadaEn: Date.now(),
+    })
+    await act(async () => { document.dispatchEvent(new Event('visibilitychange')) }); await flush()
+    expect(state.customerInfo.value?.firstName).toBe('Bea')
+    expect(api.createReservation).not.toHaveBeenCalled()
+    expect(screen.getByText(/Bea/)).toBeTruthy()
+    borrarSesion('studio-a')
   })
 
   it.each(['', '5512345678'])('optional phone %j reaches the public contract', async phone => {

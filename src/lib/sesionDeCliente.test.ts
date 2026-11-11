@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { aplicarRenovacion, borrarSesion, guardarSesion, leerSesion, type SesionDeCliente } from './sesionDeCliente'
 import { createOrder } from '../order/api'
-import { createReservation, getCustomerPortal, updateCustomerProfile } from '../api/booking'
+import { createReservation, getCustomerCredits, getCustomerPortal, updateCustomerProfile } from '../api/booking'
 import { loadSession } from '../order/session'
 import * as estado from '../state/booking'
 
@@ -253,7 +253,9 @@ describe('W1: una sola sesión de cliente por negocio', () => {
       vi.stubGlobal('fetch', fetchMock)
       await createReservation('mindform', {} as any, 'tok-1')
       expect((fetchMock.mock.calls[0][1] as RequestInit).headers).toMatchObject({ Authorization: 'Bearer tok-2' })
-      // Un invitado sigue siendo invitado.
+      // Sin ninguna sesión guardada, un invitado sigue siendo invitado.
+      borrarSesion('mindform')
+      estado.refrescarSesion('mindform')
       await createReservation('mindform', {} as any)
       expect((fetchMock.mock.calls[1][1] as RequestInit).headers).not.toHaveProperty('Authorization')
     })
@@ -266,6 +268,83 @@ describe('W1: una sola sesión de cliente por negocio', () => {
       document.dispatchEvent(new Event('visibilitychange'))
       expect(estado.customerToken.value).toBe('tok-nueva')
       borrarSesion('legado')
+    })
+  })
+
+  describe('codex-r3: H1–H7', () => {
+    const json = (status: number, body: unknown, headers: Record<string, string> = {}) =>
+      new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json', ...headers } })
+    const TEL = S.contactos[0]
+    const conToken = (token: string, extra: Partial<SesionDeCliente> = {}): SesionDeCliente => ({ ...S, token, ...extra })
+
+    it('H1 una lectura que responde después de «Salir» (o de otra entrada) no se publica', async () => {
+      estado.bindCustomerSessionToVenue('mindform')
+      estado.setCustomerSession('mindform', 'tok-1', S.customer, null, S.contactos)
+      let responder: (r: Response) => void = () => {}
+      vi.stubGlobal('fetch', vi.fn(() => new Promise<Response>(ok => { responder = ok })))
+      const pendiente = getCustomerCredits('mindform', {}, 'tok-1')
+      estado.clearCustomerSession('mindform') // «Salir» mientras espera
+      responder(json(200, { purchases: [{ id: 'de-Ana' }] }))
+      await expect(pendiente).rejects.toMatchObject({ data: { code: 'CUSTOMER_SESSION_CHANGED' } })
+    })
+
+    it('H3 una pantalla que se cree invitada no reserva a nombre de alguien sin enseñárselo: se relee y se confirma otra vez', async () => {
+      estado.bindCustomerSessionToVenue('mindform')
+      expect(estado.customerToken.value).toBeNull()
+      guardarSesion('mindform', conToken('tok-A')) // la tienda de pedidos (misma página) entró con «Mi equipo»
+      const fetchMock = vi.fn().mockImplementation(async () => json(201, { confirmationCode: 'R1' }))
+      vi.stubGlobal('fetch', fetchMock)
+      await expect(createReservation('mindform', {} as any, estado.customerToken.value ?? undefined))
+        .rejects.toMatchObject({ status: 428, data: { code: 'CUSTOMER_SESSION_CHANGED' } })
+      expect(fetchMock).not.toHaveBeenCalled()
+      // La pantalla ya enseña a nombre de quién va («Reservando como Ana»); al confirmar otra vez, sale con su sesión.
+      expect(estado.customerInfo.value?.firstName).toBe('Ana')
+      await createReservation('mindform', {} as any, estado.customerToken.value ?? undefined)
+      expect((fetchMock.mock.calls[0][1] as RequestInit).headers).toMatchObject({ Authorization: 'Bearer tok-A' })
+    })
+
+    it('H4 un 401 en cualquier llamada con sesión la cierra (o adopta la guardada), no sólo en el portal', async () => {
+      estado.bindCustomerSessionToVenue('mindform')
+      estado.setCustomerSession('mindform', 'tok-1', S.customer, null, S.contactos)
+      vi.stubGlobal('fetch', vi.fn().mockImplementation(async () => json(401, { message: 'Token inválido', code: 'CUSTOMER_TOKEN_INVALID' })))
+      await expect(updateCustomerProfile('mindform', 'tok-1', { firstName: 'Ana' })).rejects.toMatchObject({ status: 401 })
+      expect(leerSesion('mindform')).toBeNull()
+      expect(estado.customerToken.value).toBeNull()
+    })
+
+    it('H5 otra sesión de la MISMA ficha (otros contactos probados) suelta lo cargado; una renovación no', () => {
+      estado.bindCustomerSessionToVenue('mindform')
+      estado.setCustomerSession('mindform', 'tok-1', S.customer, null, S.contactos)
+      const cargado = { customer: S.customer } as any
+      estado.portalData.value = cargado
+      estado.customerCredits.value = { purchases: [{ id: 'de-Ana-con-whatsapp' }] } as any
+      estado.selectedCreditBalance.value = { balanceId: 'b1', productId: 'p1' }
+      guardarSesion('mindform', conToken('tok-renovado'))
+      estado.refrescarSesion('mindform')
+      expect(estado.portalData.value).toBe(cargado)
+      guardarSesion('mindform', conToken('tok-contrasena', { contactos: [] }))
+      estado.refrescarSesion('mindform')
+      expect(estado.portalData.value).toBeNull()
+      expect(estado.customerCredits.value).toBeNull()
+      expect(estado.selectedCreditBalance.value).toBeNull()
+    })
+
+    it('H7 si no se puede guardar la sesión única, también se van los tokens de hoy: nunca queda otra ficha', () => {
+      irA('https://www.mindform.mx/')
+      localStorage.setItem('avq_order_session:mindform', JSON.stringify({ token: 'LEGACY-A', phone: '+525512345678', name: 'Ana', savedAt: Date.now() }))
+      localStorage.setItem('avq_customer_token:mindform', 'RESERVAS-A')
+      const real = Storage.prototype.setItem
+      vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (this: Storage, k: string, v: string) {
+        if (k.startsWith('avq_sesion:')) throw new DOMException('lleno', 'QuotaExceededError')
+        return real.call(this, k, v)
+      })
+      expect(guardarSesion('mindform', conToken('tok-B'))).toBe('fallo')
+      expect(leerSesion('mindform')).toBeNull()
+      expect(loadSession('mindform')).toBeNull()
+      estado.bindCustomerSessionToVenue('mindform')
+      expect(estado.customerToken.value).toBeNull()
+      expect(localStorage.getItem('avq_customer_token:mindform')).toBeNull()
+      void TEL
     })
   })
 })

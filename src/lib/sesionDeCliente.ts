@@ -121,7 +121,24 @@ export function salioEnOtraPagina(slug: string): boolean {
   }
 }
 
-export function guardarSesion(slug: string, s: SesionDeCliente): void {
+/** Los dos tokens de hoy de ese negocio (pedidos y reservas). */
+function quitarTokensDeHoy(slug: string): void {
+  for (const k of [`avq_order_session:${slug}`, `avq_customer_token:${slug}`, `avq_customer_info:${slug}`]) {
+    try {
+      localStorage.removeItem(k)
+    } catch {
+      /* sin almacenamiento */
+    }
+  }
+}
+
+/**
+ * `guardada`: en la cookie o el localStorage. `memoria`: no hay ningún almacenamiento, vive en esta pestaña. `fallo`: sí hay
+ * almacenamiento pero esta sesión no se pudo guardar (cuota llena, cookie de más de 4 KB): no queda sesión, y como tampoco debe quedar
+ * la de antes (quizá de otra ficha), se quitan la copia guardada y los tokens de hoy (codex-r3 H7). La tienda dice «No pudimos guardar
+ * tu sesión en este navegador».
+ */
+export function guardarSesion(slug: string, s: SesionDeCliente): 'guardada' | 'memoria' | 'fallo' {
   const texto = JSON.stringify(s)
   let guardada = false
   try {
@@ -134,18 +151,20 @@ export function guardarSesion(slug: string, s: SesionDeCliente): void {
       guardada = true
     }
   } catch {
-    /* sin almacenamiento */
+    /* sin almacenamiento o lleno */
   }
-  if (guardada) return void enMemoria.delete(slug)
-  // ponytail: si sí hay almacenamiento pero ESTA sesión no cupo (una cookie de más de 4 KB; hoy pesa ~1.5 KB), no queda guardada y la
-  // pantalla la verá cerrada. Ninguna página debe seguir con la anterior (quizá de otra ficha): se quita si se puede.
-  enMemoria.set(slug, s)
+  enMemoria.delete(slug)
+  if (guardada) return 'guardada'
   try {
     if (esDeAvoqado()) escribirCookie(nombreCookie(slug), null)
     else localStorage.removeItem(llaveLocal(slug))
   } catch {
     /* sin almacenamiento */
   }
+  quitarTokensDeHoy(slug)
+  if (hayAlmacenamiento()) return 'fallo'
+  enMemoria.set(slug, s)
+  return 'memoria'
 }
 
 /** «Salir»: la sesión única y los dos tokens de hoy de ese negocio. */
@@ -159,13 +178,12 @@ export function borrarSesion(slug: string): void {
   } catch {
     /* sin cookies */
   }
-  for (const k of [llaveLocal(slug), `avq_order_session:${slug}`, `avq_customer_token:${slug}`, `avq_customer_info:${slug}`]) {
-    try {
-      localStorage.removeItem(k)
-    } catch {
-      /* sin almacenamiento */
-    }
+  try {
+    localStorage.removeItem(llaveLocal(slug))
+  } catch {
+    /* sin almacenamiento */
   }
+  quitarTokensDeHoy(slug)
 }
 
 /**

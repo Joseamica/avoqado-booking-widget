@@ -123,6 +123,8 @@ export interface BookingAccessState {
 interface VenueSession {
   token: string | null
   info: CustomerInfo | null
+  /** Qué sesión es: la ficha con sus contactos probados (una renovación los conserva) o el token de hoy. */
+  identidad?: string | null
   portalData: CustomerPortalData | null
   bookingAccess: BookingAccessState | null
 }
@@ -137,9 +139,9 @@ function dropLegacyGlobalKeys() {
  * La sesión vigente de `slug`, leída AHORA (W1, rediseño codex-r2): la única guardada (cookie de avoqado.io, o `localStorage`
  * incrustado) manda. El token de reservas de hoy sólo cuenta si no hay sesión única ni marca de salida de la otra página.
  */
-function vigente(slug: string): { token: string; info: CustomerInfo | null } | null {
+function vigente(slug: string): { token: string; info: CustomerInfo | null; identidad: string } | null {
   const nueva = leerSesion(slug)
-  if (nueva) return { token: nueva.token, info: nueva.customer }
+  if (nueva) return { token: nueva.token, info: nueva.customer, identidad: `${nueva.customer.id}|${JSON.stringify(nueva.contactos)}` }
   if (salioEnOtraPagina(slug)) {
     borrarSesion(slug)
     return null
@@ -147,7 +149,7 @@ function vigente(slug: string): { token: string; info: CustomerInfo | null } | n
   try {
     const token = localStorage.getItem(tokenKey(slug))
     const raw = localStorage.getItem(customerKey(slug))
-    return token ? { token, info: raw ? JSON.parse(raw) as CustomerInfo : null } : null
+    return token ? { token, info: raw ? JSON.parse(raw) as CustomerInfo : null, identidad: `hoy|${token}` } : null
   } catch { return null }
 }
 
@@ -166,36 +168,67 @@ export const showPortal = signal(false)
 export const bookingAccess = signal<BookingAccessState | null>(null)
 
 /**
+ * Época de la sesión de cada negocio: sube cada vez que cambia QUIÉN está adentro (otra ficha, otros contactos probados, «Salir»).
+ * Una respuesta que se pidió en otra época ya no es de la sesión vigente y no se publica (codex-r3 H1).
+ */
+const epocas = new Map<string, number>()
+export const epocaDe = (slug: string): number => epocas.get(slug) ?? 0
+
+/** Cuántas veces se entró en ESTA página (no en otra pestaña): reservar solo por la clienta sólo sigue a una entrada de aquí. */
+export const entradasAqui = signal(0)
+
+/**
  * Las señales son sólo la VISTA de lo guardado (W1, rediseño codex-r2): se releen al usarse (cada petición autenticada pasa por
- * `tokenVigente`), al volver a la pestaña y cuando otra pestaña cambia el `localStorage`. Si cambió la ficha (otra entrada, «Salir» en
- * otra página), lo cargado de la anterior se suelta y el portal se vuelve a pedir. Devuelve el token vigente.
+ * `tokenParaMandar`), al volver a la pestaña y cuando otra pestaña cambia el `localStorage`. «Misma sesión» = misma ficha con los
+ * mismos contactos probados: si cambió, lo cargado de la anterior se suelta (portal, acceso, créditos y su selección; codex-r3 H5) y el
+ * portal se vuelve a pedir. Devuelve el token vigente.
  */
 export function refrescarSesion(slug: string): string | null {
   const v = vigente(slug)
-  const activo = activeVenueSlug.value === slug
-  const antes = activo
-    ? { token: customerToken.value, info: customerInfo.value, portalData: portalData.value, bookingAccess: bookingAccess.value }
-    : sessionByVenue.get(slug)
-  const misma = !!v && !!antes?.token && (antes.token === v.token || (!!v.info && antes.info?.id === v.info.id))
-  const next: VenueSession = {
+  const antes = sessionByVenue.get(slug)
+  const identidad = v?.identidad ?? null
+  const misma = !!antes && (antes.identidad ?? null) === identidad
+  sessionByVenue.set(slug, {
     token: v?.token ?? null,
     info: v?.info ?? null,
+    identidad,
     portalData: misma ? antes!.portalData : null,
     bookingAccess: misma ? antes!.bookingAccess : null,
-  }
-  sessionByVenue.set(slug, next)
-  if (activo) {
-    customerToken.value = next.token
-    if (JSON.stringify(customerInfo.value) !== JSON.stringify(next.info)) customerInfo.value = next.info
+  })
+  if (!misma) epocas.set(slug, epocaDe(slug) + 1)
+  if (activeVenueSlug.value === slug) {
+    customerToken.value = v?.token ?? null
+    if (JSON.stringify(customerInfo.value) !== JSON.stringify(v?.info ?? null)) customerInfo.value = v?.info ?? null
     if (!misma) {
       portalData.value = null
       bookingAccess.value = null
+      customerCredits.value = null
+      selectedCreditBalance.value = null
     }
   }
-  return next.token
+  return v?.token ?? null
 }
-/** El token para MANDAR una petición: el vigente en este momento (y la pantalla queda al día). */
-export const tokenVigente = refrescarSesion
+
+/**
+ * El token para MANDAR una petición: el vigente en este momento (la pantalla queda al día). `cambio`: la sesión vigente no es la que
+ * la pantalla enseñaba al tocar (`deLaPantalla`; vacío = invitada). Lo que se confirma no sale así: se relee y se confirma otra vez.
+ */
+export function tokenParaMandar(slug: string, deLaPantalla?: string | null): { token: string | null; cambio: boolean } {
+  const antes = sessionByVenue.get(slug)
+  const token = refrescarSesion(slug)
+  const ahora = sessionByVenue.get(slug)?.identidad ?? null
+  const enseñada = !deLaPantalla ? null
+    : deLaPantalla === token ? ahora
+    : deLaPantalla === antes?.token ? (antes.identidad ?? null)
+    : '?'
+  return { token, cambio: enseñada !== ahora }
+}
+
+/** Entró en esta página (código, Google, ficha nueva): la vista toma la sesión guardada. */
+export function entroAqui(slug: string): void {
+  entradasAqui.value++
+  refrescarSesion(slug)
+}
 
 let escuchando = false
 function escucharOtrasPestanas() {
@@ -219,6 +252,7 @@ export function bindCustomerSessionToVenue(slug: string) {
     // Park the outgoing venue's in-memory bits (portalData/bookingAccess aren't persisted).
     if (prev) {
       sessionByVenue.set(prev, {
+        ...sessionByVenue.get(prev),
         token: customerToken.value,
         info: customerInfo.value,
         portalData: portalData.value,
@@ -253,8 +287,10 @@ export function setCustomerSession(
   // renovarse después de que la pantalla leyó el suyo: se conserva el guardado). Sólo un token de hoy, sin sesión única ni marca de
   // salida, sigue en sus llaves de siempre. La pantalla se relee de lo guardado.
   const nueva = leerSesion(slug)
-  if (contactos) guardarSesion(slug, { token, customer, contactos, guardadaEn: Date.now() })
-  else if (nueva) {
+  if (contactos) {
+    guardarSesion(slug, { token, customer, contactos, guardadaEn: Date.now() })
+    entradasAqui.value++
+  } else if (nueva) {
     if (nueva.customer.id === customer.id) guardarSesion(slug, { ...nueva, customer })
   } else if (!salioEnOtraPagina(slug)) {
     try {

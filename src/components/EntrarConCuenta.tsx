@@ -3,7 +3,7 @@ import { useEffect, useId, useRef, useState } from 'preact/hooks'
 import type { TFunction } from '../i18n'
 import * as api from '../api/booking'
 import { DEFAULT_DIAL, phoneE164 } from '../data/countries'
-import { esDeAvoqado, guardarSesion, type FichaNueva, type SesionEmitida } from '../lib/sesionDeCliente'
+import { esDeAvoqado, guardarSesion, leerSesion, type FichaNueva, type SesionEmitida } from '../lib/sesionDeCliente'
 import { Button } from './ui/Button'
 import { Input } from './ui/Input'
 import { CountryPhoneInput } from './ui/CountryPhoneInput'
@@ -119,7 +119,12 @@ export function EntrarConCuenta({ slug, negocio, t, onEntro }: Props) {
       setPaso('pregunta')
       return
     }
-    guardarSesion(slug, { token: r.token, customer: r.customer, contactos: r.contactos, guardadaEn: Date.now() })
+    if (guardarSesion(slug, { token: r.token, customer: r.customer, contactos: r.contactos, guardadaEn: Date.now() }) === 'fallo') {
+      // codex-r3 H7: el navegador no dejó guardarla (cuota llena, modo privado): no se entra con una sesión que nadie recordará.
+      reiniciar()
+      setError({ texto: t('entrar.noSeGuardo'), sinRed: false })
+      return
+    }
     if (r.otraFicha) {
       setConOtraFicha(r)
       setPaso('otraFicha')
@@ -319,13 +324,19 @@ export function EntrarConCuenta({ slug, negocio, t, onEntro }: Props) {
 
   // Entró, y uno de sus contactos tiene beneficios en otra ficha. No se promete unirlas: se le dice con cuál entrar.
   const otra = conOtraFicha!.otraFicha!
+  // «Seguir» sólo con la sesión que sigue guardada: si mientras tanto salió (o entró otra) en otra página, no se revive (codex-r3 H6).
+  const seguir = () => {
+    if (leerSesion(slug)?.token === conOtraFicha!.token) return onEntro(conOtraFicha!)
+    reiniciar()
+    setError({ texto: t('entrar.sesionCerrada'), sinRed: false })
+  }
   return (
     <div class="avq-animate-in" style={columna}>
       {cabeza(t('entrar.otraFichaTitulo'), t(otra.contacto === 'EMAIL' ? 'entrar.otraFichaCorreo' : 'entrar.otraFichaTelefono'))}
       <Button variant="outline" fullWidth onClick={() => { reiniciar(); setCanal(otra.contacto === 'EMAIL' ? 'email' : 'phone'); setPaso('contacto') }}>
         {t(otra.contacto === 'EMAIL' ? 'entrar.entrarConCorreo' : 'entrar.entrarConTelefono')}
       </Button>
-      <Button fullWidth onClick={() => onEntro(conOtraFicha!)}>{t('entrar.seguir')}</Button>
+      <Button fullWidth onClick={seguir}>{t('entrar.seguir')}</Button>
     </div>
   )
 }

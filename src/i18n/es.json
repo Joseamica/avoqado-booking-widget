@@ -428,6 +428,8 @@
     "sinRed": "Sin conexión. Revisa tu internet y vuelve a intentar.",
     "pruebaVencida": "Pasó mucho tiempo: pide un código nuevo para continuar.",
     "esteNegocio": "este negocio",
-    "muchosIntentos": "Demasiados intentos. Espera un minuto."
+    "muchosIntentos": "Demasiados intentos. Espera un minuto.",
+    "noSeGuardo": "No pudimos guardar tu sesión en este navegador.",
+    "sesionCerrada": "Tu sesión se cerró. Entra otra vez."
   }
 }

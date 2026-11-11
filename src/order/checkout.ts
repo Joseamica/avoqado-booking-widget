@@ -153,7 +153,7 @@ export function submitOrder(store: OrderStore, body: CreateOrderBody): Promise<S
   return p
 }
 
-async function doSubmit(store: OrderStore, body: CreateOrderBody): Promise<SubmitResult> {
+async function doSubmit(store: OrderStore, body: CreateOrderBody, reenviado = false): Promise<SubmitResult> {
   const { slug } = store
   const t = createOrderT(store.locale)
   const pending = pendingAttempt(slug)
@@ -187,6 +187,11 @@ async function doSubmit(store: OrderStore, body: CreateOrderBody): Promise<Submi
       }
       if (e instanceof ApiError && e.status === 401 && !card && !anon) {
         clearSession(slug, session?.token)
+        // codex-r3 H4: si mientras tanto otra pestaña guardó otra sesión que sirve para este teléfono, se reenvía UNA vez con ella
+        // (el mismo intento: misma llave). Si no, se pide el código.
+        const otra = loadSession(slug)
+        if (!reenviado && otra && otra.token !== session?.token && phone && (otra.phone === phone || samePhone(otra.phone, phone)))
+          return doSubmit(store, body, true)
         return { kind: 'needsOtp' }
       }
       const message =

@@ -10,7 +10,7 @@ import {
   selectedSpotIds, bookingResult, isLoading, apiError, manageSecret,
   hasServiceStep, hasStaffStep, getStepConfig, resetBooking, showToast,
   creditPacks, customerCredits, selectedCreditBalance, creditPacksLoading, creditPacksLoaded,
-  showPortal, portalData, customerToken, customerInfo, setCustomerSession, clearCustomerSession,
+  showPortal, portalData, customerToken, customerInfo, setCustomerSession, clearCustomerSession, entradasAqui,
   bookingAccess,
   flowType, visibleProducts,
   selectedProducts, selectedStaffId, totalDuration, totalPrice, selectedModifiers,
@@ -1257,7 +1257,14 @@ export function BookingFlow({ props }: BookingFlowProps) {
   // Mindbody) where the form never re-appears once the account is known.
   // EXCEPT on the Square /appointments wizard — there the customer expects
   // a review screen with "Reserva cita" before the booking actually creates.
+  // codex-r3 H3: si la sesión cambió por OTRA pestaña o página (no por entrar aquí), no se reserva sola a nombre de quien entró: el
+  // formulario ya dice «Reservando como …» y espera el toque de la clienta.
+  const sesionVista = useRef({ id: customerInfo.value?.id ?? null, entradas: entradasAqui.value })
   useEffect(() => {
+    const id = customerInfo.value?.id ?? null
+    const cambioDeOtraPagina = id !== sesionVista.current.id && entradasAqui.value === sesionVista.current.entradas
+    sesionVista.current = { id, entradas: entradasAqui.value }
+    if (cambioDeOtraPagina) return
     if (step.value !== config.formStep) return
     if (flowType.value === 'appointments') return
     if (showCreditSelector || showNoCreditsBuyPrompt || showPaymentSelector) return
@@ -1290,7 +1297,7 @@ export function BookingFlow({ props }: BookingFlowProps) {
     // Eslint exhaustive-deps would want handleFormSubmit + info, but those
     // are stable for the lifetime of a non-changing booking session.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [step.value, customerInfo.value?.id, showCreditSelector, showNoCreditsBuyPrompt, showPaymentSelector])
+  }, [step.value, customerInfo.value?.id, entradasAqui.value, showCreditSelector, showNoCreditsBuyPrompt, showPaymentSelector])
 
   // The global back button is suppressed inside the ClassDetailView (which has
   // its own Atrás link) and on the listing itself. It still fires for the
@@ -1643,6 +1650,11 @@ export function BookingFlow({ props }: BookingFlowProps) {
         // falling through to the no-credits logic.
         if (err?.status === 403 || err?.data?.code === 'PLAN_REQUIRED') {
           showToast(err.data?.message ?? t('errors.generic'), 'error')
+          return
+        }
+        // W1: la sesión cambió mientras se consultaban los créditos: la pantalla ya se releyó; la clienta confirma otra vez.
+        if (err?.data?.code === 'CUSTOMER_SESSION_CHANGED') {
+          showToast(err.data.message, 'error')
           return
         }
         // Session expired / invalid mid-flow: the server said who we are is

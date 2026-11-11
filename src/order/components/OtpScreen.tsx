@@ -82,8 +82,10 @@ export function OtpScreen() {
     try {
       await verifyPhone(store, phone, value)
     } catch (e) {
-      setError({ text: errorText(t, e), offline: !(e instanceof ApiError) || e.network })
-      setCode('')
+      const offline = !(e instanceof ApiError) || e.network
+      setError({ text: errorText(t, e), offline })
+      // codex-r3 A2: sólo un rechazo del SERVIDOR invalida lo escrito; sin red el mismo código sigue sirviendo («Reintentar»).
+      if (!offline) setCode('')
       setVerifying(false)
       return
     }
@@ -117,6 +119,9 @@ export function OtpScreen() {
         {error && (error.offline
           ? <Notice role="alert" tone="warn" icon="cloudOff" text={error.text} />
           : <p role="alert" class="avq-o-issue">{error.text}</p>)}
+        {error?.offline && code.length === 6 && !busy && (
+          <button type="button" class="avq-o-btn avq-o-btn--quiet" onClick={() => void verify(code)}>{t('common.retry')}</button>
+        )}
       </div>
       <CheckoutStatus />
       <div class="avq-o-otp__more">

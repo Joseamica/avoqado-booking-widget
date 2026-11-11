@@ -239,6 +239,35 @@ describe('W2: entrar a la cuenta', () => {
     expect(onEntro).toHaveBeenCalledWith(conOtra)
   })
 
+  it('codex-r3 H6: «Seguir» en el aviso de otra ficha no revive una sesión que ya se cerró', async () => {
+    vi.mocked(api.verifyOtp).mockResolvedValueOnce(sesion([TEL], { otraFicha: { contacto: 'EMAIL', enmascarado: 'a•••@correo.mx' } }) as any)
+    show()
+    await codigoPorWhatsApp()
+    teclearCodigo()
+    await screen.findByRole('heading', { name: 'Tienes beneficios en otra ficha' })
+    borrarSesion(SLUG) // salió en la otra página mientras el aviso estaba abierto
+    fireEvent.click(boton('Seguir'))
+    expect(onEntro).not.toHaveBeenCalled()
+    expect(leerSesion(SLUG)).toBeNull()
+    expect(screen.getByText('Tu sesión se cerró. Entra otra vez.')).toBeTruthy()
+    expect(screen.getByRole('heading', { name: 'Entra a tu cuenta' })).toBeTruthy()
+  })
+
+  it('codex-r3 H7: si el navegador no deja guardar la sesión, lo dice y no entra', async () => {
+    dom.reconfigure({ url: 'https://www.mindform.mx/' })
+    const real = Storage.prototype.setItem
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (this: Storage, k: string, v: string) {
+      if (k.startsWith('avq_sesion:')) throw new DOMException('lleno', 'QuotaExceededError')
+      return real.call(this, k, v)
+    })
+    vi.mocked(api.verifyOtp).mockResolvedValueOnce(sesion() as any)
+    show()
+    await codigoPorWhatsApp()
+    teclearCodigo()
+    expect(await screen.findByText('No pudimos guardar tu sesión en este navegador.')).toBeTruthy()
+    expect(onEntro).not.toHaveBeenCalled()
+  })
+
   it('sin red: lo dice con todas sus letras y no borra lo que escribió', async () => {
     vi.mocked(api.requestOtp).mockRejectedValueOnce(new TypeError('Failed to fetch'))
     show()

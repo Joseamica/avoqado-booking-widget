@@ -11,21 +11,40 @@ import type {
   ModifierSelection,
 } from '../types'
 import { aplicarRenovacion, type FichaNueva, type SesionEmitida } from '../lib/sesionDeCliente'
-import { refrescarSesion, tokenVigente } from '../state/booking'
+import { clearCustomerSession, epocaDe, refrescarSesion, tokenParaMandar } from '../state/booking'
 
 const BASE = (import.meta.env?.VITE_API_URL as string | undefined)
   || 'https://api.avoqado.io/api/v1/public'
 
+const fallaDeSesion = (status: number, code: string, message: string, enviado: string | null | undefined) =>
+  Object.assign(new Error(message), { status, data: { message, code }, enviado })
+
 /**
- * `sesion`: la pantalla cree que hay sesión. W1 (rediseño codex-r2): el token que se MANDA es el vigente al momento de mandar
- * (`tokenVigente`), no el que la pantalla leyó antes; si ya no hay sesión (salió en otra pestaña o página), no se manda nada y se
- * responde como un 401, sin red. Si el SERVIDOR lo renueva (`x-customer-session`, S6), se guarda. Los errores llevan `enviado`.
+ * `sesion`: la llamada puede ir con la sesión de la clienta (`token` = el que la pantalla enseña; vacío = invitada). W1, una sola
+ * fuente de verdad (codex-r2 y r3):
+ * - el token que se MANDA es el vigente al momento de mandar (`tokenParaMandar`), aunque la pantalla se crea invitada (H3);
+ * - `confirma` (reservar, comprar un paquete, guardar el perfil): si la sesión vigente no es la que la pantalla enseñaba, no se manda
+ *   nada; la pantalla ya se releyó («Reservando como…») y la clienta confirma otra vez (H3). Nadie reserva a nombre de otra sin verlo;
+ * - si la pantalla tenía sesión y ya no hay ninguna (salió en otra pestaña o página), responde como un 401, sin red;
+ * - todo 401 de una llamada con sesión la cierra, o adopta la que ya esté guardada (H4);
+ * - una LECTURA que se pidió en otra época de la sesión no se publica (H1). Una escritura nunca se descarta (duplicaría);
+ * - si el SERVIDOR la renueva (`x-customer-session`, S6), se guarda. Los errores llevan `enviado`.
  */
-async function request<T>(url: string, init?: RequestInit, sesion?: { slug: string; token: string }): Promise<T> {
-  const enviado = sesion ? tokenVigente(sesion.slug) : null
-  if (sesion && !enviado) {
-    const data = { message: 'Tu sesión se cerró. Entra otra vez.', code: 'CUSTOMER_SESSION_CLOSED' }
-    throw Object.assign(new Error(data.message), { status: 401, data, enviado: sesion.token })
+async function request<T>(
+  url: string,
+  init?: RequestInit,
+  sesion?: { slug: string; token?: string | null; confirma?: boolean },
+): Promise<T> {
+  let enviado: string | null = null
+  let epoca = 0
+  if (sesion) {
+    const r = tokenParaMandar(sesion.slug, sesion.token)
+    enviado = r.token
+    epoca = epocaDe(sesion.slug)
+    if (sesion.confirma && r.cambio) {
+      throw fallaDeSesion(428, 'CUSTOMER_SESSION_CHANGED', 'Tu sesión cambió: revisa a nombre de quién va y confirma otra vez.', enviado)
+    }
+    if (sesion.token && !enviado) throw fallaDeSesion(401, 'CUSTOMER_SESSION_CLOSED', 'Tu sesión se cerró. Entra otra vez.', sesion.token)
   }
   const res = await fetch(url, {
     ...init,
@@ -36,12 +55,16 @@ async function request<T>(url: string, init?: RequestInit, sesion?: { slug: stri
       ...(enviado ? { Authorization: `Bearer ${enviado}` } : {}),
     },
   })
-  if (sesion && aplicarRenovacion(sesion.slug, res.headers, enviado!)) refrescarSesion(sesion.slug)
+  if (sesion && enviado && aplicarRenovacion(sesion.slug, res.headers, enviado)) refrescarSesion(sesion.slug)
   if (!res.ok) {
     let err: any
     try { err = await res.json() } catch { err = { message: `HTTP ${res.status}` } }
+    if (res.status === 401 && sesion && enviado) clearCustomerSession(sesion.slug, enviado)
     const e = Object.assign(new Error(err.message ?? 'Request failed'), { status: res.status, data: err, enviado })
     throw e
+  }
+  if (sesion && (init?.method ?? 'GET') === 'GET' && epocaDe(sesion.slug) !== epoca) {
+    throw fallaDeSesion(409, 'CUSTOMER_SESSION_CHANGED', 'Tu sesión cambió mientras cargaba.', enviado)
   }
   if (res.status === 204) return undefined as T
   return res.json()
@@ -107,16 +130,14 @@ export function getClassSessionsRange(slug: string, params: {
 export function createReservation(
   slug: string,
   data: PublicCreateReservationRequest,
-  /** Optional Bearer JWT. When passed, the server stamps customerId on the
-   *  reservation so the booking shows up in the customer's portal history.
-   *  Anonymous reservations omit this and the row stays guest-only. */
+  /** The session the screen shows (empty = guest). W1: the request goes with the session vigente at send time; if it is not
+   *  the one the screen showed, nothing is sent (428 CUSTOMER_SESSION_CHANGED) and the customer confirms again. */
   token?: string,
 ): Promise<PublicBookingResult> {
   return request(`${BASE}/venues/${slug}/reservations`, {
     method: 'POST',
     body: JSON.stringify(data),
-    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-  }, token ? { slug, token } : undefined)
+  }, { slug, token, confirma: true })
 }
 
 // ==================== Slot Hold (Square countdown UX) ====================
@@ -159,8 +180,7 @@ export function createHold(
   return request(`${BASE}/venues/${slug}/reservations/hold`, {
     method: 'POST',
     body: JSON.stringify(data),
-    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-  }, token ? { slug, token } : undefined)
+  }, { slug, token })
 }
 
 /** Releases a hold the customer no longer needs (e.g. went back to pick a
@@ -265,9 +285,7 @@ export function getCustomerCredits(slug: string, params: {
   } else if (params.productId) {
     q.append('productId', params.productId)
   }
-  return request(`${BASE}/venues/${slug}/credit-packs/balance?${q}`, {
-    headers: { Authorization: `Bearer ${token}` },
-  }, { slug, token })
+  return request(`${BASE}/venues/${slug}/credit-packs/balance?${q}`, undefined, { slug, token })
 }
 
 /**
@@ -280,9 +298,8 @@ export function createPackCheckout(slug: string, packId: string, data: {
 }, token?: string | null): Promise<{ checkoutUrl: string }> {
   return request(`${BASE}/venues/${slug}/credit-packs/${packId}/checkout`, {
     method: 'POST',
-    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
     body: JSON.stringify(data),
-  }, token ? { slug, token } : undefined)
+  }, { slug, token, confirma: true })
 }
 
 // ==================== Customer Portal ====================
@@ -365,7 +382,6 @@ export function crearFichaNueva(slug: string, data: { pruebaPendiente: string; f
 
 export function getCustomerPortal(slug: string, token: string): Promise<CustomerPortalData> {
   return request(`${BASE}/venues/${slug}/customer/portal`, {
-    headers: { Authorization: `Bearer ${token}` },
     signal: conTope(), // codex-r1 #5: recién entrada, «Mi cuenta» no gira para siempre
   }, { slug, token })
 }
@@ -375,9 +391,8 @@ export function updateCustomerProfile(slug: string, token: string, data: {
 }): Promise<{ customer: AuthResponse['customer'] }> {
   return request(`${BASE}/venues/${slug}/customer/profile`, {
     method: 'PATCH',
-    headers: { Authorization: `Bearer ${token}` },
     body: JSON.stringify(data),
-  }, { slug, token })
+  }, { slug, token, confirma: true })
 }
 
 /**

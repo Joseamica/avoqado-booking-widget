@@ -221,6 +221,21 @@ describe('submitOrder', () => {
     expect(pendingAttempt(store.slug)).not.toBeNull()
   })
 
+  it('codex-r3 H4: un 401 con una sesión vieja, si ya hay otra guardada que sirve para ese teléfono, reenvía una vez con ella', async () => {
+    const { store, body } = setup({ sessionPhone: null })
+    guardarSesion(store.slug, { ...sesion('tok-vieja'), guardadaEn: Date.now() } as any)
+    api.createOrder.mockImplementationOnce(async () => {
+      guardarSesion(store.slug, { ...sesion('tok-nueva'), guardadaEn: Date.now() } as any) // otra pestaña entró
+      throw new ApiError('Sesión vieja', 401, 'CUSTOMER_TOKEN_INVALID')
+    })
+    api.createOrder.mockResolvedValueOnce(created())
+    expect((await submitOrder(store, body)).kind).toBe('created')
+    expect(sent(0).token).toBe('tok-vieja')
+    expect(sent(1).token).toBe('tok-nueva')
+    expect(sent(1).key).toBe(sent(0).key)
+    expect(leerSesion(store.slug)?.token).toBe('tok-nueva')
+  })
+
   it('codex-r2: pedir en «Mi equipo» manda la sesión vigente al momento de mandar', async () => {
     const { store, body } = setup({ sessionPhone: null })
     guardarSesion(store.slug, { ...sesion('tok-vieja'), guardadaEn: Date.now() } as any)

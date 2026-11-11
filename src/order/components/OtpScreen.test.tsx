@@ -285,6 +285,21 @@ describe('código de WhatsApp', () => {
     expect(screen.queryByText(OFFLINE)).toBeNull()
   })
 
+  it('codex-r3 A2: sin red al verificar, el código escrito se queda (sólo un rechazo del servidor lo borra)', async () => {
+    vi.mocked(verifyOrderingOtp).mockRejectedValueOnce(new ApiError('Sin conexión', 0, undefined, undefined, true))
+    show()
+    await flush()
+    fireEvent.input(screen.getAllByRole('textbox')[0], { target: { value: '123456' } })
+    await flush()
+    expect(screen.getAllByRole('textbox').map(c => (c as HTMLInputElement).value).join('')).toBe('123456')
+    // Con la red de vuelta, «Reintentar» manda el mismo código; un rechazo del servidor sí lo borra.
+    vi.mocked(verifyOrderingOtp).mockRejectedValueOnce(new ApiError('Código incorrecto.', 400))
+    fireEvent.click(screen.getByRole('button', { name: 'Reintentar' }))
+    await flush()
+    expect(vi.mocked(verifyOrderingOtp)).toHaveBeenLastCalledWith(expect.any(String), expect.any(String), '123456')
+    expect(screen.getAllByRole('textbox').map(c => (c as HTMLInputElement).value).join('')).toBe('')
+  })
+
   it('en inglés: «Enter your code» y «We sent it by WhatsApp to …»', async () => {
     const s = makeStore(infoOf(), menuOf(), 'en')
     checkoutOf(s).lastBody.value = body

@@ -6,9 +6,11 @@ import { Spinner } from './ui/Spinner'
 import { Button } from './ui/Button'
 import { Input } from './ui/Input'
 import { EntrarConCuenta } from './EntrarConCuenta'
-import type { ClienteDeSesion as CustomerInfoDeSesion, ContactoProbado } from '../lib/sesionDeCliente'
 import * as api from '../api/booking'
-import { portalData, portalLoading, customerToken, customerInfo, setCustomerSession, clearCustomerSession, bookingAccess, venueInfo } from '../state/booking'
+import {
+  portalData, portalLoading, customerToken, setCustomerSession, clearCustomerSession, bookingAccess, venueInfo, epocaDe, entroAqui,
+} from '../state/booking'
+import { leerSesion } from '../lib/sesionDeCliente'
 
 interface CustomerPortalProps {
   venueSlug: string
@@ -80,16 +82,18 @@ export function CustomerPortal({ venueSlug, timezone, venuePhone, t, onBack, onM
     const tkn = customerToken.value
     if (!tkn) return
     const mia = ++carga.current
+    const epoca = epocaDe(venueSlug)
     portalLoading.value = true
     setFallaCarga(null)
     try {
       const result = await api.getCustomerPortal(venueSlug, tkn)
-      if (mia !== carga.current) return
+      // La sesión cambió mientras cargaba («Salir», otra ficha): esta respuesta ya no es de nadie que esté adentro (codex-r3 H1).
+      if (mia !== carga.current || epocaDe(venueSlug) !== epoca) return
       portalData.value = result
       // Fase 0.B: the portal carries "¿puedo reservar aquí?" — keep it fresh.
       if (result.bookingAccess) bookingAccess.value = result.bookingAccess
     } catch (err: any) {
-      if (mia !== carga.current) return
+      if (mia !== carga.current || err?.data?.code === 'CUSTOMER_SESSION_CHANGED') return
       // W1: sólo un 401 cierra la sesión que lo recibió (si ya hay otra guardada, se adopta); sin red no se saca a nadie.
       if (err?.status === 401) clearCustomerSession(venueSlug, err.enviado ?? tkn)
       else setFallaCarga(err?.status ? t('errors.generic') : t('entrar.sinRed'))
@@ -120,6 +124,8 @@ export function CustomerPortal({ venueSlug, timezone, venuePhone, t, onBack, onM
       // S7: la contraseña ya entrega la sesión única, SIN contactos probados (prueba la ficha, no su correo).
       const antes = customerToken.value
       setCustomerSession(venueSlug, result.token, result.customer, result.bookingAccess ?? null, [])
+      // codex-r3 H7: si el navegador no la dejó guardar, no se entra.
+      if (!leerSesion(venueSlug)) return setError(t('entrar.noSeGuardo'))
       // El efecto pide «Mi cuenta» al cambiar el token; si es el mismo (misma ficha, mismo segundo), se pide aquí.
       if (customerToken.value === antes) await loadPortal()
     } catch (err: any) {
@@ -129,11 +135,14 @@ export function CustomerPortal({ venueSlug, timezone, venuePhone, t, onBack, onM
     }
   }
 
-  /** W2: ya entró por `EntrarConCuenta` (la sesión única ya está guardada): la cuenta queda en pantalla y se lee el portal. */
-  async function handleEntro(sesion: { token: string; customer: CustomerInfoDeSesion; contactos: ContactoProbado[] }) {
+  /**
+   * W2: ya entró por `EntrarConCuenta`, que guardó la sesión única: la pantalla la RELEE de lo guardado (nunca vuelve a guardar una
+   * copia que pudo envejecer; codex-r3 H6) y se pide «Mi cuenta».
+   */
+  async function handleEntro() {
     const antes = customerToken.value
-    setCustomerSession(venueSlug, sesion.token, sesion.customer, null, sesion.contactos)
-    if (customerToken.value === antes) await loadPortal()
+    entroAqui(venueSlug)
+    if (customerToken.value && customerToken.value === antes) await loadPortal()
   }
 
   function handleLogout() {
@@ -171,16 +180,9 @@ export function CustomerPortal({ venueSlug, timezone, venuePhone, t, onBack, onM
 
       const result = await api.updateCustomerProfile(venueSlug, token, updates)
 
-      // Update local state
-      if (customerInfo.value) {
-        const updated = {
-          ...customerInfo.value,
-          firstName: result.customer.firstName,
-          lastName: result.customer.lastName,
-          phone: result.customer.phone,
-        }
-        setCustomerSession(venueSlug, token, updated)
-      }
+      // Sólo la ficha que respondió: `setCustomerSession` la escribe si sigue siendo la vigente (codex-r3 H2: otra página pudo entrar
+      // con otra ficha mientras se guardaba; nunca se le pegan los datos de ésta).
+      if (result.customer?.id) setCustomerSession(venueSlug, token, result.customer)
       // Reload portal data to refresh everything
       await loadPortal()
       setEditingProfile(false)
@@ -238,7 +240,7 @@ export function CustomerPortal({ venueSlug, timezone, venuePhone, t, onBack, onM
     if (!showEmailLogin) {
       return (
         <div class="avq-animate-in">
-          <EntrarConCuenta slug={venueSlug} negocio={venueInfo.value?.name} t={t} onEntro={s => void handleEntro(s)} />
+          <EntrarConCuenta slug={venueSlug} negocio={venueInfo.value?.name} t={t} onEntro={() => void handleEntro()} />
 
           {/* Reveal the email/password login as a secondary option */}
           <div style={{ textAlign: 'center', marginTop: '16px' }}>
