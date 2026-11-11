@@ -120,6 +120,28 @@
       "MODIFIER_GROUP_MAX": "En «{{group}}» puedes elegir hasta {{n}}.",
       "BELOW_MINIMUM": "El pedido mínimo es de {{amount}}.",
       "checkOptions": "Revisa las opciones de este producto."
+    },
+    "benefits": {
+      "premioAsk": "¡Tienes {{premio}}! ¿Lo usas?",
+      "premioYes": "Sí",
+      "premioOn": "{{premio}} en tu pedido",
+      "premioOnText": "Si no pasas a pagar a tiempo, regresa a tu cuenta.",
+      "remove": "Quitar",
+      "more": "Más beneficios",
+      "points": "Usar {{n}} puntos (−{{amount}})",
+      "coupon": "Tengo un cupón",
+      "couponLabel": "Tu cupón",
+      "couponApply": "Aplicar",
+      "couponApplied": "Cupón {{code}}",
+      "couponBad": "Ese cupón no se puede usar en este pedido.",
+      "pointsBad": "Tus puntos no se pueden usar en este pedido.",
+      "premioBad": "Tu premio ya no está disponible.",
+      "premioRow": "{{premio}} (tu premio)",
+      "subtotal": "Subtotal",
+      "later": "Tus beneficios se calculan al pedir.",
+      "sessionTitle": "Tu sesión se cerró",
+      "sessionText": "Entra otra vez para usar tus beneficios, o confirma el precio sin ellos.",
+      "signInAgain": "Entrar otra vez"
     }
   },
   "details": {
@@ -186,7 +208,14 @@
     "cardProviderUnavailable": "No pudimos abrir el pago. Intenta de nuevo.",
     "tooManyUnpaid": "Hay muchos pedidos esperando pago. Pide directo en caja.",
     "zeroTotal": "Tu pedido no tiene costo: pídelo directo en caja.",
-    "needsPhone": "Este negocio cambió cómo recibe pedidos. Escribe tu WhatsApp para pedir."
+    "needsPhone": "Este negocio cambió cómo recibe pedidos. Escribe tu WhatsApp para pedir.",
+    "premioUsed": "Tu {{premio}} ya se usó en otro pedido",
+    "premioUsedGeneric": "Tu premio ya se usó en otro pedido",
+    "pointsGone": "Tus puntos ya no alcanzan",
+    "couponGone": "Tu cupón ya no está disponible",
+    "newTotal": "El nuevo total es {{total}}. ¿Confirmas?",
+    "backToOrder": "Volver a mi pedido",
+    "orderWithout": "Pedir sin beneficios · {{total}}"
   },
   "tracking": {
     "head": {
@@ -277,7 +306,12 @@
         "expired": "Se canceló porque no se registró el pago a tiempo. Si ya pagaste en caja, no pasa nada: muéstrale tu folio a la cajera.",
         "staff": "Si tienes dudas, pregunta en caja."
       },
-      "steps": { "order": "Pedido", "paid": "Pagado", "ready": "Listo", "completed": "Entregado" },
+      "steps": {
+        "order": "Pedido",
+        "paid": "Pagado",
+        "ready": "Listo",
+        "completed": "Entregado"
+      },
       "left": "Faltan {{n}} min",
       "say": "Enséñalo en caja o dile tu folio.",
       "tax": "Pagas en caja: tarjeta o efectivo. IVA incluido.",
@@ -302,5 +336,8 @@
       "reminderText": "Paga en caja antes de las {{time}}.",
       "reminderPaid": "Tu pedido {{folio}} está pagado"
     }
+  },
+  "entrar": {
+    "back": "Volver a tu pedido"
   }
 }

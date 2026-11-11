@@ -11,6 +11,10 @@ import { MenuScreen } from './MenuScreen'
 import { CartScreen } from './CartScreen'
 import { DetailsScreen } from './DetailsScreen'
 import { OtpScreen } from './OtpScreen'
+import { EntrarConCuenta } from '../../components/EntrarConCuenta'
+import { createT } from '../../i18n'
+import { entroEnLaTienda } from '../checkout'
+import { Back } from './icons'
 import { CheckoutStatus } from './CheckoutStatus'
 import { TrackingScreen, isLapsedFolio, lateWindowOpen, partialLine, partialOf } from './TrackingScreen'
 import { Notice } from './StoreStatusBanner'
@@ -168,7 +172,7 @@ export function OrderApp({ accentColor }: { accentColor?: string }) {
   }
   const hasBrand = !!(name || logo)
   const hero = hasBrand && (screen === 'menu' || screen === 'product') && !pid
-  const compact = hasBrand && (screen === 'details' || screen === 'otp')
+  const compact = hasBrand && (screen === 'details' || screen === 'otp' || screen === 'entrar')
   return (
     <div ref={root} class="avq-o-root" style={{ ['--avq-accent' as any]: accent }} onClickCapture={dropEarly}>
       <style>{STORE_CSS}</style>
@@ -205,6 +209,13 @@ export function OrderApp({ accentColor }: { accentColor?: string }) {
       {screen === 'cart' && <CartScreen />}
       {screen === 'details' && <DetailsScreen />}
       {screen === 'otp' && <OtpScreen />}
+      {/* W3 (e): «Entrar otra vez» dentro de la tienda; al entrar, la página toma esa sesión y vuelve al carrito (W4 lo reutiliza). */}
+      {screen === 'entrar' && (
+        <div class="avq-o-entrar">
+          <button type="button" class="avq-o-back" aria-label={t('entrar.back')} onClick={() => store.go('cart')}><Back /></button>
+          <EntrarConCuenta slug={store.slug} negocio={name} t={createT(store.locale)} onEntro={() => entroEnLaTienda(store)} />
+        </div>
+      )}
       {screen === 'tracking' && <TrackingScreen />}
     </div>
   )

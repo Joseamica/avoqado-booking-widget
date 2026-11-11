@@ -20,7 +20,7 @@ export type NoticeIcon = keyof typeof ICONS
  * (`CheckoutStatus`, que avisa con `role="alert"` lo que falló o pide decidir ya).
  */
 export function Notice({ tone, icon, title, text, action, role = 'status' }: {
-  tone: 'neutral' | 'warn' | 'error'
+  tone: 'neutral' | 'warn' | 'error' | 'ok'
   icon?: NoticeIcon
   title?: string
   text: string

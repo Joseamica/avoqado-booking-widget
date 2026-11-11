@@ -120,6 +120,28 @@
       "MODIFIER_GROUP_MAX": "In “{{group}}” you can choose up to {{n}}.",
       "BELOW_MINIMUM": "The minimum order is {{amount}}.",
       "checkOptions": "Check the options for this product."
+    },
+    "benefits": {
+      "premioAsk": "You have {{premio}}! Use it?",
+      "premioYes": "Yes",
+      "premioOn": "{{premio}} on your order",
+      "premioOnText": "If you don't pay in time, it goes back to your account.",
+      "remove": "Remove",
+      "more": "More rewards",
+      "points": "Use {{n}} points (−{{amount}})",
+      "coupon": "I have a coupon",
+      "couponLabel": "Your coupon",
+      "couponApply": "Apply",
+      "couponApplied": "Coupon {{code}}",
+      "couponBad": "That coupon can't be used on this order.",
+      "pointsBad": "Your points can't be used on this order.",
+      "premioBad": "Your reward is no longer available.",
+      "premioRow": "{{premio}} (your reward)",
+      "subtotal": "Subtotal",
+      "later": "Your rewards are calculated when you order.",
+      "sessionTitle": "Your session ended",
+      "sessionText": "Sign in again to use your rewards, or confirm the price without them.",
+      "signInAgain": "Sign in again"
     }
   },
   "details": {
@@ -186,7 +208,14 @@
     "cardProviderUnavailable": "We couldn't open the payment. Try again.",
     "tooManyUnpaid": "There are many orders waiting for payment. Order directly at the counter.",
     "zeroTotal": "Your order has no cost: ask for it directly at the counter.",
-    "needsPhone": "This business changed how it takes orders. Enter your WhatsApp to order."
+    "needsPhone": "This business changed how it takes orders. Enter your WhatsApp to order.",
+    "premioUsed": "Your {{premio}} was already used on another order",
+    "premioUsedGeneric": "Your reward was already used on another order",
+    "pointsGone": "You no longer have enough points",
+    "couponGone": "Your coupon is no longer available",
+    "newTotal": "The new total is {{total}}. Confirm?",
+    "backToOrder": "Back to my order",
+    "orderWithout": "Order without rewards · {{total}}"
   },
   "tracking": {
     "head": {
@@ -277,7 +306,12 @@
         "expired": "It was cancelled because no payment was recorded in time. If you already paid at the counter, don't worry: show your order number to the cashier.",
         "staff": "If you have questions, ask at the counter."
       },
-      "steps": { "order": "Order", "paid": "Paid", "ready": "Ready", "completed": "Picked up" },
+      "steps": {
+        "order": "Order",
+        "paid": "Paid",
+        "ready": "Ready",
+        "completed": "Picked up"
+      },
       "left": "{{n}} min left",
       "say": "Show it at the counter or tell them your number.",
       "tax": "You pay at the counter: card or cash. Tax included.",
@@ -302,5 +336,8 @@
       "reminderText": "Pay at the counter before {{time}}.",
       "reminderPaid": "Your order {{folio}} is paid"
     }
+  },
+  "entrar": {
+    "back": "Back to your order"
   }
 }

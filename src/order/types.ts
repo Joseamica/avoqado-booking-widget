@@ -96,13 +96,29 @@ export interface QuoteIssue {
   lineIndex?: number
   message: string
 }
+/** W3 (S10/S11): lo que la clienta eligió usar; sólo cuenta con sesión. La MISMA forma al cotizar y al pedir. */
+export type BeneficioElegido = 'CUPON' | 'PREMIO' | 'PUNTOS'
+export interface EleccionDeBeneficios { premioId?: string; puntos?: number; cupon?: string }
 export interface Quote {
   ok: boolean
   lines: QuoteLine[]
   subtotal: number
+  /** S10: con sesión y beneficios calculados, el total CON beneficios (el que se manda como `expectedTotal`). */
   total: number
   minOrderAmount: number
   issues: QuoteIssue[]
+  // ── S10, opcionales y sólo con sesión.
+  /** `calculados: false` = no se simularon (mucha carga): se calculan al pedir. */
+  beneficios?: { calculados: boolean }
+  aplicados?: { tipo: 'DESCUENTO' | 'CUPON' | 'PREMIO' | 'PUNTOS'; nombre: string; monto: number }[]
+  /** Lo que el negocio tiene prendido y ella puede usar. `cupon`: hay un cupón vigente que la tienda puede aplicar (se escribe). */
+  oferta?: {
+    premio: { id: string; etiqueta: string } | null
+    puntos: { saldo: number; minimo: number; valorPorPunto: number; maxPuntos: number } | null
+    cupon: boolean
+  }
+  /** Lo elegido que ya no está disponible (premio usado, puntos de más, cupón agotado). */
+  descartados?: BeneficioElegido[]
 }
 
 export type PaymentMode = 'PAY_AT_PICKUP' | 'CARD_ONLINE'
@@ -117,6 +133,8 @@ export interface CreateOrderBody {
   whatsappConsent?: boolean
   /** De dónde pidió la clienta (el QR del negocio o una liga); aditivo, lo llena la tarea de la liga. */
   channel?: 'QR' | 'LINK'
+  /** W3 (S11): lo que eligió usar; sólo con sesión (sin ella el SERVIDOR responde `PRICE_CHANGED` con `motivo: 'SIN_SESION'`). */
+  beneficios?: EleccionDeBeneficios
 }
 
 export type OnlineOrderStatus =

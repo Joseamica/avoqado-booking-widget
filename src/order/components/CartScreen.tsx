@@ -2,16 +2,16 @@ import { h } from 'preact'
 import { useContext, useId, useLayoutEffect, useRef, useState } from 'preact/hooks'
 import { OrderStoreContext } from '../store'
 import { createOrderT } from '../i18n'
-import { ApiError, quote as fetchQuote } from '../api'
+import { ApiError } from '../api'
 import { removeLine, setQuantity, toQuoteItems } from '../cart'
-import { checkoutOf, errorText } from '../checkout'
+import { checkoutOf, cotizar, errorText } from '../checkout'
 import { formatMXN } from '../money'
 import { Notice, StoreStatusBanner } from './StoreStatusBanner'
 import { Stepper } from './Stepper'
 import { VenueMark } from './VenueMark'
 import { Back, Plus } from './icons'
 import { optionsText } from './lineOptions'
-import type { Menu, Quote, QuoteIssue } from '../types'
+import type { EleccionDeBeneficios, Menu, Quote, QuoteIssue } from '../types'
 
 const MAX_QTY = 20
 /** `MAX_CART_LINES` del servidor. */
@@ -42,6 +42,70 @@ function issueText(t: ReturnType<typeof createOrderT>, x: QuoteIssue, q: Quote, 
  * abierta el carrito se ve, se edita y se vacía igual: sólo «Continuar» queda deshabilitado. «Continuar» y el total van en un pie
  * pegajoso DENTRO de la tienda (nunca `position: fixed`: la tienda puede estar incrustada en el sitio de un restaurante).
  */
+/** «Café gratis» ⇒ «café gratis» dentro de una frase («¡Tienes café gratis!»). */
+const enFrase = (s: string) => s.charAt(0).toLocaleLowerCase('es') + s.slice(1)
+
+/**
+ * W3 (mockups 1h y 1h·2): sólo con sesión y sólo lo que el negocio tiene prendido (`oferta`). El premio con la pregunta del founder y
+ * «Sí»/«Quitar»; «Más beneficios» junta puntos (si alcanza el mínimo) y cupón. Cambiar la elección vuelve a cotizar. Lo descartado se
+ * dice junto a su control. «Va en tu <producto>» no: el SERVIDOR no dice en qué producto cae el premio (hallazgo aparte).
+ */
+function Beneficios({ q }: { q: Quote }) {
+  const store = useContext(OrderStoreContext)!
+  const t = createOrderT(store.locale)
+  const c = checkoutOf(store)
+  const e = c.eleccion.value
+  const set = (patch: EleccionDeBeneficios) => {
+    const next: EleccionDeBeneficios = { ...e, ...patch }
+    for (const k of Object.keys(next) as (keyof EleccionDeBeneficios)[]) if (next[k] === undefined) delete next[k]
+    c.eleccion.value = next
+  }
+  const couponId = useId()
+  const [abierto, setAbierto] = useState(false)
+  const [cupon, setCupon] = useState(e.cupon ?? '')
+  const o = q.oferta
+  if (!o) return null
+  const fuera = q.descartados ?? []
+  const premio = o.premio
+  const usaPremio = !!premio && e.premioId === premio.id && !fuera.includes('PREMIO')
+  const puntos = o.puntos
+  const conCupon = !!e.cupon && !fuera.includes('CUPON')
+  return (
+    <div class="avq-o-ben">
+      {premio && (usaPremio
+        ? <Notice tone="ok" title={t('cart.benefits.premioOn', { premio: premio.etiqueta })} text={t('cart.benefits.premioOnText')}
+            action={{ label: t('cart.benefits.remove'), onClick: () => set({ premioId: undefined }) }} />
+        : <Notice tone="neutral" text={t('cart.benefits.premioAsk', { premio: enFrase(premio.etiqueta) })}
+            action={{ label: t('cart.benefits.premioYes'), onClick: () => set({ premioId: premio.id }) }} />)}
+      {e.premioId && fuera.includes('PREMIO') && <p class="avq-o-ben__msg">{t('cart.benefits.premioBad')}</p>}
+      {(puntos || o.cupon) && <p class="avq-o-ben__title">{t('cart.benefits.more')}</p>}
+      {puntos && (
+        <label class="avq-o-ben__opt">
+          <input type="checkbox" class="avq-o-opt__input" checked={!!e.puntos && !fuera.includes('PUNTOS')}
+            onChange={(ev: any) => set({ puntos: ev.currentTarget.checked ? puntos.maxPuntos : undefined })} />
+          <span>{t('cart.benefits.points', { n: puntos.maxPuntos, amount: formatMXN(Math.round(puntos.maxPuntos * puntos.valorPorPunto * 100) / 100, store.locale) })}</span>
+        </label>
+      )}
+      {e.puntos && fuera.includes('PUNTOS') && <p class="avq-o-ben__msg">{t('cart.benefits.pointsBad')}</p>}
+      {o.cupon && (conCupon
+        ? <div class="avq-o-ben__opt"><span class="avq-o-ben__grow">{t('cart.benefits.couponApplied', { code: e.cupon! })}</span>
+            <button type="button" class="avq-o-btn avq-o-btn--quiet" onClick={() => { setCupon(''); set({ cupon: undefined }) }}>{t('cart.benefits.remove')}</button></div>
+        : abierto || e.cupon
+          ? <form class="avq-o-ben__coupon" onSubmit={(ev: Event) => { ev.preventDefault(); const v = cupon.trim(); if (v) set({ cupon: v }) }}>
+              <label for={couponId} class="avq-o-ben__label">{t('cart.benefits.couponLabel')}</label>
+              <div class="avq-o-ben__row">
+                <input id={couponId} class="avq-o-input" maxLength={50} autoComplete="off" value={cupon} onInput={(ev: any) => setCupon(ev.currentTarget.value)} />
+                <button type="submit" class="avq-o-btn avq-o-btn--quiet" disabled={!cupon.trim()}>{t('cart.benefits.couponApply')}</button>
+              </div>
+            </form>
+          : <button type="button" class="avq-o-ben__opt avq-o-ben__link" onClick={() => setAbierto(true)}>
+              <span class="avq-o-ben__grow">{t('cart.benefits.coupon')}</span><span aria-hidden="true">›</span>
+            </button>)}
+      {e.cupon && fuera.includes('CUPON') && <p class="avq-o-ben__msg">{t('cart.benefits.couponBad')}</p>}
+    </div>
+  )
+}
+
 export function CartScreen() {
   const store = useContext(OrderStoreContext)!
   const t = createOrderT(store.locale)
@@ -49,6 +113,9 @@ export function CartScreen() {
   const draft = checkoutOf(store).draft
   const cart = store.cart.value
   const q = store.quote.value
+  // W3: lo elegido también vuelve a cotizar (con la sesión de la página).
+  const eleccion = checkoutOf(store).eleccion.value
+  const sesionCerrada = checkoutOf(store).sesionCerrada.value
   // `offline` = no hubo respuesta usable: es un estado normal, no una falla (tarjeta ámbar con la nube tachada, como en la carta).
   const [error, setError] = useState<{ text: string; offline: boolean } | null>(null)
   const [attempt, setAttempt] = useState(0)
@@ -70,7 +137,7 @@ export function CartScreen() {
     if (cart.length === 0) return
     let live = true
     const timer = setTimeout(() => {
-      fetchQuote(store.slug, toQuoteItems(cart)).then(
+      cotizar(store, toQuoteItems(cart)).then(
         r => { if (live) store.quote.value = r },
         e => { if (live) setError({ text: errorText(t, e), offline: !(e instanceof ApiError) || e.network }) },
       )
@@ -79,7 +146,7 @@ export function CartScreen() {
       live = false
       clearTimeout(timer)
     }
-  }, [cart, attempt])
+  }, [cart, attempt, eleccion])
 
   // Quitar un renglón con el bote destruye el botón que tenía el foco. El foco pasa al RENGLÓN que sube a ese lugar (el siguiente; si
   // era el último, el anterior), nunca a un botón suyo: un Enter mantenido repite clics sobre lo que tiene el foco, y en el bote del
@@ -177,17 +244,33 @@ export function CartScreen() {
             onInput={(e: any) => { draft.value = { ...draft.value, note: e.currentTarget.value } }} />
         </div>
       )}
+      {q && <Beneficios q={q} />}
+      {sesionCerrada && (
+        <Notice role="alert" tone="warn" title={t('cart.benefits.sessionTitle')} text={t('cart.benefits.sessionText')}
+          action={{ label: t('cart.benefits.signInAgain'), onClick: () => store.go('entrar') }} />
+      )}
       {q?.issues.filter(x => x.lineIndex === undefined).map((x, j) => <p key={j} role="alert" class="avq-o-issue">{issueText(t, x, q, store.menu.value, store.locale)}</p>)}
       {error && (
         <Notice tone={error.offline ? 'warn' : 'error'} icon={error.offline ? 'cloudOff' : 'alert'} text={error.text}
           action={{ label: t('common.retry'), onClick: () => setAttempt(a => a + 1) }} />
       )}
       <div class="avq-o-total">
+        {/* W3 (1h·2): con beneficios aplicados, el desglose: subtotal, cada uno con su monto y el total. */}
+        {q?.aplicados?.length ? <>
+          <p class="avq-o-total__row avq-o-total__row--sub"><span>{t('cart.benefits.subtotal')}</span><span>{formatMXN(q.subtotal, store.locale)}</span></p>
+          {q.aplicados.map((a, i) => (
+            <p key={i} class="avq-o-total__row avq-o-total__row--ben">
+              <span>{a.tipo === 'PREMIO' ? t('cart.benefits.premioRow', { premio: a.nombre }) : a.nombre}</span>
+              <span>−{formatMXN(a.monto, store.locale)}</span>
+            </p>
+          ))}
+        </> : null}
         <p class="avq-o-total__row">
           <span>{t('cart.totalShort')}</span>
           {q ? <span>{formatMXN(q.total, store.locale)}</span> : !error && <span class="avq-o-total__wait">{t('cart.quoting')}</span>}
         </p>
         {/* Con tarjeta en línea (fase 2) se elige cómo pagar en «Tus datos»: aquí sólo el IVA. */}
+        {q?.beneficios?.calculados === false && <p class="avq-o-total__tax">{t('cart.benefits.later')}</p>}
         <p class="avq-o-total__tax">{info?.paymentModes.cardOnline ? t('details.taxIncluded') : t('cart.taxPickup')}</p>
       </div>
       <div class="avq-o-cartfoot">

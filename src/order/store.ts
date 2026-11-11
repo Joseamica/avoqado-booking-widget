@@ -6,7 +6,8 @@ import { ApiError, getInfo, getMenu } from './api'
 import { loadCart, saveCart, type Cart } from './cart'
 import type { Menu, Quote, StoreInfo } from './types'
 
-export type Screen = 'menu' | 'product' | 'cart' | 'details' | 'otp' | 'tracking'
+/** `entrar` (W3): «Entrar otra vez» dentro de la tienda (`EntrarConCuenta`). */
+export type Screen = 'menu' | 'product' | 'cart' | 'details' | 'otp' | 'tracking' | 'entrar'
 export type PaymentReturn = 'returned' | 'cancelled' | null
 
 export interface OrderStore {

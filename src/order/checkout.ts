@@ -7,7 +7,7 @@
 //   (nunca llegó a crearse) lo suelta y pide los datos de «Mi equipo».
 // - Fase 2: pagar con tarjeta no pide el código ni manda token; el pago en Stripe es la prueba. El modo es el del cuerpo que se manda.
 import { signal, type Signal } from '@preact/signals'
-import { ApiError, createOrder, verifyOrderingOtp } from './api'
+import { ApiError, createOrder, quote, verifyOrderingOtp } from './api'
 import { beginAttempt, pendingAttempt, settleAttempt } from './attempt'
 import { loadSession, samePhone, saveLastOrder, type OrderingSession } from './session'
 import { abrirPagina, fijarPagina, guardarSesion, soltarLaPagina, tokenDeLaPagina } from '../lib/sesionDeCliente'
@@ -16,15 +16,21 @@ import { expectedTotalFromQuote } from './money'
 import { createOrderT } from './i18n'
 import { emitOrderCreated } from './events'
 import type { OrderStore } from './store'
-import type { CreateOrderBody, CreatedCardOrder, CreatedOrder, PaymentMode, Quote, QuoteIssue, StoreReason, StoreStatus } from './types'
+import type {
+  BeneficioElegido, CreateOrderBody, CreatedCardOrder, CreatedOrder, EleccionDeBeneficios, PaymentMode, Quote, QuoteIssue, QuoteItem, StoreReason,
+  StoreStatus,
+} from './types'
 
 export type SubmitResult =
   | { kind: 'created'; order: CreatedOrder | CreatedCardOrder }
   | { kind: 'needsOtp' }
   /** El servidor exige teléfono verificado a un pedido anónimo (el negocio pasó a «Mi equipo»): el intento ya se soltó. */
   | { kind: 'needsPhone' }
-  /** `body` = el cuerpo enviado con el total nuevo: se manda (con OTRA llave) sólo si la persona confirma. */
-  | { kind: 'priceChanged'; quote: Quote; body: CreateOrderBody }
+  /**
+   * `body` = el cuerpo enviado con el total nuevo (sin lo que ya no está): se manda (con OTRA llave) sólo si la persona confirma.
+   * `motivo` (W3): `SIN_SESION` = la sesión se cerró (va sin beneficios); un beneficio = ése ya no está (p. ej. el premio se usó).
+   */
+  | { kind: 'priceChanged'; quote: Quote; body: CreateOrderBody; motivo?: Motivo }
   | { kind: 'cartInvalid'; issues: QuoteIssue[] }
   | { kind: 'storeUnavailable'; status: StoreStatus; reason: StoreReason }
   | { kind: 'error'; message: string; retryable: boolean }
@@ -47,6 +53,31 @@ export function errorText(t: T, e: unknown): string {
   return e.message || t('checkout.failed')
 }
 
+/** W3: por qué cambió el precio al pedir. */
+export type Motivo = 'SIN_SESION' | BeneficioElegido
+
+/** Lo elegido sin lo que ya no está (`fuera`); `undefined` si no queda nada. */
+function sinLosDe(e: EleccionDeBeneficios | undefined, fuera: BeneficioElegido[]): EleccionDeBeneficios | undefined {
+  const b: EleccionDeBeneficios = {
+    ...(e?.premioId && !fuera.includes('PREMIO') ? { premioId: e.premioId } : {}),
+    ...(e?.puntos && !fuera.includes('PUNTOS') ? { puntos: e.puntos } : {}),
+    ...(e?.cupon && !fuera.includes('CUPON') ? { cupon: e.cupon } : {}),
+  }
+  return Object.keys(b).length ? b : undefined
+}
+
+/** W3: lo elegido que la cotización ofreció y no descartó: lo mismo con que se calculó su total (el `expectedTotal`). */
+function beneficiosCotizados(store: OrderStore, q: Quote): EleccionDeBeneficios | undefined {
+  const e = checkouts.get(store)?.eleccion.value ?? {} // sin abrir la página: armar el cuerpo no es abrir la tienda
+  const o = q.oferta
+  const ofrecido = {
+    ...(e.premioId && o?.premio?.id === e.premioId ? { premioId: e.premioId } : {}),
+    ...(e.puntos && o?.puntos ? { puntos: e.puntos } : {}),
+    ...(e.cupon && o?.cupon ? { cupon: e.cupon } : {}),
+  }
+  return sinLosDe(ofrecido, q.descartados ?? [])
+}
+
 export function buildOrderBody(
   store: OrderStore,
   input: { customer: { name: string; phone?: string; email?: string }; note: string | null; paymentMode?: PaymentMode },
@@ -55,6 +86,7 @@ export function buildOrderBody(
   if (!quote) throw new Error('buildOrderBody sin cotización')
   const email = input.customer.email?.trim()
   const note = input.note?.trim()
+  const beneficios = beneficiosCotizados(store, quote)
   return {
     items: toQuoteItems(store.cart.value),
     paymentMode: input.paymentMode ?? 'PAY_AT_PICKUP',
@@ -62,6 +94,7 @@ export function buildOrderBody(
     customer: { name: input.customer.name.trim(), ...(input.customer.phone ? { phone: input.customer.phone } : {}), ...(email ? { email } : {}) },
     channel: store.channel,
     ...(note ? { note } : {}),
+    ...(beneficios ? { beneficios } : {}),
   }
 }
 
@@ -71,7 +104,8 @@ export interface CheckoutDraft {
   note: string; name: string; dial: string; national: string; email: string; accepted: boolean; payment?: PaymentMode
 }
 export type Feedback =
-  | { kind: 'priceChanged'; total: number; body: CreateOrderBody }
+  /** `premio`: la etiqueta del premio que ya se usó (para decirlo: «Tu café gratis ya se usó en otro pedido»). */
+  | { kind: 'priceChanged'; total: number; body: CreateOrderBody; motivo?: Motivo; premio?: string }
   | { kind: 'error'; message: string; retryable: boolean }
 export interface Checkout {
   busy: Signal<boolean>
@@ -83,6 +117,10 @@ export interface Checkout {
   draft: Signal<CheckoutDraft>
   /** Hora (ms) del último código de WhatsApp pedido por teléfono: volver a la pantalla del código no manda otro antes de 30 s. */
   otpSentAt: Map<string, number>
+  /** W3: lo que la clienta eligió usar en este pedido (premio, puntos, cupón). Sólo se manda lo que la cotización ofreció. */
+  eleccion: Signal<EleccionDeBeneficios>
+  /** W3: un 401 soltó la sesión de la página en esta tienda: el carrito lo dice con calma y ofrece entrar otra vez. */
+  sesionCerrada: Signal<boolean>
 }
 const checkouts = new WeakMap<OrderStore, Checkout>()
 export function checkoutOf(store: OrderStore): Checkout {
@@ -96,6 +134,8 @@ export function checkoutOf(store: OrderStore): Checkout {
       lastBody: signal(null),
       draft: signal({ note: '', name: '', dial: '52', national: '', email: '', accepted: false }),
       otpSentAt: new Map(),
+      eleccion: signal({}),
+      sesionCerrada: signal(false),
     }
     // W1 (alcance A): abrir la tienda abre la página de ese negocio (la primera vez en el documento; recrear la tienda no relee).
     abrirPagina(store.slug, leerPedidos(store.slug))
@@ -141,6 +181,32 @@ function sesionDeLaTienda(store: OrderStore): OrderingSession | null {
 /** Un 401 de la sesión con que pidió la tienda: el guardián la suelta (también su renovación) y la página queda sin sesión. */
 const soltar401 = (store: OrderStore, s: OrderingSession | null) => { if (s) soltarLaPagina(store.slug, s.token, leerPedidos(store.slug)) }
 
+/**
+ * W3: cotiza con la sesión de la página y lo elegido (sin sesión, como hoy). (b) Un 401 suelta la sesión por el guardián y se vuelve a
+ * cotizar sin ella; el carrito lo dice con calma (`sesionCerrada`).
+ */
+export async function cotizar(store: OrderStore, items: QuoteItem[]): Promise<Quote> {
+  const c = checkoutOf(store)
+  const s = sesionDeLaTienda(store)
+  try {
+    return await quote(store.slug, items, s ? { token: s.token, beneficios: c.eleccion.value } : {})
+  } catch (e) {
+    if (!s || !(e instanceof ApiError) || e.status !== 401) throw e
+    soltar401(store, s)
+    c.sesionCerrada.value = true
+    return cotizar(store, items)
+  }
+}
+
+/** (e) Entró otra vez desde la tienda (`EntrarConCuenta`): la página toma esa sesión y se vuelve al carrito, que cotiza con ella. */
+export function entroEnLaTienda(store: OrderStore): void {
+  const c = checkoutOf(store)
+  fijarPagina(store.slug, loadSession(store.slug))
+  c.sesionCerrada.value = false
+  c.feedback.value = null
+  store.go('cart')
+}
+
 /** ¿Se puede guardar? Sin sessionStorage no hay intento y sin localStorage no hay sesión: pedir código sería en balde. */
 export function storageWorks(): boolean {
   try {
@@ -179,7 +245,7 @@ async function doSubmit(store: OrderStore, body: CreateOrderBody): Promise<Submi
   const session = sesionDeLaTienda(store)
   const card = (pending?.body ?? body).paymentMode === 'CARD_ONLINE'
   const phone = (pending?.body ?? body).customer.phone
-  // Sin teléfono (el pedido de «Nadie») no hay nada que verificar: ni código, ni sesión, ni token.
+  // Sin teléfono (el pedido de «Nadie») no hay nada que verificar ni código; si la página tiene sesión, va con ella (W3: sus beneficios).
   const anon = !card && !phone
   // El mismo texto que se verificó cuenta siempre (samePhone pide 10 dígitos y no reconoce números más cortos).
   if (!card && phone && (!session?.phone || (session.phone !== phone && !samePhone(session.phone, phone)))) return { kind: 'needsOtp' }
@@ -188,7 +254,8 @@ async function doSubmit(store: OrderStore, body: CreateOrderBody): Promise<Submi
 
   let order: CreatedOrder | CreatedCardOrder
   try {
-    order = await createOrder(slug, attempt.body, { idempotencyKey: attempt.key, token: card || anon ? undefined : session?.token })
+    // W3: la sesión de la página va también en «Nadie» y con tarjeta (c): así el SERVIDOR aplica lo elegido y liga el folio a ella.
+    order = await createOrder(slug, attempt.body, { idempotencyKey: attempt.key, token: session?.token })
     if (typeof order?.trackingToken !== 'string') throw new Error('respuesta sin pedido')
   } catch (e) {
     if (!(e instanceof ApiError) || !isDefinitive(e)) {
@@ -205,6 +272,12 @@ async function doSubmit(store: OrderStore, body: CreateOrderBody): Promise<Submi
         settleAttempt(slug)
         return { kind: 'needsPhone' }
       }
+      if (e instanceof ApiError && e.status === 401 && session && (card || anon)) {
+        // W3: la sesión de la página ya no vale y aquí no hace falta: se suelta y se manda el MISMO intento (misma llave) sin ella. Si
+        // llevaba beneficios, el SERVIDOR responde `PRICE_CHANGED` con `motivo: 'SIN_SESION'` y la tienda pregunta.
+        soltar401(store, session)
+        return doSubmit(store, body)
+      }
       if (e instanceof ApiError && e.status === 401 && !card && !anon) {
         // W1 (alcance A): se suelta esa sesión y se pide el código; nunca se reintenta con la vieja ni se toma otra a medio pedido.
         soltar401(store, session)
@@ -219,12 +292,19 @@ async function doSubmit(store: OrderStore, body: CreateOrderBody): Promise<Submi
     }
     settleAttempt(slug)
     const details = (e.details ?? {}) as any
-    if (e.code === 'PRICE_CHANGED' && details.quote)
+    if (e.code === 'PRICE_CHANGED' && details.quote) {
+      // W3: sin sesión va sin beneficios; si uno ya no está, sin ése. El cuerpo a confirmar es el de la cotización nueva.
+      const sinSesion = details.motivo === 'SIN_SESION'
+      const fuera: BeneficioElegido[] = details.descartados ?? details.quote.descartados ?? []
+      const { beneficios: antes, ...resto } = attempt.body
+      const beneficios = sinSesion ? undefined : sinLosDe(antes, fuera)
       return {
         kind: 'priceChanged',
         quote: details.quote,
-        body: { ...attempt.body, expectedTotal: expectedTotalFromQuote(details.quote.total) },
+        body: { ...resto, ...(beneficios ? { beneficios } : {}), expectedTotal: expectedTotalFromQuote(details.quote.total) },
+        ...(sinSesion ? { motivo: 'SIN_SESION' as const } : fuera[0] ? { motivo: fuera[0] } : {}),
       }
+    }
     if (e.code === 'CART_INVALID') return { kind: 'cartInvalid', issues: details.issues ?? [] }
     if (e.status === 409 && e.code?.startsWith('ORDERING_'))
       return {
@@ -294,8 +374,14 @@ export async function send(store: OrderStore, body: CreateOrderBody): Promise<Su
       break
     case 'priceChanged':
       if (isSentCart()) {
+        // W3: lo que ya no está sale de la elección (el siguiente «Pedir» ya no lo manda); la etiqueta del premio, para decirlo.
+        const premio = store.quote.value?.oferta?.premio?.etiqueta
+        if (r.motivo && r.motivo !== 'SIN_SESION') c.eleccion.value = sinLosDe(c.eleccion.value, [r.motivo]) ?? {}
         store.quote.value = r.quote
-        c.feedback.value = { kind: 'priceChanged', total: r.quote.total, body: r.body }
+        c.feedback.value = {
+          kind: 'priceChanged', total: r.quote.total, body: r.body,
+          ...(r.motivo ? { motivo: r.motivo } : {}), ...(r.motivo === 'PREMIO' && premio ? { premio } : {}),
+        }
       } else {
         // Se reintentó un intento viejo (otro carrito): «Confirmar» mandaría lo que ya no está en pantalla. Al carrito, que
         // se cotiza solo; el intento viejo ya se resolvió (el servidor no creó nada).

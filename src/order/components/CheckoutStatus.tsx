@@ -6,6 +6,9 @@ import { checkoutOf, retry, send } from '../checkout'
 import { formatMXN } from '../money'
 import { Notice } from './StoreStatusBanner'
 
+/** «Café gratis» ⇒ «café gratis» dentro de una frase. */
+const enFrase = (s: string) => s.charAt(0).toLocaleLowerCase('es') + s.slice(1)
+
 /**
  * Lo que quedó del último envío: «el precio cambió» (sólo se manda con el toque), el error con «Reintentar» si el intento
  * sigue vivo, o el aviso de un intento pendiente (también tras recargar). Se pinta en UN lugar por pantalla. Son tarjetas de la
@@ -17,6 +20,32 @@ export function CheckoutStatus() {
   const c = checkoutOf(store)
   const f = c.feedback.value
   if (c.busy.value) return null
+  // W3 (1h·4): la sesión se cerró entre cotizar y pedir. Entrar otra vez es lo primero (es lo que ella quería).
+  if (f?.kind === 'priceChanged' && f.motivo === 'SIN_SESION')
+    return (
+      <div class="avq-o-why">
+        <Notice role="alert" tone="warn" title={t('cart.benefits.sessionTitle')} text={t('cart.benefits.sessionText')} />
+        <button type="button" class="avq-o-btn avq-o-btn--primary" onClick={() => store.go('entrar')}>{t('cart.benefits.signInAgain')}</button>
+        <button type="button" class="avq-o-btn avq-o-btn--quiet" onClick={() => void send(store, f.body)}>
+          {t('checkout.orderWithout', { total: formatMXN(f.total, store.locale) })}
+        </button>
+      </div>
+    )
+  // W3 (1h·3): un beneficio ya no está (otro pedido usó el premio): dice POR QUÉ cambió y nunca crea un folio más caro sin el toque.
+  if (f?.kind === 'priceChanged' && f.motivo) {
+    const title =
+      f.motivo === 'PREMIO' ? (f.premio ? t('checkout.premioUsed', { premio: enFrase(f.premio) }) : t('checkout.premioUsedGeneric'))
+      : f.motivo === 'PUNTOS' ? t('checkout.pointsGone') : t('checkout.couponGone')
+    return (
+      <div class="avq-o-why">
+        <Notice role="alert" tone="warn" title={title} text={t('checkout.newTotal', { total: formatMXN(f.total, store.locale) })} />
+        <button type="button" class="avq-o-btn avq-o-btn--primary" onClick={() => void send(store, f.body)}>
+          <span>{t('checkout.confirmNewTotal')}</span> <span>{formatMXN(f.total, store.locale)}</span>
+        </button>
+        <button type="button" class="avq-o-btn avq-o-btn--quiet" onClick={() => { c.feedback.value = null; store.go('cart') }}>{t('checkout.backToOrder')}</button>
+      </div>
+    )
+  }
   if (f?.kind === 'priceChanged')
     return (
       <Notice role="alert" tone="warn" text={t('checkout.priceChanged', { total: formatMXN(f.total, store.locale) })}

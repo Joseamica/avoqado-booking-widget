@@ -1,4 +1,4 @@
-import type { CreateOrderBody, CreatedCardOrder, CreatedOrder, Menu, Quote, QuoteItem, StoreInfo, Tracking } from './types'
+import type { CreateOrderBody, CreatedCardOrder, CreatedOrder, EleccionDeBeneficios, Menu, Quote, QuoteItem, StoreInfo, Tracking } from './types'
 import { aplicarRenovacion, type SesionEmitida } from '../lib/sesionDeCliente'
 
 export const API_BASE: string =
@@ -76,8 +76,15 @@ export const getInfo = (slug: string) => data(send<{ data: StoreInfo }>(`${order
 
 export const getMenu = (slug: string) => data(send<{ data: Menu }>(`${ordering(slug)}/menu`))
 
-export const quote = (slug: string, items: QuoteItem[]) =>
-  data(send<{ data: Quote }>(`${ordering(slug)}/quote`, { method: 'POST', body: { items } }))
+/** W3 (S10): con la sesión de la página (`token`) la cotización trae sus beneficios y aplica lo elegido. */
+export const quote = (slug: string, items: QuoteItem[], opts: { token?: string | null; beneficios?: EleccionDeBeneficios } = {}) =>
+  data(
+    send<{ data: Quote }>(`${ordering(slug)}/quote`, {
+      method: 'POST',
+      body: { items, ...(opts.token && opts.beneficios && Object.keys(opts.beneficios).length ? { beneficios: opts.beneficios } : {}) },
+      ...(opts.token ? { headers: { Authorization: `Bearer ${opts.token}` }, sesion: { slug, token: opts.token } } : {}),
+    }),
+  )
 
 /**
  * 201 al crear, 200 si es una repetición de la misma llave: `data.replay` lo dice. Con tarjeta (fase 2) no hay token (no se pide

@@ -501,3 +501,48 @@ describe('R82 #6: aviso de cierre cercano también en «Tus datos»', () => {
     expect(screen.queryByText(/^Cerramos a las/)).toBeNull()
   })
 })
+
+describe('W3: el precio cambió por un beneficio (1h·3) o porque se cerró la sesión (1h·4)', () => {
+  const cuerpo = { items: [], paymentMode: 'PAY_AT_PICKUP' as const, expectedTotal: '170.00', customer: { name: 'Ana' } }
+
+  it('1h·3: «Tu café gratis ya se usó en otro pedido», el total nuevo, «Confirmar $170» y «Volver a mi pedido»', async () => {
+    const s = show({ requiresAcceptance: false })
+    await act(async () => { checkoutOf(s).feedback.value = { kind: 'priceChanged', total: 170, body: cuerpo, motivo: 'PREMIO', premio: 'Café gratis' } })
+    expect(screen.getByText('Tu café gratis ya se usó en otro pedido')).toBeTruthy()
+    expect(screen.getByText('El nuevo total es $170. ¿Confirmas?')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Confirmar $170' })).toBeTruthy()
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Volver a mi pedido' })) })
+    expect(s.screen.value).toBe('cart')
+  })
+
+  it('1h·4: «Tu sesión se cerró», «Entrar otra vez» primero y «Pedir sin beneficios · $170»', async () => {
+    vi.mocked(createOrder).mockResolvedValue(new Promise(() => {}) as any)
+    const s = show({ requiresAcceptance: false })
+    await act(async () => { checkoutOf(s).feedback.value = { kind: 'priceChanged', total: 170, body: cuerpo, motivo: 'SIN_SESION' } })
+    expect(screen.getByText('Tu sesión se cerró')).toBeTruthy()
+    expect(screen.getByText('Entra otra vez para usar tus beneficios, o confirma el precio sin ellos.')).toBeTruthy()
+    const [entrar, sin] = [screen.getByRole('button', { name: 'Entrar otra vez' }), screen.getByRole('button', { name: 'Pedir sin beneficios · $170' })]
+    expect(entrar.compareDocumentPosition(sin) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    await act(async () => { fireEvent.click(sin) })
+    expect(vi.mocked(createOrder).mock.calls[0][1]).toEqual(cuerpo)
+  })
+
+  it('1h·4 «Entrar otra vez» abre la pantalla de entrar de la tienda', async () => {
+    const s = show({ requiresAcceptance: false })
+    await act(async () => { checkoutOf(s).feedback.value = { kind: 'priceChanged', total: 170, body: cuerpo, motivo: 'SIN_SESION' } })
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Entrar otra vez' })) })
+    expect(s.screen.value).toBe('entrar')
+  })
+})
+
+describe('W3 (e): entrar otra vez dentro de la tienda', () => {
+  it('la pantalla «entrar» enseña «Entra a tu cuenta» (EntrarConCuenta) y una flecha de regreso al pedido', async () => {
+    const s = makeStore(infoOf(), menuOf())
+    s.go('entrar')
+    render(withStore(s, <OrderApp />))
+    await flush()
+    expect(screen.getByText('Entra a tu cuenta')).toBeTruthy()
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Volver a tu pedido' })) })
+    expect(s.screen.value).toBe('cart')
+  })
+})

@@ -786,3 +786,101 @@ describe('«Nadie»: pedido anónimo (sin teléfono)', () => {
     expect(await submitOrder(store, body)).toEqual({ kind: 'storeUnavailable', status: 'OFFLINE', reason: 'NO_DEVICE' })
   })
 })
+
+describe('W3: pedir con beneficios', () => {
+  const nadieInfo = { ...info, requiresAcceptance: false } as StoreInfo
+  /** «Nadie» con la sesión única de la página y lo elegido. */
+  function nadie(opts: { eleccion?: Record<string, unknown>; q?: Partial<Quote>; total?: number; mode?: 'CARD_ONLINE' } = {}) {
+    const store = createOrderStore(`ben${++n}`, { locale: 'es' })
+    store.cart.value = [line()]
+    store.info.value = opts.mode ? ({ ...info, paymentModes: { payAtPickup: true, cardOnline: true } } as StoreInfo) : nadieInfo
+    guardarSesion(store.slug, { ...sesion('tok-A'), guardadaEn: Date.now() } as any)
+    const c = checkoutOf(store) // abrir la página
+    if (opts.eleccion) c.eleccion.value = opts.eleccion
+    store.quote.value = quoteOf(opts.total ?? 105, {
+      subtotal: 170, oferta: { premio: { id: 'pr1', etiqueta: 'Café gratis' }, puntos: null, cupon: false }, ...opts.q,
+    })
+    const body = buildOrderBody(store, {
+      customer: opts.mode ? { name: 'Ana', phone: PHONE } : { name: 'Ana' }, note: null, paymentMode: opts.mode,
+    })
+    return { store, body, c }
+  }
+
+  it('el cuerpo lleva lo elegido que la cotización ofreció y el total de la cotización con lo elegido', () => {
+    const { body } = nadie({ eleccion: { premioId: 'pr1', puntos: 340 } })
+    expect(body.expectedTotal).toBe('105.00')
+    expect(body.beneficios).toEqual({ premioId: 'pr1' }) // sin oferta de puntos, los puntos no se mandan
+  })
+
+  it('lo que la cotización descartó no se manda', () => {
+    const { body } = nadie({ eleccion: { premioId: 'pr1', cupon: 'X' }, q: { oferta: { premio: { id: 'pr1', etiqueta: 'Café' }, puntos: null, cupon: true }, descartados: ['CUPON'] } })
+    expect(body.beneficios).toEqual({ premioId: 'pr1' })
+  })
+
+  it('sin elegir nada no hay `beneficios`', () => {
+    expect(nadie().body.beneficios).toBeUndefined()
+  })
+
+  it('«Nadie» con sesión manda la sesión de la página (también sin beneficios)', async () => {
+    const { store, body } = nadie({ eleccion: { premioId: 'pr1' } })
+    api.createOrder.mockResolvedValueOnce(created())
+    expect((await submitOrder(store, body)).kind).toBe('created')
+    expect(sent().token).toBe('tok-A')
+    expect(sent().body.beneficios).toEqual({ premioId: 'pr1' })
+  })
+
+  it('(c) con tarjeta en línea también manda la sesión y lo elegido', async () => {
+    const { store, body } = nadie({ eleccion: { premioId: 'pr1' }, mode: 'CARD_ONLINE' })
+    api.createOrder.mockResolvedValueOnce({ trackingToken: 'T'.repeat(32), checkoutUrl: '', status: 'PENDING', total: '105.00', replay: false })
+    nav.assign = vi.fn()
+    await submitOrder(store, body)
+    expect(sent().token).toBe('tok-A')
+    expect(sent().body.beneficios).toEqual({ premioId: 'pr1' })
+  })
+
+  it('PRICE_CHANGED con descartados [PREMIO]: quita el premio de la elección y del cuerpo a confirmar; avisa por qué', async () => {
+    const { store, body, c } = nadie({ eleccion: { premioId: 'pr1' } })
+    store.go('details')
+    api.createOrder.mockRejectedValueOnce(fin(409, 'PRICE_CHANGED', { quote: quoteOf(170, { descartados: ['PREMIO'] }), descartados: ['PREMIO'] }))
+    const r = await send(store, body)
+    expect(r.kind).toBe('priceChanged')
+    expect(c.eleccion.value).toEqual({})
+    expect(c.feedback.value).toMatchObject({ kind: 'priceChanged', total: 170, motivo: 'PREMIO', premio: 'Café gratis' })
+    const f = c.feedback.value as any
+    expect(f.body.beneficios).toBeUndefined()
+    expect(f.body.expectedTotal).toBe('170.00')
+    api.createOrder.mockResolvedValueOnce(created())
+    await send(store, f.body)
+    expect(sent(1).body.beneficios).toBeUndefined()
+  })
+
+  it('PRICE_CHANGED con motivo SIN_SESION: «Tu sesión se cerró»; confirmar manda sin beneficios y con el precio sin ellos', async () => {
+    const { store, body, c } = nadie({ eleccion: { premioId: 'pr1' } })
+    api.createOrder.mockRejectedValueOnce(fin(409, 'PRICE_CHANGED', { quote: quoteOf(170), motivo: 'SIN_SESION' }))
+    await send(store, body)
+    expect(c.feedback.value).toMatchObject({ kind: 'priceChanged', motivo: 'SIN_SESION', total: 170 })
+    expect((c.feedback.value as any).body.beneficios).toBeUndefined()
+  })
+
+  it('401 en «Nadie»: suelta la sesión y manda el MISMO intento sin ella; con beneficios, el SIN_SESION dice «Tu sesión se cerró»', async () => {
+    const { store, body, c } = nadie({ eleccion: { premioId: 'pr1' } })
+    api.createOrder
+      .mockRejectedValueOnce(new ApiError('Sesión vencida', 401, 'CUSTOMER_TOKEN_INVALID'))
+      .mockRejectedValueOnce(fin(409, 'PRICE_CHANGED', { quote: quoteOf(170), motivo: 'SIN_SESION' }))
+    await send(store, body)
+    expect(api.createOrder).toHaveBeenCalledTimes(2)
+    expect(sent(0).token).toBe('tok-A')
+    expect(sent(1).token).toBeUndefined()
+    expect(sent(1).key).toBe(sent(0).key)
+    expect(leerSesion(store.slug)).toBeNull()
+    expect(c.feedback.value).toMatchObject({ kind: 'priceChanged', motivo: 'SIN_SESION' })
+  })
+
+  it('un folio de $0 en «Nadie» (cerrado por el SERVIDOR) va directo al seguimiento', async () => {
+    const { store, body } = nadie({ eleccion: { premioId: 'pr1' }, total: 0 })
+    expect(body.expectedTotal).toBe('0.00')
+    api.createOrder.mockResolvedValueOnce(created({ total: '0.00', status: 'ACCEPTED' }))
+    await send(store, body)
+    expect(store.screen.value).toBe('tracking')
+  })
+})
