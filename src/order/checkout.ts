@@ -279,6 +279,9 @@ async function doSubmit(store: OrderStore, body: CreateOrderBody): Promise<Submi
   // Sin teléfono (el pedido de «Nadie») no hay nada que verificar ni código; si la página tiene sesión, va con ella (W3: sus beneficios).
   const anon = !card && !phone
   let attempt = pending
+  // codex-w3-r3 #3: en un reintento se lee la sesión de la página SÓLO para que la pantalla se entere si se perdió («Tu sesión se
+  // cerró», sin premios); lo que se manda es lo guardado.
+  if (attempt) sesionDeLaTienda(store)
   if (attempt?.requiereEntrar) return card || anon ? { kind: 'needsSesion' } : { kind: 'needsOtp' }
   if (!attempt) {
     const session = sesionDeLaTienda(store)
@@ -288,9 +291,9 @@ async function doSubmit(store: OrderStore, body: CreateOrderBody): Promise<Submi
     attempt = beginAttempt(slug, body, session?.token ?? null)
     if (!attempt) return { kind: 'error', message: t('checkout.noStorage'), retryable: false }
   }
-  // W3-r3: un reintento reenvía EXACTAMENTE lo guardado, nunca la sesión de ahora. Un intento de antes de este cambio (sin `token`)
-  // sale con la sesión de ahora, como entonces.
-  const token = attempt.token === undefined ? sesionDeLaTienda(store)?.token : attempt.token ?? undefined
+  // W3-r3: un reintento reenvía EXACTAMENTE lo guardado, nunca la sesión de ahora. codex-w3-r3 #1: un intento de antes de este cambio
+  // (sin `token`) sale como en producción: «Nadie» y tarjeta sin sesión; «Mi equipo» al recoger, con la de ahora.
+  const token = attempt.token !== undefined ? attempt.token ?? undefined : anon || card ? undefined : sesionDeLaTienda(store)?.token
 
   let order: CreatedOrder | CreatedCardOrder
   try {

@@ -889,6 +889,25 @@ describe('W3: pedir con beneficios', () => {
     expect(pendingAttempt(store.slug)).toBeNull() // resuelto: se borra lo guardado, también el token
   })
 
+  it('codex-w3-r3 #1: un intento de antes del cambio (sin token) sale como en producción: «Nadie» sin sesión, «Mi equipo» con la de ahora', async () => {
+    const { store, body } = nadie({ eleccion: { premioId: 'pr1' } })
+    sessionStorage.setItem(`avq_order_attempt:${store.slug}`, JSON.stringify({ key: 'K'.repeat(43), body, startedAt: Date.now() }))
+    api.createOrder.mockResolvedValueOnce(created({ replay: true }))
+    await submitOrder(store, body)
+    expect(sent(0)).toMatchObject({ key: 'K'.repeat(43), token: undefined })
+    const mi = setup() // «Mi equipo», con la sesión de hoy del teléfono
+    sessionStorage.setItem(`avq_order_attempt:${mi.store.slug}`, JSON.stringify({ key: 'M'.repeat(43), body: mi.body, startedAt: Date.now() }))
+    api.createOrder.mockResolvedValueOnce(created({ replay: true }))
+    await submitOrder(mi.store, mi.body)
+    expect(sent(1)).toMatchObject({ key: 'M'.repeat(43), token: 'tok-1' })
+    const t = nadie({ mode: 'CARD_ONLINE' }) // tarjeta: en producción salía sin token
+    sessionStorage.setItem(`avq_order_attempt:${t.store.slug}`, JSON.stringify({ key: 'T'.repeat(43), body: t.body, startedAt: Date.now() }))
+    api.createOrder.mockResolvedValueOnce({ trackingToken: 'T'.repeat(32), checkoutUrl: '', status: 'PENDING', total: '105.00', replay: true })
+    nav.assign = vi.fn()
+    await submitOrder(t.store, t.body)
+    expect(sent(2)).toMatchObject({ key: 'T'.repeat(43), token: undefined })
+  })
+
   it('codex-w3-r2 #1: recargar con el pedido en vuelo y la sesión cerrada en otra pestaña reenvía con el token guardado', async () => {
     const { store, body } = nadie({ eleccion: { premioId: 'pr1' } })
     api.createOrder.mockImplementationOnce(() => new Promise(() => {})) // en vuelo
