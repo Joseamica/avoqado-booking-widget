@@ -215,3 +215,85 @@ export function aplicarRenovacion(slug: string, headers: Headers | undefined, en
   guardarSesion(slug, { ...actual, token: nuevo, guardadaEn: Date.now() })
   return nuevo
 }
+
+// ── El guardián de la página (W1, alcance A; rediseño tras codex-r6) ──────────────────────────────────────────────────────────────
+// UNA sesión por negocio y por documento. Se toma la primera vez que algo de ese negocio se abre en la página y sobrevive a que un
+// elemento se vuelva a crear (idioma, venue, pedido, canal). Reservas, portal y tienda mandan con ella; nunca toman la de otra pestaña:
+// una pestaña vieja se pone al día al recargar.
+
+/** Lo que una superficie lee AHORA de lo guardado: la sesión única (`identidadDe`) o su token de hoy (`hoy:<superficie>|<token>`). */
+export interface Lectura { token: string; identidad: string; datos?: unknown }
+export type Superficie = 'reservas' | 'pedidos'
+/** `linaje`: los tokens de ESTA sesión en la página (el de la entrada y sus renovaciones). */
+export interface Pagina { token: string; identidad: string; linaje: string[]; datos?: unknown }
+
+const paginas = new Map<string, Pagina | null>()
+const epocas = new Map<string, number>()
+const oyentes: Array<(slug: string, misma: boolean) => void> = []
+
+/** Época de la página en ese negocio: sube cada vez que cambia quién está adentro. Una respuesta de otra época no se pinta. */
+export const epocaDe = (slug: string): number => epocas.get(slug) ?? 0
+export const paginaDe = (slug: string): Pagina | null => paginas.get(slug) ?? null
+/** El token de hoy de la OTRA superficie no es de ésta: se ignora sin soltar la página. */
+export const deOtraSuperficie = (p: Pagina, s: Superficie): boolean => p.identidad.startsWith('hoy:') && !p.identidad.startsWith(`hoy:${s}|`)
+/** Reservas repinta sus señales con cada cambio de la página. */
+export const alCambiarLaPagina = (f: (slug: string, misma: boolean) => void): void => { oyentes.push(f) }
+
+/** El único que cambia la página. Si cambia quién está adentro, sube la época. */
+export function fijarPagina(slug: string, l: Lectura | null): void {
+  const antes = paginas.get(slug) ?? null
+  const misma = (antes?.identidad ?? null) === (l?.identidad ?? null)
+  const linaje = !l ? [] : misma && antes ? [...antes.linaje.filter(t => t !== l.token), l.token] : [l.token]
+  paginas.set(slug, l && { token: l.token, identidad: l.identidad, linaje, datos: l.datos })
+  if (!misma) epocas.set(slug, epocaDe(slug) + 1)
+  for (const f of oyentes) f(slug, misma)
+}
+
+/** Abrir: la PRIMERA vez en este documento la página toma lo guardado; después (otro elemento, uno recreado) nunca relee. */
+export function abrirPagina(slug: string, leer: () => Lectura | null): void {
+  if (!paginas.has(slug)) fijarPagina(slug, leer())
+}
+
+/**
+ * El token con que MANDA la página: el suyo mientras su sesión siga guardada (si otra pestaña la renovó, el renovado: es la misma
+ * sesión). Si ya no (salió, entró otra ficha, se borró), la página queda sin sesión; nunca toma otra. `delLlamador`: un token de una
+ * sesión que ya no es la de la página (un sondeo de antes de salir y volver a entrar) no sale, ni con la de ahora (codex-r5 E6).
+ */
+export function tokenDeLaPagina(slug: string, s: Superficie, leer: () => Lectura | null, delLlamador?: string | null): string | null {
+  const p = paginas.get(slug)
+  if (!p || deOtraSuperficie(p, s)) return null
+  if (delLlamador && !p.linaje.includes(delLlamador)) return null
+  const l = leer()
+  if (l && l.identidad === p.identidad) {
+    if (l.token !== p.token) fijarPagina(slug, l)
+    return l.token
+  }
+  fijarPagina(slug, null)
+  return null
+}
+
+/** El SERVIDOR renovó (`x-customer-session`) un token que mandó la página: sigue con el renovado. */
+export function renovarLaPagina(slug: string, enviado: string, leer: () => Lectura | null): void {
+  const p = paginas.get(slug)
+  const l = leer()
+  if (p?.linaje.includes(enviado) && l?.identidad === p.identidad) fijarPagina(slug, l)
+}
+
+/**
+ * Sin `tokenQueFallo`: «Cerrar sesión» (borra lo guardado y deja la página sin sesión). Con él (un 401): si es un token de la sesión
+ * de la página, se borra esa sesión guardada, también su renovación (misma identidad; codex-r5 E5, r6 #2), y la página queda sin
+ * sesión. Lo guardado de otra sesión no se toca, y una respuesta tardía de una sesión anterior no saca a la de ahora.
+ */
+export function soltarLaPagina(slug: string, tokenQueFallo: string | undefined, leer: () => Lectura | null): void {
+  const p = paginas.get(slug) ?? null
+  const deLaPagina = !!tokenQueFallo && !!p?.linaje.includes(tokenQueFallo)
+  const l = leer()
+  if (tokenQueFallo === undefined || l?.token === tokenQueFallo || (deLaPagina && l?.identidad === p!.identidad)) borrarSesion(slug)
+  if (tokenQueFallo === undefined || deLaPagina) fijarPagina(slug, null)
+}
+
+/** Sólo para pruebas: un documento nuevo (cada prueba es una carga de página). */
+export function documentoNuevoParaPruebas(): void {
+  paginas.clear()
+  epocas.clear()
+}

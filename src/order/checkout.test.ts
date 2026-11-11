@@ -225,7 +225,8 @@ describe('submitOrder', () => {
     const { store, body } = setup({ sessionPhone: null })
     guardarSesion(store.slug, { ...sesion('tok-vieja'), guardadaEn: Date.now() } as any)
     api.createOrder.mockImplementationOnce(async () => {
-      guardarSesion(store.slug, { ...sesion('tok-nueva'), guardadaEn: Date.now() } as any) // otra pestaña entró
+      // Otra pestaña entró (otra prueba del teléfono: otra sesión, no una renovación).
+      guardarSesion(store.slug, { ...sesion('tok-nueva'), contactos: [{ tipo: 'PHONE', valor: PHONE, metodo: 'WHATSAPP', probadoEn: 2 }], guardadaEn: Date.now() } as any)
       throw new ApiError('Sesión vieja', 401, 'CUSTOMER_TOKEN_INVALID')
     })
     expect(await submitOrder(store, body)).toEqual({ kind: 'needsOtp' })
@@ -242,6 +243,20 @@ describe('submitOrder', () => {
     guardarSesion(store.slug, { ...sesion('tok-B'), contactos: [{ tipo: 'PHONE', valor: PHONE, metodo: 'WHATSAPP', probadoEn: 2 }], guardadaEn: Date.now() } as any)
     expect(await submitOrder(store, body)).toEqual({ kind: 'needsOtp' })
     expect(api.createOrder).not.toHaveBeenCalled()
+  })
+
+  it('codex-r6 #2: el 401 de A también suelta su renovación A2 (la misma sesión): no queda guardada ni vuelve al recargar', async () => {
+    const { store, body } = setup({ sessionPhone: null })
+    guardarSesion(store.slug, { ...sesion('tok-A'), guardadaEn: Date.now() } as any)
+    api.createOrder.mockImplementationOnce(async () => {
+      // Otra petición, autenticada antes de revocar, renovó A (misma ficha, contactos y versión).
+      guardarSesion(store.slug, { ...sesion('tok-A2'), guardadaEn: Date.now() } as any)
+      throw new ApiError('Sesión revocada', 401, 'CUSTOMER_TOKEN_INVALID')
+    })
+    expect(await submitOrder(store, body)).toEqual({ kind: 'needsOtp' })
+    expect(leerSesion(store.slug)).toBeNull()
+    vi.resetModules() // recargar la página
+    expect((await import('./session')).loadSession(store.slug)).toBeNull()
   })
 
   it('codex-r4 R4-4: 401 CUSTOMER_INACTIVE también suelta la sesión rechazada (el intento queda)', async () => {

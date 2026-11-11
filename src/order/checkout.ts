@@ -9,8 +9,8 @@
 import { signal, type Signal } from '@preact/signals'
 import { ApiError, createOrder, verifyOrderingOtp } from './api'
 import { beginAttempt, pendingAttempt, settleAttempt } from './attempt'
-import { clearSession, loadSession, samePhone, saveLastOrder, type OrderingSession } from './session'
-import { guardarSesion } from '../lib/sesionDeCliente'
+import { loadSession, samePhone, saveLastOrder, type OrderingSession } from './session'
+import { abrirPagina, fijarPagina, guardarSesion, soltarLaPagina, tokenDeLaPagina } from '../lib/sesionDeCliente'
 import { toQuoteItems } from './cart'
 import { expectedTotalFromQuote } from './money'
 import { createOrderT } from './i18n'
@@ -83,8 +83,6 @@ export interface Checkout {
   draft: Signal<CheckoutDraft>
   /** Hora (ms) del último código de WhatsApp pedido por teléfono: volver a la pantalla del código no manda otro antes de 30 s. */
   otpSentAt: Map<string, number>
-  /** W1 (alcance A): la sesión con que se abrió la tienda (o con la que se entró aquí). Nunca toma la de otra pestaña o página. */
-  sesion: OrderingSession | null
 }
 const checkouts = new WeakMap<OrderStore, Checkout>()
 export function checkoutOf(store: OrderStore): Checkout {
@@ -98,8 +96,9 @@ export function checkoutOf(store: OrderStore): Checkout {
       lastBody: signal(null),
       draft: signal({ note: '', name: '', dial: '52', national: '', email: '', accepted: false }),
       otpSentAt: new Map(),
-      sesion: loadSession(store.slug),
     }
+    // W1 (alcance A): abrir la tienda abre la página de ese negocio (la primera vez en el documento; recrear la tienda no relee).
+    abrirPagina(store.slug, leerPedidos(store.slug))
     // La cotización y la pregunta de «el precio cambió» valen sólo para el carrito que se cotizó: si cambia (también desde
     // la carta), ya no valen y «Continuar» espera la cotización nueva. OrderApp crea esto en su primer pintado.
     let first = true
@@ -125,19 +124,22 @@ export const phoneToVerify = (store: OrderStore): string | null =>
 export async function verifyPhone(store: OrderStore, phone: string, code: string): Promise<void> {
   const r = await verifyOrderingOtp(store.slug, phone, code)
   guardarSesion(store.slug, { token: r.token, customer: r.customer, contactos: r.contactos, guardadaEn: Date.now() })
-  checkoutOf(store).sesion = loadSession(store.slug) // entró aquí
+  fijarPagina(store.slug, loadSession(store.slug)) // entró aquí
 }
 
+const leerPedidos = (slug: string) => () => loadSession(slug)
+
 /**
- * La sesión con que pide la tienda: la suya mientras siga guardada (la renovada cuenta como la misma). Si ya no (salió en otra pestaña,
- * entró otra ficha u otra prueba del teléfono), la tienda queda sin sesión y se pide el código; nunca toma otra (codex-r5 E1).
+ * La sesión con que pide la tienda: la de la página (el guardián, `tokenDeLaPagina`), mientras siga guardada (la renovada cuenta como
+ * la misma). Si ya no (salió en otra pestaña, entró otra ficha u otra prueba del teléfono), queda sin sesión; nunca toma otra.
  */
 function sesionDeLaTienda(store: OrderStore): OrderingSession | null {
-  const c = checkoutOf(store)
-  const actual = c.sesion ? loadSession(store.slug) : null
-  c.sesion = actual && actual.identidad === c.sesion!.identidad ? actual : null
-  return c.sesion
+  checkoutOf(store) // abre la página si la tienda todavía no se pintó
+  return tokenDeLaPagina(store.slug, 'pedidos', leerPedidos(store.slug)) ? loadSession(store.slug) : null
 }
+
+/** Un 401 de la sesión con que pidió la tienda: el guardián la suelta (también su renovación) y la página queda sin sesión. */
+const soltar401 = (store: OrderStore, s: OrderingSession | null) => { if (s) soltarLaPagina(store.slug, s.token, leerPedidos(store.slug)) }
 
 /** ¿Se puede guardar? Sin sessionStorage no hay intento y sin localStorage no hay sesión: pedir código sería en balde. */
 export function storageWorks(): boolean {
@@ -180,7 +182,7 @@ async function doSubmit(store: OrderStore, body: CreateOrderBody): Promise<Submi
   // Sin teléfono (el pedido de «Nadie») no hay nada que verificar: ni código, ni sesión, ni token.
   const anon = !card && !phone
   // El mismo texto que se verificó cuenta siempre (samePhone pide 10 dígitos y no reconoce números más cortos).
-  if (!card && phone && (!session || (session.phone !== phone && !samePhone(session.phone, phone)))) return { kind: 'needsOtp' }
+  if (!card && phone && (!session?.phone || (session.phone !== phone && !samePhone(session.phone, phone)))) return { kind: 'needsOtp' }
   const attempt = pending ?? beginAttempt(slug, body)
   if (!attempt) return { kind: 'error', message: t('checkout.noStorage'), retryable: false }
 
@@ -195,8 +197,7 @@ async function doSubmit(store: OrderStore, body: CreateOrderBody): Promise<Submi
       // hasta que se cierre la pestaña (sessionStorage); sólo una respuesta definitiva lo borra.
       if (e instanceof ApiError && e.code === 'CUSTOMER_INACTIVE') {
         // codex-r4 R4-4: la sesión rechazada no se queda guardada (el intento sí, como cualquier respuesta no definitiva).
-        clearSession(slug, session?.token)
-        checkoutOf(store).sesion = null
+        soltar401(store, session)
         return { kind: 'error', message: t('checkout.inactive'), retryable: false }
       }
       if (e instanceof ApiError && e.status === 401 && e.code === 'PHONE_VERIFICATION_REQUIRED' && anon) {
@@ -206,8 +207,7 @@ async function doSubmit(store: OrderStore, body: CreateOrderBody): Promise<Submi
       }
       if (e instanceof ApiError && e.status === 401 && !card && !anon) {
         // W1 (alcance A): se suelta esa sesión y se pide el código; nunca se reintenta con la vieja ni se toma otra a medio pedido.
-        clearSession(slug, session?.token)
-        checkoutOf(store).sesion = null
+        soltar401(store, session)
         return { kind: 'needsOtp' }
       }
       const message =

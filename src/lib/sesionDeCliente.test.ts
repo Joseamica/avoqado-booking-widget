@@ -223,7 +223,8 @@ describe('W1: una sola sesión de cliente por negocio', () => {
       localStorage.setItem('avq_order_session:mindform', JSON.stringify({ token: 'legacy-A', phone: '+525512345678', name: 'Ana', savedAt: Date.now() }))
       expect(loadSession('mindform')?.token).toBe('legacy-A')
       guardarSesion('mindform', { ...S, token: 'tok-B', contactos: [{ tipo: 'EMAIL', valor: 'bea@correo.mx', metodo: 'EMAIL_CODE', probadoEn: 1 }] })
-      expect(loadSession('mindform')).toBeNull()
+      // (d) la sesión que sólo probó un correo sí se lee (sus beneficios), sin teléfono para «Mi equipo»; el token de hoy, nunca.
+      expect(loadSession('mindform')).toMatchObject({ token: 'tok-B', phone: null })
     })
 
     it('#4 guardar el perfil manda la sesión vigente y no regresa la pantalla al token viejo', async () => {

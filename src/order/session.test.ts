@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { clearLastOrder, clearSession, loadLastOrder, loadSession, samePhone, saveLastOrder, saveSession } from './session'
-import { guardarSesion, leerSesion, type SesionDeCliente } from '../lib/sesionDeCliente'
+import { clearLastOrder, loadLastOrder, loadSession, samePhone, saveLastOrder, saveSession } from './session'
+import { abrirPagina, borrarSesion, guardarSesion, leerSesion, soltarLaPagina, tokenDeLaPagina, type SesionDeCliente } from '../lib/sesionDeCliente'
 
 const s = { token: 't', phone: '+525512345678', name: 'Ana', savedAt: Date.now() }
 beforeEach(() => localStorage.clear())
@@ -15,7 +15,7 @@ describe('sesión de pedidos', () => {
     expect(localStorage.getItem('avq_order_session:a')).toBeTruthy()
     expect(loadSession('a')?.token).toBe('t')
     expect(loadSession('b')).toBeNull()
-    clearSession('a')
+    borrarSesion('a')
     expect(loadSession('a')).toBeNull()
   })
   it('vence a los 29 días', () => {
@@ -69,28 +69,28 @@ describe('sesión de pedidos', () => {
 
     it('con la sesión de pedidos de hoy y sin la nueva, pedir sigue usando la de hoy', () => {
       saveSession('a', s)
-      expect(loadSession('a')).toEqual({ ...s, identidad: 'hoy|t' })
+      expect(loadSession('a')).toEqual({ ...s, identidad: 'hoy:pedidos|t' })
     })
     it('con la nueva y su teléfono probado, pedir usa la nueva', () => {
       saveSession('a', s)
       guardarSesion('a', nueva([correo, tel]))
       expect(loadSession('a')).toMatchObject({ token: 'nueva', phone: '+525511112222', name: 'Ana', savedAt: expect.any(Number) })
     })
-    it('una nueva sin teléfono probado no sirve para «Mi equipo» y el token de hoy tampoco se usa: se pide el código (codex-r2 #3)', () => {
+    it('(d) una nueva que sólo probó correo o Google sirve (sin teléfono para «Mi equipo»); el token de hoy no se usa (codex-r2 #3)', () => {
       guardarSesion('a', nueva([correo]))
-      expect(loadSession('a')).toBeNull()
       saveSession('a', s)
-      expect(loadSession('a')).toBeNull()
+      expect(loadSession('a')).toMatchObject({ token: 'nueva', phone: null, name: 'Ana' })
     })
-    it('un 401 con el token de la nueva la borra; con el de hoy, sólo borra el de hoy', () => {
-      guardarSesion('a', nueva([correo]))
-      saveSession('a', s)
-      clearSession('a', 't')
-      expect(loadSession('a')).toBeNull()
-      expect(leerSesion('a')?.token).toBe('nueva')
+    it('guardián: un 401 de la sesión de la página la borra; un 401 de un token ajeno no toca lo guardado', () => {
       guardarSesion('a', nueva([tel]))
-      clearSession('a', 'nueva')
+      const leer = () => loadSession('a')
+      abrirPagina('a', leer)
+      expect(tokenDeLaPagina('a', 'pedidos', leer)).toBe('nueva')
+      soltarLaPagina('a', 'de-otra-sesion', leer)
+      expect(leerSesion('a')?.token).toBe('nueva')
+      soltarLaPagina('a', 'nueva', leer)
       expect(leerSesion('a')).toBeNull()
+      expect(tokenDeLaPagina('a', 'pedidos', leer)).toBeNull()
     })
   })
 })

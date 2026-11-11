@@ -17,6 +17,7 @@ import * as booking from '../state/booking'
 import { ApiError, abandonPayment, createOrder, getInfo, getMenu, getTracking } from './api'
 import { buildOrderBody, checkoutOf, send } from './checkout'
 import { loadSession, saveSession } from './session'
+import { fijarPagina, guardarSesion } from '../lib/sesionDeCliente'
 import type { OrderStore } from './store'
 import type { CreatedOrder, Tracking } from './types'
 import { infoOf, menuOf, product } from './components/testKit'
@@ -141,7 +142,7 @@ describe('<avoqado-order>', () => {
     const el = await mount({ venue: 'flautas' })
     const s = storeOf(el)
     saveSession('flautas', { token: 'tok', phone: '+525512345678', name: 'Ana', savedAt: Date.now() })
-    checkoutOf(s).sesion = loadSession('flautas') // alcance A: la tienda abierta ya tenía esta sesión
+    fijarPagina(s.slug, loadSession('flautas')) // alcance A: la página abierta ya tenía esta sesión
     await act(async () => { s.cart.value = [line] })
     s.quote.value = { ok: true, lines: [], subtotal: 170, total: 170, minOrderAmount: 0, issues: [] }
     const body = buildOrderBody(s, { customer: { name: 'Ana', phone: '+525512345678' }, note: null })
@@ -180,6 +181,30 @@ describe('<avoqado-order>', () => {
     expect(seen[0].detail).toEqual({ slug: 'flautas', name: 'Flautas Coyoacán' })
     expect(seen[0].target).toBe(el!)
     expect(seen[0].composed).toBe(true)
+  })
+
+  it('codex-r6 #1: cambiar el idioma vuelve a crear la tienda pero NO adopta la sesión B que guardó otra pestaña', async () => {
+    const PHONE = '+525512345678'
+    const unica = (token: string, id: string, probadoEn: number) => ({
+      token, customer: { id, firstName: 'Ana', lastName: null, email: null, phone: PHONE },
+      contactos: [{ tipo: 'PHONE' as const, valor: PHONE, metodo: 'WHATSAPP' as const, probadoEn }], guardadaEn: Date.now(),
+    })
+    guardarSesion('flautas', unica('tok-A', 'c-A', 1))
+    const el = await mount({ venue: 'flautas' }) // abrir la página: toma A
+    guardarSesion('flautas', unica('tok-B', 'c-B', 2)) // otra pestaña entró con otra ficha
+    await act(async () => { el.setAttribute('locale', 'en') })
+    await flush()
+    const s = storeOf(el)
+    expect(s.locale).toBe('en')
+    vi.mocked(createOrder).mockResolvedValue({
+      orderId: 'o', onlineOrderId: 'oo', trackingToken: 'K'.repeat(32), status: 'PENDING_ACCEPTANCE', orderNumber: '7',
+      total: '170.00', acceptDeadlineAt: '2026-10-17T19:05:00Z', replay: false,
+    })
+    await act(async () => { s.cart.value = [line] })
+    s.quote.value = { ok: true, lines: [], subtotal: 170, total: 170, minOrderAmount: 0, issues: [] }
+    await act(async () => { await send(s, buildOrderBody(s, { customer: { name: 'Ana', phone: PHONE }, note: null })) })
+    expect(vi.mocked(createOrder).mock.calls.map(c => c[2].token)).not.toContain('tok-B')
+    expect(s.screen.value).toBe('otp')
   })
 
   it('al quitarlo de la página deja de sondear /info (dispose)', async () => {

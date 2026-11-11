@@ -1,11 +1,16 @@
 // Sesión de pedidos (token OTP de WhatsApp) y último pedido, por negocio, en localStorage. Todo con try/catch: sin
 // almacenamiento la tienda funciona igual, sólo que pide el código otra vez.
-// W1: la sesión ÚNICA (`lib/sesionDeCliente`) manda cuando trae un teléfono probado; la de pedidos de hoy (`avq_order_session`) sólo
-// queda para quien entró antes y no tiene la nueva.
-import { borrarSesion, identidadDe, leerSesion, salioEnOtraPagina } from '../lib/sesionDeCliente'
+// W1: la sesión ÚNICA (`lib/sesionDeCliente`) manda; la de pedidos de hoy (`avq_order_session`) sólo queda para quien entró antes y no
+// tiene la nueva. Con QUÉ sesión pide la tienda lo decide el guardián de la página (`tokenDeLaPagina`), no esta lectura.
+import { identidadDe, leerSesion, salioEnOtraPagina, type Lectura } from '../lib/sesionDeCliente'
 
-/** `identidad`: qué sesión es (la única: `identidadDe`; la de hoy: su token). La tienda abierta sólo sigue con la misma (alcance A). */
-export interface OrderingSession { token: string; phone: string; name: string | null; savedAt: number; identidad?: string }
+/** La de pedidos de hoy, tal como se guardó. */
+export interface SesionDeHoy { token: string; phone: string; name: string | null; savedAt: number }
+/**
+ * Lo que la tienda lee AHORA. `phone`: el teléfono probado, el que pide «Mi equipo»; `null` si la sesión sólo probó un correo o Google
+ * (sirve igual para sus beneficios en «Nadie», como en el SERVIDOR: `clientaDeLaSesion.ts`).
+ */
+export interface OrderingSession extends Lectura { phone: string | null; name: string | null; savedAt: number }
 export interface LastOrder { trackingToken: string; orderNumber: string; /** Para el folio de «Nadie»: el nombre con que se pidió (el seguimiento no lo trae). */ name?: string }
 
 const TTL_MS = 29 * 24 * 60 * 60 * 1000
@@ -38,12 +43,9 @@ const remove = (key: string) => {
 export function loadSession(slug: string): OrderingSession | null {
   const nueva = leerSesion(slug)
   if (nueva) {
-    // «Mi equipo» pide un teléfono probado: una sesión que sólo probó un correo (Google, código por correo) no sirve aquí y se pide
-    // el código. Con una sesión única guardada, el token de hoy (quizá de otra ficha) nunca se usa (codex-r2 #3).
-    const telefono = nueva.contactos.find(c => c.tipo === 'PHONE')?.valor
-    return telefono
-      ? { token: nueva.token, phone: telefono, name: nueva.customer.firstName, savedAt: nueva.guardadaEn, identidad: identidadDe(nueva) }
-      : null
+    // Con una sesión única guardada, el token de hoy (quizá de otra ficha) nunca se usa (codex-r2 #3).
+    const telefono = nueva.contactos.find(c => c.tipo === 'PHONE')?.valor ?? null
+    return { token: nueva.token, phone: telefono, name: nueva.customer.firstName, savedAt: nueva.guardadaEn, identidad: identidadDe(nueva), datos: nueva.customer }
   }
   // Salió en reservas (la otra página): su token de hoy de aquí tampoco vale (codex-r1 #1).
   if (salioEnOtraPagina(slug)) {
@@ -56,14 +58,9 @@ export function loadSession(slug: string): OrderingSession | null {
     remove(sKey(slug))
     return null
   }
-  return { token: s.token, phone: s.phone, name: typeof s.name === 'string' ? s.name : null, savedAt: s.savedAt, identidad: `hoy|${s.token}` }
+  return { token: s.token, phone: s.phone, name: typeof s.name === 'string' ? s.name : null, savedAt: s.savedAt, identidad: `hoy:pedidos|${s.token}` }
 }
-export const saveSession = (slug: string, s: OrderingSession): void => write(sKey(slug), s)
-/** Tras un 401: se olvida el token que lo recibió. Si era el de la sesión única, se va entera (también para reservas: ya no vale). */
-export function clearSession(slug: string, token?: string): void {
-  if (token && leerSesion(slug)?.token === token) borrarSesion(slug)
-  remove(sKey(slug))
-}
+export const saveSession = (slug: string, s: SesionDeHoy): void => write(sKey(slug), s)
 
 /** Mismo teléfono = mismos últimos 10 dígitos (con o sin lada de país). */
 const last10 = (p: string) => p.replace(/\D/g, '').slice(-10)
