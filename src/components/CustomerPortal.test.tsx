@@ -6,6 +6,9 @@ import * as api from '../api/booking'
 import * as state from '../state/booking'
 import { createT } from '../i18n'
 import { borrarSesion, guardarSesion, leerSesion } from '../lib/sesionDeCliente'
+import { cuentaDe, cuentasNuevasParaPruebas } from '../state/miCuenta'
+/** «Mi cuenta» de reservas ya leída (lo anterior que la pantalla enseña al abrir). */
+const sembrar = (data: any) => { cuentaDe('testarudo', 'reservas').value = { data, leyendo: false, falla: null } }
 
 vi.mock('../api/booking', async importOriginal => {
   const real = await importOriginal<typeof import('../api/booking')>()
@@ -34,6 +37,7 @@ beforeEach(() => {
   state.customerToken.value = null
   state.customerInfo.value = null
   state.portalData.value = null
+  cuentasNuevasParaPruebas()
   state.portalLoading.value = false
   state.bookingAccess.value = null
   vi.mocked(api.requestOtp).mockResolvedValue({ ok: true })
@@ -100,9 +104,9 @@ describe('CustomerPortal: entrar con la sesión única (W2)', () => {
   it('codex-r4 R4-2: el perfil que responde después de «Cerrar sesión» no revive la sesión', async () => {
     guardarSesion('testarudo', { token: 'tok-A', customer: CLIENTE, contactos: [TEL], guardadaEn: Date.now() })
     state.entroAqui('testarudo', leerSesion('testarudo')!) // la página ya tiene la sesión guardada
-    state.portalData.value = {
+    sembrar({
       customer: { ...CLIENTE, loyaltyPoints: 0, totalVisits: 0 }, credits: { purchases: [] }, reservations: { upcoming: [], past: [] },
-    } as any
+    })
     let responder: (r: any) => void = () => {}
     vi.mocked(api.updateCustomerProfile).mockImplementationOnce(() => new Promise(ok => { responder = ok }))
     renderPortal()
@@ -138,9 +142,9 @@ describe('CustomerPortal: entrar con la sesión única (W2)', () => {
   it('codex-r3 H2: guardar el perfil de Ana mientras otra página entra como Bea no mezcla sus datos', async () => {
     guardarSesion('testarudo', { token: 'tok-A', customer: CLIENTE, contactos: [TEL], guardadaEn: Date.now() })
     state.entroAqui('testarudo', leerSesion('testarudo')!) // la página ya tiene la sesión guardada
-    state.portalData.value = {
+    sembrar({
       customer: { ...CLIENTE, loyaltyPoints: 0, totalVisits: 0 }, credits: { purchases: [] }, reservations: { upcoming: [], past: [] },
-    } as any
+    })
     const BEA = { ...CLIENTE, id: 'c2', firstName: 'Bea', phone: '+525599998888' }
     vi.mocked(api.updateCustomerProfile).mockImplementationOnce(async () => {
       guardarSesion('testarudo', { token: 'tok-B', customer: BEA, contactos: [TEL], guardadaEn: Date.now() })
@@ -200,9 +204,9 @@ describe('CustomerPortal: entrar con la sesión única (W2)', () => {
     localStorage.setItem('avq_order_session:testarudo', '{"token":"pedidos-de-hoy"}')
     state.entroAqui('testarudo', leerSesion('testarudo')!) // la página tiene esa sesión (Cerrar sesión borra lo guardado sólo si sigue siendo la suya)
     state.customerToken.value = 'tok'
-    state.portalData.value = {
+    sembrar({
       customer: { ...CLIENTE, loyaltyPoints: 0, totalVisits: 0 }, credits: { purchases: [] }, reservations: { upcoming: [], past: [] },
-    } as any
+    })
     renderPortal()
     fireEvent.click(screen.getByRole('button', { name: 'Cerrar sesión' }))
     expect(leerSesion('testarudo')).toBeNull()
@@ -243,7 +247,7 @@ const flushAll = () => act(async () => { for (let i = 0; i < 10; i++) await Prom
 describe('W4: se lee de nuevo al abrir, al volver a la pestaña y cuando cambia un folio', () => {
   it('al abrir enseña lo anterior con «Actualizando…» y lo vuelve a pedir; al llegar, lo nuevo y sin el aviso', async () => {
     anaAdentro()
-    state.portalData.value = PORTAL({ puntos: { saldo: 100, valor: 10 } })
+    sembrar(PORTAL({ puntos: { saldo: 100, valor: 10 } }))
     let responder: (d: any) => void = () => {}
     vi.mocked(api.getCustomerPortal).mockImplementationOnce(() => new Promise(ok => { responder = ok }))
     renderPortal()
@@ -282,7 +286,7 @@ describe('W4: se lee de nuevo al abrir, al volver a la pestaña y cuando cambia 
 
   it('sin red al releer: conserva lo último con «Sin conexión. Te enseñamos lo último que supimos.» y «Reintentar»', async () => {
     anaAdentro()
-    state.portalData.value = PORTAL()
+    sembrar(PORTAL())
     vi.mocked(api.getCustomerPortal).mockRejectedValueOnce(new TypeError('Failed to fetch')).mockResolvedValueOnce(PORTAL({ puntos: { saldo: 500, valor: 50 } }))
     renderPortal()
     expect(await screen.findByText('Sin conexión. Te enseñamos lo último que supimos.')).toBeTruthy()
@@ -759,7 +763,7 @@ describe('W4 codex-w4-r2: lo recién leído manda (una lectura vieja, de otra ap
     renderPortal()
     fireEvent.click(await screen.findByRole('button', { name: 'Ver más pedidos' }))
     // Otro elemento de reservas releyó «Mi cuenta» (datos nuevos, otra primera página).
-    await act(async () => { state.portalData.value = PORTAL({ pedidos: { items: [PEDIDO(5)], total: 3, nextCursor: 'cur-5' } }) })
+    await act(async () => { sembrar(PORTAL({ pedidos: { items: [PEDIDO(5)], total: 3, nextCursor: 'cur-5' } })) })
     await act(async () => { pagina({ items: [PEDIDO(2, { folio: 'W9D5F' })], total: 3, nextCursor: null }) })
     expect(screen.queryByRole('button', { name: /W9D5F/ })).toBeNull()
     expect(screen.getByRole('button', { name: 'Ver más pedidos' })).toBeTruthy()
@@ -785,5 +789,42 @@ describe('W4 codex-w4-r2: lo recién leído manda (una lectura vieja, de otra ap
     expect(screen.getByText('Pagado: enseña tu folio al recoger.')).toBeTruthy()
     expect(screen.queryByText('Paga en caja antes de las 10:42.')).toBeNull()
     vi.useRealTimers()
+  })
+})
+
+describe('W4 codex-w4-r3: lo leído y su estado son UNO por negocio y superficie; nada de la clienta anterior queda en el perfil', () => {
+  it('#2 dos portales sin datos: falla la lectura nueva y llega la vieja ⇒ los dos dicen «Sin conexión» con «Reintentar», ninguno gira para siempre', async () => {
+    anaAdentro()
+    let vieja: (d: any) => void = () => {}
+    vi.mocked(api.getCustomerPortal)
+      .mockImplementationOnce(() => new Promise(ok => { vieja = ok }))
+      .mockRejectedValueOnce(new TypeError('Failed to fetch'))
+    render(<div>
+      <CustomerPortal venueSlug="testarudo" timezone="America/Mexico_City" t={createT('es')} onBack={() => {}} onManageBooking={() => {}} />
+      <CustomerPortal venueSlug="testarudo" timezone="America/Mexico_City" t={createT('es')} onBack={() => {}} onManageBooking={() => {}} />
+    </div>)
+    await flushAll()
+    await act(async () => { vieja(PORTAL()) })
+    await flushAll()
+    expect(screen.getAllByText('Sin conexión. Revisa tu internet y vuelve a intentar.')).toHaveLength(2)
+    expect(screen.getAllByRole('button', { name: 'Intentar de Nuevo' })).toHaveLength(2)
+    expect(screen.queryByRole('status', { name: 'Actualizando…' })).toBeNull()
+  })
+
+  it('#3 el formulario de perfil de Ana no se queda abierto con su nombre cuando la página pasa a Bea', async () => {
+    anaAdentro()
+    const BEA = { ...CLIENTE, id: 'c2', firstName: 'Bea' }
+    vi.mocked(api.getCustomerPortal).mockImplementation(async (_s, tok) => PORTAL(tok === 'tok-B' ? { customer: { ...BEA, loyaltyPoints: 0, totalVisits: 0 } } : {}))
+    renderPortal()
+    await screen.findByText('Hola, Ana')
+    fireEvent.click(screen.getByTitle('Editar Perfil'))
+    escribir(screen.getByPlaceholderText('Nombre'), 'Anita')
+    await act(async () => {
+      guardarSesion('testarudo', { token: 'tok-B', customer: BEA, contactos: [TEL], guardadaEn: Date.now() })
+      state.entroAqui('testarudo', leerSesion('testarudo')!) // otro elemento de reservas entró como Bea
+    })
+    await screen.findByText('Hola, Bea')
+    expect(screen.queryByPlaceholderText('Nombre')).toBeNull()
+    expect(screen.queryByDisplayValue('Anita')).toBeNull()
   })
 })

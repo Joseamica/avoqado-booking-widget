@@ -10,7 +10,7 @@ import {
   selectedSpotIds, bookingResult, isLoading, apiError, manageSecret,
   hasServiceStep, hasStaffStep, getStepConfig, resetBooking, showToast,
   creditPacks, customerCredits, selectedCreditBalance, creditPacksLoading, creditPacksLoaded,
-  showPortal, lecturaDelPortal, portalData, customerToken, customerInfo, setCustomerSession, clearCustomerSession,
+  showPortal, portalData, customerToken, customerInfo, setCustomerSession, clearCustomerSession,
   bookingAccess,
   flowType, visibleProducts,
   selectedProducts, selectedStaffId, totalDuration, totalPrice, selectedModifiers,
@@ -35,6 +35,7 @@ import { CreditPackBanner } from './CreditPackBanner'
 import { CreditSelector } from './CreditSelector'
 import { CheckoutModal } from './CheckoutModal'
 import { CustomerPortal } from './CustomerPortal'
+import { leerCuenta } from '../state/miCuenta'
 import { ClassSessionList } from './ClassSessionList'
 import { ClassDetailView } from './ClassDetailView'
 import { UnifiedLanding } from './UnifiedLanding'
@@ -561,21 +562,15 @@ export function BookingFlow({ props }: BookingFlowProps) {
   useEffect(() => {
     const enviado = customerToken.value
     if (enviado && !portalData.value) {
-      const sigue = lecturaDelPortal(props.venue, 'reservas') // W4: si «Mi cuenta» pidió después, gana la suya
-      api.getCustomerPortal(props.venue, enviado).then(data => {
+      // W4: por la misma «Mi cuenta» de reservas (la última lectura gana, deja su estado y, con un 401, suelta la sesión).
+      void leerCuenta(props.venue, 'reservas', enviado).then(data => {
         // W1: si la sesión cambió mientras (otra ficha, o renovada), esta respuesta ya no es de la vigente: el efecto vuelve a pedir.
-        if (customerToken.value !== enviado || !sigue()) return
-        portalData.value = data
-        // Fase 0.B: the portal carries "¿puedo reservar aquí?" — keep it fresh.
-        if (data.bookingAccess) bookingAccess.value = data.bookingAccess
+        if (!data || customerToken.value !== enviado) return
         // Backfill customerInfo if not yet stored (e.g. login from older version)
         if (!customerInfo.value && data.customer) {
           const { id, firstName, lastName, email, phone } = data.customer
           setCustomerSession(props.venue, customerToken.value!, { id, firstName, lastName, email, phone })
         }
-      }).catch((err: any) => {
-        // W1: sólo un 401 dice que la sesión ya no vale. Sin red (o un 5xx) no se saca a nadie: la sesión es la misma en pedidos.
-        if (err?.status === 401) clearCustomerSession(props.venue, err.enviado ?? enviado)
       })
     }
   }, [props.venue, customerToken.value])

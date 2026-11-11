@@ -8,8 +8,9 @@ import { Input } from './ui/Input'
 import { EntrarConCuenta } from './EntrarConCuenta'
 import * as api from '../api/booking'
 import {
-  portalData, customerToken, setCustomerSession, clearCustomerSession, bookingAccess, venueInfo, entroAqui, lectorDe, lecturaDelPortal,
+  customerToken, setCustomerSession, clearCustomerSession, venueInfo, entroAqui, lectorDe,
 } from '../state/booking'
+import { cuentaDe, leerCuenta } from '../state/miCuenta'
 import { alCambiarLaPagina, epocaDe, paginaDe, soltarLaPagina, type SesionEmitida, type Superficie } from '../lib/sesionDeCliente'
 import { FOLIO_CAMBIO, trackingUrl, type FolioCambioDetail } from '../order/events'
 
@@ -78,35 +79,16 @@ type Lista = 'pedidos' | 'tarjetas' | 'descuentos'
 const dinero = (n: number) => '$' + new Intl.NumberFormat('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n)
 
 /**
- * W4: la sesión y los datos de la superficie que monta «Mi cuenta». Reservas usa sus señales (las suelta su oyente al cambiar de ficha);
- * la tienda, la sesión de su página (el guardián) y unos datos propios que se tiran si cambia quién está adentro.
+ * W4: la sesión de la superficie que monta «Mi cuenta». Reservas usa su señal; la tienda, la sesión de su página (el guardián), que se
+ * repinta con cada cambio. Lo leído y su estado NO viven aquí: son UNO por negocio y superficie (`state/miCuenta.ts`).
  */
-const ultimaDeLaTienda = new Map<string, { identidad: string; data: CustomerPortalData }>()
-function useSuperficie(slug: string, sup: Superficie) {
+function useTokenDe(slug: string, sup: Superficie): string | null {
   const [, repintar] = useState(0)
   useEffect(() => {
     if (sup === 'reservas') return
-    return alCambiarLaPagina((s, afecta, misma) => {
-      if (s !== slug || !afecta.includes(sup)) return
-      if (!misma) ultimaDeLaTienda.delete(slug)
-      repintar(n => n + 1)
-    })
+    return alCambiarLaPagina((s, afecta) => { if (s === slug && afecta.includes(sup)) repintar(n => n + 1) })
   }, [slug, sup])
-  if (sup === 'reservas')
-    return { token: customerToken.value, data: portalData.value, poner: (d: CustomerPortalData | null) => { portalData.value = d } }
-  // Lo último leído en la tienda vale sólo para la MISMA sesión de su página (otra persona nunca ve lo de la anterior).
-  const p = paginaDe(slug, sup)
-  const ultima = ultimaDeLaTienda.get(slug)
-  return {
-    token: p?.token ?? null,
-    data: p && ultima?.identidad === p.identidad ? ultima.data : null,
-    poner: (d: CustomerPortalData | null) => {
-      const ahora = paginaDe(slug, sup)
-      if (d && ahora) ultimaDeLaTienda.set(slug, { identidad: ahora.identidad, data: d })
-      else ultimaDeLaTienda.delete(slug)
-      repintar(n => n + 1)
-    },
-  }
+  return sup === 'reservas' ? customerToken.value : paginaDe(slug, sup)?.token ?? null
 }
 
 export function CustomerPortal({
@@ -122,10 +104,6 @@ export function CustomerPortal({
 
   // W2: entrar es `EntrarConCuenta` (WhatsApp, correo o Google, sin contraseña). Correo y contraseña quedan como opción secundaria.
   const [showEmailLogin, setShowEmailLogin] = useState(false)
-  // «Mi cuenta» no se pudo leer por red o por el servidor: se dice y se reintenta, sin volver a pedir que entre.
-  const [fallaCarga, setFallaCarga] = useState<'sinRed' | 'generico' | null>(null)
-  // W4: releyendo con lo anterior a la vista («Actualizando…»).
-  const [actualizando, setActualizando] = useState(false)
   // W4: las páginas siguientes que ya trajo «Ver más», pegadas a la primera página DE LA QUE SALIERON (`base`): si «Mi cuenta» se relee
   // (aquí, en otra apertura o en otro elemento), los datos son otros y esas páginas ya no cuentan (codex-w4-r1 #3, r2 #1).
   const [mas, setMas] = useState<{ base: CustomerPortalData | null; listas: Partial<Record<Lista, { items: any[]; nextCursor: string | null }>> }>(
@@ -156,11 +134,14 @@ export function CustomerPortal({
   const [packsLoading, setPacksLoading] = useState(false)
   const [checkoutLoading, setCheckoutLoading] = useState<string | null>(null)
 
-  const s = useSuperficie(venueSlug, sup)
-  const data = s.data
-  const token = s.token
-  const datosAhora = useRef(data)
-  datosAhora.current = data
+  const token = useTokenDe(venueSlug, sup)
+  // codex-w4-r3: lo leído y su estado, UNO por negocio y superficie; todos los lectores de la página se pintan de aquí.
+  const cuenta = cuentaDe(venueSlug, sup).value
+  const data = cuenta.data
+  // «Mi cuenta» no se pudo leer por red o por el servidor: se dice y se reintenta, sin volver a pedir que entre.
+  const fallaCarga = cuenta.falla
+  // Releyendo con lo anterior a la vista («Actualizando…»).
+  const actualizando = cuenta.leyendo
   const extra = mas.base === data ? mas.listas : {}
   /** El token de la superficie AHORA (no el del último pintado). */
   const tokenActual = () => (sup === 'reservas' ? customerToken.value : paginaDe(venueSlug, sup)?.token ?? null)
@@ -173,11 +154,14 @@ export function CustomerPortal({
     setMas({ base: null, listas: {} })
     setGuardado(null)
     setCodigo('')
+    // codex-w4-r3 #3: el perfil que se estaba editando era de la sesión anterior.
+    setEditingProfile(false)
+    setEditFirstName('')
+    setEditLastName('')
     if (!token) {
       setShowEmailLogin(false)
       setError(null)
       setReentrar(false)
-      setFallaCarga(null)
     }
   }, [token])
 
@@ -200,6 +184,9 @@ export function CustomerPortal({
     }
   }, [venueSlug])
 
+  // Una página que no se pudo traer era de la lectura anterior: con datos nuevos, el aviso se va (sus páginas también).
+  useEffect(() => { setFallaMas(null) }, [data])
+
   // Load available credit packs when portal is shown (la tienda no vende paquetes todavía: Fase B)
   useEffect(() => {
     if (data && !enTienda) {
@@ -207,40 +194,18 @@ export function CustomerPortal({
     }
   }, [!!data]) // una vez por apertura, no en cada relectura
 
-  // La última carga manda: la respuesta de una sesión que ya cambió (otra ficha, o renovada a media carga) no se pinta.
-  const carga = useRef(0)
+  /** Relee «Mi cuenta» de la superficie (la última lectura gana y deja su estado para todos los lectores; `state/miCuenta.ts`). */
   async function loadPortal() {
     const tkn = tokenActual()
-    if (!tkn) return
-    const mia = ++carga.current
-    // codex-w4-r2 #1: pinta sólo si es la ÚLTIMA lectura de «Mi cuenta» de esta superficie (de cualquier apertura o elemento) y de la
-    // misma sesión; la de una apertura anterior que llega tarde ya no pisa lo nuevo.
-    const sigue = lecturaDelPortal(venueSlug, sup)
-    setActualizando(true)
-    setFallaCarga(null)
-    try {
-      const result = await api.getCustomerPortal(venueSlug, tkn, sup)
-      // La sesión cambió mientras cargaba («Salir», otra ficha): esta respuesta ya no es de nadie que esté adentro (codex-r3 H1).
-      if (!sigue()) return
-      s.poner({ ...result }) // siempre otro objeto: las páginas de «Ver más» se pegan a ESTA lectura, no a una igual de antes
-      setFallaMas(null)
-      // Fase 0.B: the portal carries "¿puedo reservar aquí?" — keep it fresh.
-      if (!enTienda && result.bookingAccess) bookingAccess.value = result.bookingAccess
-    } catch (err: any) {
-      if (err?.data?.code === 'CUSTOMER_SESSION_CHANGED') return
-      // W1: sólo un 401 cierra la sesión que lo recibió (si ya hay otra guardada, NO se adopta); sin red no se saca a nadie.
-      if (err?.status === 401) soltar401(err, tkn)
-      else if (mia === carga.current && sigue()) setFallaCarga(err?.status ? 'generico' : 'sinRed')
-    } finally {
-      if (mia === carga.current) setActualizando(false)
-    }
+    if (tkn) await leerCuenta(venueSlug, sup, tkn)
   }
   releer.current = loadPortal
 
   /** W4: «Ver más pedidos / tarjetas / descuentos» trae la página siguiente con la sesión de la superficie. */
   async function verMas(lista: Lista) {
     const tkn = tokenActual()
-    const base = datosAhora.current
+    const vigentes = () => cuentaDe(venueSlug, sup).peek().data
+    const base = vigentes()
     const cursor = extra[lista] ? extra[lista]!.nextCursor : base?.[lista]?.nextCursor
     if (!tkn || !base || !cursor || enVuelo.current.mas) return
     enVuelo.current.mas = true
@@ -251,13 +216,13 @@ export function CustomerPortal({
       const listar = lista === 'pedidos' ? api.listarMisPedidos : lista === 'tarjetas' ? api.listarMisTarjetas : api.listarMisDescuentos
       const r = await listar(venueSlug, tkn, cursor, sup)
       // Otra sesión, u otros datos (una relectura terminó en medio, aquí o en otro elemento): esta página ya no va con lo que se ve.
-      if (datosAhora.current !== base || epocaDe(venueSlug, sup) !== epoca) return
+      if (vigentes() !== base || epocaDe(venueSlug, sup) !== epoca) return
       setMas(m => {
         const listas = m.base === base ? m.listas : {}
         return { base, listas: { ...listas, [lista]: { items: [...(listas[lista]?.items ?? []), ...r.items], nextCursor: r.nextCursor } } }
       })
     } catch (err: any) {
-      if (datosAhora.current !== base || epocaDe(venueSlug, sup) !== epoca || err?.data?.code === 'CUSTOMER_SESSION_CHANGED') return
+      if (vigentes() !== base || epocaDe(venueSlug, sup) !== epoca || err?.data?.code === 'CUSTOMER_SESSION_CHANGED') return
       if (err?.status === 401) soltar401(err, tkn)
       else setFallaMas(lista)
     } finally {
@@ -350,7 +315,6 @@ export function CustomerPortal({
     setError(null)
     setEditingProfile(false)
     setShowEmailLogin(false)
-    setFallaCarga(null)
   }
 
   function startEditProfile() {

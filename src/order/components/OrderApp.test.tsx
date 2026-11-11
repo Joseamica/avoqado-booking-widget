@@ -593,3 +593,34 @@ describe('W4: «Mi cuenta» de la tienda al volver a abrirla', () => {
     expect(screen.getByText(/en Flautas\./)).toBeTruthy()
   })
 })
+
+describe('W4 codex-w4-r3 #1: dos tiendas del mismo negocio en una página', () => {
+  it('la que enseña «Usar en caja» lo cierra cuando la otra ya leyó la tarjeta bloqueada', async () => {
+    const { createOrderStore } = await import('../store')
+    const slug = `doble${Date.now()}`
+    const sesion = { token: 'tok-A', customer: ANA, contactos: [TEL_ANA], guardadaEn: Date.now() }
+    guardarLaSesion(slug, sesion)
+    const [a, b] = [createOrderStore(slug, { locale: 'es' }), createOrderStore(slug, { locale: 'es' })]
+    for (const s of [a, b]) { s.info.value = infoOf({ requiresAcceptance: false }); s.menu.value = menuOf(product()) }
+    const viva = { ...portalDeAna(), tarjetas: { items: [{ id: 'g1', last4: 'HB7T', saldo: 350, venceEl: null, codigo: 'K7Q2-9DXM-4R8H-HB7T-Q', estado: 'ACTIVA', disponible: true }], total: 1, nextCursor: null } }
+    const bloqueada = { ...portalDeAna(), tarjetas: { items: [{ id: 'g1', last4: 'HB7T', saldo: 0, venceEl: null, codigo: null, estado: 'BLOQUEADA', disponible: false }], total: 1, nextCursor: null } }
+    vi.mocked(bookingApi.getCustomerPortal).mockReset()
+    vi.mocked(bookingApi.getCustomerPortal).mockResolvedValueOnce(viva).mockResolvedValueOnce(bloqueada)
+    vi.mocked(bookingApi.getCreditPacks).mockResolvedValue([])
+    const [ca, cb] = [document.body.appendChild(document.createElement('div')), document.body.appendChild(document.createElement('div'))]
+    render(withStore(a, <OrderApp />), { container: ca })
+    render(withStore(b, <OrderApp />), { container: cb })
+    await flush()
+    await act(async () => { fireEvent.click(within(ca).getByRole('button', { name: 'Mi cuenta' })) })
+    await flush()
+    vi.advanceTimersByTime(500)
+    await act(async () => { fireEvent.click(within(ca).getByRole('button', { name: 'Usar en caja' })) })
+    expect(within(ca).getByText('K7Q2-9DXM-4R8H-HB7T-Q')).toBeTruthy()
+    await act(async () => { fireEvent.click(within(cb).getByRole('button', { name: 'Mi cuenta' })) })
+    await flush()
+    expect(within(cb).getByText('Bloqueada: pregunta en caja.')).toBeTruthy()
+    expect(within(ca).queryByText('K7Q2-9DXM-4R8H-HB7T-Q')).toBeNull()
+    expect(within(ca).queryByText('$350.00')).toBeNull()
+    expect(within(ca).getByText('Bloqueada: pregunta en caja.')).toBeTruthy()
+  })
+})

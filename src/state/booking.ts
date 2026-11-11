@@ -198,19 +198,6 @@ alCambiarLaPagina((slug, afecta, misma) => {
   }
 })
 
-/**
- * W4 (codex-w4-r2 #1): de «Mi cuenta» de un negocio y una superficie pinta sólo la ÚLTIMA lectura que salió, la pida quien la pida
- * (otra apertura de la pantalla, otro elemento, el flujo de reservas). Una que salió antes, o de otra sesión (época), ya no pinta.
- */
-const lecturasDelPortal = new Map<string, number>()
-export function lecturaDelPortal(slug: string, s: Superficie): () => boolean {
-  const k = `${slug}|${s}`
-  const n = (lecturasDelPortal.get(k) ?? 0) + 1
-  lecturasDelPortal.set(k, n)
-  const epoca = epocaDeLaPagina(slug, s)
-  return () => lecturasDelPortal.get(k) === n && epocaDeLaPagina(slug, s) === epoca
-}
-
 /** El token con que esta página MANDA desde reservas (el guardián decide; nunca toma otra sesión). */
 export function tokenParaMandar(slug: string, delLlamador?: string | null): string | null {
   return tokenDeLaPagina(slug, 'reservas', leer(slug), delLlamador)
