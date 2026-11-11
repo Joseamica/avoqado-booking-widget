@@ -560,6 +560,8 @@ export function BookingFlow({ props }: BookingFlowProps) {
     const enviado = customerToken.value
     if (enviado && !portalData.value) {
       api.getCustomerPortal(props.venue, enviado).then(data => {
+        // W1: si la sesión cambió mientras (otra ficha, o renovada), esta respuesta ya no es de la vigente: el efecto vuelve a pedir.
+        if (customerToken.value !== enviado) return
         portalData.value = data
         // Fase 0.B: the portal carries "¿puedo reservar aquí?" — keep it fresh.
         if (data.bookingAccess) bookingAccess.value = data.bookingAccess
@@ -570,10 +572,10 @@ export function BookingFlow({ props }: BookingFlowProps) {
         }
       }).catch((err: any) => {
         // W1: sólo un 401 dice que la sesión ya no vale. Sin red (o un 5xx) no se saca a nadie: la sesión es la misma en pedidos.
-        if (err?.status === 401) clearCustomerSession(props.venue, enviado)
+        if (err?.status === 401) clearCustomerSession(props.venue, err.enviado ?? enviado)
       })
     }
-  }, [props.venue])
+  }, [props.venue, customerToken.value])
 
   // Detect return from Stripe checkout via the avq_credits URL param. The webhook may
   // race with the redirect, so poll a few times before giving up.
@@ -1647,7 +1649,7 @@ export function BookingFlow({ props }: BookingFlowProps) {
         // not trusted anymore. Drop it and ask to sign in again — never fall
         // through to a guest booking the customer didn't intend.
         if (err?.status === 401) {
-          clearCustomerSession(props.venue, sessionToken)
+          clearCustomerSession(props.venue, err.enviado ?? sessionToken)
           showToast(t('creditPacks.loginToUseCredits'), 'error')
           showPortal.value = true
           return

@@ -76,11 +76,11 @@ describe('sesión de pedidos', () => {
       guardarSesion('a', nueva([correo, tel]))
       expect(loadSession('a')).toEqual({ token: 'nueva', phone: '+525511112222', name: 'Ana', savedAt: expect.any(Number) })
     })
-    it('una nueva sin teléfono probado no sirve para «Mi equipo»: se usa la de hoy (o se pide el código)', () => {
+    it('una nueva sin teléfono probado no sirve para «Mi equipo» y el token de hoy tampoco se usa: se pide el código (codex-r2 #3)', () => {
       guardarSesion('a', nueva([correo]))
       expect(loadSession('a')).toBeNull()
       saveSession('a', s)
-      expect(loadSession('a')?.token).toBe('t')
+      expect(loadSession('a')).toBeNull()
     })
     it('un 401 con el token de la nueva la borra; con el de hoy, sólo borra el de hoy', () => {
       guardarSesion('a', nueva([correo]))

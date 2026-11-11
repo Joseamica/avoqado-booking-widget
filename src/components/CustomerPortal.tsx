@@ -1,5 +1,5 @@
 import { h } from 'preact'
-import { useState, useEffect } from 'preact/hooks'
+import { useState, useEffect, useRef } from 'preact/hooks'
 import type { TFunction } from '../i18n'
 import type { CreditPackPublic } from '../types'
 import { Spinner } from './ui/Spinner'
@@ -59,15 +59,13 @@ export function CustomerPortal({ venueSlug, timezone, venuePhone, t, onBack, onM
   const [checkoutLoading, setCheckoutLoading] = useState<string | null>(null)
 
   const data = portalData.value
-  const loading = portalLoading.value
   const token = customerToken.value
 
-  // Auto-login from stored token
+  // W1 (rediseño codex-r2): con sesión y sin «Mi cuenta» cargada, se pide. También cuando la sesión cambia de ficha (entró, otra
+  // página entró con otra, o un 401 tardío adoptó la guardada): la vista se relee y el portal se vuelve a pedir con la vigente.
   useEffect(() => {
-    if (token && !data) {
-      loadPortal(token)
-    }
-  }, [])
+    if (token && !data) void loadPortal()
+  }, [token, data])
 
   // Load available credit packs when portal is shown
   useEffect(() => {
@@ -76,20 +74,27 @@ export function CustomerPortal({ venueSlug, timezone, venuePhone, t, onBack, onM
     }
   }, [data])
 
-  async function loadPortal(tkn: string) {
+  // La última carga manda: la respuesta de una sesión que ya cambió (otra ficha, o renovada a media carga) no se pinta.
+  const carga = useRef(0)
+  async function loadPortal() {
+    const tkn = customerToken.value
+    if (!tkn) return
+    const mia = ++carga.current
     portalLoading.value = true
     setFallaCarga(null)
     try {
       const result = await api.getCustomerPortal(venueSlug, tkn)
+      if (mia !== carga.current) return
       portalData.value = result
       // Fase 0.B: the portal carries "¿puedo reservar aquí?" — keep it fresh.
       if (result.bookingAccess) bookingAccess.value = result.bookingAccess
     } catch (err: any) {
-      // W1: sólo un 401 (token vencido o inválido) cierra la sesión; sin red no se saca a nadie de las dos páginas.
-      if (err?.status === 401) clearCustomerSession(venueSlug, tkn)
+      if (mia !== carga.current) return
+      // W1: sólo un 401 cierra la sesión que lo recibió (si ya hay otra guardada, se adopta); sin red no se saca a nadie.
+      if (err?.status === 401) clearCustomerSession(venueSlug, err.enviado ?? tkn)
       else setFallaCarga(err?.status ? t('errors.generic') : t('entrar.sinRed'))
     } finally {
-      portalLoading.value = false
+      if (mia === carga.current) portalLoading.value = false
     }
   }
 
@@ -113,8 +118,10 @@ export function CustomerPortal({ venueSlug, timezone, venuePhone, t, onBack, onM
     try {
       const result = await api.customerLogin(venueSlug, { email: email.trim(), password: password.trim() })
       // S7: la contraseña ya entrega la sesión única, SIN contactos probados (prueba la ficha, no su correo).
+      const antes = customerToken.value
       setCustomerSession(venueSlug, result.token, result.customer, result.bookingAccess ?? null, [])
-      await loadPortal(result.token)
+      // El efecto pide «Mi cuenta» al cambiar el token; si es el mismo (misma ficha, mismo segundo), se pide aquí.
+      if (customerToken.value === antes) await loadPortal()
     } catch (err: any) {
       setError(err.data?.message ?? t('errors.generic'))
     } finally {
@@ -124,8 +131,9 @@ export function CustomerPortal({ venueSlug, timezone, venuePhone, t, onBack, onM
 
   /** W2: ya entró por `EntrarConCuenta` (la sesión única ya está guardada): la cuenta queda en pantalla y se lee el portal. */
   async function handleEntro(sesion: { token: string; customer: CustomerInfoDeSesion; contactos: ContactoProbado[] }) {
+    const antes = customerToken.value
     setCustomerSession(venueSlug, sesion.token, sesion.customer, null, sesion.contactos)
-    await loadPortal(sesion.token)
+    if (customerToken.value === antes) await loadPortal()
   }
 
   function handleLogout() {
@@ -174,7 +182,7 @@ export function CustomerPortal({ venueSlug, timezone, venuePhone, t, onBack, onM
         setCustomerSession(venueSlug, token, updated)
       }
       // Reload portal data to refresh everything
-      await loadPortal(token)
+      await loadPortal()
       setEditingProfile(false)
       setProfileSuccess(true)
       setTimeout(() => setProfileSuccess(false), 3000)
@@ -205,8 +213,8 @@ export function CustomerPortal({ venueSlug, timezone, venuePhone, t, onBack, onM
     }
   }
 
-  // Loading state (auto-login)
-  if (loading && !data) {
+  // Con sesión y «Mi cuenta» todavía sin cargar: cargando (nunca «Entra a tu cuenta» a quien ya entró).
+  if (!data && token && !fallaCarga) {
     return (
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '64px 0' }}>
         <Spinner size={28} />
@@ -218,7 +226,7 @@ export function CustomerPortal({ venueSlug, timezone, venuePhone, t, onBack, onM
     return (
       <div class="avq-animate-in" style={{ display: 'flex', flexDirection: 'column', gap: '12px', padding: '32px 0', textAlign: 'center' }}>
         <p role="alert" style={{ fontSize: '14px', color: 'var(--avq-fg, #111827)', margin: 0 }}>{fallaCarga}</p>
-        <Button fullWidth onClick={() => void loadPortal(token)}>{t('actions.retry')}</Button>
+        <Button fullWidth onClick={() => void loadPortal()}>{t('actions.retry')}</Button>
         <Button variant="ghost" fullWidth onClick={handleLogout}>{t('portal.logout')}</Button>
       </div>
     )

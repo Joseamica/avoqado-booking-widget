@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { aplicarRenovacion, borrarSesion, guardarSesion, leerSesion, type SesionDeCliente } from './sesionDeCliente'
 import { createOrder } from '../order/api'
-import { getCustomerPortal } from '../api/booking'
+import { createReservation, getCustomerPortal, updateCustomerProfile } from '../api/booking'
 import { loadSession } from '../order/session'
 import * as estado from '../state/booking'
 
@@ -150,12 +150,8 @@ describe('W1: una sola sesión de cliente por negocio', () => {
       const B = { ...S, token: 'tok-B', customer: { ...S.customer, id: 'otra-ficha' } }
       guardarSesion('mindform', B)
       expect(leerSesion('mindform')).toEqual(B)
-      vi.restoreAllMocks()
-      irA('https://book.avoqado.io/')
-      guardarSesion('mindform', S)
-      vi.spyOn(Document.prototype, 'cookie', 'set').mockImplementation(() => {})
-      guardarSesion('mindform', B)
-      expect(leerSesion('mindform')).toEqual(B)
+      // Ya sin la de memoria a la vista de otras pestañas: la copia vieja se quitó.
+      expect(localStorage.getItem('avq_sesion:mindform')).toBeNull()
     })
 
     it('#3 un 401 tardío de la sesión A no borra la B que otra página guardó mientras: la pantalla adopta B', () => {
@@ -180,6 +176,96 @@ describe('W1: una sola sesión de cliente por negocio', () => {
       await getCustomerPortal('mindform', 'tok-1')
       expect(estado.customerToken.value).toBe('tok-2')
       expect(leerSesion('mindform')?.token).toBe('tok-2')
+    })
+  })
+
+  describe('codex-r2: una sola fuente de verdad (lo guardado manda; la pantalla sólo lo enseña)', () => {
+    const json = (status: number, body: unknown, headers: Record<string, string> = {}) =>
+      new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json', ...headers } })
+
+    it('#1 «Salir» en otra pestaña: ninguna petición sale con el token viejo y la pantalla se entera al volver', async () => {
+      estado.bindCustomerSessionToVenue('mindform')
+      estado.setCustomerSession('mindform', 'tok-1', S.customer, null, S.contactos)
+      expect(estado.customerToken.value).toBe('tok-1')
+      // Otra pestaña sale: lo guardado ya no está (aquí no se usa `borrarSesion`, que es de la otra pestaña).
+      localStorage.removeItem('avq_sesion:mindform')
+      const fetchMock = vi.fn()
+      vi.stubGlobal('fetch', fetchMock)
+      await expect(getCustomerPortal('mindform', 'tok-1')).rejects.toMatchObject({ status: 401 })
+      expect(fetchMock).not.toHaveBeenCalled()
+      expect(estado.customerToken.value).toBeNull()
+
+      // Y sin pedir nada: al volver a la pestaña (o con el aviso de otra pestaña) la pantalla se relee.
+      estado.setCustomerSession('mindform', 'tok-1', S.customer, null, S.contactos)
+      localStorage.removeItem('avq_sesion:mindform')
+      document.dispatchEvent(new Event('visibilitychange'))
+      expect(estado.customerToken.value).toBeNull()
+      estado.setCustomerSession('mindform', 'tok-1', S.customer, null, S.contactos)
+      localStorage.removeItem('avq_sesion:mindform')
+      window.dispatchEvent(new StorageEvent('storage', { key: 'avq_sesion:mindform' }))
+      expect(estado.customerToken.value).toBeNull()
+    })
+
+    it('#2 la memoria sólo vale sin almacenamiento: no le gana a una sesión guardada después ni sobrevive a «Salir»', () => {
+      irA('https://www.mindform.mx/')
+      const bloquear = () => {
+        vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('bloqueado') })
+        vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => { throw new Error('bloqueado') })
+      }
+      bloquear()
+      guardarSesion('mindform', S)
+      expect(leerSesion('mindform')).toEqual(S)
+      vi.restoreAllMocks()
+      // Otra pestaña (ya con almacenamiento) entra con B: ésa manda.
+      const B = { ...S, token: 'tok-B', customer: { ...S.customer, id: 'otra-ficha' } }
+      localStorage.setItem('avq_sesion:mindform', JSON.stringify(B))
+      expect(leerSesion('mindform')).toEqual(B)
+      // Y sale: nadie queda adentro con la de memoria.
+      localStorage.removeItem('avq_sesion:mindform')
+      expect(leerSesion('mindform')).toBeNull()
+    })
+
+    it('#3 con la sesión única guardada (aunque no sirva para «Mi equipo»), el token de pedidos de hoy nunca se usa', () => {
+      localStorage.setItem('avq_order_session:mindform', JSON.stringify({ token: 'legacy-A', phone: '+525512345678', name: 'Ana', savedAt: Date.now() }))
+      expect(loadSession('mindform')?.token).toBe('legacy-A')
+      guardarSesion('mindform', { ...S, token: 'tok-B', contactos: [{ tipo: 'EMAIL', valor: 'bea@correo.mx', metodo: 'EMAIL_CODE', probadoEn: 1 }] })
+      expect(loadSession('mindform')).toBeNull()
+    })
+
+    it('#4 guardar el perfil manda la sesión vigente y no regresa la pantalla al token viejo', async () => {
+      estado.bindCustomerSessionToVenue('mindform')
+      estado.setCustomerSession('mindform', 'tok-1', S.customer, null, S.contactos)
+      guardarSesion('mindform', { ...S, token: 'tok-2' }) // otra petición lo renovó
+      const fetchMock = vi.fn().mockResolvedValue(json(200, { customer: { ...S.customer, firstName: 'Anita' } }))
+      vi.stubGlobal('fetch', fetchMock)
+      await updateCustomerProfile('mindform', 'tok-1', { firstName: 'Anita' })
+      expect((fetchMock.mock.calls[0][1] as RequestInit).headers).toMatchObject({ Authorization: 'Bearer tok-2' })
+      estado.setCustomerSession('mindform', 'tok-1', { ...S.customer, firstName: 'Anita' })
+      expect(leerSesion('mindform')).toMatchObject({ token: 'tok-2', customer: { firstName: 'Anita' } })
+      expect(estado.customerToken.value).toBe('tok-2')
+    })
+
+    it('reservar manda la sesión vigente al momento de mandar (no la que la pantalla leyó antes)', async () => {
+      estado.bindCustomerSessionToVenue('mindform')
+      estado.setCustomerSession('mindform', 'tok-1', S.customer, null, S.contactos)
+      guardarSesion('mindform', { ...S, token: 'tok-2' })
+      const fetchMock = vi.fn().mockImplementation(async () => json(201, { confirmationCode: 'R1' }))
+      vi.stubGlobal('fetch', fetchMock)
+      await createReservation('mindform', {} as any, 'tok-1')
+      expect((fetchMock.mock.calls[0][1] as RequestInit).headers).toMatchObject({ Authorization: 'Bearer tok-2' })
+      // Un invitado sigue siendo invitado.
+      await createReservation('mindform', {} as any)
+      expect((fetchMock.mock.calls[1][1] as RequestInit).headers).not.toHaveProperty('Authorization')
+    })
+
+    it('el token de reservas de hoy sólo cuenta sin sesión única: al guardarse una, la pantalla la toma al volver a la pestaña', () => {
+      localStorage.setItem('avq_customer_token:legado', 'reservas-de-hoy')
+      estado.bindCustomerSessionToVenue('legado')
+      expect(estado.customerToken.value).toBe('reservas-de-hoy')
+      guardarSesion('legado', { ...S, token: 'tok-nueva' })
+      document.dispatchEvent(new Event('visibilitychange'))
+      expect(estado.customerToken.value).toBe('tok-nueva')
+      borrarSesion('legado')
     })
   })
 })

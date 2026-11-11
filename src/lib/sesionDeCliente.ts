@@ -69,16 +69,47 @@ function valida(x: any): SesionDeCliente | null {
   return { token: x.token, customer: x.customer, contactos: x.contactos, guardadaEn: x.guardadaEn }
 }
 
-export function leerSesion(slug: string): SesionDeCliente | null {
-  // La de memoria sólo existe si guardarla falló: es más nueva que cualquier copia guardada (codex-r1 #2).
-  const deMemoria = valida(enMemoria.get(slug))
-  if (deMemoria) return deMemoria
+/** ¿Hay dónde guardar (la cookie en avoqado.io, el localStorage fuera)? Se prueba escribiendo y leyendo. */
+function hayAlmacenamiento(): boolean {
   try {
-    const crudo = esDeAvoqado() ? leerCookie(nombreCookie(slug)) : localStorage.getItem(llaveLocal(slug))
-    return crudo ? valida(JSON.parse(crudo)) : null
+    if (!esDeAvoqado()) {
+      localStorage.setItem('avq_prueba', '1')
+      localStorage.removeItem('avq_prueba')
+      return true
+    }
+    escribirCookie('avq_prueba', '1')
+    const ok = leerCookie('avq_prueba') === '1'
+    escribirCookie('avq_prueba', null)
+    return ok
   } catch {
-    return null // sin almacenamiento o basura
+    return false
   }
+}
+
+/**
+ * La sesión vigente, leída AHORA de lo guardado (la única fuente de verdad: otras pestañas y la otra página la cambian). La copia en
+ * memoria sólo vale si no hay ningún almacenamiento; nunca le gana a lo guardado ni sobrevive a un «Salir» guardado (codex-r2 #2).
+ */
+export function leerSesion(slug: string): SesionDeCliente | null {
+  let crudo: string | null = null
+  try {
+    crudo = esDeAvoqado() ? leerCookie(nombreCookie(slug)) : localStorage.getItem(llaveLocal(slug))
+  } catch {
+    /* sin almacenamiento */
+  }
+  if (crudo) {
+    try {
+      return valida(JSON.parse(crudo))
+    } catch {
+      return null // basura
+    }
+  }
+  if (!enMemoria.has(slug)) return null
+  if (hayAlmacenamiento()) {
+    enMemoria.delete(slug)
+    return null
+  }
+  return valida(enMemoria.get(slug))
 }
 
 /** ¿«Salir» (o un 401) pasó en la otra página de avoqado.io? Entonces el token de hoy de ésta ya no se usa. */
@@ -106,8 +137,9 @@ export function guardarSesion(slug: string, s: SesionDeCliente): void {
     /* sin almacenamiento */
   }
   if (guardada) return void enMemoria.delete(slug)
+  // ponytail: si sí hay almacenamiento pero ESTA sesión no cupo (una cookie de más de 4 KB; hoy pesa ~1.5 KB), no queda guardada y la
+  // pantalla la verá cerrada. Ninguna página debe seguir con la anterior (quizá de otra ficha): se quita si se puede.
   enMemoria.set(slug, s)
-  // Y la copia guardada (de otra ficha, quizá) se quita si se puede: que ninguna página la siga usando.
   try {
     if (esDeAvoqado()) escribirCookie(nombreCookie(slug), null)
     else localStorage.removeItem(llaveLocal(slug))

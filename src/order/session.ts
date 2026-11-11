@@ -36,9 +36,12 @@ const remove = (key: string) => {
 
 export function loadSession(slug: string): OrderingSession | null {
   const nueva = leerSesion(slug)
-  // «Mi equipo» pide un teléfono probado: una sesión que sólo probó un correo (Google, código por correo) no sirve aquí.
-  const telefono = nueva?.contactos.find(c => c.tipo === 'PHONE')?.valor
-  if (nueva && telefono) return { token: nueva.token, phone: telefono, name: nueva.customer.firstName, savedAt: nueva.guardadaEn }
+  if (nueva) {
+    // «Mi equipo» pide un teléfono probado: una sesión que sólo probó un correo (Google, código por correo) no sirve aquí y se pide
+    // el código. Con una sesión única guardada, el token de hoy (quizá de otra ficha) nunca se usa (codex-r2 #3).
+    const telefono = nueva.contactos.find(c => c.tipo === 'PHONE')?.valor
+    return telefono ? { token: nueva.token, phone: telefono, name: nueva.customer.firstName, savedAt: nueva.guardadaEn } : null
+  }
   // Salió en reservas (la otra página): su token de hoy de aquí tampoco vale (codex-r1 #1).
   if (salioEnOtraPagina(slug)) {
     remove(sKey(slug))

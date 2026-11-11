@@ -77,6 +77,26 @@ describe('CustomerPortal: entrar con la sesión única (W2)', () => {
     await waitFor(() => expect(api.getCustomerPortal).toHaveBeenCalledTimes(2))
   })
 
+  it('codex-r2 #5: un 401 tardío que ya encuentra otra sesión guardada la adopta y carga su portal (no «Entra a tu cuenta»)', async () => {
+    guardarSesion('testarudo', { token: 'tok-A', customer: CLIENTE, contactos: [TEL], guardadaEn: Date.now() })
+    state.bindCustomerSessionToVenue('testarudo')
+    const BEA = { ...CLIENTE, id: 'c2', firstName: 'Bea' }
+    vi.mocked(api.getCustomerPortal)
+      .mockImplementationOnce(async () => {
+        // Mientras «Mi cuenta» de A espera, otra página entra como B; luego llega el 401 de A.
+        guardarSesion('testarudo', { token: 'tok-B', customer: BEA, contactos: [TEL], guardadaEn: Date.now() })
+        throw Object.assign(new Error('Sesión vieja'), { status: 401, data: { message: 'Sesión vieja' }, enviado: 'tok-A' })
+      })
+      .mockResolvedValueOnce({
+        customer: { ...BEA, loyaltyPoints: 0, totalVisits: 0 }, credits: { purchases: [] }, reservations: { upcoming: [], past: [] },
+      } as any)
+    renderPortal()
+    expect(await screen.findByText('Hola, Bea')).toBeTruthy()
+    expect(screen.queryByRole('heading', { name: 'Entra a tu cuenta' })).toBeNull()
+    expect(vi.mocked(api.getCustomerPortal).mock.calls.map(c => c[1])).toEqual(['tok-A', 'tok-B'])
+    expect(leerSesion('testarudo')?.token).toBe('tok-B')
+  })
+
   it('con contraseña (legado) también queda la sesión única, sin contactos probados', async () => {
     vi.mocked(api.customerLogin).mockResolvedValue({ token: 'tok-pass', customer: CLIENTE })
     renderPortal()

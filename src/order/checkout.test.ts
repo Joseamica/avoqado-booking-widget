@@ -15,7 +15,7 @@ import { ApiError } from './api'
 import { buildOrderBody, checkoutOf, isDefinitive, nav, phoneToVerify, retry, send, storageWorks, submitOrder, verifyPhone } from './checkout'
 import { createOrderStore, type OrderStore } from './store'
 import { loadLastOrder, loadSession, saveSession } from './session'
-import { leerSesion } from '../lib/sesionDeCliente'
+import { guardarSesion, leerSesion } from '../lib/sesionDeCliente'
 import { pendingAttempt } from './attempt'
 import { phoneE164 } from './phone'
 import type { CartLine } from './cart'
@@ -219,6 +219,15 @@ describe('submitOrder', () => {
     expect(sent(2).token).toBe('tok-2')
     expect(leerSesion(store.slug)).toBeNull()
     expect(pendingAttempt(store.slug)).not.toBeNull()
+  })
+
+  it('codex-r2: pedir en «Mi equipo» manda la sesión vigente al momento de mandar', async () => {
+    const { store, body } = setup({ sessionPhone: null })
+    guardarSesion(store.slug, { ...sesion('tok-vieja'), guardadaEn: Date.now() } as any)
+    guardarSesion(store.slug, { ...sesion('tok-vigente'), guardadaEn: Date.now() } as any)
+    api.createOrder.mockResolvedValueOnce(created())
+    expect((await submitOrder(store, body)).kind).toBe('created')
+    expect(sent().token).toBe('tok-vigente')
   })
 
   it('200 replay:true (el reintento recupera su pedido, aun con el plan vencido) ⇒ created', async () => {

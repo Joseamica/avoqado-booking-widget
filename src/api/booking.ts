@@ -11,29 +11,36 @@ import type {
   ModifierSelection,
 } from '../types'
 import { aplicarRenovacion, type FichaNueva, type SesionEmitida } from '../lib/sesionDeCliente'
-import { adoptarRenovacion } from '../state/booking'
+import { refrescarSesion, tokenVigente } from '../state/booking'
 
 const BASE = (import.meta.env?.VITE_API_URL as string | undefined)
   || 'https://api.avoqado.io/api/v1/public'
 
 /**
- * `sesion`: la petición va con el token de esa sesión; si el SERVIDOR lo renueva (`x-customer-session`, S6), se guarda (W1).
+ * `sesion`: la pantalla cree que hay sesión. W1 (rediseño codex-r2): el token que se MANDA es el vigente al momento de mandar
+ * (`tokenVigente`), no el que la pantalla leyó antes; si ya no hay sesión (salió en otra pestaña o página), no se manda nada y se
+ * responde como un 401, sin red. Si el SERVIDOR lo renueva (`x-customer-session`, S6), se guarda. Los errores llevan `enviado`.
  */
 async function request<T>(url: string, init?: RequestInit, sesion?: { slug: string; token: string }): Promise<T> {
+  const enviado = sesion ? tokenVigente(sesion.slug) : null
+  if (sesion && !enviado) {
+    const data = { message: 'Tu sesión se cerró. Entra otra vez.', code: 'CUSTOMER_SESSION_CLOSED' }
+    throw Object.assign(new Error(data.message), { status: 401, data, enviado: sesion.token })
+  }
   const res = await fetch(url, {
     ...init,
     headers: {
       'Content-Type': 'application/json',
       'ngrok-skip-browser-warning': '1',
       ...(init?.headers ?? {}),
+      ...(enviado ? { Authorization: `Bearer ${enviado}` } : {}),
     },
   })
-  const renovado = sesion ? aplicarRenovacion(sesion.slug, res.headers, sesion.token) : null
-  if (renovado) adoptarRenovacion(sesion!.slug, sesion!.token, renovado)
+  if (sesion && aplicarRenovacion(sesion.slug, res.headers, enviado!)) refrescarSesion(sesion.slug)
   if (!res.ok) {
     let err: any
     try { err = await res.json() } catch { err = { message: `HTTP ${res.status}` } }
-    const e = Object.assign(new Error(err.message ?? 'Request failed'), { status: res.status, data: err })
+    const e = Object.assign(new Error(err.message ?? 'Request failed'), { status: res.status, data: err, enviado })
     throw e
   }
   if (res.status === 204) return undefined as T
