@@ -8,7 +8,7 @@
 // - Fase 2: pagar con tarjeta no pide el código ni manda token; el pago en Stripe es la prueba. El modo es el del cuerpo que se manda.
 import { signal, type Signal } from '@preact/signals'
 import { ApiError, createOrder, quote, verifyOrderingOtp } from './api'
-import { beginAttempt, pendingAttempt, settleAttempt } from './attempt'
+import { beginAttempt, marcarIdentidad, pendingAttempt, settleAttempt } from './attempt'
 import { desdeUnica, loadSession, samePhone, saveLastOrder, type OrderingSession } from './session'
 import {
   abrirPagina, alCambiarLaPagina, entrarAqui, epocaDe, epocaDelNegocio, fijarPagina, paginaDe, sesionParaMandar, soltarLaPagina, type SesionEmitida,
@@ -28,6 +28,8 @@ export type SubmitResult =
   | { kind: 'needsOtp' }
   /** El servidor exige teléfono verificado a un pedido anónimo (el negocio pasó a «Mi equipo»): el intento ya se soltó. */
   | { kind: 'needsPhone' }
+  /** codex-w3-r1 #1: el intento pudo crearse con OTRA sesión (la de entonces) y ésa ya no está: entrar otra vez para terminarlo. */
+  | { kind: 'needsSesion' }
   /**
    * `body` = el cuerpo enviado con el total nuevo (sin lo que ya no está): se manda (con OTRA llave) sólo si la persona confirma.
    * `motivo` (W3): `SIN_SESION` = la sesión se cerró (va sin beneficios); un beneficio = ése ya no está (p. ej. el premio se usó).
@@ -71,11 +73,15 @@ function sinLosDe(e: EleccionDeBeneficios | undefined, fuera: BeneficioElegido[]
 /** W3: lo elegido que la cotización ofreció y no descartó: lo mismo con que se calculó su total (el `expectedTotal`). */
 function beneficiosCotizados(store: OrderStore, q: Quote): EleccionDeBeneficios | undefined {
   const e = checkouts.get(store)?.eleccion.value ?? {} // sin abrir la página: armar el cuerpo no es abrir la tienda
+  // Sin nada de beneficios en la cotización, se cotizó sin sesión: no se manda nada (sería `SIN_SESION`).
+  if (!q.oferta && !q.aplicados && !q.beneficios) return undefined
   const o = q.oferta
-  const ofrecido = {
-    ...(e.premioId && o?.premio?.id === e.premioId ? { premioId: e.premioId } : {}),
-    ...(e.puntos && o?.puntos ? { puntos: e.puntos } : {}),
-    ...(e.cupon && o?.cupon ? { cupon: e.cupon } : {}),
+  // codex-w3-r1 #2: sin `oferta` (sin calcular por carga, o la recotización de un PRICE_CHANGED) lo elegido va igual: se calcula al
+  // pedir, o ya está en su total. Con `oferta`, sólo lo que se ofreció.
+  const ofrecido = !o ? e : {
+    ...(e.premioId && o.premio?.id === e.premioId ? { premioId: e.premioId } : {}),
+    ...(e.puntos && o.puntos ? { puntos: e.puntos } : {}),
+    ...(e.cupon && o.cupon ? { cupon: e.cupon } : {}),
   }
   return sinLosDe(ofrecido, q.descartados ?? [])
 }
@@ -106,6 +112,7 @@ export interface CheckoutDraft {
   note: string; name: string; dial: string; national: string; email: string; accepted: boolean; payment?: PaymentMode
 }
 export type Feedback =
+  | { kind: 'sesionParaTerminar' }
   /** `premio`: la etiqueta del premio que ya se usó (para decirlo: «Tu café gratis ya se usó en otro pedido»). */
   | { kind: 'priceChanged'; total: number; body: CreateOrderBody; motivo?: Motivo; premio?: string }
   | { kind: 'error'; message: string; retryable: boolean }
@@ -195,6 +202,9 @@ function sesionDeLaTienda(store: OrderStore): OrderingSession | null {
   return sesionParaMandar(store.slug, 'pedidos', leerPedidos(store.slug))
 }
 
+/** La clienta de una identidad: la ficha de una sesión única; el token entero de una de hoy. */
+const clientaDe = (identidad: string) => (identidad.startsWith('hoy:') ? identidad : identidad.split('|')[0])
+
 /** Un 401 de la sesión con que pidió la tienda: el guardián la suelta (también su renovación) y la página queda sin sesión. */
 const soltar401 = (store: OrderStore, s: OrderingSession | null) => { if (s) soltarLaPagina(store.slug, 'pedidos', s.token, leerPedidos(store.slug)) }
 
@@ -272,11 +282,18 @@ async function doSubmit(store: OrderStore, body: CreateOrderBody): Promise<Submi
   if (!card && phone && (!session?.phone || (session.phone !== phone && !samePhone(session.phone, phone)))) return { kind: 'needsOtp' }
   const attempt = pending ?? beginAttempt(slug, body)
   if (!attempt) return { kind: 'error', message: t('checkout.noStorage'), retryable: false }
+  // codex-w3-r1 #1: si ya salió sin desenlace, se reenvía con la MISMA clienta (la huella del SERVIDOR la lleva) o sin sesión si salió
+  // sin ella; nunca con otra ni sin ella, que crearía otro pedido. «Mi equipo» ya lo asegura con el teléfono probado.
+  let token = session?.token
+  if ((card || anon) && attempt.identidad !== undefined) {
+    if (attempt.identidad === '') token = undefined
+    else if (!session || clientaDe(attempt.identidad) !== clientaDe(session.identidad)) return { kind: 'needsSesion' }
+  }
 
   let order: CreatedOrder | CreatedCardOrder
   try {
     // W3: la sesión de la página va también en «Nadie» y con tarjeta (c): así el SERVIDOR aplica lo elegido y liga el folio a ella.
-    order = await createOrder(slug, attempt.body, { idempotencyKey: attempt.key, token: session?.token })
+    order = await createOrder(slug, attempt.body, { idempotencyKey: attempt.key, token })
     if (typeof order?.trackingToken !== 'string') throw new Error('respuesta sin pedido')
   } catch (e) {
     if (!(e instanceof ApiError) || !isDefinitive(e)) {
@@ -304,6 +321,8 @@ async function doSubmit(store: OrderStore, body: CreateOrderBody): Promise<Submi
         soltar401(store, session)
         return { kind: 'needsOtp' }
       }
+      // Sin desenlace: pudo crearse. Se anota con qué sesión salió (codex-w3-r1 #1).
+      marcarIdentidad(slug, token ? session!.identidad : '')
       const message =
         e instanceof ApiError && e.code === 'VENUE_NOT_FOUND' ? t('store.notFound')
         // 502 de Stripe: no es definitivo, el reintento con la MISMA llave recupera la página de pago.
@@ -316,13 +335,15 @@ async function doSubmit(store: OrderStore, body: CreateOrderBody): Promise<Submi
     if (e.code === 'PRICE_CHANGED' && details.quote) {
       // W3: sin sesión va sin beneficios; si uno ya no está, sin ése. El cuerpo a confirmar es el de la cotización nueva.
       const sinSesion = details.motivo === 'SIN_SESION'
+      // codex-w3-r1 #3: con tarjeta, el total exacto con beneficios viene aparte (`totalEstricto`) cuando la cotización salió degradada.
+      const quote: Quote = typeof details.totalEstricto === 'number' ? { ...details.quote, total: details.totalEstricto } : details.quote
       const fuera: BeneficioElegido[] = details.descartados ?? details.quote.descartados ?? []
       const { beneficios: antes, ...resto } = attempt.body
       const beneficios = sinSesion ? undefined : sinLosDe(antes, fuera)
       return {
         kind: 'priceChanged',
-        quote: details.quote,
-        body: { ...resto, ...(beneficios ? { beneficios } : {}), expectedTotal: expectedTotalFromQuote(details.quote.total) },
+        quote,
+        body: { ...resto, ...(beneficios ? { beneficios } : {}), expectedTotal: expectedTotalFromQuote(quote.total) },
         ...(sinSesion ? { motivo: 'SIN_SESION' as const } : fuera[0] ? { motivo: fuera[0] } : {}),
       }
     }
@@ -385,6 +406,9 @@ export async function send(store: OrderStore, body: CreateOrderBody): Promise<Su
       break
     case 'needsOtp':
       store.go('otp')
+      break
+    case 'needsSesion':
+      c.feedback.value = { kind: 'sesionParaTerminar' }
       break
     case 'needsPhone':
       // Ahora la pantalla pide WhatsApp y la casilla: se cambia en el acto y se confirma con el servidor.

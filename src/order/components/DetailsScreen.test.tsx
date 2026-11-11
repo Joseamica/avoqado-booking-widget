@@ -535,6 +535,18 @@ describe('W3: el precio cambió por un beneficio (1h·3) o porque se cerró la s
   })
 })
 
+describe('codex-w3-r1 #1: el pedido anterior salió con otra sesión', () => {
+  it('dice con calma que entre otra vez para terminarlo, sin ofrecer pedir de nuevo', async () => {
+    const s = show({ requiresAcceptance: false })
+    await act(async () => { checkoutOf(s).feedback.value = { kind: 'sesionParaTerminar' } })
+    expect(screen.getByText('Tu sesión se cerró')).toBeTruthy()
+    expect(screen.getByText('Entra otra vez para terminar tu pedido.')).toBeTruthy()
+    expect(document.querySelector('.avq-o-notice--error')).toBeNull()
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Entrar otra vez' })) })
+    expect(s.screen.value).toBe('entrar')
+  })
+})
+
 describe('W3 (e): entrar otra vez dentro de la tienda', () => {
   it('la pantalla «entrar» enseña «Entra a tu cuenta» (EntrarConCuenta) y una flecha de regreso al pedido', async () => {
     const s = makeStore(infoOf(), menuOf())

@@ -215,7 +215,8 @@
     "couponGone": "Tu cupón ya no está disponible",
     "newTotal": "El nuevo total es {{total}}. ¿Confirmas?",
     "backToOrder": "Volver a mi pedido",
-    "orderWithout": "Pedir sin beneficios · {{total}}"
+    "orderWithout": "Pedir sin beneficios · {{total}}",
+    "finishSignedIn": "Entra otra vez para terminar tu pedido."
   },
   "tracking": {
     "head": {

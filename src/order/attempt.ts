@@ -3,7 +3,11 @@
 // guardar, no se envía: una respuesta perdida + recarga jamás puede duplicar el pedido.
 import type { CreateOrderBody } from './types'
 
-export interface PendingAttempt { key: string; body: CreateOrderBody; startedAt: number }
+/**
+ * `identidad` (codex-w3-r1 #1): con qué sesión salió la vez que quedó sin desenlace (`''` = sin sesión). El SERVIDOR mete a la clienta
+ * en la huella de la llave: un intento que pudo crearse sólo se reenvía con la misma clienta (o sin sesión, si salió sin ella).
+ */
+export interface PendingAttempt { key: string; body: CreateOrderBody; startedAt: number; identidad?: string }
 
 const KEY_RE = /^[A-Za-z0-9_-]{32,64}$/
 const storageKey = (slug: string) => `avq_order_attempt:${slug}`
@@ -37,6 +41,17 @@ export function pendingAttempt(slug: string): PendingAttempt | null {
     return a && typeof a.key === 'string' && KEY_RE.test(a.key) && a.body ? (a as PendingAttempt) : null
   } catch {
     return null
+  }
+}
+
+/** El intento salió y no hubo desenlace: se anota con qué sesión (la primera vez; después ya no cambia). */
+export function marcarIdentidad(slug: string, identidad: string): void {
+  const a = pendingAttempt(slug)
+  if (!a || a.identidad !== undefined) return
+  try {
+    sessionStorage.setItem(storageKey(slug), JSON.stringify({ ...a, identidad }))
+  } catch {
+    /* sin almacenamiento no hubo intento guardado */
   }
 }
 

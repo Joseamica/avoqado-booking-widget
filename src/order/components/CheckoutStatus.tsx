@@ -20,6 +20,12 @@ export function CheckoutStatus() {
   const c = checkoutOf(store)
   const f = c.feedback.value
   if (c.busy.value) return null
+  // codex-w3-r1 #1: el pedido anterior salió con su sesión y quizá ya se creó: sólo se termina entrando otra vez (nunca se repite sin ella).
+  if (f?.kind === 'sesionParaTerminar')
+    return (
+      <Notice role="alert" tone="warn" title={t('cart.benefits.sessionTitle')} text={t('checkout.finishSignedIn')}
+        action={{ label: t('cart.benefits.signInAgain'), onClick: () => store.go('entrar') }} />
+    )
   // W3 (1h·4): la sesión se cerró entre cotizar y pedir. Entrar otra vez es lo primero (es lo que ella quería).
   if (f?.kind === 'priceChanged' && f.motivo === 'SIN_SESION')
     return (

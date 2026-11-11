@@ -15,7 +15,7 @@ import { ApiError } from './api'
 import { buildOrderBody, checkoutOf, entroEnLaTienda, isDefinitive, nav, phoneToVerify, retry, send, storageWorks, submitOrder, verifyPhone } from './checkout'
 import { createOrderStore, type OrderStore } from './store'
 import { loadLastOrder, loadSession, saveSession } from './session'
-import { guardarSesion, leerSesion, paginaDe } from '../lib/sesionDeCliente'
+import { borrarSesion, guardarSesion, leerSesion, paginaDe } from '../lib/sesionDeCliente'
 import { setCustomerSession, tokenParaMandar } from '../state/booking'
 import { pendingAttempt } from './attempt'
 import { phoneE164 } from './phone'
@@ -877,6 +877,63 @@ describe('W3: pedir con beneficios', () => {
     expect(sent(1).token).toBeUndefined()
     expect(leerSesion(store.slug)?.token).toBe('tok-B') // nunca se borra la sesión más nueva que guardó otra superficie
     expect(tokenParaMandar(store.slug)).toBe('tok-B') // reservas sigue con Bea
+  })
+
+  it('codex-w3-r1 #1: un intento que salió con la sesión de Ana sin desenlace sólo se reenvía con Ana; sin ella pide entrar y no lo abandona', async () => {
+    const { store, body } = nadie({ eleccion: { premioId: 'pr1' } })
+    api.createOrder.mockRejectedValueOnce(offline()) // el folio pudo crearse con Ana; la respuesta se perdió
+    expect((await submitOrder(store, body)).kind).toBe('error')
+    borrarSesion(store.slug) // otra pestaña cerró su sesión
+    expect(await submitOrder(store, body)).toEqual({ kind: 'needsSesion' })
+    expect(api.createOrder).toHaveBeenCalledTimes(1) // sin Ana no se reenvía (otra huella = otro pedido)
+    expect(pendingAttempt(store.slug)?.key).toBe(sent(0).key)
+    // Entra otra vez Ana (otra prueba, la MISMA ficha): el intento sale con la llave de siempre y recupera su folio.
+    const a2 = { ...sesion('tok-A2'), contactos: [{ tipo: 'PHONE', valor: PHONE, metodo: 'WHATSAPP', probadoEn: 9 }] }
+    guardarSesion(store.slug, { ...a2, guardadaEn: Date.now() } as any) // EntrarConCuenta la guardó
+    entroEnLaTienda(store, a2 as any)
+    api.createOrder.mockResolvedValueOnce(created({ replay: true }))
+    expect((await submitOrder(store, body)).kind).toBe('created')
+    expect(sent(1)).toMatchObject({ key: sent(0).key, token: 'tok-A2' })
+  })
+
+  it('codex-w3-r1 #1: un intento que salió SIN sesión y quedó sin desenlace se reenvía sin sesión aunque la página ya tenga una', async () => {
+    const slug = `ben${++n}`
+    const store = createOrderStore(slug, { locale: 'es' })
+    store.cart.value = [line()]
+    store.info.value = nadieInfo
+    store.quote.value = quoteOf(170)
+    const body = buildOrderBody(store, { customer: { name: 'Ana' }, note: null })
+    api.createOrder.mockRejectedValueOnce(offline())
+    await submitOrder(store, body)
+    expect(sent(0).token).toBeUndefined()
+    entroEnLaTienda(store, sesion('tok-A') as any) // entró después
+    guardarSesion(slug, { ...sesion('tok-A'), guardadaEn: Date.now() } as any)
+    api.createOrder.mockResolvedValueOnce(created({ replay: true }))
+    await submitOrder(store, body)
+    expect(sent(1)).toMatchObject({ key: sent(0).key, token: undefined })
+  })
+
+  it('codex-w3-r1 #2: con los beneficios sin calcular (sin oferta) lo elegido se manda para calcularse al pedir', () => {
+    const { body } = nadie({ eleccion: { puntos: 340 }, total: 170, q: { oferta: undefined, beneficios: { calculados: false } } })
+    expect(body.beneficios).toEqual({ puntos: 340 })
+  })
+
+  it('codex-w3-r1 #2: una recotización con lo aplicado y sin oferta manda lo elegido que su total ya incluye', () => {
+    const { body } = nadie({ eleccion: { puntos: 340 }, total: 136, q: { oferta: undefined, aplicados: [{ tipo: 'PUNTOS', nombre: 'Puntos', monto: 34 }] } })
+    expect(body).toMatchObject({ expectedTotal: '136.00', beneficios: { puntos: 340 } })
+  })
+
+  it('sin sesión (sin oferta, sin aplicados, sin beneficios) no se manda nada de lo elegido', () => {
+    const { body } = nadie({ eleccion: { puntos: 340 }, total: 170, q: { oferta: undefined } })
+    expect(body.beneficios).toBeUndefined()
+  })
+
+  it('codex-w3-r1 #3: con tarjeta, el PRICE_CHANGED trae totalEstricto: se confirma ESE total, no el de la cotización degradada', async () => {
+    const { store, body, c } = nadie({ eleccion: { premioId: 'pr1' }, mode: 'CARD_ONLINE' })
+    api.createOrder.mockRejectedValueOnce(fin(409, 'PRICE_CHANGED', { quote: quoteOf(250, { beneficios: { calculados: false } }), totalEstricto: 244.99, descartados: [] }))
+    await send(store, body)
+    expect(c.feedback.value).toMatchObject({ kind: 'priceChanged', total: 244.99 })
+    expect((c.feedback.value as any).body.expectedTotal).toBe('244.99')
   })
 
   it('el cuerpo lleva lo elegido que la cotización ofreció y el total de la cotización con lo elegido', () => {
