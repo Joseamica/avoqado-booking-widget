@@ -179,7 +179,10 @@
     "notePlaceholder": "Ej. sin azúcar",
     "privacyNadie": "Al pedir aceptas el aviso de privacidad de {{venue}}.",
     "confirmNadie": "Pedir",
-    "payAtCounter": "Pagas en caja: tarjeta o efectivo."
+    "payAtCounter": "Pagas en caja: tarjeta o efectivo.",
+    "premiosTitulo": "¿Tienes premios en {{venue}}?",
+    "premiosTexto": "Entra para usarlos en este pedido.",
+    "premiosEntrar": "Entrar"
   },
   "otp": {
     "title": "Escribe tu código",
@@ -340,5 +343,10 @@
   },
   "entrar": {
     "back": "Volver a tu pedido"
+  },
+  "cuenta": {
+    "entrar": "Entrar",
+    "mia": "Mi cuenta",
+    "volver": "Volver al menú"
   }
 }

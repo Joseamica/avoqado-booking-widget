@@ -840,6 +840,16 @@ describe('r11: leer y validar UNA vez (otra pestaña escribe B en medio)', () =>
     entroEnLaTienda(store, { ...sesion('tok-2') } as any)
     expect(paginaDe(store.slug, 'pedidos')?.token).toBe('tok-2')
   })
+
+  it('W4: entrar desde «Mi cuenta» de la tienda adopta esa sesión sin cambiar de pantalla; el menú pasa a «Mi cuenta» (conSesion)', () => {
+    const { store } = setup({ sessionPhone: null })
+    store.go('cuenta')
+    entroEnLaTienda(store, { ...sesion('tok-2') } as any, null)
+    expect(paginaDe(store.slug, 'pedidos')?.token).toBe('tok-2')
+    expect(store.screen.value).toBe('cuenta')
+    expect(checkoutOf(store).conSesion.value).toBe(true)
+    expect(checkoutOf(store).sesionCerrada.value).toBe(false)
+  })
 })
 
 describe('W3: pedir con beneficios', () => {

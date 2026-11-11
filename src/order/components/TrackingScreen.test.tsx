@@ -1224,3 +1224,18 @@ describe('W3: seguimiento del folio', () => {
     expect(getTracking).toHaveBeenCalledTimes(n)
   })
 })
+
+describe('W4: el seguimiento avisa a «Mi cuenta» cuando su folio cambia', () => {
+  it('pagado entre dos lecturas ⇒ avoqado:folio-cambio con el negocio, el folio y su estado; sin cambio, nada', async () => {
+    const oido = vi.fn()
+    document.addEventListener('avoqado:folio-cambio', oido)
+    const s = await show(tr())
+    await tick(10_000) // misma respuesta: no hay cambio
+    expect(oido).not.toHaveBeenCalled()
+    vi.mocked(getTracking).mockResolvedValue(tr({ status: 'ACCEPTED', paid: true, canCancel: false }))
+    await tick(10_000)
+    expect(oido).toHaveBeenCalledTimes(1)
+    expect(oido.mock.calls[0][0].detail).toMatchObject({ slug: s.slug, trackingToken: 'T'.repeat(32), status: 'ACCEPTED', paid: true })
+    document.removeEventListener('avoqado:folio-cambio', oido)
+  })
+})

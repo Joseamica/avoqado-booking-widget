@@ -490,4 +490,26 @@ export interface CustomerPortalData {
     canCreateReservation: boolean
     blockedBy?: 'PLAN' | 'PUBLIC_BOOKING_OFF' | 'APPROVAL'
   }
+  // S13 (P2-6), todo opcional: un servidor viejo no lo manda; una sección apagada (o que no se pudo leer) llega `null`.
+  /** Sin contactos probados (token de reservas de hoy, contraseña): «Entra otra vez para ver tus reservas como invitada». */
+  invitadaRequiereEntrar?: boolean
+  puntos?: { saldo: number; valor: number } | null
+  premioDisponible?: { id: string; etiqueta: string } | null
+  descuentos?: PaginaDeMiCuenta<MiDescuento> | null
+  /** R9: el saldo a favor se usa con su teléfono; su código nunca viene. */
+  saldoAFavor?: { last4: string; saldo: number; codigo: null; venceEl: string | null; estado: EstadoDeTarjeta; disponible: boolean } | null
+  tarjetas?: PaginaDeMiCuenta<MiTarjeta> | null
+  pedidos?: PaginaDeMiCuenta<MiPedido> | null
+  /** R7': el aviso firmado de otra ficha con su contacto (S7). */
+  otraFicha?: { contacto: 'PHONE' | 'EMAIL'; enmascarado: string } | null
 }
+
+/** S13: una página de «Mi cuenta» (20 por omisión; `nextCursor` = hay más). */
+export interface PaginaDeMiCuenta<T> { items: T[]; total: number; nextCursor: string | null }
+export type EstadoDeTarjeta = 'ACTIVA' | 'BLOQUEADA' | 'DESACTIVADA' | 'VENCIDA'
+/** `venceEl`: `yyyy-MM-dd` en la zona del negocio. `codigo`: sólo ACTIVA y con contacto probado. */
+export interface MiTarjeta { id: string; last4: string; saldo: number; venceEl: string | null; codigo: string | null; estado: EstadoDeTarjeta; disponible: boolean }
+/** `estado`: el de `OnlineOrder` (`PENDING_ACCEPTANCE`, `COMPLETED`…); `creadoEl` ISO. */
+export interface MiPedido { folio: string; estado: string; pagado: boolean; total: number; trackingToken: string; creadoEl: string }
+/** `vigenteHasta` ISO o `null` (sin vencimiento). */
+export interface MiDescuento { nombre: string; tipo: string; valor: number; vigenteHasta: string | null }

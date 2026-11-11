@@ -8,8 +8,8 @@ import { loadSession } from './session'
 import { abrirPagina } from '../lib/sesionDeCliente'
 import type { Menu, Quote, StoreInfo } from './types'
 
-/** `entrar` (W3): «Entrar otra vez» dentro de la tienda (`EntrarConCuenta`). */
-export type Screen = 'menu' | 'product' | 'cart' | 'details' | 'otp' | 'tracking' | 'entrar'
+/** `entrar` (W3): «Entrar otra vez» dentro de la tienda (`EntrarConCuenta`). `cuenta` (W4): «Mi cuenta» (sin sesión, entrar). */
+export type Screen = 'menu' | 'product' | 'cart' | 'details' | 'otp' | 'tracking' | 'entrar' | 'cuenta'
 export type PaymentReturn = 'returned' | 'cancelled' | null
 
 export interface OrderStore {

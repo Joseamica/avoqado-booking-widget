@@ -244,8 +244,11 @@ export const epocaDe = (slug: string, s: Superficie): number => epocas.get(clave
 export const epocaDelNegocio = (slug: string): string => `${epocaDe(slug, 'reservas')}|${epocaDe(slug, 'pedidos')}`
 /** La sesión de la superficie `s` en esta página (sólo suya). */
 export const paginaDe = (slug: string, s: Superficie): Pagina | null => paginas.get(clave(slug, s)) ?? null
-/** Reservas repinta sus señales con cada cambio de SU superficie. */
-export const alCambiarLaPagina = (f: (slug: string, afecta: Superficie[], misma: boolean) => void): void => { oyentes.push(f) }
+/** Reservas repinta sus señales con cada cambio de SU superficie. Devuelve «dejar de oír» («Mi cuenta» se monta y se desmonta). */
+export const alCambiarLaPagina = (f: (slug: string, afecta: Superficie[], misma: boolean) => void): (() => void) => {
+  oyentes.push(f)
+  return () => { const i = oyentes.indexOf(f); if (i >= 0) oyentes.splice(i, 1) }
+}
 
 /** El único que cambia la sesión de la superficie `s`: sólo la de `s`, nunca la de otra. */
 export function fijarPagina(slug: string, s: Superficie, l: Lectura | null): void {

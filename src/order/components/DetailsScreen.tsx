@@ -7,7 +7,7 @@ import { buildOrderBody, checkoutOf, send } from '../checkout'
 import { formatMXN } from '../money'
 import { phoneE164 } from '../phone'
 import { CountryPhoneInput } from '../../components/ui/CountryPhoneInput'
-import { ClosingSoonNotice, StoreStatusBanner } from './StoreStatusBanner'
+import { ClosingSoonNotice, Notice, StoreStatusBanner } from './StoreStatusBanner'
 import { CheckoutStatus } from './CheckoutStatus'
 import { Back } from './icons'
 import { tapTime } from './focus'
@@ -87,13 +87,20 @@ export function DetailsScreen() {
             onInput={(e: any) => set({ name: e.currentTarget.value })} />
         </div>
         {/* El campo es compartido con reservas: `inputId` (sólo con `look="tienda"`) le pone id al número, y así «WhatsApp» es su etiqueta real. */}
-        {nadie ? (
+        {nadie ? (<>
           <div class="avq-o-field">
             <label for={`${id}-note`}>{t('details.note')}</label>
             <textarea id={`${id}-note`} class="avq-o-input" rows={2} maxLength={300} placeholder={t('details.notePlaceholder')} value={d.note}
               onInput={(e: any) => set({ note: e.currentTarget.value })} />
           </div>
-        ) : <>
+          {/* W4 (1b): sin sesión, entrar para usar sus premios en ESTE pedido (de regreso al carrito, donde se eligen). */}
+          {!c.conSesion.value && (
+            <div class="avq-o-why">
+              <Notice tone="neutral" title={t('details.premiosTitulo', { venue })} text={t('details.premiosTexto')}
+                action={{ label: t('details.premiosEntrar'), onClick: () => store.go('entrar') }} />
+            </div>
+          )}
+        </>) : <>
         <div class="avq-o-field">
           <label for={`${id}-phone`}>{t('details.phone')}</label>
           <CountryPhoneInput look="tienda" inputId={`${id}-phone`} dialCode={d.dial} nationalNumber={d.national}

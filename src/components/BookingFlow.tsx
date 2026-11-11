@@ -10,7 +10,7 @@ import {
   selectedSpotIds, bookingResult, isLoading, apiError, manageSecret,
   hasServiceStep, hasStaffStep, getStepConfig, resetBooking, showToast,
   creditPacks, customerCredits, selectedCreditBalance, creditPacksLoading, creditPacksLoaded,
-  showPortal, portalData, customerToken, customerInfo, setCustomerSession, clearCustomerSession,
+  showPortal, lecturaDelPortal, portalData, customerToken, customerInfo, setCustomerSession, clearCustomerSession,
   bookingAccess,
   flowType, visibleProducts,
   selectedProducts, selectedStaffId, totalDuration, totalPrice, selectedModifiers,
@@ -561,9 +561,10 @@ export function BookingFlow({ props }: BookingFlowProps) {
   useEffect(() => {
     const enviado = customerToken.value
     if (enviado && !portalData.value) {
+      const sigue = lecturaDelPortal(props.venue, 'reservas') // W4: si «Mi cuenta» pidió después, gana la suya
       api.getCustomerPortal(props.venue, enviado).then(data => {
         // W1: si la sesión cambió mientras (otra ficha, o renovada), esta respuesta ya no es de la vigente: el efecto vuelve a pedir.
-        if (customerToken.value !== enviado) return
+        if (customerToken.value !== enviado || !sigue()) return
         portalData.value = data
         // Fase 0.B: the portal carries "¿puedo reservar aquí?" — keep it fresh.
         if (data.bookingAccess) bookingAccess.value = data.bookingAccess

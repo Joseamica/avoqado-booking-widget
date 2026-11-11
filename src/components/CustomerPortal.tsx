@@ -1,16 +1,17 @@
 import { h } from 'preact'
-import { useState, useEffect, useRef } from 'preact/hooks'
+import { useState, useEffect, useRef, useId } from 'preact/hooks'
 import type { TFunction } from '../i18n'
-import type { CreditPackPublic } from '../types'
+import type { CreditPackPublic, CustomerPortalData, MiTarjeta } from '../types'
 import { Spinner } from './ui/Spinner'
 import { Button } from './ui/Button'
 import { Input } from './ui/Input'
 import { EntrarConCuenta } from './EntrarConCuenta'
 import * as api from '../api/booking'
 import {
-  portalData, portalLoading, customerToken, setCustomerSession, clearCustomerSession, bookingAccess, venueInfo, epocaDe, entroAqui,
+  portalData, customerToken, setCustomerSession, clearCustomerSession, bookingAccess, venueInfo, entroAqui, lectorDe, lecturaDelPortal,
 } from '../state/booking'
-import type { SesionEmitida } from '../lib/sesionDeCliente'
+import { alCambiarLaPagina, epocaDe, paginaDe, soltarLaPagina, type SesionEmitida, type Superficie } from '../lib/sesionDeCliente'
+import { FOLIO_CAMBIO, trackingUrl, type FolioCambioDetail } from '../order/events'
 
 interface CustomerPortalProps {
   venueSlug: string
@@ -20,6 +21,17 @@ interface CustomerPortalProps {
   t: TFunction
   onBack: () => void
   onManageBooking: (cancelSecret: string) => void
+  /** W4: la superficie que monta «Mi cuenta». `pedidos` = dentro de la tienda: manda con la sesión de la tienda; sin contraseña, perfil ni paquetes. */
+  superficie?: Superficie
+  /** W4: abrir el seguimiento de un pedido. Por omisión, su liga. */
+  onVerPedido?: (trackingToken: string) => void
+  /** W4 (tienda): el folio de este aparato con la línea exacta de su seguimiento («Paga en caja antes de las 10:42.»). */
+  pedidoDeHoy?: { folio: string; estado: string; pagado: boolean; linea: string; trackingToken: string } | null
+  /** W4 (tienda): entró o salió en «Mi cuenta»; por omisión, la sesión de reservas. */
+  alEntrar?: (r: SesionEmitida) => void
+  alSalir?: () => void
+  /** W4 (tienda): el nombre del negocio para «¿Ya eres cliente de…?» (en la tienda no hay `venueInfo` de reservas). */
+  negocio?: string | null
 }
 
 const statusConfig: Record<string, { bg: string; text: string }> = {
@@ -36,7 +48,72 @@ const labelStyle: Record<string, string> = {
   color: 'var(--avq-fg, #111827)', marginBottom: '6px',
 }
 
-export function CustomerPortal({ venueSlug, timezone, venuePhone, t, onBack, onManageBooking }: CustomerPortalProps) {
+// W4: los bloques de «Mi cuenta» (mockups v2 1f, 1g, 1m y 1f·2), con los tokens del contenedor (tienda clara o reservas clara/oscura).
+const bloque = { margin: '0 0 12px', padding: '14px 16px', borderRadius: '16px', background: 'var(--avq-muted, #F4F4F4)' }
+const tituloBloque = { margin: '0 0 4px', color: 'var(--avq-muted-fg, #4A4A4A)', fontSize: '13px', fontWeight: '600' }
+const grande = {
+  margin: 0, fontFamily: 'var(--avq-o-display, inherit)', fontWeight: '800', fontSize: '24px', lineHeight: '1.15', color: 'var(--avq-fg, #000)',
+}
+const chico = { display: 'block', margin: '3px 0 0', color: 'var(--avq-muted-fg, #5E5E5E)', fontSize: '13px', lineHeight: '1.35' }
+const pildora = (verde: boolean) => ({
+  display: 'inline-flex', alignItems: 'center', height: '26px', padding: '0 10px', borderRadius: '999px', fontSize: '13px', fontWeight: '600',
+  background: verde ? '#EAF6EE' : 'var(--avq-bg, #FFF)', color: verde ? '#0B6B36' : 'var(--avq-muted-fg, #4A4A4A)', whiteSpace: 'nowrap',
+})
+const botonBlanco = {
+  display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minHeight: '44px', marginTop: '10px', padding: '0 16px',
+  borderRadius: '12px', border: 'none', background: 'var(--avq-bg, #FFF)', color: 'var(--avq-fg, #000)', fontSize: '15px', fontWeight: '700',
+  cursor: 'pointer',
+}
+const botonQuieto = {
+  display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%', minHeight: '44px', marginTop: '8px', padding: '0 8px',
+  border: 'none', background: 'transparent', color: 'var(--avq-fg, #000)', fontSize: '15px', fontWeight: '600', cursor: 'pointer',
+}
+const aviso = (tono: 'ambar' | 'neutro') => ({
+  display: 'flex', flexDirection: 'column', gap: '2px', margin: '0 0 12px', padding: '14px 16px', borderRadius: '16px', lineHeight: '1.4',
+  fontSize: '14px', background: tono === 'ambar' ? '#FFF4DE' : 'var(--avq-muted, #F3F3F3)', color: tono === 'ambar' ? '#6B4300' : 'var(--avq-fg, #000)',
+})
+const FINALES = new Set(['COMPLETED', 'REJECTED', 'EXPIRED', 'CANCELLED_BY_CUSTOMER', 'CANCELLED_BY_STAFF', 'PAYMENT_NOT_COMPLETED'])
+type Lista = 'pedidos' | 'tarjetas' | 'descuentos'
+/** «$1,234.50»: siempre con centavos, como la caja y los mockups (es y en escriben igual el dinero de México). */
+const dinero = (n: number) => '$' + new Intl.NumberFormat('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n)
+
+/**
+ * W4: la sesión y los datos de la superficie que monta «Mi cuenta». Reservas usa sus señales (las suelta su oyente al cambiar de ficha);
+ * la tienda, la sesión de su página (el guardián) y unos datos propios que se tiran si cambia quién está adentro.
+ */
+const ultimaDeLaTienda = new Map<string, { identidad: string; data: CustomerPortalData }>()
+function useSuperficie(slug: string, sup: Superficie) {
+  const [, repintar] = useState(0)
+  useEffect(() => {
+    if (sup === 'reservas') return
+    return alCambiarLaPagina((s, afecta, misma) => {
+      if (s !== slug || !afecta.includes(sup)) return
+      if (!misma) ultimaDeLaTienda.delete(slug)
+      repintar(n => n + 1)
+    })
+  }, [slug, sup])
+  if (sup === 'reservas')
+    return { token: customerToken.value, data: portalData.value, poner: (d: CustomerPortalData | null) => { portalData.value = d } }
+  // Lo último leído en la tienda vale sólo para la MISMA sesión de su página (otra persona nunca ve lo de la anterior).
+  const p = paginaDe(slug, sup)
+  const ultima = ultimaDeLaTienda.get(slug)
+  return {
+    token: p?.token ?? null,
+    data: p && ultima?.identidad === p.identidad ? ultima.data : null,
+    poner: (d: CustomerPortalData | null) => {
+      const ahora = paginaDe(slug, sup)
+      if (d && ahora) ultimaDeLaTienda.set(slug, { identidad: ahora.identidad, data: d })
+      else ultimaDeLaTienda.delete(slug)
+      repintar(n => n + 1)
+    },
+  }
+}
+
+export function CustomerPortal({
+  venueSlug, timezone, venuePhone, t, onBack, onManageBooking, superficie = 'reservas', onVerPedido, pedidoDeHoy, alEntrar, alSalir, negocio,
+}: CustomerPortalProps) {
+  const sup = superficie
+  const enTienda = sup === 'pedidos'
   // Correo y contraseña: sólo para entrar a una cuenta que YA la tiene. Toda cuenta nueva se crea con código (seguridad, 1-oct).
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -45,8 +122,27 @@ export function CustomerPortal({ venueSlug, timezone, venuePhone, t, onBack, onM
 
   // W2: entrar es `EntrarConCuenta` (WhatsApp, correo o Google, sin contraseña). Correo y contraseña quedan como opción secundaria.
   const [showEmailLogin, setShowEmailLogin] = useState(false)
-  // Ya entró (hay token) pero «Mi cuenta» no cargó por red o por el servidor: se dice y se reintenta, sin volver a pedir que entre.
-  const [fallaCarga, setFallaCarga] = useState<string | null>(null)
+  // «Mi cuenta» no se pudo leer por red o por el servidor: se dice y se reintenta, sin volver a pedir que entre.
+  const [fallaCarga, setFallaCarga] = useState<'sinRed' | 'generico' | null>(null)
+  // W4: releyendo con lo anterior a la vista («Actualizando…»).
+  const [actualizando, setActualizando] = useState(false)
+  // W4: las páginas siguientes que ya trajo «Ver más», pegadas a la primera página DE LA QUE SALIERON (`base`): si «Mi cuenta» se relee
+  // (aquí, en otra apertura o en otro elemento), los datos son otros y esas páginas ya no cuentan (codex-w4-r1 #3, r2 #1).
+  const [mas, setMas] = useState<{ base: CustomerPortalData | null; listas: Partial<Record<Lista, { items: any[]; nextCursor: string | null }>> }>(
+    { base: null, listas: {} },
+  )
+  const [trayendo, setTrayendo] = useState<Lista | null>(null)
+  const [fallaMas, setFallaMas] = useState<Lista | null>(null)
+  // W4: «Guardar en mi cuenta».
+  const [codigo, setCodigo] = useState('')
+  const [guardando, setGuardando] = useState(false)
+  const [guardado, setGuardado] = useState<{ ok: boolean; texto: string } | null>(null)
+  // W4: «Usar en caja» (1m) y «Entrar otra vez» (invitada u otra ficha).
+  // El id, no una copia: «Usar en caja» enseña SIEMPRE la tarjeta de los datos vigentes (codex-w4-r1 #2).
+  const [usando, setUsando] = useState<string | null>(null)
+  const [reentrar, setReentrar] = useState(false)
+  const idCodigo = useId()
+  const enVuelo = useRef({ mas: false, guardar: false })
 
   // Profile edit state
   const [editingProfile, setEditingProfile] = useState(false)
@@ -60,53 +156,144 @@ export function CustomerPortal({ venueSlug, timezone, venuePhone, t, onBack, onM
   const [packsLoading, setPacksLoading] = useState(false)
   const [checkoutLoading, setCheckoutLoading] = useState<string | null>(null)
 
-  const data = portalData.value
-  const token = customerToken.value
+  const s = useSuperficie(venueSlug, sup)
+  const data = s.data
+  const token = s.token
+  const datosAhora = useRef(data)
+  datosAhora.current = data
+  const extra = mas.base === data ? mas.listas : {}
+  /** El token de la superficie AHORA (no el del último pintado). */
+  const tokenActual = () => (sup === 'reservas' ? customerToken.value : paginaDe(venueSlug, sup)?.token ?? null)
+  /** Un 401 ya soltó la sesión en el transporte; si llega de otro lado (o simulado), se suelta igual: nunca la de otra persona. */
+  const soltar401 = (err: any, tkn: string) => soltarLaPagina(venueSlug, sup, err?.enviado ?? tkn, lectorDe(venueSlug, sup))
 
   // codex-r5 E7: si la página se queda sin sesión (401, salió), vuelve a «Entra a tu cuenta», sin el formulario de contraseña ni su error.
   useEffect(() => {
+    setUsando(null)
+    setMas({ base: null, listas: {} })
+    setGuardado(null)
+    setCodigo('')
     if (!token) {
       setShowEmailLogin(false)
       setError(null)
+      setReentrar(false)
+      setFallaCarga(null)
     }
   }, [token])
 
-  // W1 (rediseño codex-r2): con sesión y sin «Mi cuenta» cargada, se pide. También cuando la sesión cambia de ficha (entró, otra
-  // página entró con otra, o un 401 tardío adoptó la guardada): la vista se relee y el portal se vuelve a pedir con la vigente.
+  // W4 (P2-6): siempre leída de nuevo. Al abrirla (con lo anterior a la vista y «Actualizando…») y cada vez que cambia la sesión de la
+  // superficie (entró, otra ficha, renovada).
   useEffect(() => {
-    if (token && !data) void loadPortal()
-  }, [token, data])
+    if (token) void loadPortal()
+  }, [token])
 
-  // Load available credit packs when portal is shown
+  // W4: también al volver a la pestaña y cuando el seguimiento ve que un folio de este negocio cambió (pagado, vencido, cancelado).
+  const releer = useRef<() => Promise<void>>(async () => {})
   useEffect(() => {
-    if (data) {
+    const alVolver = () => { if (document.visibilityState === 'visible') void releer.current() }
+    const alCambiarFolio = (e: Event) => { if ((e as CustomEvent<FolioCambioDetail>).detail?.slug === venueSlug) void releer.current() }
+    document.addEventListener('visibilitychange', alVolver)
+    document.addEventListener(FOLIO_CAMBIO, alCambiarFolio)
+    return () => {
+      document.removeEventListener('visibilitychange', alVolver)
+      document.removeEventListener(FOLIO_CAMBIO, alCambiarFolio)
+    }
+  }, [venueSlug])
+
+  // Load available credit packs when portal is shown (la tienda no vende paquetes todavía: Fase B)
+  useEffect(() => {
+    if (data && !enTienda) {
       loadPacks()
     }
-  }, [data])
+  }, [!!data]) // una vez por apertura, no en cada relectura
 
   // La última carga manda: la respuesta de una sesión que ya cambió (otra ficha, o renovada a media carga) no se pinta.
   const carga = useRef(0)
   async function loadPortal() {
-    const tkn = customerToken.value
+    const tkn = tokenActual()
     if (!tkn) return
     const mia = ++carga.current
-    const epoca = epocaDe(venueSlug)
-    portalLoading.value = true
+    // codex-w4-r2 #1: pinta sólo si es la ÚLTIMA lectura de «Mi cuenta» de esta superficie (de cualquier apertura o elemento) y de la
+    // misma sesión; la de una apertura anterior que llega tarde ya no pisa lo nuevo.
+    const sigue = lecturaDelPortal(venueSlug, sup)
+    setActualizando(true)
     setFallaCarga(null)
     try {
-      const result = await api.getCustomerPortal(venueSlug, tkn)
+      const result = await api.getCustomerPortal(venueSlug, tkn, sup)
       // La sesión cambió mientras cargaba («Salir», otra ficha): esta respuesta ya no es de nadie que esté adentro (codex-r3 H1).
-      if (mia !== carga.current || epocaDe(venueSlug) !== epoca) return
-      portalData.value = result
+      if (!sigue()) return
+      s.poner({ ...result }) // siempre otro objeto: las páginas de «Ver más» se pegan a ESTA lectura, no a una igual de antes
+      setFallaMas(null)
       // Fase 0.B: the portal carries "¿puedo reservar aquí?" — keep it fresh.
-      if (result.bookingAccess) bookingAccess.value = result.bookingAccess
+      if (!enTienda && result.bookingAccess) bookingAccess.value = result.bookingAccess
     } catch (err: any) {
-      if (mia !== carga.current || err?.data?.code === 'CUSTOMER_SESSION_CHANGED') return
-      // W1: sólo un 401 cierra la sesión que lo recibió (si ya hay otra guardada, se adopta); sin red no se saca a nadie.
-      if (err?.status === 401) clearCustomerSession(venueSlug, err.enviado ?? tkn)
-      else setFallaCarga(err?.status ? t('errors.generic') : t('entrar.sinRed'))
+      if (err?.data?.code === 'CUSTOMER_SESSION_CHANGED') return
+      // W1: sólo un 401 cierra la sesión que lo recibió (si ya hay otra guardada, NO se adopta); sin red no se saca a nadie.
+      if (err?.status === 401) soltar401(err, tkn)
+      else if (mia === carga.current && sigue()) setFallaCarga(err?.status ? 'generico' : 'sinRed')
     } finally {
-      if (mia === carga.current) portalLoading.value = false
+      if (mia === carga.current) setActualizando(false)
+    }
+  }
+  releer.current = loadPortal
+
+  /** W4: «Ver más pedidos / tarjetas / descuentos» trae la página siguiente con la sesión de la superficie. */
+  async function verMas(lista: Lista) {
+    const tkn = tokenActual()
+    const base = datosAhora.current
+    const cursor = extra[lista] ? extra[lista]!.nextCursor : base?.[lista]?.nextCursor
+    if (!tkn || !base || !cursor || enVuelo.current.mas) return
+    enVuelo.current.mas = true
+    const epoca = epocaDe(venueSlug, sup)
+    setTrayendo(lista)
+    setFallaMas(null)
+    try {
+      const listar = lista === 'pedidos' ? api.listarMisPedidos : lista === 'tarjetas' ? api.listarMisTarjetas : api.listarMisDescuentos
+      const r = await listar(venueSlug, tkn, cursor, sup)
+      // Otra sesión, u otros datos (una relectura terminó en medio, aquí o en otro elemento): esta página ya no va con lo que se ve.
+      if (datosAhora.current !== base || epocaDe(venueSlug, sup) !== epoca) return
+      setMas(m => {
+        const listas = m.base === base ? m.listas : {}
+        return { base, listas: { ...listas, [lista]: { items: [...(listas[lista]?.items ?? []), ...r.items], nextCursor: r.nextCursor } } }
+      })
+    } catch (err: any) {
+      if (datosAhora.current !== base || epocaDe(venueSlug, sup) !== epoca || err?.data?.code === 'CUSTOMER_SESSION_CHANGED') return
+      if (err?.status === 401) soltar401(err, tkn)
+      else setFallaMas(lista)
+    } finally {
+      enVuelo.current.mas = false
+      setTrayendo(x => (x === lista ? null : x))
+    }
+  }
+
+  /** W4: «Guardar en mi cuenta» con el código (17 letras y números). No mueve saldo; al guardarla se relee «Mi cuenta». */
+  const caracteres = codigo.replace(/[\s-]/g, '').length
+  async function guardarTarjeta(e: Event) {
+    e.preventDefault()
+    const tkn = tokenActual()
+    if (!tkn || enVuelo.current.guardar || caracteres !== 17) return
+    enVuelo.current.guardar = true
+    const epoca = epocaDe(venueSlug, sup)
+    setGuardando(true)
+    setGuardado(null)
+    try {
+      await api.guardarTarjeta(venueSlug, tkn, codigo.trim(), sup)
+      if (epocaDe(venueSlug, sup) !== epoca) return
+      setCodigo('')
+      setGuardado({ ok: true, texto: t('cuenta.guardada') })
+      void loadPortal()
+    } catch (err: any) {
+      if (epocaDe(venueSlug, sup) !== epoca) return
+      if (err?.status === 401) return void soltar401(err, tkn)
+      const texto = err?.data?.code === 'GIFT_CARD_ALREADY_SAVED' ? t('cuenta.yaGuardada')
+        : err?.status === 404 ? t('cuenta.noEncontrada')
+        : err?.status === 429 ? t('entrar.muchosIntentos')
+        : !err?.status ? t('entrar.sinRed')
+        : t('errors.generic')
+      setGuardado({ ok: false, texto })
+    } finally {
+      enVuelo.current.guardar = false
+      setGuardando(false)
     }
   }
 
@@ -143,17 +330,21 @@ export function CustomerPortal({ venueSlug, timezone, venuePhone, t, onBack, onM
   }
 
   /**
-   * W2: ya entró por `EntrarConCuenta`, que guardó la sesión única: reservas adopta ESA sesión (r11: sin releer lo guardado; tampoco la
-   * vuelve a guardar, codex-r3 H6) y se pide «Mi cuenta».
+   * W2: ya entró por `EntrarConCuenta`, que guardó la sesión única: la superficie adopta ESA sesión (r11: sin releer lo guardado; tampoco
+   * la vuelve a guardar, codex-r3 H6) y se pide «Mi cuenta». W4: en la tienda la adopta la tienda (`alEntrar`).
    */
   async function handleEntro(r: SesionEmitida) {
-    const antes = customerToken.value
-    entroAqui(venueSlug, r)
-    if (customerToken.value && customerToken.value === antes) await loadPortal()
+    const antes = tokenActual()
+    setReentrar(false)
+    if (alEntrar) alEntrar(r)
+    else entroAqui(venueSlug, r)
+    const ahora = tokenActual()
+    if (ahora && ahora === antes) await loadPortal()
   }
 
   function handleLogout() {
-    clearCustomerSession(venueSlug)
+    if (alSalir) alSalir()
+    else clearCustomerSession(venueSlug)
     setEmail('')
     setPassword('')
     setError(null)
@@ -175,7 +366,7 @@ export function CustomerPortal({ venueSlug, timezone, venuePhone, t, onBack, onM
     setProfileSaving(true)
     setProfileSuccess(false)
     // codex-r4 R4-2: si la página salió (o cambió de sesión) mientras se guardaba, la respuesta ya no es de nadie que esté adentro.
-    const epoca = epocaDe(venueSlug)
+    const epoca = epocaDe(venueSlug, sup)
     try {
       const updates: Record<string, string> = {}
       const c = data?.customer
@@ -191,7 +382,7 @@ export function CustomerPortal({ venueSlug, timezone, venuePhone, t, onBack, onM
 
       // Sólo la ficha que respondió: `setCustomerSession` la escribe si sigue siendo la vigente (codex-r3 H2: otra página pudo entrar
       // con otra ficha mientras se guardaba; nunca se le pegan los datos de ésta).
-      if (epocaDe(venueSlug) !== epoca) return
+      if (epocaDe(venueSlug, sup) !== epoca) return
       if (result.customer?.id) setCustomerSession(venueSlug, token, result.customer)
       // Reload portal data to refresh everything
       await loadPortal()
@@ -229,7 +420,7 @@ export function CustomerPortal({ venueSlug, timezone, venuePhone, t, onBack, onM
   // Con sesión y «Mi cuenta» todavía sin cargar: cargando (nunca «Entra a tu cuenta» a quien ya entró).
   if (!data && token && !fallaCarga) {
     return (
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '64px 0' }}>
+      <div role="status" aria-label={t('cuenta.actualizando')} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '64px 0' }}>
         <Spinner size={28} />
       </div>
     )
@@ -238,20 +429,65 @@ export function CustomerPortal({ venueSlug, timezone, venuePhone, t, onBack, onM
   if (!data && token && fallaCarga) {
     return (
       <div class="avq-animate-in" style={{ display: 'flex', flexDirection: 'column', gap: '12px', padding: '32px 0', textAlign: 'center' }}>
-        <p role="alert" style={{ fontSize: '14px', color: 'var(--avq-fg, #111827)', margin: 0 }}>{fallaCarga}</p>
+        <p role="alert" style={{ fontSize: '14px', color: 'var(--avq-fg, #111827)', margin: 0 }}>{fallaCarga === 'sinRed' ? t('entrar.sinRed') : t('errors.generic')}</p>
         <Button fullWidth onClick={() => void loadPortal()}>{t('actions.retry')}</Button>
         <Button variant="ghost" fullWidth onClick={handleLogout}>{t('portal.logout')}</Button>
       </div>
     )
   }
 
+  // W4: «Entrar otra vez» (invitada u otra ficha): la misma entrada, con la cuenta todavía abierta detrás.
+  if (data && token && reentrar) {
+    return (
+      <div class="avq-animate-in">
+        <EntrarConCuenta slug={venueSlug} negocio={negocio ?? venueInfo.value?.name} t={t} onEntro={r => void handleEntro(r)} />
+        <button type="button" style={botonQuieto} onClick={() => setReentrar(false)}>{t('cuenta.volverACuenta')}</button>
+      </div>
+    )
+  }
+
+  // W4 (1m): «Usar en caja», con el código de la tarjeta para que la cajera lo teclee. Sale de los datos VIGENTES: si al releer ya no
+  // está activa (bloqueada, vencida, sin código) o ya no está, se regresa a «Mi cuenta», que dice por qué.
+  const enUso = usando && data
+    ? [...(data.tarjetas?.items ?? []), ...(extra.tarjetas?.items ?? [])].find(c => c.id === usando && c.estado === 'ACTIVA' && c.codigo) ?? null
+    : null
+  if (data && token && enUso) {
+    return (
+      <div class="avq-animate-in" style={{ textAlign: 'center' }}>
+        {actualizando && <p role="status" style={{ ...chico, margin: 0 }}>{t('cuenta.actualizando')}</p>}
+        {fallaCarga && <p role="status" style={{ ...chico, margin: 0, color: '#6B4300' }}>{fallaCarga === 'sinRed' ? t('cuenta.sinRedConDatos') : t('cuenta.noSeActualizo')}</p>}
+        <h2 tabIndex={-1} style={{ ...grande, fontSize: '26px', margin: '8px 0 0' }}>{t('cuenta.tarjeta')}</h2>
+        <p style={{ margin: '8px 0 0', color: 'var(--avq-muted-fg, #4A4A4A)', fontSize: '15px' }}>
+          {t('cuenta.saldoEtiqueta')} <b style={{ color: 'var(--avq-fg, #000)' }}>{dinero(enUso.saldo)}</b>
+        </p>
+        <p style={{ margin: '16px 0 0', fontFamily: 'Figtree, system-ui, sans-serif', fontWeight: '700', fontSize: '23px', letterSpacing: '.06em', color: 'var(--avq-fg, #000)' }}>
+          {enUso.codigo}
+        </p>
+        <p style={{ margin: '12px 0 0', color: 'var(--avq-muted-fg, #5E5E5E)', fontSize: '14px', lineHeight: '1.4' }}>{t('cuenta.usarEnCajaAyuda')}</p>
+        <div style={{ marginTop: '20px' }}>
+          <Button variant="secondary" fullWidth onClick={() => setUsando(null)}>{t('cuenta.listo')}</Button>
+        </div>
+      </div>
+    )
+  }
+
   // Auth forms — WhatsApp-OTP is primary; email/password is the secondary option.
   if (!data) {
+    // W4 (1k): dentro de la tienda, la misma entrada sin contraseña y con «Pedir sin cuenta» (para pedir basta su nombre).
+    if (enTienda) {
+      return (
+        <div class="avq-animate-in">
+          <EntrarConCuenta slug={venueSlug} negocio={negocio ?? venueInfo.value?.name} t={t} onEntro={r => void handleEntro(r)} />
+          <p style={{ ...chico, margin: '16px 0 0', textAlign: 'center' }}>{t('cuenta.sinCuentaAyuda')}</p>
+          <button type="button" style={botonQuieto} onClick={onBack}>{t('cuenta.pedirSinCuenta')}</button>
+        </div>
+      )
+    }
     // PRIMARY (W2): «Entra a tu cuenta» — WhatsApp, correo o Google, sin contraseña.
     if (!showEmailLogin) {
       return (
         <div class="avq-animate-in">
-          <EntrarConCuenta slug={venueSlug} negocio={venueInfo.value?.name} t={t} onEntro={r => void handleEntro(r)} />
+          <EntrarConCuenta slug={venueSlug} negocio={negocio ?? venueInfo.value?.name} t={t} onEntro={r => void handleEntro(r)} />
 
           {/* Reveal the email/password login as a secondary option */}
           <div style={{ textAlign: 'center', marginTop: '16px' }}>
@@ -372,12 +608,56 @@ export function CustomerPortal({ venueSlug, timezone, venuePhone, t, onBack, onM
   // user-agent modificado.
   const isAndroidDevice = api.esAndroid(navigator.userAgent)
 
+  // W4: lo de «Mi cuenta», sólo lo que llega prendido (un servidor viejo no manda nada de esto y la pantalla sale como antes).
+  const intl = t('cuenta.intl')
+  const fecha = (iso: string, conAno = false) =>
+    new Intl.DateTimeFormat(intl, { day: 'numeric', month: 'short', ...(conAno ? { year: 'numeric' } : {}), timeZone: timezone }).format(new Date(iso))
+  /** `yyyy-MM-dd` (ya en la zona del negocio) sin moverlo de día. */
+  const dia = (ymd: string) => new Intl.DateTimeFormat(intl, { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }).format(new Date(`${ymd}T12:00:00Z`))
+  const estadoDe = (estado: string, pagado: boolean) =>
+    t(`cuenta.estados.${estado === 'PENDING_ACCEPTANCE' && pagado ? 'ACCEPTED' : estado}`).replace(/^cuenta\.estados\..*$/, t('cuenta.estados.OTRO'))
+  const pedidos = [...(data.pedidos?.items ?? []), ...(extra.pedidos?.items ?? [])]
+  const tarjetas: MiTarjeta[] = [...(data.tarjetas?.items ?? []), ...(extra.tarjetas?.items ?? [])]
+  const descuentos = [...(data.descuentos?.items ?? []), ...(extra.descuentos?.items ?? [])]
+  const sigue = (l: Lista) => (extra[l] ? extra[l]!.nextCursor : data[l]?.nextCursor ?? null)
+  const hoy = new Intl.DateTimeFormat('en-CA', { timeZone: timezone }).format(new Date())
+  // codex-w4-r2 #2: el estado y el «pagado» los manda la cuenta recién leída; la línea exacta del seguimiento de este aparato («Paga en
+  // caja antes de las 10:42.») sólo si es SU folio y dice lo mismo que la cuenta.
+  const suyoDelAparato = pedidoDeHoy && pedidos.find(p => p.trackingToken === pedidoDeHoy.trackingToken)
+  const deHoy = suyoDelAparato && suyoDelAparato.estado === pedidoDeHoy!.estado && suyoDelAparato.pagado === pedidoDeHoy!.pagado
+    ? pedidoDeHoy
+    : (() => {
+        const p = suyoDelAparato && !FINALES.has(suyoDelAparato.estado) ? suyoDelAparato
+          : pedidos.find(x => !FINALES.has(x.estado) && new Intl.DateTimeFormat('en-CA', { timeZone: timezone }).format(new Date(x.creadoEl)) === hoy)
+        if (!p) return null
+        const linea = p.estado === 'READY' ? t('cuenta.lineaListo')
+          : p.pagado ? t('cuenta.lineaPagado')
+          : p.estado === 'PENDING_ACCEPTANCE' ? t('cuenta.pagaEnCaja')
+          : p.estado === 'AWAITING_PAYMENT' ? t('cuenta.estados.AWAITING_PAYMENT')
+          : t('cuenta.lineaPreparando')
+        return { folio: p.folio, estado: p.estado, pagado: p.pagado, linea, trackingToken: p.trackingToken }
+      })()
+  const verPedido = (tt: string) => (onVerPedido ? onVerPedido(tt) : window.location.assign(trackingUrl(venueSlug, tt)))
+  const sellos = data.stampCard?.enabled && customer ? data.stampCard : null
+  const hayAlgo = !!(sellos || data.puntos || data.premioDisponible || descuentos.length || tarjetas.length || data.saldoAFavor || pedidos.length
+    || hasUpcoming || hasPast || hasCredits || deHoy)
+  const verMasBoton = (l: Lista, etiqueta: string, mostrados: number, total: number | undefined) =>
+    sigue(l) && (
+      <div>
+        <small style={{ ...chico, marginTop: '8px' }}>{t('cuenta.deTotal', { n: mostrados, total: total ?? mostrados })}</small>
+        <button type="button" style={{ ...botonQuieto, marginTop: '2px' }} disabled={trayendo === l} onClick={() => void verMas(l)}>
+          {trayendo === l ? <Spinner size={16} /> : etiqueta}
+        </button>
+        {fallaMas === l && <small role="status" style={{ ...chico, color: '#6B4300' }}>{t('cuenta.errorMas')}</small>}
+      </div>
+    )
+
   return (
     <div class="avq-animate-in">
-      {/* Header — Profile info + Edit/Logout */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px' }}>
-        <div>
-          <h2 style={{ fontSize: '18px', fontWeight: '700', color: 'var(--avq-fg, #111827)', margin: 0 }}>
+      {/* W4 (1f): «Hola, Ana» y, mientras relee, «Actualizando…» con lo anterior a la vista. «Cerrar sesión» va al final (1g). */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', marginBottom: '16px' }}>
+        <div style={{ minWidth: 0 }}>
+          <h2 style={{ fontFamily: 'var(--avq-o-display, inherit)', fontSize: '26px', fontWeight: '800', lineHeight: '1.1', color: 'var(--avq-fg, #111827)', margin: 0 }}>
             {customer
               ? (customer.firstName || customer.email)
                 ? `${t('portal.hello')}, ${customer.firstName || customer.email}`
@@ -385,39 +665,42 @@ export function CustomerPortal({ venueSlug, timezone, venuePhone, t, onBack, onM
               : t('portal.title')}
           </h2>
           {customer?.email && customer.firstName && (
-            <p style={{ fontSize: '13px', color: 'var(--avq-muted-fg, #6b7280)', margin: '2px 0 0' }}>{customer.email}</p>
+            <p style={{ fontSize: '13px', color: 'var(--avq-muted-fg, #6b7280)', margin: '4px 0 0' }}>{customer.email}</p>
           )}
           {customer?.phone && (
             <p style={{ fontSize: '12px', color: 'var(--avq-muted-fg, #6b7280)', margin: '1px 0 0' }}>{customer.phone}</p>
           )}
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-          {/* Edit profile button */}
-          <button
-            type="button"
-            onClick={startEditProfile}
-            style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '6px', color: 'var(--avq-muted-fg, #6b7280)' }}
-            title={t('portal.editProfile')}
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z" />
-            </svg>
-          </button>
-          {/* Logout button */}
-          <button
-            type="button"
-            onClick={handleLogout}
-            style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '6px', color: 'var(--avq-muted-fg, #6b7280)' }}
-            title={t('portal.logout')}
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
-              <polyline points="16 17 21 12 16 7" />
-              <line x1="21" y1="12" x2="9" y2="12" />
-            </svg>
-          </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flex: 'none' }}>
+          {actualizando && (
+            <span role="status" style={{ display: 'inline-flex', alignItems: 'center', height: '32px', padding: '0 12px', borderRadius: '999px', background: 'var(--avq-muted, #F3F3F3)', color: 'var(--avq-fg, #333)', fontSize: '14px', fontWeight: '500', whiteSpace: 'nowrap' }}>
+              {t('cuenta.actualizando')}
+            </span>
+          )}
+          {/* El perfil se edita en «Mi cuenta» de reservas (en la tienda, W6 trae «Cambiar mi número»). */}
+          {!enTienda && (
+            <button
+              type="button"
+              onClick={startEditProfile}
+              style={{ background: 'none', border: 'none', cursor: 'pointer', minWidth: '44px', minHeight: '44px', padding: '6px', color: 'var(--avq-muted-fg, #6b7280)' }}
+              title={t('portal.editProfile')}
+              aria-label={t('portal.editProfile')}
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z" />
+              </svg>
+            </button>
+          )}
         </div>
       </div>
+
+      {/* Releer falló: lo último que supimos sigue a la vista, con calma (ámbar) y «Reintentar». */}
+      {fallaCarga && (
+        <div role="status" style={{ ...aviso('ambar'), flexDirection: 'row', alignItems: 'center', gap: '12px' }}>
+          <span style={{ flex: 1 }}>{fallaCarga === 'sinRed' ? t('cuenta.sinRedConDatos') : t('cuenta.noSeActualizo')}</span>
+          <button type="button" style={{ ...botonBlanco, marginTop: 0 }} onClick={() => void loadPortal()}>{t('cuenta.reintentar')}</button>
+        </div>
+      )}
 
       {/* Profile success toast */}
       {profileSuccess && (
@@ -480,59 +763,175 @@ export function CustomerPortal({ venueSlug, timezone, venuePhone, t, onBack, onM
         </div>
       )}
 
+      {/* 1f·2: beneficios en otra ficha (P2-1: no promete unirlas). */}
+      {data.otraFicha && (
+        <div style={aviso('ambar')}>
+          <b>{t('entrar.otraFichaTitulo')}</b>
+          <span>{t(data.otraFicha.contacto === 'EMAIL' ? 'entrar.otraFichaCorreo' : 'entrar.otraFichaTelefono')}</span>
+          <button type="button" style={{ ...botonBlanco, alignSelf: 'flex-start' }} onClick={() => setReentrar(true)}>
+            {t(data.otraFicha.contacto === 'EMAIL' ? 'entrar.entrarConCorreo' : 'entrar.entrarConTelefono')}
+          </button>
+        </div>
+      )}
+
+      {/* S7: sesión sin contacto probado (token de reservas de hoy, contraseña): sus reservas de invitada piden entrar otra vez. */}
+      {data.invitadaRequiereEntrar && (
+        <div style={aviso('neutro')}>
+          <span>{t('cuenta.invitada')}</span>
+          <button type="button" style={{ ...botonBlanco, alignSelf: 'flex-start' }} onClick={() => setReentrar(true)}>{t('cuenta.entrarOtraVez')}</button>
+        </div>
+      )}
+
+      {/* 1f: lo más urgente arriba, su folio de hoy. */}
+      {deHoy && (
+        <div style={{ ...bloque, display: 'flex', alignItems: 'center', gap: '12px', background: '#EAF6EE' }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <p style={{ ...tituloBloque, color: '#0B6B36' }}>{t('cuenta.pedidoDeHoy')}</p>
+            <b style={{ color: '#000', letterSpacing: '0.04em' }}>{`${deHoy.folio} · ${estadoDe(deHoy.estado, deHoy.pagado).toLocaleLowerCase(intl)}`}</b>
+            <small style={{ ...chico, color: '#3A4A3F' }}>{deHoy.linea}</small>
+          </div>
+          <button type="button" style={{ ...botonBlanco, marginTop: 0, background: '#FFF', color: '#000' }} onClick={() => verPedido(deHoy.trackingToken)}>{t('cuenta.ver')}</button>
+        </div>
+      )}
+
       {/* Tarjeta de sellos — 🔴 la seccion completa depende de `enabled`, que manda el
           servidor. Dibujar el boton sin ese dato lo haria responder 403 al tocarlo, y
           el cliente creeria que el negocio le esta fallando. */}
-      {data.stampCard?.enabled && customer && (
-        <div style={{ marginBottom: '20px' }}>
-          <h3 style={{ fontSize: '14px', fontWeight: '600', color: 'var(--avq-fg, #111827)', margin: '0 0 10px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--avq-accent, #6366f1)" stroke-width="2" aria-hidden="true">
-              <rect x="2" y="5" width="20" height="14" rx="2" />
-              <path d="M2 10h20" />
-            </svg>
-            {t('portal.stampCard')}
-          </h3>
-          <div style={{ borderRadius: '12px', padding: '14px', border: '1px solid var(--avq-border, #e8eaed)' }}>
-            <p style={{ fontSize: '14px', fontWeight: '600', color: 'var(--avq-fg, #111827)', margin: '0 0 4px' }}>
-              {t('portal.stampProgress')
-                .replace('{earned}', String(data.stampCard.stampsEarned))
-                .replace('{required}', String(data.stampCard.stampsRequired))}
-            </p>
-            {data.stampCard.rewardLabel && (
-              <p style={{ fontSize: '13px', color: 'var(--avq-muted-fg, #6b7280)', margin: '0 0 12px' }}>
-                {t('portal.stampReward').replace('{reward}', data.stampCard.rewardLabel)}
-              </p>
-            )}
+      {sellos && customer && (
+        <div style={bloque}>
+          <p style={tituloBloque}>{t('portal.stampCard')}</p>
+          <div aria-hidden="true" style={{ display: 'flex', flexWrap: 'wrap', gap: '5px', margin: '8px 0 6px' }}>
+            {Array.from({ length: Math.min(sellos.stampsRequired, 20) }, (_, i) => (
+              <i key={i} style={{ width: '20px', height: '20px', borderRadius: '50%', border: '2px solid var(--avq-fg, #000)', background: i < sellos.stampsEarned ? 'var(--avq-fg, #000)' : 'transparent' }} />
+            ))}
+          </div>
+          <small style={chico}>{t('cuenta.llevas', { n: sellos.stampsEarned, total: sellos.stampsRequired })}</small>
+          {data.premioDisponible
+            ? <span style={{ ...pildora(true), marginTop: '8px' }}>{t('cuenta.premio', { premio: data.premioDisponible.etiqueta })}</span>
+            : sellos.rewardLabel && <small style={chico}>{t('cuenta.alCompletar', { premio: sellos.rewardLabel })}</small>}
+          <a
+            href={isAndroidDevice ? api.googleWalletPassUrl(venueSlug, customer.id) : api.walletPassUrl(venueSlug, customer.id)}
+            // 🔴 El portal va incrustado en el sitio del negocio. La liga de Apple dispara
+            // una descarga y la página se queda; la de Google hace un 302 a
+            // pay.google.com y SE LLEVA el sitio del negocio, sin regreso, si no abre en
+            // pestaña nueva. `rel="noopener"` evita que esa pestaña nueva controle la de
+            // origen (`window.opener`).
+            target="_blank"
+            rel="noopener"
+            style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '44px', marginTop: '10px', borderRadius: '12px', background: 'var(--avq-fg, #000)', color: 'var(--avq-bg, #FFF)', fontSize: '14px', fontWeight: '600', textDecoration: 'none' }}
+          >
+            {t('portal.saveCard')}
+          </a>
+          {/* 🔴 La salida existe porque la detección falla: tablets raras, navegadores
+              con user-agent modificado. Sin ella ese cliente se queda sin tarjeta y no
+              hay a quién preguntarle en el mostrador. */}
+          <p style={{ fontSize: '12px', color: 'var(--avq-muted-fg, #6b7280)', margin: '10px 0 0', textAlign: 'center' }}>
             <a
-              href={isAndroidDevice ? api.googleWalletPassUrl(venueSlug, customer.id) : api.walletPassUrl(venueSlug, customer.id)}
-              // 🔴 El portal va incrustado en el sitio del negocio. La liga de Apple dispara
-              // una descarga y la página se queda; la de Google hace un 302 a
-              // pay.google.com y SE LLEVA el sitio del negocio, sin regreso, si no abre en
-              // pestaña nueva. `rel="noopener"` evita que esa pestaña nueva controle la de
-              // origen (`window.opener`).
+              href={isAndroidDevice ? api.walletPassUrl(venueSlug, customer.id) : api.googleWalletPassUrl(venueSlug, customer.id)}
+              // 🔴 Misma razón que la liga principal: esta es la de escape (la otra
+              // cartera), y también puede ser la de Google — mismo riesgo de llevarse el
+              // sitio del negocio.
               target="_blank"
               rel="noopener"
-              style={{ display: 'inline-block', padding: '10px 16px', borderRadius: '10px', background: 'var(--avq-accent, #6366f1)', color: '#fff', fontSize: '14px', fontWeight: '600', textDecoration: 'none' }}
+              style={{ color: 'var(--avq-muted-fg, #6b7280)' }}
             >
-              {t('portal.saveCard')}
+              {t('portal.saveOnOther', { sistema: isAndroidDevice ? 'iPhone' : 'Android' })}
             </a>
-            {/* 🔴 La salida existe porque la detección falla: tablets raras, navegadores
-                con user-agent modificado. Sin ella ese cliente se queda sin tarjeta y no
-                hay a quién preguntarle en el mostrador. */}
-            <p style={{ fontSize: '12px', color: 'var(--avq-muted-fg, #6b7280)', margin: '10px 0 0' }}>
-              <a
-                href={isAndroidDevice ? api.walletPassUrl(venueSlug, customer.id) : api.googleWalletPassUrl(venueSlug, customer.id)}
-                // 🔴 Misma razón que la liga principal: esta es la de escape (la otra
-                // cartera), y también puede ser la de Google — mismo riesgo de llevarse el
-                // sitio del negocio.
-                target="_blank"
-                rel="noopener"
-                style={{ color: 'var(--avq-muted-fg, #6b7280)' }}
-              >
-                {t('portal.saveOnOther', { sistema: isAndroidDevice ? 'iPhone' : 'Android' })}
-              </a>
-            </p>
+          </p>
+        </div>
+      )}
+
+      {data.puntos && (
+        <div style={bloque}>
+          <p style={tituloBloque}>{t('cuenta.puntos')}</p>
+          <p style={grande}>{t(data.puntos.saldo === 1 ? 'cuenta.unPunto' : 'cuenta.nPuntos', { n: new Intl.NumberFormat(intl).format(data.puntos.saldo) })}</p>
+          <small style={chico}>{t('cuenta.valen', { valor: dinero(data.puntos.valor) })}</small>
+        </div>
+      )}
+
+      {descuentos.length > 0 && (
+        <div style={bloque}>
+          <p style={tituloBloque}>{t('cuenta.descuentos')}</p>
+          {descuentos.map((d, i) => (
+            <div key={`${d.nombre}-${i}`} style={{ marginTop: i ? '10px' : 0 }}>
+              <b style={{ fontSize: '14px', color: 'var(--avq-fg, #000)' }}>{d.nombre}</b>
+              <small style={chico}>{d.vigenteHasta ? t('cuenta.hasta', { fecha: fecha(d.vigenteHasta) }) : t('cuenta.sinVencimiento')}</small>
+            </div>
+          ))}
+          {verMasBoton('descuentos', t('cuenta.verMasDescuentos'), descuentos.length, data.descuentos?.total)}
+        </div>
+      )}
+
+      {/* 1g: tarjetas que ELLA guardó. Sólo una ACTIVA con código se ofrece para usar; las demás dicen por qué no (R6). */}
+      {tarjetas.map(c => (
+        <div key={c.id} style={bloque}>
+          <p style={tituloBloque}>{t('cuenta.tarjeta')}</p>
+          <p style={grande}>{t(c.estado === 'ACTIVA' ? 'cuenta.teQuedan' : 'cuenta.saldo', { saldo: dinero(c.saldo) })}</p>
+          <small style={chico}>{[t('cuenta.terminaEn', { last4: c.last4 }), c.venceEl && t('cuenta.venceEl', { fecha: dia(c.venceEl) })].filter(Boolean).join(' · ')}</small>
+          {c.estado !== 'ACTIVA'
+            ? <small style={chico}>{t(`cuenta.tarjeta${c.estado}`)}</small>
+            : c.codigo
+              ? <button type="button" style={botonBlanco} onClick={() => setUsando(c.id)}>{t('cuenta.usarEnCaja')}</button>
+              : <small style={chico}>{t('cuenta.sinCodigo')}</small>}
+        </div>
+      ))}
+      {tarjetas.length > 0 && sigue('tarjetas') && <div style={{ margin: '-4px 0 12px' }}>{verMasBoton('tarjetas', t('cuenta.verMasTarjetas'), tarjetas.length, data.tarjetas?.total)}</div>}
+
+      {/* R9: el saldo a favor se usa con su teléfono; su código nunca se enseña. */}
+      {data.saldoAFavor && (
+        <div style={bloque}>
+          <p style={tituloBloque}>{t('cuenta.saldoAFavor')}</p>
+          <p style={grande}>{dinero(data.saldoAFavor.saldo)}</p>
+          <small style={chico}>{data.saldoAFavor.estado === 'ACTIVA' ? t('cuenta.saldoAFavorAyuda') : t(`cuenta.tarjeta${data.saldoAFavor.estado}`)}</small>
+        </div>
+      )}
+
+      {/* «Guardar en mi cuenta» (S13): sólo con un servidor que lo sabe hacer. */}
+      {data.tarjetas !== undefined && (
+        <form style={bloque} onSubmit={e => void guardarTarjeta(e)}>
+          <p style={tituloBloque}>{t('cuenta.guardarTitulo')}</p>
+          <small style={{ ...chico, margin: '0 0 10px' }}>{t('cuenta.guardarAyuda')}</small>
+          <label for={idCodigo} style={labelStyle}>{t('cuenta.codigo')}</label>
+          <Input
+            id={idCodigo}
+            type="text"
+            value={codigo}
+            placeholder="XXXX-XXXX-XXXX-XXXX-X"
+            onInput={(e) => { setCodigo((e.target as HTMLInputElement).value); setGuardado(null) }}
+          />
+          {caracteres !== 17 && <small style={chico}>{t('cuenta.codigoCorto')}</small>}
+          {guardado && (
+            <small role={guardado.ok ? 'status' : 'alert'} style={{ ...chico, color: guardado.ok ? '#0B6B36' : '#6B4300', fontWeight: '600' }}>{guardado.texto}</small>
+          )}
+          <div style={{ marginTop: '10px' }}>
+            <Button type="submit" variant="secondary" fullWidth disabled={guardando || caracteres !== 17}>
+              {guardando ? <Spinner size={18} /> : t('cuenta.guardar')}
+            </Button>
           </div>
+        </form>
+      )}
+
+      {pedidos.length > 0 && (
+        <div style={bloque}>
+          <p style={tituloBloque}>{t('cuenta.pedidos')}</p>
+          {pedidos.map(p => (
+            <button
+              key={p.trackingToken}
+              type="button"
+              onClick={() => verPedido(p.trackingToken)}
+              style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', width: '100%', minHeight: '44px', padding: '6px 0', border: 'none', background: 'none', textAlign: 'left', cursor: 'pointer', color: 'var(--avq-fg, #000)' }}
+            >
+              <span style={{ minWidth: 0 }}>
+                <b style={{ fontSize: '14px', letterSpacing: '0.04em' }}>{`${p.folio} · ${dinero(p.total)}`}</b>
+                <small style={chico}>{fecha(p.creadoEl)}</small>
+              </span>
+              <span style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'flex-end', gap: '4px' }}>
+                <span style={pildora(false)}>{estadoDe(p.estado, p.pagado)}</span>
+                {p.pagado && <span style={pildora(true)}>{t('cuenta.pagado')}</span>}
+              </span>
+            </button>
+          ))}
+          {verMasBoton('pedidos', t('cuenta.verMasPedidos'), pedidos.length, data.pedidos?.total)}
         </div>
       )}
 
@@ -578,7 +977,7 @@ export function CustomerPortal({ venueSlug, timezone, venuePhone, t, onBack, onM
         </div>
       )}
 
-      {!hasCredits && customer && (
+      {!hasCredits && customer && !enTienda && (
         <div style={{ borderRadius: '12px', padding: '14px', background: 'var(--avq-muted, #f8f9fb)', border: '1px solid var(--avq-border, #e8eaed)', textAlign: 'center', marginBottom: '20px' }}>
           <p style={{ fontSize: '13px', color: 'var(--avq-muted-fg, #6b7280)', margin: 0 }}>{t('portal.noCredits')}</p>
         </div>
@@ -587,7 +986,7 @@ export function CustomerPortal({ venueSlug, timezone, venuePhone, t, onBack, onM
       {/* Buy Credits — header always visible; empty state when no packs.
           Cards no longer have outer border (they live inside a section already);
           rows are separated by a hairline divider for cleaner visual rhythm. */}
-      {customer && (
+      {customer && !enTienda && (
         <div style={{ marginBottom: '24px' }}>
           <h3 style={{
             fontSize: '11px', fontWeight: '600',
@@ -733,8 +1132,8 @@ export function CustomerPortal({ venueSlug, timezone, venuePhone, t, onBack, onM
         </div>
       )}
 
-      {/* Upcoming */}
-      <div style={{ marginBottom: '24px' }}>
+      {/* Upcoming — en la tienda sólo si tiene alguna (allá no se reserva). */}
+      {(!enTienda || hasUpcoming) && <div style={{ marginBottom: '24px' }}>
         <h3 style={{
           fontSize: '11px', fontWeight: '600',
           color: 'var(--avq-muted-fg, #6b7280)',
@@ -783,7 +1182,7 @@ export function CustomerPortal({ venueSlug, timezone, venuePhone, t, onBack, onM
             <p style={{ fontSize: '13px', color: 'var(--avq-muted-fg, #6b7280)', margin: 0 }}>{t('portal.noUpcoming')}</p>
           </div>
         )}
-      </div>
+      </div>}
 
       {/* Past */}
       {hasPast && (
@@ -815,10 +1214,13 @@ export function CustomerPortal({ venueSlug, timezone, venuePhone, t, onBack, onM
         </details>
       )}
 
-      {/* Actions */}
+      {/* W4: en la tienda, una cuenta sin nada dice por qué está vacía. */}
+      {enTienda && !hayAlgo && <p style={{ ...chico, margin: '4px 0 16px', textAlign: 'center' }}>{t('cuenta.vacio')}</p>}
+
+      {/* Actions — «Cerrar sesión» al final, lejos de lo que se toca seguido (1g). */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-        <Button variant="primary" fullWidth onClick={onBack}>{t('portal.bookNow')}</Button>
-        <Button variant="ghost" fullWidth onClick={handleLogout}>{t('portal.logout')}</Button>
+        {!enTienda && <Button variant="primary" fullWidth onClick={onBack}>{t('portal.bookNow')}</Button>}
+        <button type="button" style={botonQuieto} onClick={handleLogout}>{t('portal.logout')}</button>
       </div>
     </div>
   )

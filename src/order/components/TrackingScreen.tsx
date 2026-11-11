@@ -2,6 +2,7 @@ import { h } from 'preact'
 import { useContext, useEffect, useId, useRef, useState } from 'preact/hooks'
 import { ApiError, abandonPayment, cancelOrder, getTracking } from '../api'
 import { errorText } from '../checkout'
+import { avisarSiCambio } from '../events'
 import { formatTime } from '../hours'
 import { createOrderT } from '../i18n'
 import { formatMXN } from '../money'
@@ -114,6 +115,7 @@ export function TrackingScreen() {
     const later = () => { if (!stopped && !finished && !cancelling && !timer) timer = setTimeout(() => void run(), POLL_MS) }
     let lastValid: Tracking | null = null // la última respuesta buena: con ella se vigila el tope aunque las lecturas fallen
     const apply = (r: Tracking) => {
+      avisarSiCambio(store.host, store.slug, token, lastValid, r) // W4: «Mi cuenta» se vuelve a leer
       lastValid = r
       setTracking(r)
       setProblem(null)

@@ -5,7 +5,7 @@ import { ApiError, getTracking } from '../api'
 import { createOrderT } from '../i18n'
 import { clearLastOrder, loadLastOrder } from '../session'
 import { isFinalStatus, type Tracking } from '../types'
-import { emitStoreLoaded } from '../events'
+import { avisarSiCambio, emitStoreLoaded } from '../events'
 import { closesAt, formatTime } from '../hours'
 import { MenuScreen } from './MenuScreen'
 import { CartScreen } from './CartScreen'
@@ -13,7 +13,8 @@ import { DetailsScreen } from './DetailsScreen'
 import { OtpScreen } from './OtpScreen'
 import { EntrarConCuenta } from '../../components/EntrarConCuenta'
 import { createT } from '../../i18n'
-import { entroEnLaTienda } from '../checkout'
+import { checkoutOf, entroEnLaTienda, nav, salioEnLaTienda } from '../checkout'
+import { CustomerPortal } from '../../components/CustomerPortal'
 import { Back } from './icons'
 import { CheckoutStatus } from './CheckoutStatus'
 import { TrackingScreen, isLapsedFolio, lateWindowOpen, partialLine, partialOf } from './TrackingScreen'
@@ -68,6 +69,7 @@ export function OrderApp({ accentColor }: { accentColor?: string }) {
       return getTracking(store.slug, last.trackingToken).then(
       r => {
         if (off || mine !== seq) return
+        avisarSiCambio(store.host, store.slug, last.trackingToken, seen, r) // W4: «Mi cuenta» se vuelve a leer
         seen = r
         if (isFinalStatus(r.status) && !lateWindowOpen(r)) forget()
         else setActive({ token: last.trackingToken, tracking: r })
@@ -172,7 +174,11 @@ export function OrderApp({ accentColor }: { accentColor?: string }) {
   }
   const hasBrand = !!(name || logo)
   const hero = hasBrand && (screen === 'menu' || screen === 'product') && !pid
-  const compact = hasBrand && (screen === 'details' || screen === 'otp' || screen === 'entrar')
+  const compact = hasBrand && (screen === 'details' || screen === 'otp' || screen === 'entrar' || screen === 'cuenta')
+  // W4: «Entrar» sin sesión de la tienda; con ella, «Mi cuenta». Los dos llevan a «Mi cuenta» (sin sesión, a entrar).
+  // ponytail: sale siempre; esconderlo cuando el negocio no tiene nada de cuenta prendido pide un campo del SERVIDOR en /ordering/info.
+  const conSesion = checkoutOf(store).conSesion.value
+  const tz = info?.venue.timezone ?? 'America/Mexico_City'
   return (
     <div ref={root} class="avq-o-root" style={{ ['--avq-accent' as any]: accent }} onClickCapture={dropEarly}>
       <style>{STORE_CSS}</style>
@@ -188,6 +194,7 @@ export function OrderApp({ accentColor }: { accentColor?: string }) {
                 {address && <p class="avq-o-hero__addr">{t('store.pickupAt', { address })}</p>}
               </div>
             )}
+            <button type="button" class="avq-o-ent" onClick={() => store.go('cuenta')}>{t(conSesion ? 'cuenta.mia' : 'cuenta.entrar')}</button>
           </div>
           {chips()}
         </header>
@@ -199,7 +206,7 @@ export function OrderApp({ accentColor }: { accentColor?: string }) {
         </header>
       )}
       {notice && <Notice tone="neutral" text={notice} action={{ label: t('common.close'), onClick: () => { store.notice.value = null } }} />}
-      {active && screen !== 'tracking' && (
+      {active && screen !== 'tracking' && screen !== 'cuenta' && (
         <Notice tone="neutral" {...reminder(active.tracking)}
           action={{ label: t('tracking.view'), onClick: () => { store.trackingToken.value = active.token; store.go('tracking') } }} />
       )}
@@ -214,6 +221,25 @@ export function OrderApp({ accentColor }: { accentColor?: string }) {
         <div class="avq-o-entrar">
           <button type="button" class="avq-o-back" aria-label={t('entrar.back')} onClick={() => store.go('cart')}><Back /></button>
           <EntrarConCuenta slug={store.slug} negocio={name} t={createT(store.locale)} onEntro={r => entroEnLaTienda(store, r)} />
+        </div>
+      )}
+      {/* W4: «Mi cuenta» es la misma de reservas, con la sesión de la TIENDA; su folio de este aparato va arriba con la línea exacta. */}
+      {screen === 'cuenta' && (
+        <div class="avq-o-entrar">
+          <button type="button" class="avq-o-back" aria-label={t('cuenta.volver')} onClick={() => store.go('menu')}><Back /></button>
+          <CustomerPortal
+            venueSlug={store.slug}
+            timezone={tz}
+            t={createT(store.locale)}
+            superficie="pedidos"
+            negocio={name}
+            onBack={() => store.go('menu')}
+            onManageBooking={secret => nav.assign(`https://book.avoqado.io/${encodeURIComponent(store.slug)}?manage=${encodeURIComponent(secret)}`)}
+            onVerPedido={tt => { store.trackingToken.value = tt; store.go('tracking') }}
+            pedidoDeHoy={active ? { folio: active.tracking.orderNumber, estado: active.tracking.status, pagado: !!active.tracking.paid, linea: reminder(active.tracking).text, trackingToken: active.token } : undefined}
+            alEntrar={r => entroEnLaTienda(store, r, null)}
+            alSalir={() => { salioEnLaTienda(store); store.go('menu') }}
+          />
         </div>
       )}
       {screen === 'tracking' && <TrackingScreen />}

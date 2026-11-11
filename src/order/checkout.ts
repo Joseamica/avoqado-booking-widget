@@ -130,6 +130,8 @@ export interface Checkout {
   eleccion: Signal<EleccionDeBeneficios>
   /** W3: un 401 soltó la sesión de la página en esta tienda: el carrito lo dice con calma y ofrece entrar otra vez. */
   sesionCerrada: Signal<boolean>
+  /** W4: la tienda tiene sesión (el guardián): el menú dice «Mi cuenta»; sin ella, «Entrar». */
+  conSesion: Signal<boolean>
 }
 const checkouts = new WeakMap<OrderStore, Checkout>()
 export function checkoutOf(store: OrderStore): Checkout {
@@ -145,9 +147,11 @@ export function checkoutOf(store: OrderStore): Checkout {
       otpSentAt: new Map(),
       eleccion: signal({}),
       sesionCerrada: signal(false),
+      conSesion: signal(false),
     }
     // W1 (alcance A): abrir la tienda abre la página de ese negocio (la primera vez en el documento; recrear la tienda no relee).
     abrirPagina(store.slug, 'pedidos', leerPedidos(store.slug))
+    c.conSesion.value = !!paginaDe(store.slug, 'pedidos')
     // r12, la pantalla no miente: si la tienda pierde su sesión (por donde sea: ya no está guardada, un 401 al cotizar o al pedir), lo
     // cotizado con ella ya no vale (se vuelve a cotizar sin sesión) y se dice con calma. Si entra otra vez, el aviso se va.
     // ponytail: un oyente por tienda creada, sin quitarlo al recrearla (pesa un cierre); si se recrean miles, devolver un «dejar de oír».
@@ -155,6 +159,7 @@ export function checkoutOf(store: OrderStore): Checkout {
     alCambiarLaPagina((s, afecta, misma) => {
       if (s !== slug || misma || !afecta.includes('pedidos')) return
       const perdio = !paginaDe(slug, 'pedidos')
+      c!.conSesion.value = !perdio
       c!.sesionCerrada.value = perdio
       if (perdio) store.quote.value = null
     })
@@ -228,15 +233,25 @@ export async function cotizar(store: OrderStore, items: QuoteItem[]): Promise<Qu
   return epocaDe(store.slug, 'pedidos') === epoca ? q : cotizar(store, items)
 }
 
-/** (e) Entró otra vez desde la tienda (`EntrarConCuenta`): la página toma esa sesión y se vuelve al carrito, que cotiza con ella. */
-export function entroEnLaTienda(store: OrderStore, r: SesionEmitida): void {
+/**
+ * (e) Entró otra vez desde la tienda (`EntrarConCuenta`): la página toma esa sesión y se vuelve al carrito, que cotiza con ella.
+ * W4: desde «Mi cuenta» (`volverA` null) se queda ahí.
+ */
+export function entroEnLaTienda(store: OrderStore, r: SesionEmitida, volverA: 'cart' | null = 'cart'): void {
   const c = checkoutOf(store)
   // r11: adopta la sesión con que entró (`EntrarConCuenta` ya la guardó), sin releer lo guardado.
   fijarPagina(store.slug, 'pedidos', desdeUnica({ token: r.token, customer: r.customer, contactos: r.contactos, guardadaEn: Date.now() }))
   reautorizarIntento(store.slug, r.token) // un intento que esperaba entrar sale con ésta (misma llave y cuerpo)
   c.sesionCerrada.value = false
   c.feedback.value = null
-  store.go('cart')
+  if (volverA) store.go(volverA)
+}
+
+/** W4: «Cerrar sesión» en «Mi cuenta» de la tienda. Salió ella: el carrito no dice «Tu sesión se cerró». */
+export function salioEnLaTienda(store: OrderStore): void {
+  const c = checkoutOf(store)
+  soltarLaPagina(store.slug, 'pedidos', undefined, leerPedidos(store.slug))
+  c.sesionCerrada.value = false
 }
 
 /** ¿Se puede guardar? Sin sessionStorage no hay intento y sin localStorage no hay sesión: pedir código sería en balde. */

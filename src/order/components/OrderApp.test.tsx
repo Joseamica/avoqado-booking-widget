@@ -8,6 +8,11 @@ vi.mock('../api', async () => {
   const actual = await vi.importActual<typeof import('../api')>('../api')
   return { ...actual, quote: vi.fn(), getInfo: vi.fn(), getMenu: vi.fn(), getTracking: vi.fn(), requestOrderingOtp: vi.fn() }
 })
+vi.mock('../../api/booking', async () => {
+  const actual = await vi.importActual<typeof import('../../api/booking')>('../../api/booking')
+  return { ...actual, getCustomerPortal: vi.fn(), getCreditPacks: vi.fn(), requestOtp: vi.fn(), verifyOtp: vi.fn() }
+})
+import * as bookingApi from '../../api/booking'
 import { ApiError, getTracking, quote, requestOrderingOtp } from '../api'
 import { checkoutOf } from '../checkout'
 import type { OrderStore, Screen } from '../store'
@@ -432,5 +437,159 @@ describe('W3: el aviso del menú con un folio (volvió a abrir el QR)', () => {
     const n = vi.mocked(getTracking).mock.calls.length
     await act(async () => { await vi.advanceTimersByTimeAsync(120_000) })
     expect(getTracking).toHaveBeenCalledTimes(n)
+  })
+})
+
+// ───────────────────────── W4: «Entrar» / «Mi cuenta» dentro de la tienda ─────────────────────────
+import { borrarSesion as borrarLaSesion, fijarPagina as fijarLaPagina, guardarSesion as guardarLaSesion, leerSesion as leerLaSesion, paginaDe as paginaDeLa } from '../../lib/sesionDeCliente'
+import { desdeUnica } from '../session'
+const ANA = { id: 'c1', firstName: 'Ana', lastName: null, email: null, phone: '+525544422262' }
+const TEL_ANA = { tipo: 'PHONE' as const, valor: '+525544422262', metodo: 'WHATSAPP' as const, probadoEn: 1 }
+const portalDeAna = () => ({
+  customer: { ...ANA, loyaltyPoints: 340, totalVisits: 1 }, credits: { purchases: [] }, reservations: { upcoming: [], past: [] },
+  puntos: { saldo: 340, valor: 34 }, pedidos: { items: [], total: 0, nextCursor: null }, tarjetas: { items: [], total: 0, nextCursor: null },
+  descuentos: { items: [], total: 0, nextCursor: null }, saldoAFavor: null, premioDisponible: null, otraFicha: null, invitadaRequiereEntrar: false,
+}) as any
+/** La tienda con Ana adentro (su sesión guardada y adoptada por la superficie de la tienda). */
+function tiendaConAna(info = infoOf({ requiresAcceptance: false })) {
+  const s = makeStore(info, menuOf(product()))
+  const sesion = { token: 'tok-A', customer: ANA, contactos: [TEL_ANA], guardadaEn: Date.now() }
+  guardarLaSesion(s.slug, sesion)
+  fijarLaPagina(s.slug, 'pedidos', desdeUnica(sesion))
+  return s
+}
+
+describe('W4: «Entrar» / «Mi cuenta» en la tienda', () => {
+  beforeEach(() => {
+    vi.mocked(bookingApi.getCustomerPortal).mockReset()
+    vi.mocked(bookingApi.getCustomerPortal).mockResolvedValue(portalDeAna())
+    vi.mocked(bookingApi.getCreditPacks).mockResolvedValue([])
+  })
+
+  it('sin sesión: «Entrar» arriba del menú lleva a «Entra a tu cuenta»; «Pedir sin cuenta» regresa al menú', async () => {
+    const s = makeStore(infoOf({ requiresAcceptance: false }), menuOf(product()))
+    render(withStore(s, <OrderApp />))
+    await flush()
+    expect(screen.queryByRole('button', { name: 'Mi cuenta' })).toBeNull()
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Entrar' })) })
+    await flush()
+    expect(s.screen.value).toBe('cuenta')
+    expect(screen.getByRole('heading', { name: 'Entra a tu cuenta' })).toBeTruthy()
+    expect(screen.getByText('Para pedir no necesitas cuenta: basta tu nombre.')).toBeTruthy()
+    vi.advanceTimersByTime(500) // el guardia de doble toque
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Pedir sin cuenta' })) })
+    expect(s.screen.value).toBe('menu')
+    expect(bookingApi.getCustomerPortal).not.toHaveBeenCalled()
+  })
+
+  it('con sesión: «Mi cuenta» lee el portal con la sesión de la TIENDA; «Cerrar sesión» vuelve al menú con «Entrar» y sin «Tu sesión se cerró»', async () => {
+    const s = tiendaConAna()
+    render(withStore(s, <OrderApp />))
+    await flush()
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Mi cuenta' })) })
+    await flush()
+    expect(bookingApi.getCustomerPortal).toHaveBeenCalledWith(s.slug, 'tok-A', 'pedidos')
+    expect(screen.getByText('Hola, Ana')).toBeTruthy()
+    expect(screen.getByText('340 puntos')).toBeTruthy()
+    vi.advanceTimersByTime(500)
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Cerrar sesión' })) })
+    await flush()
+    expect(s.screen.value).toBe('menu')
+    expect(screen.getByRole('button', { name: 'Entrar' })).toBeTruthy()
+    expect(leerLaSesion(s.slug)).toBeNull()
+    expect(paginaDeLa(s.slug, 'pedidos')).toBeNull()
+    expect(checkoutOf(s).sesionCerrada.value).toBe(false)
+  })
+
+  it('«Mi cuenta» de la tienda nunca toma la sesión que otra superficie guardó después: se queda sin sesión y lo dice con calma', async () => {
+    const s = tiendaConAna()
+    render(withStore(s, <OrderApp />))
+    await flush()
+    // Otra superficie del documento (o otra pestaña) entró como Bea.
+    borrarLaSesion(s.slug)
+    guardarLaSesion(s.slug, { token: 'tok-B', customer: { ...ANA, id: 'c2', firstName: 'Bea' }, contactos: [TEL_ANA], guardadaEn: Date.now() })
+    vi.mocked(bookingApi.getCustomerPortal).mockImplementation((await vi.importActual<typeof import('../../api/booking')>('../../api/booking')).getCustomerPortal)
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Mi cuenta' })) })
+    await flush()
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(screen.queryByText('Hola, Bea')).toBeNull()
+    expect(screen.getByRole('heading', { name: 'Entra a tu cuenta' })).toBeTruthy()
+    vi.unstubAllGlobals()
+  })
+
+  it('«Nadie» sin sesión: «Tus datos» ofrece «¿Tienes premios en Flautas?» y «Entrar» lleva a la pantalla de entrar; con sesión, no sale', async () => {
+    const s = makeStore(infoOf({ requiresAcceptance: false }), menuOf(product()))
+    s.cart.value = [{ lineId: 'a', productId: 'p1', name: 'Flautas', unitPrice: 85, quantity: 1, note: null, modifiers: [] }]
+    s.go('details')
+    render(withStore(s, <OrderApp />))
+    await flush()
+    expect(screen.getByText('¿Tienes premios en Flautas?')).toBeTruthy()
+    expect(screen.getByText('Entra para usarlos en este pedido.')).toBeTruthy()
+    vi.advanceTimersByTime(500)
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Entrar' })) })
+    expect(s.screen.value).toBe('entrar')
+    cleanup()
+    const conAna = tiendaConAna()
+    conAna.cart.value = s.cart.value
+    conAna.go('details')
+    render(withStore(conAna, <OrderApp />))
+    await flush()
+    expect(screen.queryByText('¿Tienes premios en Flautas?')).toBeNull()
+  })
+
+  it('el aviso del menú ve cambiar su folio (pagado) ⇒ avisa avoqado:folio-cambio con su negocio', async () => {
+    const folioPorPagar = {
+      orderNumber: 'W7K3P', status: 'PENDING_ACCEPTANCE', paymentMode: 'PAY_AT_PICKUP', venueName: 'Flautas', venueSlug: 'a', items: [], total: 134,
+      paid: false, estimatedReadyAt: null, acceptDeadlineAt: '2026-10-17T19:42:00Z', rejectReason: null, createdAt: '2026-10-17T19:12:00Z',
+      canCancel: true, venueTimezone: 'America/Mexico_City', requiresAcceptance: false,
+    } as Tracking
+    vi.mocked(getTracking).mockResolvedValue(folioPorPagar)
+    const s = makeStore(infoOf(), menuOf(product()))
+    localStorage.setItem(`avq_order_last:${s.slug}`, JSON.stringify({ trackingToken: 'T'.repeat(32), orderNumber: 'W7K3P' }))
+    const oido = vi.fn()
+    document.addEventListener('avoqado:folio-cambio', oido)
+    render(withStore(s, <OrderApp />))
+    await flush()
+    expect(oido).not.toHaveBeenCalled() // la primera lectura no es un cambio
+    vi.mocked(getTracking).mockResolvedValue({ ...folioPorPagar, status: 'ACCEPTED', paid: true, canCancel: false })
+    await act(async () => { await vi.advanceTimersByTimeAsync(30_000) })
+    expect(oido).toHaveBeenCalledTimes(1)
+    expect(oido.mock.calls[0][0].detail).toMatchObject({ slug: s.slug, trackingToken: 'T'.repeat(32), status: 'ACCEPTED', paid: true })
+    document.removeEventListener('avoqado:folio-cambio', oido)
+  })
+})
+
+describe('W4: «Mi cuenta» de la tienda al volver a abrirla', () => {
+  beforeEach(() => {
+    vi.mocked(bookingApi.getCustomerPortal).mockReset()
+    vi.mocked(bookingApi.getCreditPacks).mockResolvedValue([])
+  })
+
+  it('enseña lo anterior de ESA sesión con «Actualizando…» mientras relee', async () => {
+    const s = tiendaConAna()
+    vi.mocked(bookingApi.getCustomerPortal).mockResolvedValueOnce(portalDeAna()).mockImplementationOnce(() => new Promise(() => {}))
+    render(withStore(s, <OrderApp />))
+    await flush()
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Mi cuenta' })) })
+    await flush()
+    expect(screen.getByText('340 puntos')).toBeTruthy()
+    vi.advanceTimersByTime(500)
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Volver al menú' })) })
+    vi.advanceTimersByTime(500)
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Mi cuenta' })) })
+    await flush()
+    expect(screen.getByText('340 puntos')).toBeTruthy()
+    expect(screen.getByText('Actualizando…')).toBeTruthy()
+    expect(bookingApi.getCustomerPortal).toHaveBeenCalledTimes(2)
+  })
+
+  it('sin sesión, la entrada dice el nombre del negocio de la tienda', async () => {
+    const s = makeStore(infoOf({ requiresAcceptance: false }), menuOf(product()))
+    s.go('cuenta')
+    render(withStore(s, <OrderApp />))
+    await flush()
+    expect(screen.getByText(/en Flautas\./)).toBeTruthy()
   })
 })

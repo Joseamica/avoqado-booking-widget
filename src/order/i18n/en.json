@@ -179,7 +179,10 @@
     "notePlaceholder": "E.g. no sugar",
     "privacyNadie": "By ordering you accept the privacy notice of {{venue}}.",
     "confirmNadie": "Order",
-    "payAtCounter": "You pay at the counter: card or cash."
+    "payAtCounter": "You pay at the counter: card or cash.",
+    "premiosTitulo": "Do you have rewards at {{venue}}?",
+    "premiosTexto": "Sign in to use them on this order.",
+    "premiosEntrar": "Sign in"
   },
   "otp": {
     "title": "Enter your code",
@@ -340,5 +343,10 @@
   },
   "entrar": {
     "back": "Back to your order"
+  },
+  "cuenta": {
+    "entrar": "Sign in",
+    "mia": "My account",
+    "volver": "Back to the menu"
   }
 }

@@ -178,7 +178,9 @@ textarea.avq-o-input{min-height:0;padding:12px 14px;resize:none}
 .avq-o-hero__img{display:block;width:100%;height:196px;object-fit:cover;background:#E2E2E2}
 .avq-o-hero__id{display:flex;align-items:center;gap:14px;padding:16px 16px 0}
 .avq-o-hero--cover .avq-o-hero__id{display:block;padding-top:48px}
-.avq-o-hero__names{display:flex;flex-direction:column;gap:6px;min-width:0}
+.avq-o-hero__names{display:flex;flex-direction:column;gap:6px;min-width:0;flex:1}
+.avq-o-ent{flex:none;align-self:flex-start;display:flex;align-items:center;min-height:44px;margin-left:auto;padding:0 16px;border:0;border-radius:999px;background:${T.surface};color:${T.ink};font:inherit;font-weight:600;cursor:pointer}
+.avq-o-hero--cover .avq-o-ent{position:absolute;top:12px;right:16px;background:#FFFFFF}
 .avq-o-hero__name{margin:0;font-family:var(--avq-o-display);font-weight:800;font-size:32px;line-height:1.05;letter-spacing:-.01em;overflow-wrap:anywhere}
 .avq-o-hero__addr{margin:0;color:${T.text2};line-height:1.4;overflow-wrap:anywhere}
 .avq-o-chips{display:flex;flex-wrap:wrap;gap:8px;margin:14px 16px 4px}

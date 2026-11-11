@@ -9,9 +9,15 @@ import type {
   CustomerCreditBalance,
   CustomerPortalData,
   ModifierSelection,
+  MiDescuento,
+  MiPedido,
+  MiTarjeta,
+  PaginaDeMiCuenta,
 } from '../types'
-import { aplicarRenovacion, type FichaNueva, type SesionEmitida } from '../lib/sesionDeCliente'
-import { adoptarRenovacion, clearCustomerSession, epocaDe, tokenParaMandar } from '../state/booking'
+import {
+  aplicarRenovacion, epocaDe, renovarLaPagina, soltarLaPagina, tokenDeLaPagina, type FichaNueva, type SesionEmitida, type Superficie,
+} from '../lib/sesionDeCliente'
+import { lectorDe } from '../state/booking'
 
 const BASE = (import.meta.env?.VITE_API_URL as string | undefined)
   || 'https://api.avoqado.io/api/v1/public'
@@ -21,15 +27,20 @@ const fallaDeSesion = (status: number, code: string, message: string, enviado: s
 
 /**
  * `sesion`: la pantalla manda con la sesión de la página (`token` vacío = invitada: sigue invitada). W1, alcance A:
- * - se manda con la sesión de ESTA página mientras siga guardada (`tokenParaMandar`; la renovada si otra pestaña la renovó). Si ya no
- *   está (salió en otra pestaña o página, entró otra ficha), la página queda sin sesión y se responde un 401 sin tocar la red;
+ * - se manda con la sesión de ESTA superficie mientras siga guardada (`tokenDeLaPagina`, UNA lectura; la renovada si otra pestaña la
+ *   renovó). Si ya no está (salió en otra pestaña o página, entró otra ficha), la superficie queda sin sesión y se responde un 401 sin
+ *   tocar la red;
  * - todo 401 de una llamada con sesión la cierra (codex-r3 H4);
- * - una LECTURA que se pidió en otra época de la sesión de la página no se publica (codex-r3 H1). Una escritura nunca se descarta;
- * - si el SERVIDOR la renueva (`x-customer-session`, S6), se guarda y la página sigue con la renovada. Los errores llevan `enviado`.
+ * - una LECTURA que se pidió en otra época de la sesión de la superficie no se publica (codex-r3 H1). Una escritura nunca se descarta;
+ * - si el SERVIDOR la renueva (`x-customer-session`, S6), se guarda y la superficie sigue con la renovada. Los errores llevan `enviado`.
+ * W4: `superficie` (reservas por omisión): «Mi cuenta» dentro de la tienda manda con la sesión de la TIENDA (`pedidos`), nunca con la
+ * de reservas, y su 401 sólo suelta la de la tienda.
  */
-async function request<T>(url: string, init?: RequestInit, sesion?: { slug: string; token?: string | null }): Promise<T> {
-  const enviado = sesion?.token ? tokenParaMandar(sesion.slug, sesion.token) : null
-  const epoca = sesion ? epocaDe(sesion.slug) : 0
+async function request<T>(url: string, init?: RequestInit, sesion?: { slug: string; token?: string | null; superficie?: Superficie }): Promise<T> {
+  const sup = sesion?.superficie ?? 'reservas'
+  const leer = sesion ? lectorDe(sesion.slug, sup) : null
+  const enviado = sesion?.token ? tokenDeLaPagina(sesion.slug, sup, leer!, sesion.token) : null
+  const epoca = sesion ? epocaDe(sesion.slug, sup) : 0
   if (sesion?.token && !enviado) throw fallaDeSesion(401, 'CUSTOMER_SESSION_CLOSED', 'Tu sesión se cerró. Entra otra vez.', sesion.token)
   // codex-r7 H3: lo autenticado nunca espera más de 20 s (sin red o un cuerpo que no llega dicen «sin conexión», no giran).
   const res = await fetch(url, {
@@ -42,10 +53,10 @@ async function request<T>(url: string, init?: RequestInit, sesion?: { slug: stri
       ...(enviado ? { Authorization: `Bearer ${enviado}` } : {}),
     },
   })
-  if (sesion && enviado && aplicarRenovacion(sesion.slug, res.headers, enviado)) adoptarRenovacion(sesion.slug, enviado)
+  if (sesion && enviado && aplicarRenovacion(sesion.slug, res.headers, enviado)) renovarLaPagina(sesion.slug, sup, enviado, leer!)
   if (!res.ok) {
     // codex-r7 H3: el 401 suelta la sesión ANTES de leer el cuerpo (un cuerpo que no llega no la deja activa).
-    if (res.status === 401 && sesion && enviado) clearCustomerSession(sesion.slug, enviado)
+    if (res.status === 401 && sesion && enviado) soltarLaPagina(sesion.slug, sup, enviado, leer!)
     let err: any
     try { err = await res.json() } catch { err = { message: `HTTP ${res.status}` } }
     const e = Object.assign(new Error(err.message ?? 'Request failed'), { status: res.status, data: err, enviado })
@@ -53,7 +64,7 @@ async function request<T>(url: string, init?: RequestInit, sesion?: { slug: stri
   }
   const datos = res.status === 204 ? undefined : await res.json()
   // Después de leer el cuerpo (codex-r5 E4): lo último que pudo cambiar antes de entregarlo.
-  if (sesion && enviado && (init?.method ?? 'GET') === 'GET' && epocaDe(sesion.slug) !== epoca) {
+  if (sesion && enviado && (init?.method ?? 'GET') === 'GET' && epocaDe(sesion.slug, sup) !== epoca) {
     throw fallaDeSesion(409, 'CUSTOMER_SESSION_CHANGED', 'Tu sesión cambió mientras cargaba.', enviado)
   }
   return datos as T
@@ -369,10 +380,22 @@ export function crearFichaNueva(slug: string, data: { pruebaPendiente: string; f
   return request(`${BASE}/venues/${slug}/auth/session/nueva-ficha`, { method: 'POST', body: JSON.stringify(data), signal: conTope() })
 }
 
-export function getCustomerPortal(slug: string, token: string): Promise<CustomerPortalData> {
+export function getCustomerPortal(slug: string, token: string, superficie: Superficie = 'reservas'): Promise<CustomerPortalData> {
   return request(`${BASE}/venues/${slug}/customer/portal`, {
     signal: conTope(), // codex-r1 #5: recién entrada, «Mi cuenta» no gira para siempre
-  }, { slug, token })
+  }, { slug, token, superficie })
+}
+
+// W4 (S13): las páginas siguientes de «Mi cuenta» (el portal trae la primera de cada una) y «Guardar en mi cuenta».
+const pagina = <T>(lista: string) => (slug: string, token: string, cursor: string, superficie: Superficie = 'reservas') =>
+  request<PaginaDeMiCuenta<T>>(`${BASE}/venues/${slug}/customer/${lista}?cursor=${encodeURIComponent(cursor)}`, { signal: conTope() }, { slug, token, superficie })
+export const listarMisPedidos = pagina<MiPedido>('orders')
+export const listarMisTarjetas = pagina<MiTarjeta>('gift-cards')
+export const listarMisDescuentos = pagina<MiDescuento>('discounts')
+
+/** 409 `GIFT_CARD_ALREADY_SAVED` = de otra clienta; 404 = código que no es de una tarjeta viva de este negocio. No mueve saldo. */
+export function guardarTarjeta(slug: string, token: string, code: string, superficie: Superficie = 'reservas'): Promise<{ giftCardId: string; last4: string; saldo: number }> {
+  return request(`${BASE}/venues/${slug}/customer/gift-cards/claim`, { method: 'POST', body: JSON.stringify({ code }), signal: conTope() }, { slug, token, superficie })
 }
 
 export function updateCustomerProfile(slug: string, token: string, data: {

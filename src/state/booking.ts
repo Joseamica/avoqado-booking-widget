@@ -2,8 +2,9 @@ import { signal, computed } from '@preact/signals'
 import {
   abrirPagina, alCambiarLaPagina, borrarSesion, entrarAqui, epocaDe as epocaDeLaPagina, fijarPagina, guardarSesion, identidadDe, lecturaDe,
   leerSesion, paginaDe, renovarLaPagina, salioEnOtraPagina, soltarLaPagina, tokenDeLaPagina, type ContactoProbado, type Lectura, type Pagina,
-  type SesionDeCliente,
+  type SesionDeCliente, type Superficie,
 } from '../lib/sesionDeCliente'
+import { loadSession } from '../order/session'
 import type { PublicVenueInfo, Product, PublicSlot, PublicBookingResult, CreditPackPublic, CustomerCreditBalance, CustomerPortalData, FlowType, ModifierSelection, ReservationBranding } from '../types'
 
 /** Reservation branding defaults — used until the venue payload arrives (and as
@@ -153,6 +154,8 @@ function vigente(slug: string): Lectura | null {
   } catch { return null }
 }
 const leer = (slug: string) => () => vigente(slug)
+/** W4: lo que lee AHORA cada superficie («Mi cuenta» vive en las dos: reservas y la tienda). */
+export const lectorDe = (slug: string, s: Superficie): (() => Lectura | null) => (s === 'reservas' ? leer(slug) : () => loadSession(slug))
 
 /** Slug whose session the signals currently reflect. */
 export const activeVenueSlug = signal<string | null>(null)
@@ -194,6 +197,19 @@ alCambiarLaPagina((slug, afecta, misma) => {
     selectedCreditBalance.value = null
   }
 })
+
+/**
+ * W4 (codex-w4-r2 #1): de «Mi cuenta» de un negocio y una superficie pinta sólo la ÚLTIMA lectura que salió, la pida quien la pida
+ * (otra apertura de la pantalla, otro elemento, el flujo de reservas). Una que salió antes, o de otra sesión (época), ya no pinta.
+ */
+const lecturasDelPortal = new Map<string, number>()
+export function lecturaDelPortal(slug: string, s: Superficie): () => boolean {
+  const k = `${slug}|${s}`
+  const n = (lecturasDelPortal.get(k) ?? 0) + 1
+  lecturasDelPortal.set(k, n)
+  const epoca = epocaDeLaPagina(slug, s)
+  return () => lecturasDelPortal.get(k) === n && epocaDeLaPagina(slug, s) === epoca
+}
 
 /** El token con que esta página MANDA desde reservas (el guardián decide; nunca toma otra sesión). */
 export function tokenParaMandar(slug: string, delLlamador?: string | null): string | null {
