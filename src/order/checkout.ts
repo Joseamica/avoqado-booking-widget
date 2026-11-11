@@ -10,7 +10,9 @@ import { signal, type Signal } from '@preact/signals'
 import { ApiError, createOrder, quote, verifyOrderingOtp } from './api'
 import { beginAttempt, pendingAttempt, settleAttempt } from './attempt'
 import { desdeUnica, loadSession, samePhone, saveLastOrder, type OrderingSession } from './session'
-import { abrirPagina, entrarAqui, epocaDelNegocio, fijarPagina, paginaDe, sesionParaMandar, soltarLaPagina, type SesionEmitida } from '../lib/sesionDeCliente'
+import {
+  abrirPagina, alCambiarLaPagina, entrarAqui, epocaDe, epocaDelNegocio, fijarPagina, paginaDe, sesionParaMandar, soltarLaPagina, type SesionEmitida,
+} from '../lib/sesionDeCliente'
 import { toQuoteItems } from './cart'
 import { expectedTotalFromQuote } from './money'
 import { createOrderT } from './i18n'
@@ -139,6 +141,16 @@ export function checkoutOf(store: OrderStore): Checkout {
     }
     // W1 (alcance A): abrir la tienda abre la página de ese negocio (la primera vez en el documento; recrear la tienda no relee).
     abrirPagina(store.slug, 'pedidos', leerPedidos(store.slug))
+    // r12, la pantalla no miente: si la tienda pierde su sesión (por donde sea: ya no está guardada, un 401 al cotizar o al pedir), lo
+    // cotizado con ella ya no vale (se vuelve a cotizar sin sesión) y se dice con calma. Si entra otra vez, el aviso se va.
+    // ponytail: un oyente por tienda creada, sin quitarlo al recrearla (pesa un cierre); si se recrean miles, devolver un «dejar de oír».
+    const slug = store.slug
+    alCambiarLaPagina((s, afecta, misma) => {
+      if (s !== slug || misma || !afecta.includes('pedidos')) return
+      const perdio = !paginaDe(slug, 'pedidos')
+      c!.sesionCerrada.value = perdio
+      if (perdio) store.quote.value = null
+    })
     // La cotización y la pregunta de «el precio cambió» valen sólo para el carrito que se cotizó: si cambia (también desde
     // la carta), ya no valen y «Continuar» espera la cotización nueva. OrderApp crea esto en su primer pintado.
     let first = true
@@ -178,13 +190,9 @@ const leerPedidos = (slug: string) => () => loadSession(slug)
  * la misma). Si ya no (salió en otra pestaña, entró otra ficha u otra prueba del teléfono), queda sin sesión; nunca toma otra.
  */
 function sesionDeLaTienda(store: OrderStore): OrderingSession | null {
-  const c = checkoutOf(store) // abre la página si la tienda todavía no se pintó
-  const tenia = !!paginaDe(store.slug, 'pedidos')
-  // r11: UNA lectura; lo que se valida es lo que se manda.
-  const s = sesionParaMandar(store.slug, 'pedidos', leerPedidos(store.slug))
-  // r11, la pantalla no miente: perdió su sesión (salió en otra pestaña, entró otra): deja de enseñar lo de esa sesión y lo dice con calma.
-  if (tenia && !s) c.sesionCerrada.value = true
-  return s
+  checkoutOf(store) // abre la página si la tienda todavía no se pintó
+  // r11: UNA lectura; lo que se valida es lo que se manda. Si ya no es la guardada, la suelta (y el oyente de `checkoutOf` lo dice).
+  return sesionParaMandar(store.slug, 'pedidos', leerPedidos(store.slug))
 }
 
 /** Un 401 de la sesión con que pidió la tienda: el guardián la suelta (también su renovación) y la página queda sin sesión. */
@@ -197,14 +205,17 @@ const soltar401 = (store: OrderStore, s: OrderingSession | null) => { if (s) sol
 export async function cotizar(store: OrderStore, items: QuoteItem[]): Promise<Quote> {
   const c = checkoutOf(store)
   const s = sesionDeLaTienda(store)
+  const epoca = epocaDe(store.slug, 'pedidos')
+  let q: Quote
   try {
-    return await quote(store.slug, items, s ? { token: s.token, beneficios: c.eleccion.value } : {})
+    q = await quote(store.slug, items, s ? { token: s.token, beneficios: c.eleccion.value } : {})
   } catch (e) {
     if (!s || !(e instanceof ApiError) || e.status !== 401) throw e
     soltar401(store, s)
-    c.sesionCerrada.value = true
     return cotizar(store, items)
   }
+  // r12: la sesión de la tienda cambió mientras volaba (se perdió, o entró otra): esa respuesta ya no es de nadie; se cotiza de nuevo.
+  return epocaDe(store.slug, 'pedidos') === epoca ? q : cotizar(store, items)
 }
 
 /** (e) Entró otra vez desde la tienda (`EntrarConCuenta`): la página toma esa sesión y se vuelve al carrito, que cotiza con ella. */

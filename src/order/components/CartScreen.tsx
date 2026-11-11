@@ -146,7 +146,7 @@ export function CartScreen() {
       live = false
       clearTimeout(timer)
     }
-  }, [cart, attempt, eleccion])
+  }, [cart, attempt, eleccion, sesionCerrada])
 
   // Quitar un renglón con el bote destruye el botón que tenía el foco. El foco pasa al RENGLÓN que sube a ese lugar (el siguiente; si
   // era el último, el anterior), nunca a un botón suyo: un Enter mantenido repite clics sobre lo que tiene el foco, y en el bote del

@@ -823,7 +823,7 @@ describe('r11: leer y validar UNA vez (otra pestaña escribe B en medio)', () =>
     api.createOrder.mockResolvedValueOnce(created())
     intercalar(slug, sesionB(), 'leer')
     await submitOrder(store, body)
-    expect(sent().token).not.toBe('tok-B')
+    expect(sent().token).toBe('tok-A') // manda exactamente la que validó (ni B ni sin sesión)
   })
 
   it('el código de «Mi equipo»: la tienda adopta la sesión que guardó, no la B que otra pestaña escribió justo después', async () => {

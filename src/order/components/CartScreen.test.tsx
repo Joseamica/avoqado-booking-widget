@@ -7,8 +7,9 @@ vi.mock('../api', async () => {
   return { ...actual, quote: vi.fn(), getInfo: vi.fn(), getMenu: vi.fn() }
 })
 import { ApiError, quote } from '../api'
-import { checkoutOf } from '../checkout'
-import { borrarSesion, fijarPagina, guardarSesion, leerSesion, paginaDe } from '../../lib/sesionDeCliente'
+import { checkoutOf, retry } from '../checkout'
+import { beginAttempt } from '../attempt'
+import { borrarSesion, fijarPagina, guardarSesion, leerSesion, paginaDe, soltarLaPagina } from '../../lib/sesionDeCliente'
 import { setCustomerSession } from '../../state/booking'
 import { loadSession } from '../session'
 import { CartScreen } from './CartScreen'
@@ -721,6 +722,35 @@ describe('W3: el carrito con sus beneficios', () => {
     expect(document.querySelector('.avq-o-notice--error')).toBeNull()
   })
 
+  it('r12 «Reintentar» tras perder la sesión (otra pestaña la cerró): el carrito deja de enseñar los premios y recotiza sin sesión', async () => {
+    vi.stubGlobal('fetch', vi.fn(() => Promise.reject(new Error('sin red'))))
+    try {
+      const s = await conSesion(opts => quoteOf(170, opts.token ? { oferta: oferta() } : {}), infoOf({ requiresAcceptance: false }))
+      expect(screen.getByText('¡Tienes café gratis! ¿Lo usas?')).toBeTruthy()
+      beginAttempt(s.slug, { items: [{ productId: 'p1', quantity: 2, modifiers: [] }], paymentMode: 'PAY_AT_PICKUP', expectedTotal: '170.00', customer: { name: 'Ana' } })
+      await act(async () => { borrarSesion(s.slug) }) // otra pestaña cerró su sesión
+      await act(async () => { await retry(s) }) // «Reintentar»: vuelve a fallar la red
+      await flush()
+      expect(screen.queryByText('¡Tienes café gratis! ¿Lo usas?')).toBeNull()
+      expect(screen.getByText('Tu sesión se cerró')).toBeTruthy()
+      expect(vi.mocked(quote).mock.lastCall![2]?.token).toBeFalsy()
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('r12 una cotización de la sesión vieja que llega tarde se descarta, aunque el carrito siga abierto', async () => {
+    let llega!: (q: Quote) => void
+    const s = await conSesion(opts => opts.token && !llega ? new Promise<Quote>(r => { llega = r }) : quoteOf(170))
+    // Otra petición de la tienda recibió 401: la sesión se suelta mientras la cotización de Ana sigue en vuelo.
+    await act(async () => { soltarLaPagina(s.slug, 'pedidos', 'tok-A', () => loadSession(s.slug)) })
+    await flush()
+    await act(async () => { llega(quoteOf(85, { oferta: oferta() })) })
+    await flush()
+    expect(screen.queryByText('¡Tienes café gratis! ¿Lo usas?')).toBeNull()
+    expect(continueBtn().textContent).toBe('Continuar $170')
+  })
+
   it('codex-r8 H2 (A refinada): Bea entra en reservas mientras vuela la cotización de Ana; la tienda sigue con Ana y nunca manda con Bea', async () => {
     let llega!: (q: Quote) => void
     const s = await conSesion(opts => opts.token === 'tok-A' && !llega ? new Promise<Quote>(r => { llega = r }) : quoteOf(170))
@@ -813,6 +843,7 @@ describe('W3: el carrito con sus beneficios', () => {
     })
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Sí' })) })
     await flush()
+    await flush() // r12: perder la sesión vuelve a cotizar (otra espera de 300 ms)
     expect(vi.mocked(quote).mock.lastCall![2]?.token).toBeFalsy()
     expect(leerSesion(s.slug)).toBeNull()
     expect(screen.getByText('Tu sesión se cerró')).toBeTruthy()
