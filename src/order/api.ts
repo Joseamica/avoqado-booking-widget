@@ -39,7 +39,11 @@ const offline = () => new ApiError('Sin conexión', 0, undefined, undefined, tru
  */
 async function send<T>(
   path: string,
-  opts: { method?: 'POST'; body?: unknown; headers?: Record<string, string>; sesion?: { slug: string; token: string } } = {},
+  opts: {
+    method?: 'POST'; body?: unknown; headers?: Record<string, string>; sesion?: { slug: string; token: string }
+    /** `false`: el 401 puede no ser de sesión (`PHONE_VERIFICATION_REQUIRED`): se lee el cuerpo y quien llama decide si la suelta. */
+    soltarAntes?: boolean
+  } = {},
 ): Promise<T> {
   const ctrl = new AbortController()
   const timer = setTimeout(() => ctrl.abort(), TIMEOUT_MS)
@@ -59,7 +63,7 @@ async function send<T>(
     if (opts.sesion) aplicarRenovacion(opts.sesion.slug, res.headers, opts.sesion.token)
     // codex-r8 H4: el 401 suelta la sesión ANTES de leer el cuerpo, como reservas y portal (un cuerpo que no llega no la deja activa).
     const { slug, token } = opts.sesion ?? {}
-    if (res.status === 401 && slug && token) soltarLaPagina(slug, 'pedidos', token, () => loadSession(slug))
+    if (res.status === 401 && slug && token && opts.soltarAntes !== false) soltarLaPagina(slug, 'pedidos', token, () => loadSession(slug))
     const body: any = await res.json().catch(() => null)
     // Un 2xx sin JSON legible (portal cautivo, lectura abortada) no dice qué pasó: se trata como sin red.
     if (res.ok) {
@@ -101,6 +105,9 @@ export const createOrder = (slug: string, body: CreateOrderBody, opts: { idempot
       body,
       headers: { 'Idempotency-Key': opts.idempotencyKey, ...(opts.token ? { Authorization: `Bearer ${opts.token}` } : {}) },
       ...(opts.token ? { sesion: { slug, token: opts.token } } : {}),
+      // Regresión de la r9a: sólo el pedido de «Nadie» sin teléfono puede recibir `PHONE_VERIFICATION_REQUIRED` con una sesión válida;
+      // ése lee el cuerpo (tope de 15 s) y `doSubmit` suelta la sesión si el 401 no es de teléfono. Los demás, antes del cuerpo.
+      soltarAntes: !!body.customer.phone,
     }),
   )
 

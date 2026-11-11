@@ -262,3 +262,21 @@ describe('codex-r8 H4: el 401 de la tienda suelta la sesión ANTES de leer el cu
   })
 })
 
+
+describe('regresión de la r9a: el 401 que pide teléfono no suelta una sesión válida', () => {
+  it('pedido de «Nadie» sin teléfono + 401 PHONE_VERIFICATION_REQUIRED ⇒ needsPhone; guardada A y página A', async () => {
+    const { createOrderStore } = await import('./store')
+    const { buildOrderBody, submitOrder } = await import('./checkout')
+    guardarSesion('r9a', { token: 'tok-A', customer: { id: 'c1', firstName: 'Ana', lastName: null, email: 'ana@correo.mx', phone: null },
+      contactos: [{ tipo: 'EMAIL', valor: 'ana@correo.mx', metodo: 'GOOGLE', probadoEn: 1 }], guardadaEn: Date.now() })
+    const store = createOrderStore('r9a', { locale: 'es' }) // abrir la página con A
+    store.info.value = { venue: { slug: 'r9a', name: 'X' }, status: 'OPEN', reason: null, requiresAcceptance: false } as any
+    store.cart.value = [{ lineId: 'l1', productId: 'p1', name: 'Flautas', unitPrice: 85, quantity: 1, note: null, modifiers: [] }]
+    store.quote.value = { ok: true, lines: [], subtotal: 85, total: 85, minOrderAmount: 0, issues: [] }
+    fetchMock.mockResolvedValueOnce(json(401, { success: false, code: 'PHONE_VERIFICATION_REQUIRED', error: 'Verifica tu teléfono' }))
+    const r = await submitOrder(store, buildOrderBody(store, { customer: { name: 'Ana' }, note: null }))
+    expect(r).toEqual({ kind: 'needsPhone' })
+    expect(leerSesion('r9a')?.token).toBe('tok-A')
+    expect(paginaDe('r9a', 'pedidos')?.token).toBe('tok-A')
+  })
+})
