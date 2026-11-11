@@ -10,7 +10,7 @@ import { signal, type Signal } from '@preact/signals'
 import { ApiError, createOrder, quote, verifyOrderingOtp } from './api'
 import { beginAttempt, pendingAttempt, settleAttempt } from './attempt'
 import { loadSession, samePhone, saveLastOrder, type OrderingSession } from './session'
-import { abrirPagina, fijarPagina, guardarSesion, soltarLaPagina, tokenDeLaPagina } from '../lib/sesionDeCliente'
+import { abrirPagina, epocaDelNegocio, fijarPagina, guardarSesion, soltarLaPagina, tokenDeLaPagina } from '../lib/sesionDeCliente'
 import { toQuoteItems } from './cart'
 import { expectedTotalFromQuote } from './money'
 import { createOrderT } from './i18n'
@@ -161,10 +161,14 @@ export const phoneToVerify = (store: OrderStore): string | null =>
  * Verifica el código y guarda la sesión ÚNICA (W2: también abre «Mi cuenta» y reservas). `loadSession` la usa con el teléfono que el
  * SERVIDOR probó, que es este mismo número en su forma canónica (`samePhone`).
  */
-export async function verifyPhone(store: OrderStore, phone: string, code: string): Promise<void> {
+export async function verifyPhone(store: OrderStore, phone: string, code: string): Promise<boolean> {
+  const antes = epocaDelNegocio(store.slug)
   const r = await verifyOrderingOtp(store.slug, phone, code)
+  // codex-r8 H3: llegó después de «Cerrar sesión» u otro cambio de sesión en la página: no guarda, no revive y no se manda el pedido.
+  if (epocaDelNegocio(store.slug) !== antes) return false
   guardarSesion(store.slug, { token: r.token, customer: r.customer, contactos: r.contactos, guardadaEn: Date.now() })
   fijarPagina(store.slug, 'pedidos', loadSession(store.slug)) // entró aquí
+  return true
 }
 
 const leerPedidos = (slug: string) => () => loadSession(slug)

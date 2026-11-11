@@ -238,6 +238,11 @@ const esDeHoy = (identidad: string) => identidad.startsWith('hoy:')
 
 /** Época de la sesión de `s` en ese negocio: sube cada vez que cambia quién está adentro. Una respuesta de otra época no se pinta. */
 export const epocaDe = (slug: string, s: Superficie): number => epocas.get(`${slug}|${s}`) ?? 0
+/**
+ * La época de TODO el negocio en la página (cualquier superficie). Una entrada que se pidió antes de que cambiara (salió, entró otra,
+ * se soltó) llega tarde: no guarda nada (codex-r8 H3).
+ */
+export const epocaDelNegocio = (slug: string): string => `${epocaDe(slug, 'reservas')}|${epocaDe(slug, 'pedidos')}`
 /** La sesión de la página para `s`: la única (compartida) o, sin ella, el token de hoy de `s`. */
 export function paginaDe(slug: string, s: Superficie): Pagina | null {
   const e = paginas.get(slug)

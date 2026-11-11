@@ -4,7 +4,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { EntrarConCuenta } from './EntrarConCuenta'
 import * as api from '../api/booking'
 import { createT } from '../i18n'
-import { borrarSesion, leerSesion, type ContactoProbado } from '../lib/sesionDeCliente'
+import { borrarSesion, guardarSesion, leerSesion, type ContactoProbado } from '../lib/sesionDeCliente'
+import { bindCustomerSessionToVenue, clearCustomerSession } from '../state/booking'
 import es from '../i18n/es.json'
 import en from '../i18n/en.json'
 
@@ -133,6 +134,21 @@ describe('W2: entrar a la cuenta', () => {
     await act(async () => { alEntrar({ credential: idToken('ana@correo.mx') }) })
     await waitFor(() => expect(onEntro).toHaveBeenCalledTimes(1))
     expect(leerSesion(SLUG)?.contactos[0].metodo).toBe('GOOGLE')
+  })
+
+  it('codex-r8 H3: un código que se verifica después de «Cerrar sesión» no guarda nada ni entra', async () => {
+    guardarSesion(SLUG, { ...sesion(), guardadaEn: Date.now() } as any)
+    bindCustomerSessionToVenue(SLUG) // la página abierta con su sesión (el portal de al lado)
+    let llega!: (v: unknown) => void
+    vi.mocked(api.verifyOtp).mockImplementationOnce(() => new Promise(r => { llega = r }) as any)
+    show()
+    await codigoPorWhatsApp('52 55 4442 2262')
+    teclearCodigo()
+    await act(async () => { clearCustomerSession(SLUG) }) // «Cerrar sesión» en el portal mientras se verifica
+    await act(async () => { llega({ ...sesion(), token: 'tok-tarde' }) })
+    await act(async () => { for (let i = 0; i < 5; i++) await Promise.resolve() })
+    expect(leerSesion(SLUG)).toBeNull()
+    expect(onEntro).not.toHaveBeenCalled()
   })
 
   it('con ficha: el código deja la sesión en W1 y avisa que entró', async () => {

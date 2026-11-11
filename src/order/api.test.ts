@@ -11,6 +11,8 @@ import {
   verifyOrderingOtp,
 } from './api'
 import type { CreateOrderBody } from './types'
+import { abrirPagina, guardarSesion, leerSesion, paginaDe } from '../lib/sesionDeCliente'
+import { loadSession } from './session'
 
 const fetchMock = vi.fn()
 
@@ -245,3 +247,18 @@ describe('errores', () => {
     expect(e).toMatchObject({ network: true, status: 0 })
   })
 })
+
+describe('codex-r8 H4: el 401 de la tienda suelta la sesión ANTES de leer el cuerpo', () => {
+  it('con el cuerpo detenido, la sesión ya no está guardada ni es la de la página', async () => {
+    const PHONE = '+525512345678'
+    guardarSesion('h4', { token: 'tok-A', customer: { id: 'c1', firstName: 'Ana', lastName: null, email: null, phone: PHONE },
+      contactos: [{ tipo: 'PHONE', valor: PHONE, metodo: 'WHATSAPP', probadoEn: 1 }], guardadaEn: Date.now() })
+    abrirPagina('h4', 'pedidos', () => loadSession('h4'))
+    fetchMock.mockResolvedValueOnce({ ok: false, status: 401, headers: new Headers(), json: () => new Promise(() => {}) })
+    void quote('h4', [{ productId: 'p1', quantity: 1 }], { token: 'tok-A' }).catch(() => {})
+    for (let i = 0; i < 5; i++) await Promise.resolve()
+    expect(leerSesion('h4')).toBeNull()
+    expect(paginaDe('h4', 'pedidos')).toBeNull()
+  })
+})
+

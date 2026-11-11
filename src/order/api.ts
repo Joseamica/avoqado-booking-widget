@@ -1,5 +1,6 @@
 import type { CreateOrderBody, CreatedCardOrder, CreatedOrder, EleccionDeBeneficios, Menu, Quote, QuoteItem, StoreInfo, Tracking } from './types'
-import { aplicarRenovacion, type SesionEmitida } from '../lib/sesionDeCliente'
+import { aplicarRenovacion, soltarLaPagina, type SesionEmitida } from '../lib/sesionDeCliente'
+import { loadSession } from './session'
 
 export const API_BASE: string =
   (import.meta.env?.VITE_API_URL as string | undefined) || 'https://api.avoqado.io/api/v1/public'
@@ -56,6 +57,9 @@ async function send<T>(
     }
     // W1: una sesión de más de un día regresa renovada en `x-customer-session` (también en una respuesta de error).
     if (opts.sesion) aplicarRenovacion(opts.sesion.slug, res.headers, opts.sesion.token)
+    // codex-r8 H4: el 401 suelta la sesión ANTES de leer el cuerpo, como reservas y portal (un cuerpo que no llega no la deja activa).
+    const { slug, token } = opts.sesion ?? {}
+    if (res.status === 401 && slug && token) soltarLaPagina(slug, 'pedidos', token, () => loadSession(slug))
     const body: any = await res.json().catch(() => null)
     // Un 2xx sin JSON legible (portal cautivo, lectura abortada) no dice qué pasó: se trata como sin red.
     if (res.ok) {

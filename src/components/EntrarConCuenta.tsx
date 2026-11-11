@@ -3,7 +3,7 @@ import { useEffect, useId, useRef, useState } from 'preact/hooks'
 import type { TFunction } from '../i18n'
 import * as api from '../api/booking'
 import { DEFAULT_DIAL, phoneE164 } from '../data/countries'
-import { esDeAvoqado, guardarSesion, leerSesion, type FichaNueva, type SesionEmitida } from '../lib/sesionDeCliente'
+import { epocaDelNegocio, esDeAvoqado, guardarSesion, leerSesion, type FichaNueva, type SesionEmitida } from '../lib/sesionDeCliente'
 import { Button } from './ui/Button'
 import { Input } from './ui/Input'
 import { CountryPhoneInput } from './ui/CountryPhoneInput'
@@ -72,6 +72,8 @@ export function EntrarConCuenta({ slug, negocio, t, onEntro }: Props) {
   const idNombre = useId()
   const encabezado = useRef<HTMLHeadingElement>(null)
   const primerPintado = useRef(true)
+  /** La época del negocio cuando salió la petición que puede traer una sesión (codex-r8 H3). */
+  const epocaAlEmpezar = useRef('')
 
   useEffect(() => {
     if (!espera) return
@@ -113,6 +115,11 @@ export function EntrarConCuenta({ slug, negocio, t, onEntro }: Props) {
     else setError({ texto: e.data?.message || t('errors.generic'), sinRed: false })
   }
   function terminar(r: SesionEmitida | FichaNueva, contacto: string, canalUsado: Canal) {
+    // codex-r8 H3: la respuesta llegó después de «Cerrar sesión» u otro cambio de sesión en la página: no guarda nada ni entra.
+    if (epocaDelNegocio(slug) !== epocaAlEmpezar.current) {
+      reiniciar()
+      return
+    }
     if ('fichaNueva' in r) {
       if (prueba) setTampoco({ contacto, canal: canalUsado })
       else setPrueba({ token: r.pruebaPendiente, contacto, canal: canalUsado })
@@ -132,6 +139,7 @@ export function EntrarConCuenta({ slug, negocio, t, onEntro }: Props) {
   }
   async function intentar(fn: () => Promise<void>) {
     if (ocupado) return
+    epocaAlEmpezar.current = epocaDelNegocio(slug)
     setOcupado(true)
     setError(null)
     try {

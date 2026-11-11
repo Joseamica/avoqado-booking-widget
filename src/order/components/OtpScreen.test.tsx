@@ -9,6 +9,7 @@ vi.mock('../api', async () => {
 import { ApiError, createOrder, requestOrderingOtp, verifyOrderingOtp } from '../api'
 import { checkoutOf } from '../checkout'
 import { loadSession } from '../session'
+import { fijarPagina, guardarSesion, leerSesion, paginaDe, soltarLaPagina } from '../../lib/sesionDeCliente'
 import { OtpScreen } from './OtpScreen'
 import { infoOf, makeStore, menuOf, withStore } from './testKit'
 import type { CreateOrderBody } from '../types'
@@ -110,6 +111,26 @@ describe('código de WhatsApp', () => {
     await flush()
     expect(requestOrderingOtp).toHaveBeenCalledTimes(2)
     expect(screen.queryByText('Sin conexión. Revisa tu internet y vuelve a intentar.')).toBeNull()
+  })
+
+  it('codex-r8 H3: un código que se verifica después de «Cerrar sesión» no guarda, no revive la sesión ni manda el pedido', async () => {
+    const s = makeStore(infoOf(), menuOf())
+    guardarSesion(s.slug, { ...sesion, token: 'tok-A', guardadaEn: Date.now() } as any)
+    fijarPagina(s.slug, 'pedidos', loadSession(s.slug)) // la página abierta con A (el portal de al lado la comparte)
+    checkoutOf(s).lastBody.value = body
+    s.go('otp')
+    render(withStore(s, <OtpScreen />))
+    await flush()
+    let llega!: (v: unknown) => void
+    vi.mocked(verifyOrderingOtp).mockImplementationOnce(() => new Promise(r => { llega = r }) as any)
+    fireEvent.input(screen.getAllByRole('textbox')[0], { target: { value: '123456' } })
+    await flush()
+    await act(async () => { soltarLaPagina(s.slug, 'reservas', undefined, () => null) }) // «Cerrar sesión» en el portal
+    await act(async () => { llega(sesion) })
+    await flush()
+    expect(leerSesion(s.slug)).toBeNull()
+    expect(paginaDe(s.slug, 'pedidos')).toBeNull()
+    expect(createOrder).not.toHaveBeenCalled()
   })
 
   it('al completar el código verifica, guarda la sesión con ESE teléfono y manda el pedido', async () => {

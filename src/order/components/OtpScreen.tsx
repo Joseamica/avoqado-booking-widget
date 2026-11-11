@@ -79,8 +79,9 @@ export function OtpScreen() {
     if (verifying || !phone || !body) return
     setVerifying(true)
     setError(null)
+    let vigente: boolean
     try {
-      await verifyPhone(store, phone, value)
+      vigente = await verifyPhone(store, phone, value)
     } catch (e) {
       const offline = !(e instanceof ApiError) || e.network
       setError({ text: errorText(t, e), offline })
@@ -92,6 +93,8 @@ export function OtpScreen() {
     // Ese código ya se usó: si un 401 regresa aquí, toca uno nuevo sin esperar.
     c.otpSentAt.delete(phone)
     setVerifying(false)
+    // codex-r8 H3: la sesión de la página cambió mientras se verificaba (salió, entró otra): no se manda nada.
+    if (!vigente) return setCode('')
     // Verificado y aun así el pedido pide código (sesión que no se guardó, 401 otra vez): se dice, no se queda callado.
     if ((await send(store, body)).kind === 'needsOtp') setError({ text: t('otp.notUsable'), offline: false })
   }
