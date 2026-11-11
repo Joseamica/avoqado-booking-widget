@@ -908,6 +908,17 @@ describe('W3: pedir con beneficios', () => {
     expect(sent(2)).toMatchObject({ key: 'T'.repeat(43), token: undefined })
   })
 
+  it('codex-w3-r4 #1: un intento viejo de «Mi equipo» lee la sesión UNA vez: si otra pestaña escribe B justo después, sale con la que leyó', async () => {
+    const mi = setup() // «Mi equipo», con la sesión de hoy del teléfono (tok-1)
+    sessionStorage.setItem(`avq_order_attempt:${mi.store.slug}`, JSON.stringify({ key: 'M'.repeat(43), body: mi.body, startedAt: Date.now() }))
+    checkoutOf(mi.store)
+    intercalar(mi.store.slug, sesionB(), 'leer')
+    api.createOrder.mockResolvedValueOnce(created({ replay: true }))
+    await submitOrder(mi.store, mi.body)
+    vi.restoreAllMocks()
+    expect(sent(0)).toMatchObject({ key: 'M'.repeat(43), token: 'tok-1' })
+  })
+
   it('codex-w3-r2 #1: recargar con el pedido en vuelo y la sesión cerrada en otra pestaña reenvía con el token guardado', async () => {
     const { store, body } = nadie({ eleccion: { premioId: 'pr1' } })
     api.createOrder.mockImplementationOnce(() => new Promise(() => {})) // en vuelo
