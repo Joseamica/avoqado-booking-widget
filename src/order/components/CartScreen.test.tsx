@@ -869,3 +869,93 @@ describe('W3: el carrito con sus beneficios', () => {
     expect(screen.getByText('You have café gratis! Use it?')).toBeTruthy()
   })
 })
+
+describe('D8: «Va en tu Latte» (lineIndex del premio)', () => {
+  const PHONE = '+525512345678'
+  const latte: CartLine = { lineId: 'l', productId: 'p-latte', name: 'Latte', unitPrice: 65, quantity: 1, note: null, modifiers: [] }
+  const shake: CartLine = { lineId: 's', productId: 'p-shake', name: 'Shake de proteína', unitPrice: 69, quantity: 1, note: null, modifiers: [] }
+  /** En el orden del carrito (la cotización respeta el orden de `items`). */
+  let shakePrimero = false
+  const lineas = (latteTotal = 65) => (shakePrimero ? [qline('p-shake', 69), qline('p-latte', latteTotal)] : [qline('p-latte', latteTotal), qline('p-shake', 69)])
+  const premio = (lineIndex?: number) => ({ id: 'pr1', etiqueta: 'Café gratis', ...(lineIndex === undefined ? {} : { lineIndex }) })
+  const ofertaCon = (lineIndex?: number): NonNullable<Quote['oferta']> => ({ premio: premio(lineIndex), puntos: null, cupon: false })
+  async function conSesion(cart: CartLine[], responder: (opts: any) => Quote, locale: 'es' | 'en' = 'es') {
+    shakePrimero = cart[0]?.productId === 'p-shake'
+    const s = makeStore(infoOf(), menuOf(), locale)
+    guardarSesion(s.slug, {
+      token: 'tok-A', customer: { id: 'c1', firstName: 'Ana', lastName: null, email: null, phone: PHONE },
+      contactos: [{ tipo: 'PHONE' as const, valor: PHONE, metodo: 'WHATSAPP' as const, probadoEn: 1 }], guardadaEn: Date.now(),
+    })
+    fijarPagina(s.slug, 'pedidos', loadSession(s.slug))
+    s.cart.value = cart
+    vi.mocked(quote).mockImplementation(async (_slug, _items, opts) => responder(opts ?? {}))
+    s.go('cart')
+    render(withStore(s, <CartScreen />))
+    await flush()
+    return s
+  }
+  /** Sin elegir: la oferta dice dónde caería; elegido: el premio aplicado en su renglón. */
+  const cotizador = (lineIndex: number | undefined, latteTotal = 65, monto = 65) => (opts: any) =>
+    opts.beneficios?.premioId
+      ? quoteOf(134 + (latteTotal - 65) - monto, {
+          lines: lineas(latteTotal), subtotal: 134 + (latteTotal - 65), oferta: ofertaCon(lineIndex),
+          aplicados: [{ tipo: 'PREMIO', nombre: 'Café gratis', monto, ...(lineIndex === undefined ? {} : { lineIndex }) }],
+        })
+      : quoteOf(134 + (latteTotal - 65), { lines: lineas(latteTotal), subtotal: 134 + (latteTotal - 65), oferta: ofertaCon(lineIndex) })
+  const elegir = async () => {
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Sí' })) })
+    await flush()
+  }
+
+  it('la pregunta dice en qué producto va: «¡Tienes café gratis! ¿Lo usas?» / «Va en tu Latte.» (1h)', async () => {
+    await conSesion([latte, shake], cotizador(0))
+    const n = screen.getByText('Va en tu Latte.').closest('.avq-o-notice')!
+    expect(n.querySelector('.avq-o-notice__title')!.textContent).toBe('¡Tienes café gratis! ¿Lo usas?')
+  })
+
+  it('elegido: «Café gratis en tu Latte» y el Latte con su precio tachado y «Gratis»; el Shake como siempre (1h·2)', async () => {
+    await conSesion([shake, latte], cotizador(1))
+    await elegir()
+    expect(screen.getByText('Café gratis en tu Latte')).toBeTruthy()
+    expect(screen.getByText('Si no pasas a pagar a tiempo, regresa a tu cuenta.')).toBeTruthy()
+    const precioLatte = within(rowOf('Latte')).getByText('Gratis').closest('.avq-o-line__price')!
+    expect(precioLatte.querySelector('s')!.textContent).toBe('$65')
+    expect(within(rowOf('Shake de proteína')).queryByText('Gratis')).toBeNull()
+    expect(within(rowOf('Shake de proteína')).getByText('$69')).toBeTruthy()
+    expect(continueBtn().textContent).toBe('Continuar $69')
+  })
+
+  it('si el premio no cubre todo el renglón (dos Lattes), dice «en tu Latte» pero el renglón no dice «Gratis»', async () => {
+    await conSesion([{ ...latte, quantity: 2 }, shake], cotizador(0, 130, 65))
+    await elegir()
+    expect(screen.getByText('Café gratis en tu Latte')).toBeTruthy()
+    expect(within(rowOf('Latte')).queryByText('Gratis')).toBeNull()
+    expect(within(rowOf('Latte')).getByText('$130')).toBeTruthy()
+  })
+
+  it('sin lineIndex, como hoy: sin «Va en tu…», «Café gratis en tu pedido» y sin «Gratis»', async () => {
+    await conSesion([latte, shake], cotizador(undefined))
+    expect(screen.getByText('¡Tienes café gratis! ¿Lo usas?')).toBeTruthy()
+    expect(screen.queryByText(/Va en tu/)).toBeNull()
+    await elegir()
+    expect(screen.getByText('Café gratis en tu pedido')).toBeTruthy()
+    expect(screen.queryByText('Gratis')).toBeNull()
+  })
+
+  it('un lineIndex que no es un renglón del carrito no inventa producto', async () => {
+    await conSesion([latte, shake], cotizador(7))
+    expect(screen.queryByText(/Va en tu/)).toBeNull()
+    await elegir()
+    expect(screen.getByText('Café gratis en tu pedido')).toBeTruthy()
+    expect(screen.queryByText('Gratis')).toBeNull()
+  })
+
+  it('en inglés', async () => {
+    await conSesion([latte, shake], cotizador(0), 'en')
+    expect(screen.getByText('It goes on your Latte.')).toBeTruthy()
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Yes' })) })
+    await flush()
+    expect(screen.getByText('Café gratis on your Latte')).toBeTruthy()
+    expect(within(rowOf('Latte')).getByText('Free')).toBeTruthy()
+  })
+})

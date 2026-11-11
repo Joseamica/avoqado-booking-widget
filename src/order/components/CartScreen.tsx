@@ -5,7 +5,7 @@ import { createOrderT } from '../i18n'
 import { ApiError } from '../api'
 import { removeLine, setQuantity, toQuoteItems } from '../cart'
 import { checkoutOf, cotizar, errorText } from '../checkout'
-import { formatMXN } from '../money'
+import { formatMXN, toCents } from '../money'
 import { Notice, StoreStatusBanner } from './StoreStatusBanner'
 import { Stepper } from './Stepper'
 import { VenueMark } from './VenueMark'
@@ -48,7 +48,8 @@ const enFrase = (s: string) => s.charAt(0).toLocaleLowerCase('es') + s.slice(1)
 /**
  * W3 (mockups 1h y 1h·2): sólo con sesión y sólo lo que el negocio tiene prendido (`oferta`). El premio con la pregunta del founder y
  * «Sí»/«Quitar»; «Más beneficios» junta puntos (si alcanza el mínimo) y cupón. Cambiar la elección vuelve a cotizar. Lo descartado se
- * dice junto a su control. «Va en tu <producto>» no: el SERVIDOR no dice en qué producto cae el premio (hallazgo aparte).
+ * dice junto a su control. D8: con `oferta.premio.lineIndex` (el renglón de `items` donde cae o caería), «Va en tu Latte.» y «Café gratis
+ * en tu Latte»; un índice que no es un renglón del carrito no nombra producto.
  */
 function Beneficios({ q }: { q: Quote }) {
   const store = useContext(OrderStoreContext)!
@@ -68,14 +69,18 @@ function Beneficios({ q }: { q: Quote }) {
   const fuera = q.descartados ?? []
   const premio = o.premio
   const usaPremio = !!premio && e.premioId === premio.id && !fuera.includes('PREMIO')
+  const enProducto = premio?.lineIndex !== undefined ? store.cart.value[premio.lineIndex]?.name : undefined
   const puntos = o.puntos
   const conCupon = !!e.cupon && !fuera.includes('CUPON')
   return (
     <div class="avq-o-ben">
       {premio && (usaPremio
-        ? <Notice tone="ok" title={t('cart.benefits.premioOn', { premio: premio.etiqueta })} text={t('cart.benefits.premioOnText')}
+        ? <Notice tone="ok" text={t('cart.benefits.premioOnText')}
+            title={enProducto ? t('cart.benefits.premioOnIn', { premio: premio.etiqueta, producto: enProducto }) : t('cart.benefits.premioOn', { premio: premio.etiqueta })}
             action={{ label: t('cart.benefits.remove'), onClick: () => set({ premioId: undefined }) }} />
-        : <Notice tone="neutral" text={t('cart.benefits.premioAsk', { premio: enFrase(premio.etiqueta) })}
+        : <Notice tone="neutral" {...(enProducto
+              ? { title: t('cart.benefits.premioAsk', { premio: enFrase(premio.etiqueta) }), text: t('cart.benefits.vaEn', { producto: enProducto }) }
+              : { text: t('cart.benefits.premioAsk', { premio: enFrase(premio.etiqueta) }) })}
             action={{ label: t('cart.benefits.premioYes'), onClick: () => set({ premioId: premio.id }) }} />)}
       {e.premioId && fuera.includes('PREMIO') && <p class="avq-o-ben__msg">{t('cart.benefits.premioBad')}</p>}
       {(puntos || o.cupon) && <p class="avq-o-ben__title">{t('cart.benefits.more')}</p>}
@@ -174,6 +179,9 @@ export function CartScreen() {
   // El servidor omite de `lines` los renglones con problema y respeta el orden del carrito (quote.service.ts:131-224).
   let k = 0
   const lineTotals = cart.map((_, i) => (q && lineIssues(i).length === 0 ? q.lines[k++]?.lineTotal : undefined))
+  // D8 (1h·2): el renglón donde quedó el premio dice «Gratis» sólo si el premio lo cubre entero (con 2 piezas o extras, no).
+  const premioAp = q?.aplicados?.find(a => a.tipo === 'PREMIO' && a.lineIndex !== undefined)
+  const gratis = (i: number) => premioAp?.lineIndex === i && lineTotals[i] !== undefined && toCents(premioAp.monto) >= toCents(lineTotals[i]!)
 
   // Vacío: la misma flecha y el mismo título que con renglones (sin la tarjeta de recolección: no hay nada que recoger), el mensaje
   // centrado con aire y «Ver la carta», que es el que hereda el foco al quitar el último renglón (arriba).
@@ -218,7 +226,13 @@ export function CartScreen() {
                 {options && <span class="avq-o-line__sub">{options}</span>}
                 {l.note && <span class="avq-o-line__sub">{l.note}</span>}
                 {/* Sólo el importe de la cotización, cuando llega: nunca se calcula con los precios de la carta ni del carrito. */}
-                {lineTotals[i] !== undefined && <span class="avq-o-line__price">{formatMXN(lineTotals[i]!, store.locale)}</span>}
+                {lineTotals[i] !== undefined && (
+                  <span class="avq-o-line__price">
+                    {gratis(i)
+                      ? <><s>{formatMXN(lineTotals[i]!, store.locale)}</s> <em class="avq-o-line__free">{t('cart.benefits.free')}</em></>
+                      : formatMXN(lineTotals[i]!, store.locale)}
+                  </span>
+                )}
               </div>
               {/* Con cantidad 1 el «−» es un bote de basura que quita el renglón; en 20 el «+» queda aria-disabled. Los tres botones
                   llevan el nombre del producto (el stepper es de ESE renglón). */}

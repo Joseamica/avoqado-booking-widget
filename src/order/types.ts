@@ -110,10 +110,12 @@ export interface Quote {
   // ── S10, opcionales y sólo con sesión.
   /** `calculados: false` = no se simularon (mucha carga): se calculan al pedir. */
   beneficios?: { calculados: boolean }
-  aplicados?: { tipo: 'DESCUENTO' | 'CUPON' | 'PREMIO' | 'PUNTOS'; nombre: string; monto: number }[]
+  /** D8: `lineIndex` (sólo PREMIO de producto gratis) = el renglón (desde 0) de `items` donde cae. */
+  aplicados?: { tipo: 'DESCUENTO' | 'CUPON' | 'PREMIO' | 'PUNTOS'; nombre: string; monto: number; lineIndex?: number }[]
   /** Lo que el negocio tiene prendido y ella puede usar. `cupon`: hay un cupón vigente que la tienda puede aplicar (se escribe). */
   oferta?: {
-    premio: { id: string; etiqueta: string } | null
+    /** D8: `lineIndex` = el renglón de `items` donde cae (si lo eligió) o caería (si no); falta si no es de producto gratis. */
+    premio: { id: string; etiqueta: string; lineIndex?: number } | null
     puntos: { saldo: number; minimo: number; valorPorPunto: number; maxPuntos: number } | null
     cupon: boolean
   }
@@ -213,6 +215,13 @@ export interface Tracking {
   /** R79, opcionales (PESOS): lo ya abonado y lo que falta. Con abono la cuenta no vence (R18). */
   amountPaid?: number
   remaining?: number
+  /** S14, opcionales (PESOS): las filas de descuento de la cuenta (hasta 10) y cuántas son en total. */
+  beneficios?: { nombre: string; monto: number }[]
+  beneficiosTotal?: number
+  /** S14: lo que la clienta usó en este folio ya regresó a su cuenta (el folio se anuló). */
+  beneficioRegresado?: boolean
+  /** S14: lo que sumó con esta cuenta pagada (sello con el avance de SU cartilla, y puntos); `null` = nada (nunca «no sumaste»). */
+  lealtad?: { sello?: { ganados: number; meta: number }; puntos?: number } | null
 }
 
 export interface OrderingCustomer {

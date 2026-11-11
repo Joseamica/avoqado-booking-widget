@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { createPackCheckout, getCustomerPortal, guardarTarjeta, listarMisPedidos, listarMisTarjetas } from './booking'
+import {
+  confirmarCambioDeNumero, createPackCheckout, getCustomerPortal, guardarTarjeta, listarMisPedidos, listarMisTarjetas, pedirCambioDeNumero,
+} from './booking'
 import { bindCustomerSessionToVenue, customerToken, tokenParaMandar } from '../state/booking'
 import { abrirPagina, borrarSesion, documentoNuevoParaPruebas, guardarSesion, leerSesion, paginaDe } from '../lib/sesionDeCliente'
 import { loadSession } from '../order/session'
@@ -82,5 +84,52 @@ describe('W4: «Mi cuenta» de la tienda manda con la sesión de la TIENDA (supe
     expect(claim[0]).toMatch(/\/venues\/m\/customer\/gift-cards\/claim$/)
     expect(claim[1]).toMatchObject({ method: 'POST', body: JSON.stringify({ code: 'K7Q2-9DXM-4R8H-HB7T-Q' }) })
     expect(claim[1].headers.Authorization).toBe('Bearer tok-A')
+  })
+})
+
+describe('W6: cambiar de número (S8)', () => {
+  beforeEach(() => documentoNuevoParaPruebas())
+
+  it('pedir y confirmar van a sus rutas con el número, el código y el token de la superficie', async () => {
+    guardarSesion('m', { ...unica, guardadaEn: Date.now() })
+    abrirPagina('m', 'pedidos', () => loadSession('m'))
+    const fetchMock = vi.fn(async () => ({ ok: true, status: 200, headers: new Headers(), json: async () => ({ ok: true }) }) as any)
+    vi.stubGlobal('fetch', fetchMock)
+    await pedirCambioDeNumero('m', 'tok-A', '+525598765432', 'pedidos')
+    await confirmarCambioDeNumero('m', 'tok-A', '+525598765432', '123456', 'pedidos')
+    const [pedir, confirmar] = fetchMock.mock.calls as any[]
+    expect(pedir[0]).toMatch(/\/venues\/m\/customer\/phone\/request$/)
+    expect(pedir[1]).toMatchObject({ method: 'POST', body: JSON.stringify({ phone: '+525598765432' }) })
+    expect(pedir[1].headers.Authorization).toBe('Bearer tok-A')
+    expect(confirmar[0]).toMatch(/\/venues\/m\/customer\/phone\/verify$/)
+    expect(confirmar[1]).toMatchObject({ method: 'POST', body: JSON.stringify({ phone: '+525598765432', code: '123456' }) })
+  })
+
+  it('401 CUSTOMER_REAUTH_REQUIRED no suelta la sesión (sirve para lo demás); otro 401 sí', async () => {
+    guardarSesion('m', { ...unica, guardadaEn: Date.now() })
+    bindCustomerSessionToVenue('m')
+    const r401 = (code: string) => vi.fn(async () => ({ ok: false, status: 401, headers: new Headers(), json: async () => ({ message: 'x', code }) }) as any)
+    vi.stubGlobal('fetch', r401('CUSTOMER_REAUTH_REQUIRED'))
+    await expect(pedirCambioDeNumero('m', 'tok-A', '+525598765432')).rejects.toMatchObject({ status: 401, data: { code: 'CUSTOMER_REAUTH_REQUIRED' } })
+    expect(leerSesion('m')?.token).toBe('tok-A')
+    expect(tokenParaMandar('m')).toBe('tok-A')
+    vi.stubGlobal('fetch', r401('CUSTOMER_TOKEN_INVALID'))
+    await expect(confirmarCambioDeNumero('m', 'tok-A', '+525598765432', '123456')).rejects.toMatchObject({ status: 401 })
+    expect(leerSesion('m')).toBeNull()
+    expect(tokenParaMandar('m')).toBeNull()
+  })
+
+  it('un 401 cuyo cuerpo no llega también suelta la sesión (al cortarse a los 20 s)', async () => {
+    vi.useFakeTimers()
+    guardarSesion('m', { ...unica, guardadaEn: Date.now() })
+    bindCustomerSessionToVenue('m')
+    vi.stubGlobal('fetch', vi.fn(async (_u: string, init: RequestInit) => ({
+      ok: false, status: 401, headers: new Headers(),
+      json: () => new Promise((_, rej) => init.signal?.addEventListener('abort', () => rej(Object.assign(new Error('aborted'), { name: 'AbortError' })))),
+    }) as any))
+    const p = pedirCambioDeNumero('m', 'tok-A', '+525598765432').catch(e => e)
+    await vi.advanceTimersByTimeAsync(20_500)
+    expect(await p).toMatchObject({ status: 401 })
+    expect(leerSesion('m')).toBeNull()
   })
 })

@@ -15,6 +15,7 @@ vi.mock('../api/booking', async importOriginal => {
   return {
     ...real, requestOtp: vi.fn(), verifyOtp: vi.fn(), customerLogin: vi.fn(), getCustomerPortal: vi.fn(), getCreditPacks: vi.fn(),
     updateCustomerProfile: vi.fn(), listarMisPedidos: vi.fn(), listarMisTarjetas: vi.fn(), listarMisDescuentos: vi.fn(), guardarTarjeta: vi.fn(),
+    pedirCambioDeNumero: vi.fn(), confirmarCambioDeNumero: vi.fn(),
   }
 })
 
@@ -826,5 +827,175 @@ describe('W4 codex-w4-r3: lo leído y su estado son UNO por negocio y superficie
     await screen.findByText('Hola, Bea')
     expect(screen.queryByPlaceholderText('Nombre')).toBeNull()
     expect(screen.queryByDisplayValue('Anita')).toBeNull()
+  })
+})
+
+describe('W6: «Cambiar mi número» (S8)', () => {
+  const NUEVO = '+525598765432'
+  const NUEVA = { token: 'tok-N', customer: { ...CLIENTE, phone: NUEVO }, contactos: [{ ...TEL, valor: NUEVO }], otraFicha: null }
+  const falla = (status: number, code?: string, extra: Record<string, unknown> = {}) =>
+    Object.assign(new Error('x'), { status, data: { message: 'del servidor', ...(code ? { code } : {}), ...extra }, enviado: 'tok-A' })
+  beforeEach(() => {
+    vi.mocked(api.pedirCambioDeNumero).mockResolvedValue({ ok: true })
+    vi.mocked(api.confirmarCambioDeNumero).mockResolvedValue(NUEVA)
+    vi.mocked(api.getCustomerPortal).mockImplementation(async (_s, tok) =>
+      PORTAL(tok === 'tok-N' ? { customer: { ...CLIENTE, phone: NUEVO, loyaltyPoints: 340, totalVisits: 3 } } : {}))
+  })
+  async function abrir(locale: 'es' | 'en' = 'es', extra: Record<string, unknown> = {}) {
+    renderPortal(locale, extra)
+    await screen.findByText(locale === 'es' ? 'Hola, Ana' : 'Hello, Ana')
+    fireEvent.click(screen.getByRole('button', { name: locale === 'es' ? 'Cambiar mi número' : 'Change my number' }))
+  }
+  async function pedir(numero = '5598765432') {
+    escribir(screen.getByPlaceholderText('Tu número de teléfono'), numero)
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Enviar código' })) })
+  }
+  const codigo = (c = '123456') => escribir(screen.getAllByRole('textbox')[0], c)
+
+  it('pide el nuevo, manda el código y guarda la sesión de reemplazo; reservas la adopta y «Mi cuenta» se relee con ella', async () => {
+    anaAdentro()
+    await abrir()
+    expect(screen.getByRole('heading', { name: 'Cambiar mi número' })).toBeTruthy()
+    expect(screen.getByText('Te mandamos un código por WhatsApp a tu número nuevo. Desde que lo confirmes, entras con él.')).toBeTruthy()
+    await pedir()
+    expect(api.pedirCambioDeNumero).toHaveBeenCalledWith('testarudo', 'tok-A', NUEVO, 'reservas')
+    expect(screen.getByText('Te enviamos un código por WhatsApp')).toBeTruthy()
+    expect(screen.getByText('55 9876 5432')).toBeTruthy()
+    expect((screen.getByRole('button', { name: 'Reenviar en 30s' }) as HTMLButtonElement).disabled).toBe(true)
+    codigo()
+    await waitFor(() => expect(api.confirmarCambioDeNumero).toHaveBeenCalledWith('testarudo', 'tok-A', NUEVO, '123456', 'reservas'))
+    expect(await screen.findByText('Listo: tu número ahora es 55 9876 5432.')).toBeTruthy()
+    expect(leerSesion('testarudo')).toMatchObject({ token: 'tok-N', contactos: NUEVA.contactos })
+    expect(state.customerToken.value).toBe('tok-N')
+    expect(api.getCustomerPortal).toHaveBeenLastCalledWith('testarudo', 'tok-N', 'reservas')
+    // El aviso es de ESA sesión: si entra otra persona en la página, se va.
+    await act(async () => { state.entroAqui('testarudo', { token: 'tok-B', customer: { ...CLIENTE, id: 'c2', firstName: 'Bea' }, contactos: [TEL] }) })
+    expect(screen.queryByText(/tu número ahora es/)).toBeNull()
+  })
+
+  it('tienda: manda con la sesión de la TIENDA y la de reemplazo la adopta la tienda (alEntrar); reservas no la toma', async () => {
+    const { fijarPagina } = await import('../lib/sesionDeCliente')
+    const { desdeUnica } = await import('../order/session')
+    const sesion = { token: 'tok-T', customer: CLIENTE, contactos: [TEL], guardadaEn: Date.now() }
+    guardarSesion('testarudo', sesion)
+    fijarPagina('testarudo', 'pedidos', desdeUnica(sesion))
+    const alEntrar = vi.fn()
+    await abrir('es', { superficie: 'pedidos', alEntrar })
+    await pedir()
+    expect(api.pedirCambioDeNumero).toHaveBeenCalledWith('testarudo', 'tok-T', NUEVO, 'pedidos')
+    codigo()
+    await waitFor(() => expect(alEntrar).toHaveBeenCalledWith(NUEVA))
+    expect(leerSesion('testarudo')?.token).toBe('tok-N')
+    expect(state.customerToken.value).toBeNull() // A refinada: reservas no la toma
+  })
+
+  it('401 CUSTOMER_REAUTH_REQUIRED ⇒ «Entra otra vez para cambiar tu número» con «Entrar otra vez»; la sesión NO se cierra', async () => {
+    anaAdentro()
+    vi.mocked(api.pedirCambioDeNumero).mockRejectedValueOnce(falla(401, 'CUSTOMER_REAUTH_REQUIRED'))
+    await abrir()
+    await pedir()
+    expect(await screen.findByText('Entra otra vez para cambiar tu número')).toBeTruthy()
+    expect(leerSesion('testarudo')?.token).toBe('tok-A')
+    expect(state.customerToken.value).toBe('tok-A')
+    fireEvent.click(screen.getByRole('button', { name: 'Entrar otra vez' }))
+    expect(screen.getByRole('heading', { name: 'Entra a tu cuenta' })).toBeTruthy()
+    expect(state.customerToken.value).toBe('tok-A')
+  })
+
+  it('otro 401 al confirmar (la sesión ya no vale) ⇒ se cierra como siempre: «Entra a tu cuenta», sin rojo', async () => {
+    anaAdentro()
+    vi.mocked(api.confirmarCambioDeNumero).mockRejectedValueOnce(falla(401, 'CUSTOMER_TOKEN_INVALID'))
+    await abrir()
+    await pedir()
+    codigo()
+    expect(await screen.findByRole('heading', { name: 'Entra a tu cuenta' })).toBeTruthy()
+    expect(state.customerToken.value).toBeNull()
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+
+  it('409 TELEFONO_DE_OTRA_FICHA ⇒ el aviso de dos fichas y «Tu número no cambió.»; «Entrar con mi teléfono» abre la entrada', async () => {
+    anaAdentro()
+    vi.mocked(api.confirmarCambioDeNumero).mockRejectedValueOnce(
+      falla(409, 'TELEFONO_DE_OTRA_FICHA', { details: { otraFicha: { contacto: 'PHONE', enmascarado: '•••• 5432' } } }))
+    await abrir()
+    await pedir()
+    codigo()
+    expect(await screen.findByText('Tienes beneficios en otra ficha')).toBeTruthy()
+    expect(screen.getByText('Con tu teléfono: entra con ese teléfono para usarlos.')).toBeTruthy()
+    expect(screen.getByText('Tu número no cambió.')).toBeTruthy()
+    expect(leerSesion('testarudo')?.token).toBe('tok-A')
+    fireEvent.click(screen.getByRole('button', { name: 'Entrar con mi teléfono' }))
+    expect(screen.getByRole('heading', { name: 'Entra a tu cuenta' })).toBeTruthy()
+  })
+
+  it('el mismo número ⇒ «Ese ya es tu número.» y sigue en el paso del número', async () => {
+    anaAdentro()
+    vi.mocked(api.pedirCambioDeNumero).mockRejectedValueOnce(falla(400, 'CUSTOMER_PHONE_SAME'))
+    await abrir()
+    await pedir('5544422262')
+    expect(await screen.findByText('Ese ya es tu número.')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Enviar código' })).toBeTruthy()
+  })
+
+  it('sin red ⇒ «Sin conexión…» en ámbar, se conserva lo escrito y se puede volver a intentar; al confirmar, el código sigue', async () => {
+    anaAdentro()
+    vi.mocked(api.pedirCambioDeNumero).mockRejectedValueOnce(new TypeError('Failed to fetch'))
+    await abrir()
+    await pedir()
+    const aviso = await screen.findByText('Sin conexión. Revisa tu internet y vuelve a intentar.')
+    expect(aviso.style.color).toBe('rgb(146, 64, 14)') // ámbar (#92400e), no rojo
+    expect((screen.getByPlaceholderText('Tu número de teléfono') as HTMLInputElement).value).toContain('98765432')
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Enviar código' })) })
+    expect(await screen.findByText('Te enviamos un código por WhatsApp')).toBeTruthy()
+    vi.mocked(api.confirmarCambioDeNumero).mockRejectedValueOnce(new TypeError('Failed to fetch'))
+    codigo()
+    expect(await screen.findByText('Sin conexión. Revisa tu internet y vuelve a intentar.')).toBeTruthy()
+    expect((screen.getAllByRole('textbox')[0] as HTMLInputElement).value).toBe('1')
+  })
+
+  it('un doble toque en «Enviar código» manda una sola petición', async () => {
+    anaAdentro()
+    let responder: (r: any) => void = () => {}
+    vi.mocked(api.pedirCambioDeNumero).mockImplementationOnce(() => new Promise(ok => { responder = ok }))
+    await abrir()
+    escribir(screen.getByPlaceholderText('Tu número de teléfono'), '5598765432')
+    const boton = screen.getByRole('button', { name: 'Enviar código' })
+    fireEvent.click(boton)
+    fireEvent.click(boton)
+    await act(async () => { responder({ ok: true }) })
+    expect(api.pedirCambioDeNumero).toHaveBeenCalledTimes(1)
+  })
+
+  it('la confirmación que llega después de «Cerrar sesión» no guarda ni adopta la sesión de reemplazo', async () => {
+    anaAdentro()
+    let responder: (r: any) => void = () => {}
+    vi.mocked(api.confirmarCambioDeNumero).mockImplementationOnce(() => new Promise(ok => { responder = ok }))
+    await abrir()
+    await pedir()
+    codigo()
+    await waitFor(() => expect(api.confirmarCambioDeNumero).toHaveBeenCalled())
+    await act(async () => { state.clearCustomerSession('testarudo') })
+    await act(async () => { responder(NUEVA) })
+    expect(leerSesion('testarudo')).toBeNull()
+    expect(state.customerToken.value).toBeNull()
+    expect(screen.queryByText(/tu número ahora es/)).toBeNull()
+  })
+
+  it('una cuenta sin teléfono no ve «Cambiar mi número»', async () => {
+    anaAdentro()
+    vi.mocked(api.getCustomerPortal).mockResolvedValue(PORTAL({ customer: { ...CLIENTE, phone: null, email: 'ana@x.mx', loyaltyPoints: 0, totalVisits: 0 } }))
+    renderPortal()
+    await screen.findByText('Hola, Ana')
+    expect(screen.queryByRole('button', { name: 'Cambiar mi número' })).toBeNull()
+  })
+
+  it('en inglés', async () => {
+    anaAdentro()
+    vi.mocked(api.pedirCambioDeNumero).mockRejectedValueOnce(falla(401, 'CUSTOMER_REAUTH_REQUIRED'))
+    await abrir('en')
+    expect(screen.getByRole('heading', { name: 'Change my number' })).toBeTruthy()
+    escribir(screen.getByPlaceholderText('Your phone number'), '5598765432')
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Send code' })) })
+    expect(await screen.findByText('Sign in again to change your number')).toBeTruthy()
   })
 })

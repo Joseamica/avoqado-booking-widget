@@ -350,7 +350,7 @@
     "saveCard": "Save my card",
     "saveOnOther": "Have {{sistema}}? save it here",
     "enterWithCode": "Sign in with a code",
-    "phoneChangeHint": "To update your phone without losing your history, ask the business for help."
+    "phoneChangeHint": "To change it, use “Change my number”: we'll send you a WhatsApp code."
   },
   "otp": {
     "title": "Sign in with WhatsApp",
@@ -504,5 +504,17 @@
     "vacio": "There's nothing in your account yet. When you order, you'll see it here.",
     "sinCuentaAyuda": "You don't need an account to order: your name is enough.",
     "pedirSinCuenta": "Order without an account"
+  },
+  "cambiarNumero": {
+    "boton": "Change my number",
+    "titulo": "Change my number",
+    "intro": "We'll send a WhatsApp code to your new number. Once you confirm it, you sign in with it.",
+    "etiqueta": "Your new WhatsApp number",
+    "confirmar": "Confirm",
+    "listo": "Done: your number is now {{numero}}.",
+    "mismo": "That's already your number.",
+    "reentrar": "Sign in again to change your number",
+    "reentrarAyuda": "For your security, first confirm your WhatsApp or email with a code.",
+    "noCambio": "Your number didn't change."
   }
 }

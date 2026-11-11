@@ -35,8 +35,13 @@ const fallaDeSesion = (status: number, code: string, message: string, enviado: s
  * - si el SERVIDOR la renueva (`x-customer-session`, S6), se guarda y la superficie sigue con la renovada. Los errores llevan `enviado`.
  * W4: `superficie` (reservas por omisión): «Mi cuenta» dentro de la tienda manda con la sesión de la TIENDA (`pedidos`), nunca con la
  * de reservas, y su 401 sólo suelta la de la tienda.
+ * W6: `pideReentrarNoCierra` («Cambiar mi número»): su 401 `CUSTOMER_REAUTH_REQUIRED` sólo dice que ESTA sesión no probó un contacto
+ * (sigue sirviendo para lo demás), así que el cuerpo se lee antes de soltarla (con el tope de 20 s): cualquier otro 401, o un cuerpo que
+ * no llega, la suelta igual.
  */
-async function request<T>(url: string, init?: RequestInit, sesion?: { slug: string; token?: string | null; superficie?: Superficie }): Promise<T> {
+async function request<T>(
+  url: string, init?: RequestInit, sesion?: { slug: string; token?: string | null; superficie?: Superficie; pideReentrarNoCierra?: boolean },
+): Promise<T> {
   const sup = sesion?.superficie ?? 'reservas'
   const leer = sesion ? lectorDe(sesion.slug, sup) : null
   const enviado = sesion?.token ? tokenDeLaPagina(sesion.slug, sup, leer!, sesion.token) : null
@@ -56,9 +61,11 @@ async function request<T>(url: string, init?: RequestInit, sesion?: { slug: stri
   if (sesion && enviado && aplicarRenovacion(sesion.slug, res.headers, enviado)) renovarLaPagina(sesion.slug, sup, enviado, leer!)
   if (!res.ok) {
     // codex-r7 H3: el 401 suelta la sesión ANTES de leer el cuerpo (un cuerpo que no llega no la deja activa).
-    if (res.status === 401 && sesion && enviado) soltarLaPagina(sesion.slug, sup, enviado, leer!)
+    const conCuerpo = res.status === 401 && !!sesion?.pideReentrarNoCierra
+    if (res.status === 401 && sesion && enviado && !conCuerpo) soltarLaPagina(sesion.slug, sup, enviado, leer!)
     let err: any
     try { err = await res.json() } catch { err = { message: `HTTP ${res.status}` } }
+    if (conCuerpo && enviado && err?.code !== 'CUSTOMER_REAUTH_REQUIRED') soltarLaPagina(sesion!.slug, sup, enviado, leer!)
     const e = Object.assign(new Error(err.message ?? 'Request failed'), { status: res.status, data: err, enviado })
     throw e
   }
@@ -396,6 +403,26 @@ export const listarMisDescuentos = pagina<MiDescuento>('discounts')
 /** 409 `GIFT_CARD_ALREADY_SAVED` = de otra clienta; 404 = código que no es de una tarjeta viva de este negocio. No mueve saldo. */
 export function guardarTarjeta(slug: string, token: string, code: string, superficie: Superficie = 'reservas'): Promise<{ giftCardId: string; last4: string; saldo: number }> {
   return request(`${BASE}/venues/${slug}/customer/gift-cards/claim`, { method: 'POST', body: JSON.stringify({ code }), signal: conTope() }, { slug, token, superficie })
+}
+
+/**
+ * W6 (S8): «Cambiar mi número». El código va por WhatsApp al número NUEVO. 401 `CUSTOMER_REAUTH_REQUIRED` = esta sesión no probó un
+ * contacto (token de reservas de hoy o contraseña): «Entra otra vez para cambiar tu número», sin cerrarla.
+ */
+export function pedirCambioDeNumero(slug: string, token: string, phone: string, superficie: Superficie = 'reservas'): Promise<{ ok: true }> {
+  return request(`${BASE}/venues/${slug}/customer/phone/request`, { method: 'POST', body: JSON.stringify({ phone }), signal: conTope() },
+    { slug, token, superficie, pideReentrarNoCierra: true })
+}
+
+/**
+ * W6 (S8): confirma el código y responde la sesión de REEMPLAZO (versión nueva: todas las de antes de esa ficha dejan de valer). 409
+ * `TELEFONO_DE_OTRA_FICHA` = el número es de otra ficha y no se movió nada.
+ */
+export function confirmarCambioDeNumero(
+  slug: string, token: string, phone: string, code: string, superficie: Superficie = 'reservas',
+): Promise<SesionEmitida> {
+  return request(`${BASE}/venues/${slug}/customer/phone/verify`, { method: 'POST', body: JSON.stringify({ phone, code }), signal: conTope() },
+    { slug, token, superficie, pideReentrarNoCierra: true })
 }
 
 export function updateCustomerProfile(slug: string, token: string, data: {

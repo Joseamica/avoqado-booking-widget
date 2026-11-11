@@ -6,6 +6,7 @@ import { Spinner } from './ui/Spinner'
 import { Button } from './ui/Button'
 import { Input } from './ui/Input'
 import { EntrarConCuenta } from './EntrarConCuenta'
+import { CambiarNumero } from './CambiarNumero'
 import * as api from '../api/booking'
 import {
   customerToken, setCustomerSession, clearCustomerSession, venueInfo, entroAqui, lectorDe,
@@ -119,6 +120,10 @@ export function CustomerPortal({
   // El id, no una copia: «Usar en caja» enseña SIEMPRE la tarjeta de los datos vigentes (codex-w4-r1 #2).
   const [usando, setUsando] = useState<string | null>(null)
   const [reentrar, setReentrar] = useState(false)
+  // W6: «Cambiar mi número» abierto, y el aviso «Listo: tu número ahora es…». Los dos son de UNA sesión (la época de la superficie al
+  // abrirlo, y la de la sesión de reemplazo): si entra otra persona o sale, ya no se pintan. Una renovación no los cierra.
+  const [cambiando, setCambiando] = useState<number | null>(null)
+  const [numeroNuevo, setNumeroNuevo] = useState<{ epoca: number; numero: string } | null>(null)
   const idCodigo = useId()
   const enVuelo = useRef({ mas: false, guardar: false })
 
@@ -410,6 +415,29 @@ export function CustomerPortal({
     )
   }
 
+  // W6: «Cambiar mi número». La sesión de reemplazo ya quedó guardada: la superficie la adopta como al entrar (sin releer) y «Mi cuenta»
+  // se vuelve a leer con ella.
+  if (data && token && cambiando !== null && cambiando === epocaDe(venueSlug, sup)) {
+    return (
+      <div class="avq-animate-in">
+        <CambiarNumero
+          slug={venueSlug}
+          superficie={sup}
+          t={t}
+          token={tokenActual}
+          onListo={(r, numero) => {
+            setCambiando(null)
+            void handleEntro(r)
+            setNumeroNuevo({ epoca: epocaDe(venueSlug, sup), numero })
+          }}
+          onReentrar={() => { setCambiando(null); setReentrar(true) }}
+          onVolver={() => setCambiando(null)}
+          on401={soltar401}
+        />
+      </div>
+    )
+  }
+
   // W4 (1m): «Usar en caja», con el código de la tarjeta para que la cajera lo teclee. Sale de los datos VIGENTES: si al releer ya no
   // está activa (bloqueada, vencida, sin código) o ya no está, se regresa a «Mi cuenta», que dice por qué.
   const enUso = usando && data
@@ -634,6 +662,13 @@ export function CustomerPortal({
           {customer?.phone && (
             <p style={{ fontSize: '12px', color: 'var(--avq-muted-fg, #6b7280)', margin: '1px 0 0' }}>{customer.phone}</p>
           )}
+          {/* W6: con su código por WhatsApp (una cuenta sin teléfono no lo ve: agregar uno no está pedido). */}
+          {customer?.phone && (
+            <button type="button" onClick={() => { setNumeroNuevo(null); setCambiando(epocaDe(venueSlug, sup)) }}
+              style={{ ...botonQuieto, width: 'auto', justifyContent: 'flex-start', marginTop: 0, padding: 0, fontSize: '13px', textDecoration: 'underline', textUnderlineOffset: '2px' }}>
+              {t('cambiarNumero.boton')}
+            </button>
+          )}
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flex: 'none' }}>
           {actualizando && (
@@ -657,6 +692,12 @@ export function CustomerPortal({
           )}
         </div>
       </div>
+
+      {numeroNuevo && numeroNuevo.epoca === epocaDe(venueSlug, sup) && (
+        <div role="status" style={{ ...aviso('neutro'), background: '#EAF6EE', color: '#0B6B36', fontWeight: '600' }}>
+          {t('cambiarNumero.listo', { numero: numeroNuevo.numero })}
+        </div>
+      )}
 
       {/* Releer falló: lo último que supimos sigue a la vista, con calma (ámbar) y «Reintentar». */}
       {fallaCarga && (

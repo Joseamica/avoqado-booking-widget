@@ -350,7 +350,7 @@
     "saveCard": "Guardar mi tarjeta",
     "saveOnOther": "¿Tienes {{sistema}}? guárdala aquí",
     "enterWithCode": "Entra con un código",
-    "phoneChangeHint": "Para actualizar tu teléfono sin perder tu historial, pide ayuda al negocio."
+    "phoneChangeHint": "Para cambiarlo, usa «Cambiar mi número»: te mandamos un código por WhatsApp."
   },
   "otp": {
     "title": "Entrar con WhatsApp",
@@ -504,5 +504,17 @@
     "vacio": "Todavía no hay nada en tu cuenta. Cuando pidas, aquí lo verás.",
     "sinCuentaAyuda": "Para pedir no necesitas cuenta: basta tu nombre.",
     "pedirSinCuenta": "Pedir sin cuenta"
+  },
+  "cambiarNumero": {
+    "boton": "Cambiar mi número",
+    "titulo": "Cambiar mi número",
+    "intro": "Te mandamos un código por WhatsApp a tu número nuevo. Desde que lo confirmes, entras con él.",
+    "etiqueta": "Tu número nuevo de WhatsApp",
+    "confirmar": "Confirmar",
+    "listo": "Listo: tu número ahora es {{numero}}.",
+    "mismo": "Ese ya es tu número.",
+    "reentrar": "Entra otra vez para cambiar tu número",
+    "reentrarAyuda": "Por seguridad, primero confirma tu WhatsApp o tu correo con un código.",
+    "noCambio": "Tu número no cambió."
   }
 }

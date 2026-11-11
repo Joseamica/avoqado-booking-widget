@@ -141,7 +141,10 @@
       "later": "Tus beneficios se calculan al pedir.",
       "sessionTitle": "Tu sesión se cerró",
       "sessionText": "Entra otra vez para usar tus beneficios, o confirma el precio sin ellos.",
-      "signInAgain": "Entrar otra vez"
+      "signInAgain": "Entrar otra vez",
+      "vaEn": "Va en tu {{producto}}.",
+      "premioOnIn": "{{premio}} en tu {{producto}}",
+      "free": "Gratis"
     }
   },
   "details": {
@@ -338,7 +341,21 @@
       "tab": "¡Listo! · {{venue}}",
       "reminderTitle": "Tu folio {{folio}}",
       "reminderText": "Paga en caja antes de las {{time}}.",
-      "reminderPaid": "Tu pedido {{folio}} está pagado"
+      "reminderPaid": "Tu pedido {{folio}} está pagado",
+      "totalToPay": "Total a pagar",
+      "paidTotal": "Pagaste"
+    },
+    "loyalty": {
+      "stamp": "Sumaste 1 sello ({{n}} de {{meta}})",
+      "stampFull": "Con esta compra completaste tu cartilla",
+      "points": "Sumaste {{n}} puntos",
+      "point": "Sumaste 1 punto"
+    },
+    "benefits": {
+      "returned": "Tus beneficios regresaron a tu cuenta",
+      "returnedHint": "Úsalos en tu próximo pedido.",
+      "more": "y {{n}} más",
+      "unnamed": "Descuento"
     }
   },
   "entrar": {

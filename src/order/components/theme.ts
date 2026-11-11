@@ -293,6 +293,8 @@ textarea.avq-o-input{min-height:0;padding:12px 14px;resize:none}
 .avq-o-line__name{font-size:16px;font-weight:600}
 .avq-o-line__sub{color:${T.muted};font-size:14px}
 .avq-o-line__price{margin-top:2px;font-weight:500}
+.avq-o-line__price s{color:${T.text2};font-weight:400}
+.avq-o-line__free{font-style:normal;font-weight:700;color:${T.okFg}}
 .avq-o-issue{margin:0;padding:8px 12px;border-radius:12px;background:${T.errBg};color:${T.errFg};font-size:14px;font-weight:600;line-height:1.4;overflow-wrap:anywhere}
 .avq-o-line>.avq-o-issue{flex:0 0 100%;margin-top:10px}
 .avq-o-cart>.avq-o-issue{margin:12px 16px 0;border-radius:16px}

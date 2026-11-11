@@ -359,6 +359,23 @@ export function TrackingScreen() {
       : shownName ? t('tracking.folio.paidByAt', { name: shownName, time: time(tracking.paidAt) }) : t('tracking.folio.paidTodayAt', { time: time(tracking.paidAt) })
     : shownName ? t('tracking.folio.paidBy', { name: shownName }) : t('tracking.folio.paidToday')
 
+  // W5 (S14, mockups 1i, 1i·2 y 1j): lo que sumó, si su premio regresó y sus beneficios en el ticket; sólo lo que el SERVIDOR manda.
+  const l = tracking.lealtad
+  const sumaste = [
+    // La cartilla que esta compra llenó dice «10 de 10» del avance de ESA cartilla, no de hoy: se dice que la completó (nota de S14).
+    l?.sello && (l.sello.ganados >= l.sello.meta
+      ? t('tracking.loyalty.stampFull')
+      : t('tracking.loyalty.stamp', { n: l.sello.ganados, meta: l.sello.meta })),
+    l?.puntos && t(l.puntos === 1 ? 'tracking.loyalty.point' : 'tracking.loyalty.points', { n: new Intl.NumberFormat(store.locale === 'en' ? 'en-US' : 'es-MX').format(l.puntos) }),
+  ].filter((x): x is string => !!x)
+  const ben = tracking.beneficios ?? []
+  // R1 de S14: el SERVIDOR publica hasta 10 filas y dice cuántas son; las demás se cuentan, nunca se esconden.
+  const benMas = Math.max(0, (tracking.beneficiosTotal ?? ben.length) - ben.length)
+  const paidWithBen = folioPaid && ben.length > 0
+  const totalLabel = paidWithBen ? 'tracking.folio.paidTotal'
+    : isFolio && ben.length > 0 && tracking.status === 'PENDING_ACCEPTANCE' && !partialOf(tracking) ? 'tracking.folio.totalToPay'
+    : 'cart.totalShort'
+
   async function doCancel() {
     if (cancelling.current || !token) return
     cancelling.current = true
@@ -397,6 +414,8 @@ export function TrackingScreen() {
           <p class="avq-o-track__chip"><span class={left <= 5 ? 'avq-o-chip avq-o-chip--warn' : 'avq-o-chip'}><span aria-hidden="true">◷</span>{t('tracking.folio.left', { n: String(left) })}</span></p>
         )}
       </div>
+      {tracking.beneficioRegresado && <Notice tone="ok" title={t('tracking.benefits.returned')} text={t('tracking.benefits.returnedHint')} />}
+      {sumaste.length > 0 && <Notice tone="ok" title={sumaste[0]} text={sumaste[1]} />}
       {isFolio && tracking.status === 'EXPIRED' && !folioPaid && (
         <div class="avq-o-track__again"><strong>{t('tracking.folio.againTitle')}</strong><span>{t('tracking.folio.againHint')}</span></div>
       )}
@@ -454,8 +473,15 @@ export function TrackingScreen() {
             })}
           </ul>}
           <div class="avq-o-ticket__sum">
-            <p class="avq-o-total__row"><span>{t('cart.totalShort')}</span><span>{formatMXN(tracking.total, store.locale)}</span></p>
-            {pay && <p class="avq-o-total__tax">{pay}</p>}
+            {ben.map((b, i) => (
+              <p key={i} class="avq-o-total__row avq-o-total__row--ben">
+                <span>{b.nombre || t('tracking.benefits.unnamed')}</span><span>−{formatMXN(b.monto, store.locale)}</span>
+              </p>
+            ))}
+            {benMas > 0 && <p class="avq-o-total__tax">{t('tracking.benefits.more', { n: benMas })}</p>}
+            <p class="avq-o-total__row"><span>{t(totalLabel)}</span><span>{formatMXN(tracking.total, store.locale)}</span></p>
+            {/* «Pagaste $69» ya dice que se pagó (1j). */}
+            {pay && !paidWithBen && <p class="avq-o-total__tax">{pay}</p>}
           </div>
           {isFolio && tracking.status === 'PENDING_ACCEPTANCE' && <p class="avq-o-total__tax">{t('tracking.folio.closePage')}</p>}
         </div>

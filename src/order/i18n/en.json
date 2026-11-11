@@ -141,7 +141,10 @@
       "later": "Your rewards are calculated when you order.",
       "sessionTitle": "Your session ended",
       "sessionText": "Sign in again to use your rewards, or confirm the price without them.",
-      "signInAgain": "Sign in again"
+      "signInAgain": "Sign in again",
+      "vaEn": "It goes on your {{producto}}.",
+      "premioOnIn": "{{premio}} on your {{producto}}",
+      "free": "Free"
     }
   },
   "details": {
@@ -338,7 +341,21 @@
       "tab": "Ready! · {{venue}}",
       "reminderTitle": "Your order number {{folio}}",
       "reminderText": "Pay at the counter before {{time}}.",
-      "reminderPaid": "Your order {{folio}} is paid"
+      "reminderPaid": "Your order {{folio}} is paid",
+      "totalToPay": "Total to pay",
+      "paidTotal": "You paid"
+    },
+    "loyalty": {
+      "stamp": "You earned 1 stamp ({{n}} of {{meta}})",
+      "stampFull": "With this purchase you completed your card",
+      "points": "You earned {{n}} points",
+      "point": "You earned 1 point"
+    },
+    "benefits": {
+      "returned": "Your rewards went back to your account",
+      "returnedHint": "Use them on your next order.",
+      "more": "and {{n}} more",
+      "unnamed": "Discount"
     }
   },
   "entrar": {

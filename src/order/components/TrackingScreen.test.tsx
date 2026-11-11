@@ -1239,3 +1239,130 @@ describe('W4: el seguimiento avisa a «Mi cuenta» cuando su folio cambia', () =
     document.removeEventListener('avoqado:folio-cambio', oido)
   })
 })
+
+describe('W5: el seguimiento dice lo que ganó y lo que regresó (S14)', () => {
+  const NOW = '2026-10-17T19:00:00Z'
+  const T32 = 'T'.repeat(32)
+  const folio = (over: Partial<Tracking> = {}): Tracking => tr({
+    orderNumber: 'W7K3P', requiresAcceptance: false, channel: 'QR', canCancel: true, total: 69,
+    acceptDeadlineAt: '2026-10-17T19:30:00Z',
+    items: [
+      { name: 'Latte', quantity: 1, note: null, modifiers: [], unitPrice: 65, total: 65 },
+      { name: 'Shake de proteína', quantity: 1, note: null, modifiers: [], unitPrice: 69, total: 69 },
+    ],
+    ...over,
+  })
+  const pagado = (over: Partial<Tracking> = {}) => folio({ status: 'ACCEPTED', paid: true, canCancel: false, paidAt: '2026-10-17T19:14:00Z', ...over })
+  async function showW(t: Tracking, locale: 'es' | 'en' = 'es') {
+    vi.setSystemTime(new Date(NOW))
+    localStorage.clear()
+    vi.mocked(getTracking).mockResolvedValue(t)
+    const s = makeStore(null, null, locale)
+    saveLastOrder(s.slug, { trackingToken: T32, orderNumber: 'W7K3P', name: 'Ana' })
+    s.trackingToken.value = T32
+    s.go('tracking')
+    render(withStore(s, <TrackingScreen />))
+    await flush()
+    return s
+  }
+  const fila = (label: string) => screen.getByText(label).parentElement!.textContent
+
+  it('pagado con un sello ⇒ «Sumaste 1 sello (7 de 10)», en verde', async () => {
+    await showW(pagado({ lealtad: { sello: { ganados: 7, meta: 10 } } }))
+    const t = screen.getByText('Sumaste 1 sello (7 de 10)')
+    expect(t.closest('.avq-o-notice--ok')).toBeTruthy()
+  })
+  it('la compra llenó la cartilla ⇒ «Con esta compra completaste tu cartilla», nunca «10 de 10»', async () => {
+    await showW(pagado({ lealtad: { sello: { ganados: 10, meta: 10 } } }))
+    expect(screen.getByText('Con esta compra completaste tu cartilla')).toBeTruthy()
+    expect(screen.queryByText(/10 de 10/)).toBeNull()
+  })
+  it('con puntos ⇒ «Sumaste 42 puntos»; con sello y puntos, las dos', async () => {
+    await showW(pagado({ lealtad: { puntos: 42 } }))
+    expect(screen.getByText('Sumaste 42 puntos')).toBeTruthy()
+    cleanup()
+    await showW(pagado({ lealtad: { sello: { ganados: 3, meta: 8 }, puntos: 1 } }))
+    expect(screen.getByText('Sumaste 1 sello (3 de 8)')).toBeTruthy()
+    expect(screen.getByText('Sumaste 1 punto')).toBeTruthy()
+  })
+  it('sin lealtad (null o sin el campo) no dice nada: nunca «no sumaste»', async () => {
+    await showW(pagado({ lealtad: null }))
+    expect(screen.queryByText(/Sumaste/)).toBeNull()
+    expect(screen.queryByText(/no sumaste/i)).toBeNull()
+    cleanup()
+    await showW(pagado())
+    expect(screen.queryByText(/Sumaste/)).toBeNull()
+  })
+  it('beneficioRegresado ⇒ «Tus beneficios regresaron a tu cuenta» / «Úsalos en tu próximo pedido.» (1i·2)', async () => {
+    await showW(folio({ status: 'EXPIRED', canCancel: false, beneficioRegresado: true, beneficios: [{ nombre: 'Café gratis', monto: 65 }], beneficiosTotal: 1 }))
+    expect(screen.getByRole('heading', { name: 'Se canceló tu pedido' })).toBeTruthy()
+    const t = screen.getByText('Tus beneficios regresaron a tu cuenta')
+    expect(t.closest('.avq-o-notice--ok')!.textContent).toContain('Úsalos en tu próximo pedido.')
+  })
+  it('beneficioRegresado false no dice nada', async () => {
+    await showW(folio({ beneficioRegresado: false, beneficios: [], beneficiosTotal: 0 }))
+    expect(screen.queryByText(/regresaron a tu cuenta/)).toBeNull()
+  })
+  it('por pagar con beneficios: cada fila con −$X encima del total, y «Total a pagar» (1i)', async () => {
+    await showW(folio({ beneficios: [{ nombre: 'Café gratis', monto: 65 }], beneficiosTotal: 1 }))
+    expect(fila('Café gratis')).toBe('Café gratis−$65')
+    expect(screen.getByText('Café gratis').parentElement!.classList.contains('avq-o-total__row--ben')).toBe(true)
+    expect(fila('Total a pagar')).toBe('Total a pagar$69')
+    const sum = document.querySelector('.avq-o-ticket__sum')!
+    expect(sum.textContent!.indexOf('Café gratis')).toBeLessThan(sum.textContent!.indexOf('Total a pagar'))
+    expect(screen.getByText('Pagas en caja: tarjeta o efectivo. IVA incluido.')).toBeTruthy()
+  })
+  it('pagado con beneficios: la fila y «Pagaste $69», sin el «Pagado» suelto (1j)', async () => {
+    await showW(pagado({ beneficios: [{ nombre: 'Café gratis', monto: 65 }], beneficiosTotal: 1, lealtad: { sello: { ganados: 1, meta: 10 } } }))
+    expect(fila('Café gratis')).toBe('Café gratis−$65')
+    expect(fila('Pagaste')).toBe('Pagaste$69')
+    expect(document.querySelector('.avq-o-ticket__sum')!.textContent).not.toContain('Pagado')
+    expect(screen.getByText('Sumaste 1 sello (1 de 10)')).toBeTruthy()
+  })
+  it('más filas que las publicadas ⇒ «y 2 más» (nunca se recorta en silencio)', async () => {
+    const diez = Array.from({ length: 10 }, (_, i) => ({ nombre: `Descuento ${i + 1}`, monto: 1 }))
+    await showW(folio({ beneficios: diez, beneficiosTotal: 12 }))
+    expect(screen.getByText('Descuento 10')).toBeTruthy()
+    expect(screen.getByText('y 2 más')).toBeTruthy()
+  })
+  it('una fila sin nombre dice «Descuento»', async () => {
+    await showW(folio({ beneficios: [{ nombre: '', monto: 5 }], beneficiosTotal: 1 }))
+    expect(fila('Descuento')).toBe('Descuento−$5')
+  })
+  it('sin los campos nuevos, como hoy: «Total», «Pagado», ni filas ni avisos', async () => {
+    await showW(pagado())
+    expect(fila('Total')).toBe('Total$69')
+    expect(document.querySelector('.avq-o-ticket__sum')!.textContent).toBe('Total$69Pagado')
+    expect(document.querySelector('.avq-o-total__row--ben')).toBeNull()
+    expect(screen.queryByText(/regresaron/)).toBeNull()
+  })
+  it('pedido de «Mi equipo» también: filas y «Sumaste», con «Total»', async () => {
+    await showW(tr({ status: 'ACCEPTED', paid: true, canCancel: false, total: 105, beneficios: [{ nombre: 'Recompensas — 340 puntos', monto: 34 }], beneficiosTotal: 1, lealtad: { puntos: 10 } }))
+    expect(fila('Recompensas — 340 puntos')).toBe('Recompensas — 340 puntos−$34')
+    expect(fila('Total')).toBe('Total$105')
+    expect(screen.getByText('Sumaste 10 puntos')).toBeTruthy()
+  })
+  it('sin red: se queda lo último que supo, con «Sumaste» y las filas', async () => {
+    await showW(pagado({ beneficios: [{ nombre: 'Café gratis', monto: 65 }], beneficiosTotal: 1, lealtad: { sello: { ganados: 7, meta: 10 } } }))
+    vi.mocked(getTracking).mockRejectedValue(new ApiError('Sin conexión', 0, undefined, undefined, true))
+    await tick(10_000)
+    expect(screen.getByText('Sin conexión: te enseñamos lo último que supimos; se actualiza solo al volver.')).toBeTruthy()
+    expect(screen.getByText('Sumaste 1 sello (7 de 10)')).toBeTruthy()
+    expect(fila('Café gratis')).toBe('Café gratis−$65')
+  })
+  it('en inglés', async () => {
+    await showW(pagado({ beneficios: [{ nombre: 'Café gratis', monto: 65 }], beneficiosTotal: 12, lealtad: { sello: { ganados: 7, meta: 10 }, puntos: 42 } }), 'en')
+    expect(screen.getByText('You earned 1 stamp (7 of 10)')).toBeTruthy()
+    expect(screen.getByText('You earned 42 points')).toBeTruthy()
+    expect(fila('You paid')).toBe('You paid$69')
+    expect(screen.getByText('and 11 more')).toBeTruthy()
+    cleanup()
+    await showW(folio({ status: 'EXPIRED', canCancel: false, beneficioRegresado: true, beneficios: [{ nombre: 'Café gratis', monto: 65 }], beneficiosTotal: 1, lealtad: { sello: { ganados: 10, meta: 10 } } }), 'en')
+    expect(screen.getByText('Your rewards went back to your account')).toBeTruthy()
+    expect(screen.getByText('Use them on your next order.')).toBeTruthy()
+    expect(screen.getByText('With this purchase you completed your card')).toBeTruthy()
+    cleanup()
+    await showW(folio({ beneficios: [{ nombre: 'Café gratis', monto: 65 }], beneficiosTotal: 1 }), 'en')
+    expect(fila('Total to pay')).toBe('Total to pay$69')
+  })
+})

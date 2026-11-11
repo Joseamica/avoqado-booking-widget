@@ -23,7 +23,7 @@ export function Notice({ tone, icon, title, text, action, role = 'status' }: {
   tone: 'neutral' | 'warn' | 'error' | 'ok'
   icon?: NoticeIcon
   title?: string
-  text: string
+  text?: string
   action?: { label: string; onClick: () => void }
   role?: 'status' | 'alert'
 }) {
@@ -36,7 +36,7 @@ export function Notice({ tone, icon, title, text, action, role = 'status' }: {
       )}
       <div class="avq-o-notice__body">
         {title && <span class="avq-o-notice__title">{title}</span>}
-        <span>{text}</span>
+        {text && <span>{text}</span>}
       </div>
       {action && <button type="button" class="avq-o-notice__action" onClick={action.onClick}>{action.label}</button>}
     </div>
