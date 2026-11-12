@@ -108,8 +108,9 @@ export function buildOrderBody(
 
 /** Estado del envío de UNA tienda (dos `<avoqado-order>` nunca lo comparten). */
 /** `payment`: lo que eligió la persona en «¿Cómo quieres pagar?»; sin elegir, tarjeta si el negocio la acepta. */
+/** `nameTouched` (W2 a): ella tocó el nombre; vacío y tocado = lo borró a propósito (no se enseña el de su ficha). */
 export interface CheckoutDraft {
-  note: string; name: string; dial: string; national: string; email: string; accepted: boolean; payment?: PaymentMode
+  note: string; name: string; dial: string; national: string; email: string; accepted: boolean; payment?: PaymentMode; nameTouched?: boolean
 }
 export type Feedback =
   | { kind: 'sesionParaTerminar' }

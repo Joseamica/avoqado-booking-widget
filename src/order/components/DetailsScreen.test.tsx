@@ -8,9 +8,10 @@ vi.mock('../api', async () => {
 })
 import { API_BASE, createOrder } from '../api'
 import { loadSession, saveSession } from '../session'
-import { fijarPagina, guardarSesion } from '../../lib/sesionDeCliente'
+import { borrarSesion, fijarPagina, guardarSesion } from '../../lib/sesionDeCliente'
 import { autorizarIntento, beginAttempt, pendingAttempt, reautorizarIntento } from '../attempt'
-import { checkoutOf } from '../checkout'
+import { checkoutOf, entroEnLaTienda } from '../checkout'
+import { createOrderStore } from '../store'
 import { DetailsScreen } from './DetailsScreen'
 import { OrderApp } from './OrderApp'
 import { infoOf, makeStore, menuOf, withStore } from './testKit'
@@ -616,6 +617,75 @@ describe('pulido W2: «Tus datos» con sesión', () => {
     render(withStore(s, <DetailsScreen />))
     await flush()
     expect(nombre().value).toBe('')
+  })
+
+  // W2 (a), conductor 11-nov: el nombre de la ficha NO se escribe en el borrador; se ve (y se manda) el de la ficha que está AHORA.
+  const BEA = { id: 'c2', firstName: 'Beatriz', lastName: null, email: null, phone: '+525599998888' }
+  const TEL_BEA = { tipo: 'PHONE' as const, valor: '+525599998888', metodo: 'WHATSAPP' as const, probadoEn: 2 }
+  const pedirBtn = () => screen.getByRole('button', { name: /^Pedir/ }) as HTMLButtonElement
+  const cotizada = (s: ReturnType<typeof makeStore>) => {
+    s.cart.value = [{ lineId: 'a', productId: 'p1', name: 'Flautas', unitPrice: 85, quantity: 1, note: null, modifiers: [] }]
+    s.quote.value = { ok: true, lines: [], subtotal: 85, total: 85, minOrderAmount: 0, issues: [] }
+  }
+
+  it('W2 (a): dos tiendas del mismo negocio; entra Beatriz en la otra con «Tus datos» abierto: se ve y se manda «Beatriz», nunca «Ana López» con su token', async () => {
+    const slug = `dos${Date.now()}`
+    ana(slug)
+    const [a, b] = [createOrderStore(slug, { locale: 'es' }), createOrderStore(slug, { locale: 'es' })]
+    for (const x of [a, b]) { x.info.value = infoOf({ requiresAcceptance: false }); x.menu.value = menuOf() }
+    cotizada(a)
+    a.go('details')
+    vi.mocked(createOrder).mockReturnValue(new Promise(() => {}))
+    render(withStore(a, <DetailsScreen />))
+    await flush()
+    expect(nombre().value).toBe('Ana López')
+    // En la OTRA tienda entra Beatriz (EntrarConCuenta ya guardó su sesión).
+    const r = { token: 'tok-B', customer: BEA, contactos: [TEL_BEA] }
+    guardarSesion(slug, { ...r, guardadaEn: Date.now() })
+    await act(async () => { entroEnLaTienda(b, r as any, null) })
+    await flush()
+    expect(nombre().value).toBe('Beatriz')
+    await pastGuard()
+    fireEvent.click(pedirBtn())
+    await flush()
+    expect(createOrder).toHaveBeenCalledTimes(1)
+    const [, body, opts] = vi.mocked(createOrder).mock.calls[0]
+    expect(body.customer.name).toBe('Beatriz')
+    expect(opts.token).toBe('tok-B')
+  })
+
+  it('W2 (a): lo que se manda es lo que se ve: si al pedir su sesión ya no está guardada, no sale «Ana López»; el campo queda vacío', async () => {
+    const s = makeStore(infoOf({ requiresAcceptance: false }), menuOf())
+    ana(s.slug)
+    cotizada(s)
+    s.go('details')
+    vi.mocked(createOrder).mockReturnValue(new Promise(() => {}))
+    render(withStore(s, <DetailsScreen />))
+    await flush()
+    expect(nombre().value).toBe('Ana López')
+    borrarSesion(s.slug) // salió en otra pestaña: esta página todavía no se entera
+    await pastGuard()
+    fireEvent.click(pedirBtn())
+    await flush()
+    expect(createOrder).not.toHaveBeenCalled()
+    expect(nombre().value).toBe('')
+    expect(screen.getByText('Escribe tu nombre (de 2 a 80 caracteres).')).toBeTruthy()
+  })
+
+  it('W2 (a): si ella borra el nombre, se queda vacío (no reaparece el de la ficha), también al volver a la pantalla', async () => {
+    const s = makeStore(infoOf({ requiresAcceptance: false }), menuOf())
+    ana(s.slug)
+    cotizada(s)
+    s.go('details')
+    render(withStore(s, <DetailsScreen />))
+    await flush()
+    fireEvent.input(nombre(), { target: { value: '' } })
+    expect(nombre().value).toBe('')
+    cleanup()
+    render(withStore(s, <DetailsScreen />))
+    await flush()
+    expect(nombre().value).toBe('')
+    expect(checkoutOf(s).draft.value.name).toBe('')
   })
 
   it('sin sesión el campo nace vacío; lo que ya escribió no se pisa', async () => {

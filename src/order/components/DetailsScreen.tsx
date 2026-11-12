@@ -1,6 +1,7 @@
 import { h } from 'preact'
-import { useContext, useId, useLayoutEffect, useState } from 'preact/hooks'
-import { paginaDe, type ClienteDeSesion } from '../../lib/sesionDeCliente'
+import { useContext, useEffect, useId, useState } from 'preact/hooks'
+import { alCambiarLaPagina, paginaDe, sesionParaMandar, type ClienteDeSesion } from '../../lib/sesionDeCliente'
+import { loadSession } from '../session'
 import { OrderStoreContext } from '../store'
 import { createOrderT } from '../i18n'
 import { API_BASE } from '../api'
@@ -15,8 +16,11 @@ import { tapTime } from './focus'
 import type { PaymentMode } from '../types'
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-/** Pulido W2: el nombre que la tienda escribió sola, y de qué ficha (para no dejárselo a otra persona). */
-const nombrePuesto = new WeakMap<object, { ficha: string; nombre: string }>()
+/** W2 (a): el nombre de la ficha de una sesión de la tienda («Ana López»); la de pedidos de hoy no trae ficha: vacío. */
+const nombreDe = (l: { datos?: unknown } | null | undefined): string => {
+  const f = l?.datos as Partial<ClienteDeSesion> | undefined
+  return [f?.firstName, f?.lastName].filter(Boolean).join(' ').trim().slice(0, 80)
+}
 /** Durante cuánto, al aparecer la pantalla, «Confirmar pedido» ignora los toques (ver `confirm`). */
 const ENTRY_GUARD_MS = 400
 
@@ -34,18 +38,13 @@ export function DetailsScreen() {
   const c = checkoutOf(store)
   const d = c.draft.value
   const set = (patch: Partial<typeof d>) => { c.draft.value = { ...c.draft.value, ...patch } }
-  // Pulido W2: con sesión, el nombre de su ficha ya viene escrito (y se puede cambiar); lo que ella escribió no se pisa. El que puso la
-  // tienda es de ESA ficha: si ya no es ella (salió, entró otra), se cambia por el de quien está o se borra (codex-pulido-r1 #2).
-  useLayoutEffect(() => {
-    const ficha = paginaDe(store.slug, 'pedidos')?.datos as Partial<ClienteDeSesion> | undefined
-    const suyo = [ficha?.firstName, ficha?.lastName].filter(Boolean).join(' ').trim().slice(0, 80)
-    const puesto = nombrePuesto.get(store)
-    const escrito = c.draft.value.name
-    if (escrito && !(puesto && escrito === puesto.nombre && puesto.ficha !== ficha?.id)) return
-    nombrePuesto.delete(store)
-    if (suyo && ficha?.id) nombrePuesto.set(store, { ficha: ficha.id, nombre: suyo })
-    if (escrito !== suyo) set({ name: suyo })
-  }, [])
+  // W2 (a), conductor 11-nov: el nombre de la ficha NUNCA se escribe en el borrador. El campo enseña lo que ella tecleó (un nombre no
+  // vacío del borrador siempre lo tecleó ella; `nameTouched` dice si lo borró a propósito) y, si no tecleó nada, el de la ficha que está
+  // AHORA en la tienda (la sesión de la página: A refinada). Si la sesión de la página cambia con la pantalla abierta (otra tienda del
+  // negocio, salir), se repinta con la de ahora.
+  const [, repintar] = useState(0)
+  useEffect(() => alCambiarLaPagina((slug, afecta) => { if (slug === store.slug && afecta.includes('pedidos')) repintar(n => n + 1) }), [store])
+  const shownName = d.name || (d.nameTouched ? '' : nombreDe(paginaDe(store.slug, 'pedidos')))
   const info = store.info.value
   const q = store.quote.value
   // «Nadie»: sólo nombre y nota, sin teléfono ni código ni medio de pago que elegir (se paga en caja). Un servidor viejo = «Mi equipo».
@@ -56,7 +55,7 @@ export function DetailsScreen() {
   const card = payment === 'CARD_ONLINE'
 
   const phone = phoneE164(d.dial, d.national)
-  const name = d.name.trim()
+  const name = shownName.trim()
   const email = d.email.trim()
   const missing =
     name.length < 2 || name.length > 80 ? t('details.needName')
@@ -77,6 +76,9 @@ export function DetailsScreen() {
     // contando la hora del TOQUE (`tapTime`), no la de atenderlo. La raíz de la tienda (OrderApp) ya descarta los toques de los 400 ms que
     // siguen a un cambio de pantalla; ésta es la guarda propia del botón, medida desde que se pinta esta pantalla.
     if (!canSend || tapTime(e) - shownAt < ENTRY_GUARD_MS) return
+    // W2 (a): lo que se manda es lo que se ve. Sin teclear, la ficha se lee UNA vez con la regla de mandar (`sesionParaMandar`, la misma
+    // de la cotización y del pedido); si ya no es la que se ve (salió o cambió), no se manda y la pantalla se repinta con la de ahora.
+    if (!d.name && nombreDe(sesionParaMandar(store.slug, 'pedidos', () => loadSession(store.slug))) !== name) return repintar(n => n + 1)
     void send(store, buildOrderBody(store, {
       customer: nadie ? { name } : { name, phone, ...(email ? { email } : {}) },
       note: d.note || null,
@@ -99,8 +101,8 @@ export function DetailsScreen() {
         </div>
         <div class="avq-o-field">
           <label for={`${id}-name`}>{t('details.name')}</label>
-          <input id={`${id}-name`} class="avq-o-input" type="text" autoComplete="name" maxLength={80} value={d.name}
-            onInput={(e: any) => set({ name: e.currentTarget.value })} />
+          <input id={`${id}-name`} class="avq-o-input" type="text" autoComplete="name" maxLength={80} value={shownName}
+            onInput={(e: any) => set({ name: e.currentTarget.value, nameTouched: true })} />
         </div>
         {/* El campo es compartido con reservas: `inputId` (sólo con `look="tienda"`) le pone id al número, y así «WhatsApp» es su etiqueta real. */}
         {nadie ? (<>
