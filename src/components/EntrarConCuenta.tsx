@@ -93,10 +93,12 @@ export function EntrarConCuenta({ slug, negocio, t, onEntro }: Props) {
   const destino = () => (canal === 'phone' ? { phone: phoneE164(dial, numero) } : { email: correo.trim() })
   // Como se lee en México: «55 4442 2262»; de otro país, con su lada.
   const digitos = numero.replace(/\D/g, '')
-  const visible = () =>
-    canal === 'email' ? correo.trim()
-    : dial === '52' && digitos.length === 10 ? digitos.replace(/(\d{2})(\d{4})(\d{4})/, '$1 $2 $3')
-    : `+${dial} ${digitos}`
+  // El mismo número que se manda (`phoneE164` quita la lada que la persona repitió: «52 55 4442 2262» se lee «55 4442 2262»).
+  const visible = () => {
+    if (canal === 'email') return correo.trim()
+    const e164 = phoneE164(dial, numero)
+    return /^\+52\d{10}$/.test(e164) ? e164.slice(3).replace(/(\d{2})(\d{4})(\d{4})/, '$1 $2 $3') : `+${dial} ${digitos}`
+  }
 
   function reiniciar() {
     setPaso('inicio')
@@ -282,10 +284,10 @@ export function EntrarConCuenta({ slug, negocio, t, onEntro }: Props) {
         {atras(() => { setAviso(null); setPaso('contacto') })}
         {cabeza(canal === 'phone' ? t('otp.title') : t('otp.titleEmail'))}
         {aviso && <p role="status" style={{ ...texto, color: 'var(--avq-fg, #111827)', textAlign: 'center' }}>{aviso}</p>}
-        <div style={{ textAlign: 'center' }}>
-          <p style={texto}>{canal === 'phone' ? t('otp.sent') : t('otp.sentEmail')}</p>
-          <p style={{ ...texto, fontWeight: '600', color: 'var(--avq-fg, #111827)' }}>{visible()}</p>
-        </div>
+        {/* D17: el SERVIDOR no garantiza que el código salió (`requestOtp` responde igual): se dice que se pidió y qué hacer si no llega. */}
+        <p style={{ ...texto, textAlign: 'center' }}>
+          {canal === 'phone' ? t('entrar.pedimosWhatsapp', { numero: visible() }) : t('entrar.pedimosCorreo', { correo: visible() })}
+        </p>
         <div>
           <label style={etiqueta}>{t('otp.codeLabel')}</label>
           <OtpInput value={codigo} onChange={setCodigo} onComplete={verificar} disabled={ocupado} />

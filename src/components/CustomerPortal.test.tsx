@@ -63,7 +63,7 @@ describe('CustomerPortal: entrar con la sesión única (W2)', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Seguir con WhatsApp' }))
     escribir(screen.getByPlaceholderText('Tu número de teléfono'), '5544422262')
     fireEvent.click(screen.getByRole('button', { name: 'Enviar código' }))
-    await screen.findByText('Te enviamos un código por WhatsApp')
+    await screen.findByText(/^Pedimos tu código por WhatsApp/)
     escribir(screen.getAllByRole('textbox')[0], '123456')
     await waitFor(() => expect(api.getCustomerPortal).toHaveBeenCalledWith('testarudo', 'tok', 'reservas'))
     expect(state.customerToken.value).toBe('tok')
@@ -77,7 +77,7 @@ describe('CustomerPortal: entrar con la sesión única (W2)', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Seguir con WhatsApp' }))
     escribir(screen.getByPlaceholderText('Tu número de teléfono'), '5544422262')
     fireEvent.click(screen.getByRole('button', { name: 'Enviar código' }))
-    await screen.findByText('Te enviamos un código por WhatsApp')
+    await screen.findByText(/^Pedimos tu código por WhatsApp/)
     escribir(screen.getAllByRole('textbox')[0], '123456')
     expect(await screen.findByText('Sin conexión. Revisa tu internet y vuelve a intentar.')).toBeTruthy()
     expect(screen.queryByRole('heading', { name: 'Entra a tu cuenta' })).toBeNull()
@@ -568,7 +568,7 @@ describe('W4: «Mi cuenta» dentro de la tienda (superficie pedidos)', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Seguir con WhatsApp' }))
     escribir(screen.getByPlaceholderText('Tu número de teléfono'), '5544422262')
     fireEvent.click(screen.getByRole('button', { name: 'Enviar código' }))
-    await screen.findByText('Te enviamos un código por WhatsApp')
+    await screen.findByText(/^Pedimos tu código por WhatsApp/)
     escribir(screen.getAllByRole('textbox')[0], '123456')
     await waitFor(() => expect(alEntrar).toHaveBeenCalledWith(expect.objectContaining({ token: 'tok' })))
     expect(state.customerToken.value).toBeNull() // reservas no la toma (A refinada)
@@ -859,8 +859,8 @@ describe('W6: «Cambiar mi número» (S8)', () => {
     expect(screen.getByText('Te mandamos un código por WhatsApp a tu número nuevo. Desde que lo confirmes, entras con él.')).toBeTruthy()
     await pedir()
     expect(api.pedirCambioDeNumero).toHaveBeenCalledWith('testarudo', 'tok-A', NUEVO, 'reservas')
-    expect(screen.getByText('Te enviamos un código por WhatsApp')).toBeTruthy()
-    expect(screen.getByText('55 9876 5432')).toBeTruthy()
+    expect(screen.getByText(/^Pedimos tu código por WhatsApp/)).toBeTruthy()
+    expect(screen.getByText(/al 55 9876 5432\./)).toBeTruthy()
     expect((screen.getByRole('button', { name: 'Reenviar en 30s' }) as HTMLButtonElement).disabled).toBe(true)
     codigo()
     await waitFor(() => expect(api.confirmarCambioDeNumero).toHaveBeenCalledWith('testarudo', 'tok-A', NUEVO, '123456', 'reservas'))
@@ -946,7 +946,7 @@ describe('W6: «Cambiar mi número» (S8)', () => {
     expect(aviso.style.color).toBe('rgb(146, 64, 14)') // ámbar (#92400e), no rojo
     expect((screen.getByPlaceholderText('Tu número de teléfono') as HTMLInputElement).value).toContain('98765432')
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Enviar código' })) })
-    expect(await screen.findByText('Te enviamos un código por WhatsApp')).toBeTruthy()
+    expect(await screen.findByText(/^Pedimos tu código por WhatsApp/)).toBeTruthy()
     vi.mocked(api.confirmarCambioDeNumero).mockRejectedValueOnce(new TypeError('Failed to fetch'))
     codigo()
     expect(await screen.findByText('Sin conexión. Revisa tu internet y vuelve a intentar.')).toBeTruthy()
@@ -986,7 +986,7 @@ describe('W6: «Cambiar mi número» (S8)', () => {
     await abrir()
     await pedir('52 55 9876 5432')
     expect(api.pedirCambioDeNumero).toHaveBeenCalledWith('testarudo', 'tok-A', NUEVO, 'reservas')
-    expect(screen.getByText('55 9876 5432')).toBeTruthy()
+    expect(screen.getByText(/al 55 9876 5432\./)).toBeTruthy()
     codigo()
     expect(await screen.findByText('Listo: tu número ahora es 55 9876 5432.')).toBeTruthy()
   })
@@ -1000,7 +1000,7 @@ describe('W6: «Cambiar mi número» (S8)', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Enviar código' }))
     escribir(screen.getByPlaceholderText('Tu número de teléfono'), '5511112222') // la editó mientras iba
     await act(async () => { responder({ ok: true }) })
-    expect(screen.getByText('55 9876 5432')).toBeTruthy()
+    expect(screen.getByText(/al 55 9876 5432\./)).toBeTruthy()
     codigo()
     await waitFor(() => expect(api.confirmarCambioDeNumero).toHaveBeenCalledWith('testarudo', 'tok-A', NUEVO, '123456', 'reservas'))
   })
@@ -1105,6 +1105,47 @@ describe('W6: «Cambiar mi número» (S8)', () => {
     expect(leerSesion('testarudo')?.token).toBe('tok-N')
     expect(state.customerToken.value).toBe('tok-N')
     expect(await screen.findByText('Listo: tu número ahora es 55 9876 5432.')).toBeTruthy()
+  })
+
+  // Un token como los del SERVIDOR: sólo importa su versión (`v`) en la parte del medio.
+  const conVersion = (v: number, n: string) => `h.${btoa(JSON.stringify({ v, n })).replace(/=+$/, '')}.f`
+
+  it('codex-w5w6-r3 #1: dos pestañas cambian el número; la respuesta v1 que llega tarde no pisa la v2 ya guardada', async () => {
+    guardarSesion('testarudo', { token: conVersion(0, 'a'), customer: CLIENTE, contactos: [TEL], guardadaEn: Date.now() })
+    state.entroAqui('testarudo', leerSesion('testarudo')!)
+    let responder: (r: any) => void = () => {}
+    vi.mocked(api.confirmarCambioDeNumero).mockImplementationOnce(() => new Promise(ok => { responder = ok }))
+    await abrir()
+    await pedir()
+    codigo()
+    await waitFor(() => expect(api.confirmarCambioDeNumero).toHaveBeenCalled())
+    // En otra pestaña Ana confirmó OTRO cambio después: su sesión v2 es la válida.
+    const v2 = conVersion(2, 'b')
+    guardarSesion('testarudo', { token: v2, customer: { ...CLIENTE, phone: '+525511112222' }, contactos: [{ ...TEL, valor: '+525511112222' }], guardadaEn: Date.now() })
+    await act(async () => { responder({ ...NUEVA, token: conVersion(1, 'n') }) })
+    expect(leerSesion('testarudo')?.token).toBe(v2)
+    expect(state.customerToken.value).toBeNull()
+    expect(screen.queryByText(/tu número ahora es/)).toBeNull()
+  })
+
+  it('con versiones de verdad, el caso normal: la de reemplazo (v1) sí pisa a la que la pidió (v0)', async () => {
+    guardarSesion('testarudo', { token: conVersion(0, 'a'), customer: CLIENTE, contactos: [TEL], guardadaEn: Date.now() })
+    state.entroAqui('testarudo', leerSesion('testarudo')!)
+    vi.mocked(api.confirmarCambioDeNumero).mockResolvedValueOnce({ ...NUEVA, token: conVersion(1, 'n') })
+    vi.mocked(api.getCustomerPortal).mockResolvedValue(PORTAL({ customer: { ...CLIENTE, phone: NUEVO, loyaltyPoints: 340, totalVisits: 3 } }))
+    await abrir()
+    await pedir()
+    codigo()
+    expect(await screen.findByText('Listo: tu número ahora es 55 9876 5432.')).toBeTruthy()
+    expect(leerSesion('testarudo')?.token).toBe(conVersion(1, 'n'))
+  })
+
+  it('D17: no promete que el código ya salió: «Pedimos tu código por WhatsApp al 55 9876 5432. Si no te llega en un minuto, revisa el número o pide otro.»', async () => {
+    anaAdentro()
+    await abrir()
+    await pedir()
+    expect(screen.getByText('Pedimos tu código por WhatsApp al 55 9876 5432. Si no te llega en un minuto, revisa el número o pide otro.')).toBeTruthy()
+    expect(screen.queryByText(/Te enviamos/)).toBeNull()
   })
 
   it('una cuenta sin teléfono no ve «Cambiar mi número»', async () => {

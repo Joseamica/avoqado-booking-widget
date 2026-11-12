@@ -431,7 +431,9 @@
     "muchosIntentos": "Demasiados intentos. Espera un minuto.",
     "noSeGuardo": "No pudimos guardar tu sesión en este navegador.",
     "sesionCerrada": "Tu sesión se cerró. Entra otra vez.",
-    "sesionCerradaSigue": "Tu sesión se cerró. Puedes seguir sin cuenta o entrar otra vez."
+    "sesionCerradaSigue": "Tu sesión se cerró. Puedes seguir sin cuenta o entrar otra vez.",
+    "pedimosWhatsapp": "Pedimos tu código por WhatsApp al {{numero}}. Si no te llega en un minuto, revisa el número o pide otro.",
+    "pedimosCorreo": "Pedimos tu código por correo a {{correo}}. Si no te llega en un minuto, revisa el correo o pide otro."
   },
   "cuenta": {
     "intl": "es-MX",

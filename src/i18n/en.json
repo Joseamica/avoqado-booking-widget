@@ -431,7 +431,9 @@
     "muchosIntentos": "Too many attempts. Wait a minute.",
     "noSeGuardo": "We couldn't save your session in this browser.",
     "sesionCerrada": "Your session ended. Sign in again.",
-    "sesionCerradaSigue": "Your session ended. You can continue without an account or sign in again."
+    "sesionCerradaSigue": "Your session ended. You can continue without an account or sign in again.",
+    "pedimosWhatsapp": "We requested your code on WhatsApp for {{numero}}. If it doesn't arrive within a minute, check the number or request another one.",
+    "pedimosCorreo": "We requested your code by email for {{correo}}. If it doesn't arrive within a minute, check the email or request another one."
   },
   "cuenta": {
     "intl": "en-US",

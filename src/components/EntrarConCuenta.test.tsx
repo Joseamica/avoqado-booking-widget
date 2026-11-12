@@ -41,7 +41,7 @@ async function codigoPorWhatsApp(numero = '5544422262') {
   fireEvent.click(boton('Seguir con WhatsApp'))
   escribir(screen.getByPlaceholderText('Tu número de teléfono'), numero)
   fireEvent.click(boton('Enviar código'))
-  await screen.findByText('Te enviamos un código por WhatsApp')
+  await screen.findByText(/^Pedimos tu código por WhatsApp/)
 }
 const teclearCodigo = (code = '123456') => escribir(screen.getAllByRole('textbox')[0], code)
 
@@ -116,7 +116,7 @@ describe('W2: entrar a la cuenta', () => {
     await act(async () => { alEntrar({ credential: idToken('ana@empresa.mx') }) })
     expect(api.entrarConGoogle).toHaveBeenCalledWith(SLUG, { idToken: idToken('ana@empresa.mx') })
     expect(await screen.findByText('Te mandamos un código a tu correo para confirmarlo')).toBeTruthy()
-    expect(screen.getByText('Te enviamos un código a tu correo')).toBeTruthy()
+    expect(screen.getByText(/^Pedimos tu código por correo a ana@empresa\.mx\./)).toBeTruthy()
     // El SERVIDOR ya lo mandó: la tienda no pide otro (y no deja reenviar antes de 30 s).
     expect(api.requestOtp).not.toHaveBeenCalled()
     expect((boton(/Reenviar/) as HTMLButtonElement).disabled).toBe(true)
@@ -202,7 +202,7 @@ describe('W2: entrar a la cuenta', () => {
     fireEvent.click(boton('Seguir con correo'))
     escribir(screen.getByPlaceholderText('tucorreo@email.com'), ' ana@correo.mx ')
     fireEvent.click(boton('Enviar código'))
-    await screen.findByText('Te enviamos un código a tu correo')
+    await screen.findByText(/^Pedimos tu código por correo/)
     expect(api.requestOtp).toHaveBeenLastCalledWith(SLUG, { email: 'ana@correo.mx' })
     teclearCodigo('654321')
     await waitFor(() => expect(onEntro).toHaveBeenCalledTimes(1))
@@ -222,7 +222,7 @@ describe('W2: entrar a la cuenta', () => {
     fireEvent.click(boton('Seguir con correo'))
     escribir(screen.getByPlaceholderText('tucorreo@email.com'), 'otro@correo.mx')
     fireEvent.click(boton('Enviar código'))
-    await screen.findByText('Te enviamos un código a tu correo')
+    await screen.findByText(/^Pedimos tu código por correo/)
     teclearCodigo()
     expect(await screen.findByText(/Tampoco encontramos una cuenta con otro@correo\.mx\./)).toBeTruthy()
     fireEvent.click(boton('No, es mi primera vez'))
@@ -295,7 +295,7 @@ describe('W2: entrar a la cuenta', () => {
     expect(numero.value).toBe('5544422262')
     expect((boton('Enviar código') as HTMLButtonElement).disabled).toBe(false)
     fireEvent.click(boton('Enviar código'))
-    await screen.findByText('Te enviamos un código por WhatsApp')
+    await screen.findByText(/^Pedimos tu código por WhatsApp/)
   })
 
   it('codex-r2 #6: sin red al verificar, el código escrito se queda (sólo un rechazo del servidor lo borra)', async () => {
@@ -352,5 +352,31 @@ describe('W2: entrar a la cuenta', () => {
     const llaves = (o: any, p = ''): string[] =>
       Object.entries(o).flatMap(([k, v]) => (v && typeof v === 'object' ? llaves(v, `${p}${k}.`) : [`${p}${k}`])).sort()
     expect(llaves((en as any).entrar)).toEqual(llaves((es as any).entrar))
+  })
+})
+
+describe('D17 / codex-w5w6-r1 #4: el SERVIDOR no garantiza que el código salió ⇒ la tienda no promete «Te enviamos»', () => {
+  it('WhatsApp: «Pedimos tu código por WhatsApp al 55 4442 2262. Si no te llega en un minuto, revisa el número o pide otro.»', async () => {
+    show()
+    fireEvent.click(boton('Seguir con WhatsApp'))
+    escribir(screen.getByPlaceholderText('Tu número de teléfono'), '52 55 4442 2262')
+    fireEvent.click(boton('Enviar código'))
+    expect(await screen.findByText('Pedimos tu código por WhatsApp al 55 4442 2262. Si no te llega en un minuto, revisa el número o pide otro.')).toBeTruthy()
+    expect(screen.queryByText(/Te enviamos/)).toBeNull()
+  })
+  it('correo: «Pedimos tu código por correo a ana@correo.mx. Si no te llega en un minuto, revisa el correo o pide otro.»', async () => {
+    show()
+    fireEvent.click(boton('Seguir con correo'))
+    escribir(screen.getByPlaceholderText('tucorreo@email.com'), ' ana@correo.mx ')
+    fireEvent.click(boton('Enviar código'))
+    expect(await screen.findByText('Pedimos tu código por correo a ana@correo.mx. Si no te llega en un minuto, revisa el correo o pide otro.')).toBeTruthy()
+    expect(screen.queryByText(/Te enviamos/)).toBeNull()
+  })
+  it('en inglés', async () => {
+    show('en')
+    fireEvent.click(boton('Continue with WhatsApp'))
+    escribir(screen.getByPlaceholderText('Your phone number'), '5544422262')
+    fireEvent.click(boton('Send code'))
+    expect(await screen.findByText("We requested your code on WhatsApp for 55 4442 2262. If it doesn't arrive within a minute, check the number or request another one.")).toBeTruthy()
   })
 })

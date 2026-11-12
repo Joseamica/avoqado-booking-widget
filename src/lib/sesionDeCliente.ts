@@ -43,7 +43,7 @@ export interface FichaNueva {
 const TREINTA_DIAS_S = 30 * 24 * 60 * 60
 
 /** La versión de sesión que firmó el SERVIDOR (`v` del token; S6). `null` si el token no trae una legible. */
-function versionDelToken(token: string): number | null {
+export function versionDelToken(token: string): number | null {
   try {
     const p = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')
     const v = JSON.parse(atob(p + '==='.slice((p.length + 3) % 4))).v

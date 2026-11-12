@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'preact/hooks'
 import type { TFunction } from '../i18n'
 import * as api from '../api/booking'
 import { DEFAULT_DIAL, phoneE164 } from '../data/countries'
-import { epocaDelNegocio, guardarSesion, leerSesion, salidaDe, type SesionEmitida, type Superficie } from '../lib/sesionDeCliente'
+import { epocaDelNegocio, guardarSesion, leerSesion, salidaDe, versionDelToken, type SesionEmitida, type Superficie } from '../lib/sesionDeCliente'
 import { Button } from './ui/Button'
 import { CountryPhoneInput } from './ui/CountryPhoneInput'
 import { OtpInput } from './ui/OtpInput'
@@ -131,12 +131,16 @@ export function CambiarNumero({ slug, superficie, t, token, onListo, onReentrar,
     const tel = destino
     const salida = salidaDe(slug)
     void intentar(tkn => api.confirmarCambioDeNumero(slug, tkn, tel, valor, superficie), (r, tkn) => {
-      // Regla única de la sesión de reemplazo (codex-w5w6-r1 #1 y r2 #1; `inventario-reemplazo-w6.md`): el SERVIDOR ya cambió el número
-      // y dejó sin valor toda sesión anterior de ESA ficha. Se escribe y se adopta salvo que, mientras iba, alguien cerrara sesión a
-      // propósito (en cualquier pestaña: `salidaDe`) o lo guardado sea de OTRA persona; un 401 de la sesión vieja, una renovación o lo
-      // guardado vacío por ese 401 no lo impiden. Si no se escribe, la página queda sin sesión (la suya ya no vale).
+      // Regla única de la sesión de reemplazo (codex-w5w6-r1 #1, r2 #1 y r3 #1; `inventario-reemplazo-w6.md`): el SERVIDOR ya cambió el
+      // número y dejó sin valor toda sesión anterior de ESA ficha. Se escribe y se adopta salvo que, mientras iba, alguien cerrara sesión
+      // a propósito (en cualquier pestaña: `salidaDe`), lo guardado sea de OTRA persona, o sea una versión MÁS NUEVA de la misma (otro
+      // cambio de número posterior, en otra pestaña). Un 401 de la sesión vieja, una renovación o lo guardado vacío por ese 401 no lo
+      // impiden. Si no se escribe, la página queda sin sesión (la suya ya no vale).
       const guardada = leerSesion(slug)
-      if (salidaDe(slug) !== salida || (guardada && guardada.customer.id !== r.customer.id)) return on401(null, tkn)
+      const vGuardada = guardada ? versionDelToken(guardada.token) : null
+      const vNueva = versionDelToken(r.token)
+      const masNueva = vGuardada !== null && vNueva !== null && vGuardada > vNueva
+      if (salidaDe(slug) !== salida || (guardada && (guardada.customer.id !== r.customer.id || masNueva))) return on401(null, tkn)
       // codex-r3 H7: si el navegador no la deja guardar, no se adopta una sesión que nadie recordará.
       if (guardarSesion(slug, { token: r.token, customer: r.customer, contactos: r.contactos, guardadaEn: Date.now() }) === 'fallo') {
         return setError({ texto: t('entrar.noSeGuardo'), sinRed: false })
@@ -188,10 +192,8 @@ export function CambiarNumero({ slug, superficie, t, token, onListo, onReentrar,
           <span aria-hidden="true">← </span>{t('entrar.atras')}
         </button>
         {cabeza(t('cambiarNumero.titulo'))}
-        <div style={{ textAlign: 'center' }}>
-          <p style={texto}>{t('otp.sent')}</p>
-          <p style={{ ...texto, fontWeight: '600', color: 'var(--avq-fg, #111827)' }}>{comoSeLee(destino)}</p>
-        </div>
+        {/* D17: el SERVIDOR no garantiza que el WhatsApp salió: se dice que se pidió y qué hacer si no llega. */}
+        <p style={{ ...texto, textAlign: 'center' }}>{t('entrar.pedimosWhatsapp', { numero: comoSeLee(destino) })}</p>
         <div>
           <label style={etiqueta}>{t('otp.codeLabel')}</label>
           <OtpInput value={codigo} onChange={setCodigo} onComplete={verificar} disabled={ocupado} />
