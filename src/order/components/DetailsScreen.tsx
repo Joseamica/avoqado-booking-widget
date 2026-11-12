@@ -94,8 +94,8 @@ export function DetailsScreen() {
             <textarea id={`${id}-note`} class="avq-o-input" rows={2} maxLength={300} placeholder={t('details.notePlaceholder')} value={d.note}
               onInput={(e: any) => set({ note: e.currentTarget.value })} />
           </div>
-          {/* W4 (1b): sin sesión, entrar para usar sus premios en ESTE pedido (de regreso al carrito, donde se eligen). */}
-          {!c.conSesion.value && (
+          {/* W4 (1b): sin sesión, entrar para usar sus premios en ESTE pedido (de regreso al carrito, donde se eligen). D16: sólo si el negocio tiene algo de cuenta. */}
+          {!c.conSesion.value && info?.cuentaConBeneficios !== false && (
             <div class="avq-o-why">
               <Notice tone="neutral" title={t('details.premiosTitulo', { venue })} text={t('details.premiosTexto')}
                 action={{ label: t('details.premiosEntrar'), onClick: () => store.go('entrar') }} />
