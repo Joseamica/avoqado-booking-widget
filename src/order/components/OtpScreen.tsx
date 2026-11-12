@@ -18,7 +18,11 @@ export function OtpScreen() {
   const store = useContext(OrderStoreContext)!
   const t = createOrderT(store.locale)
   const c = checkoutOf(store)
+  // El destino del código: el teléfono del pedido (no se edita aquí; «Cambiar número» sale de esta pantalla). Pedir, decir y verificar
+  // usan este mismo valor (D17, como W2 y W6), y si cambiara, el efecto de abajo lo vuelve a pedir para el nuevo.
   const phone = phoneToVerify(store)
+  /** Como se lee en México: «+525544422262» ⇒ «55 4442 2262»; de otro país, tal cual. */
+  const leible = phone && /^\+52\d{10}$/.test(phone) ? phone.slice(3).replace(/(\d{2})(\d{4})(\d{4})/, '$1 $2 $3') : phone
   const titleId = useId()
   const introId = useId()
   const boxes = useRef<HTMLDivElement>(null)
@@ -41,7 +45,7 @@ export function OtpScreen() {
   // Al llegar, el cursor ya está en la primera caja (spec §5.5) con el borde de acento, sin mover la página. El teclado no se promete: iOS no
   // lo abre con un foco que no sale de un toque (aquí se llega tras una respuesta de la red), y ahí hay que tocar la caja. Va en lugar del
   // titular, que es a donde van las demás pantallas (OrderApp lo respeta: el foco ya está tomado; si la caja no pudiera tomarlo, lo toma el
-  // titular); el grupo de abajo le da a las cajas el titular como nombre y «Te lo mandamos…» como descripción, para que un lector de pantalla no
+  // titular); el grupo de abajo le da a las cajas el titular como nombre y «Pedimos tu código…» como descripción, para que un lector de pantalla no
   // llegue a cajas sin contexto. Y otra vez cuando un código equivocado vacía las cajas: mientras se verificaba estaban deshabilitadas y el
   // navegador les quitó el foco (en Android se cierra el teclado). Las dos veces, sólo si nadie tiene el foco: quien ya está en otro elemento,
   // de la tienda o del sitio, se queda ahí.
@@ -112,7 +116,8 @@ export function OtpScreen() {
       <button type="button" class="avq-o-btn avq-o-btn--quiet avq-o-otp__back" onClick={() => store.go('details')}><Back />{t('otp.change')}</button>
       <div class="avq-o-otp__intro">
         <h2 id={titleId} class="avq-o-title" tabIndex={-1}>{t('otp.title')}</h2>
-        <p id={introId}>{t('otp.sent', { phone })}</p>
+        {/* D17: el SERVIDOR no garantiza que el WhatsApp salió: se dice que se pidió y qué hacer si no llega. */}
+        <p id={introId}>{t('otp.sent', { phone: leible ?? '' })}</p>
       </div>
       <div class="avq-o-otp__code">
         <div ref={boxes} role="group" aria-labelledby={titleId} aria-describedby={introId}>

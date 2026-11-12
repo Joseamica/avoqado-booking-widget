@@ -178,7 +178,7 @@ describe('código de WhatsApp', () => {
     show()
     await flush()
     expect(screen.getByRole('heading', { name: 'Escribe tu código' })).toBeTruthy()
-    expect(screen.getByText('Te lo mandamos por WhatsApp al +525544422262.')).toBeTruthy()
+    expect(screen.getByText('Pedimos tu código por WhatsApp al 55 4442 2262. Si no te llega en un minuto, revisa el número o pide otro.')).toBeTruthy()
     expect(screen.getByText('Si no te llega, revisa que el número sea el de tu WhatsApp.')).toBeTruthy()
     const boxes = screen.getAllByRole('textbox') as HTMLInputElement[]
     expect(boxes).toHaveLength(6)
@@ -261,11 +261,11 @@ describe('código de WhatsApp', () => {
     }
   })
 
-  it('las cajas forman un grupo con nombre y descripción (el titular y «Te lo mandamos…»): quien llega con un lector de pantalla a la primera caja sabe qué se pide', async () => {
+  it('las cajas forman un grupo con nombre y descripción (el titular y «Pedimos tu código…»): quien llega con un lector de pantalla a la primera caja sabe qué se pide', async () => {
     show()
     await flush()
     const group = screen.getByRole('group', { name: 'Escribe tu código' })
-    expect(document.getElementById(group.getAttribute('aria-describedby')!)!.textContent).toBe('Te lo mandamos por WhatsApp al +525544422262.')
+    expect(document.getElementById(group.getAttribute('aria-describedby')!)!.textContent).toBe('Pedimos tu código por WhatsApp al 55 4442 2262. Si no te llega en un minuto, revisa el número o pide otro.')
     expect(within(group).getAllByRole('textbox')).toHaveLength(6)
     expect(group.contains(document.activeElement)).toBe(true)
   })
@@ -323,14 +323,44 @@ describe('código de WhatsApp', () => {
     expect(screen.getAllByRole('textbox').map(c => (c as HTMLInputElement).value).join('')).toBe('')
   })
 
-  it('en inglés: «Enter your code» y «We sent it by WhatsApp to …»', async () => {
+  it('en inglés: «Enter your code» y «We requested your code on WhatsApp for …»', async () => {
     const s = makeStore(infoOf(), menuOf(), 'en')
     checkoutOf(s).lastBody.value = body
     s.go('otp')
     render(withStore(s, <OtpScreen />))
     await flush()
     expect(screen.getByRole('heading', { name: 'Enter your code' })).toBeTruthy()
-    expect(screen.getByText('We sent it by WhatsApp to +525544422262.')).toBeTruthy()
+    expect(screen.getByText("We requested your code on WhatsApp for 55 4442 2262. If it doesn't arrive within a minute, check the number or request another one.")).toBeTruthy()
     expect(screen.getByText("Didn't get it? Check that it's your WhatsApp number.")).toBeTruthy()
+  })
+})
+
+describe('D17 en «Mi equipo»: el SERVIDOR no garantiza que el código salió ⇒ no se promete «Te lo mandamos»', () => {
+  it('«Pedimos tu código por WhatsApp al 55 4442 2262. Si no te llega en un minuto, revisa el número o pide otro.»', async () => {
+    show()
+    await flush()
+    expect(screen.getByText('Pedimos tu código por WhatsApp al 55 4442 2262. Si no te llega en un minuto, revisa el número o pide otro.')).toBeTruthy()
+    expect(screen.queryByText(/Te lo mandamos/)).toBeNull()
+  })
+  it('el número que dice es el que se pidió y el que se verifica (no se edita en esta pantalla; «Cambiar número» sale de ella)', async () => {
+    const s = show()
+    await flush()
+    expect(requestOrderingOtp).toHaveBeenCalledWith(s.slug, '+525544422262')
+    vi.mocked(verifyOrderingOtp).mockResolvedValue(sesion as any)
+    vi.mocked(createOrder).mockResolvedValue({
+      orderId: 'o1', onlineOrderId: 'oo1', trackingToken: 'T'.repeat(32), status: 'PENDING_ACCEPTANCE', orderNumber: '7',
+      total: '170.00', acceptDeadlineAt: '', replay: false,
+    })
+    fireEvent.input(screen.getAllByRole('textbox')[0], { target: { value: '123456' } })
+    await flush()
+    expect(verifyOrderingOtp).toHaveBeenCalledWith(s.slug, '+525544422262', '123456')
+  })
+  it('en inglés', async () => {
+    const s = makeStore(infoOf(), menuOf(), 'en')
+    checkoutOf(s).lastBody.value = body
+    s.go('otp')
+    render(withStore(s, <OtpScreen />))
+    await flush()
+    expect(screen.getByText("We requested your code on WhatsApp for 55 4442 2262. If it doesn't arrive within a minute, check the number or request another one.")).toBeTruthy()
   })
 })

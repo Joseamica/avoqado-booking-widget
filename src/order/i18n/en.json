@@ -189,7 +189,7 @@
   },
   "otp": {
     "title": "Enter your code",
-    "sent": "We sent it by WhatsApp to {{phone}}.",
+    "sent": "We requested your code on WhatsApp for {{phone}}. If it doesn't arrive within a minute, check the number or request another one.",
     "resend": "Resend code",
     "resendIn": "Resend code in {{s}} s",
     "change": "Change number",
