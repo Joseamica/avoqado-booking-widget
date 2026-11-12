@@ -52,13 +52,18 @@ const centavos = (x: number) => Math.round(x * 100) / 100
  * queman los puntos de ese monto. Marcada (ya aplicados), el monto es el de la cotización y los pedidos son los que ELIGIÓ (`elegidos`,
  * lo que se mandó; la oferta nueva puede traer otro máximo: codex-pulido-r1 #1); sin marcar, los que se mandarían (`maxPuntos`).
  * `null` = ya no queda nada que pagar con puntos.
- * ponytail: copia de la regla del SERVIDOR; si la cotización trajera los puntos aplicables (`oferta.puntos.usables`), se usa eso.
+ * W7 A1: si la cotización trae `oferta.puntos.usables` (lo que el canje del SERVIDOR usaría pidiendo `maxPuntos`), manda eso cuando lo
+ * pedido es `maxPuntos`; la copia de la regla queda para un SERVIDOR que no lo manda y para lo que ELIGIÓ con otra oferta.
  */
 export function puntosQueSeUsan(q: Quote, elegidos?: number): { n: number; monto: number } | null {
   const p = q.oferta?.puntos
   if (!p) return null
   const aplicado = q.aplicados?.find(a => a.tipo === 'PUNTOS')
   const pedidos = aplicado && elegidos ? elegidos : p.maxPuntos
+  if (p.usables && pedidos === p.maxPuntos) {
+    const monto = aplicado?.monto ?? p.usables.monto
+    return monto > 0 ? { n: p.usables.puntos, monto } : null
+  }
   const valor = centavos(pedidos * p.valorPorPunto)
   const otros = (q.aplicados ?? []).reduce((s, a) => (a.tipo === 'PUNTOS' ? s : s + toCents(a.monto)), 0)
   const base = Math.max(0, toCents(q.subtotal) - otros) / 100

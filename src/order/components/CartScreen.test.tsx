@@ -843,6 +843,43 @@ describe('W3: el carrito con sus beneficios', () => {
     expect((screen.getByRole('checkbox', { name: 'Usar 111 puntos (−$1.11)' }) as HTMLInputElement).checked).toBe(true)
   })
 
+  // W7 A1: el SERVIDOR manda `oferta.puntos.usables` (su regla del canje en su punto de la cadena): la casilla dice eso, no la copia.
+  it('W7 A1: con `oferta.puntos.usables`, la casilla dice lo que usa el SERVIDOR (140 puntos, −$14), no la copia (150, −$15)', async () => {
+    const conUsables = { ...ana500, usables: { puntos: 140, monto: 14 } }
+    await conSesion(() => quoteOf(15, { subtotal: 159, oferta: oferta({ premio: null, puntos: conUsables }), aplicados: tras }))
+    expect(screen.getByRole('checkbox', { name: 'Usar 140 puntos (−$14)' })).toBeTruthy()
+    expect(screen.queryByText(/150 puntos/)).toBeNull()
+  })
+
+  it('W7 A1: marcada pidiendo `maxPuntos`, los puntos son los de `usables` y el monto el de lo APLICADO en la cotización', async () => {
+    const conUsables = { ...ana500, usables: { puntos: 140, monto: 14 } }
+    await conSesion(opts => quoteOf(opts.beneficios?.puntos ? 1.5 : 15, {
+      subtotal: 159, oferta: oferta({ premio: null, puntos: conUsables }),
+      aplicados: opts.beneficios?.puntos ? [...tras, { tipo: 'PUNTOS' as const, nombre: 'Recompensas — 140 puntos', monto: 13.5 }] : tras,
+    }))
+    await act(async () => { fireEvent.click(screen.getByRole('checkbox', { name: 'Usar 140 puntos (−$14)' })) })
+    await flush()
+    expect(optsOf(1)).toMatchObject({ beneficios: { puntos: 500 } })
+    expect((screen.getByRole('checkbox', { name: 'Usar 140 puntos (−$13.50)' }) as HTMLInputElement).checked).toBe(true)
+  })
+
+  it('W7 A1: marcada con otra oferta (eligió 111, la nueva trae 210 con `usables`): cuenta lo que ELIGIÓ con la copia, no `usables`', async () => {
+    const pts = (max: number, usables?: { puntos: number; monto: number }) => ({ saldo: max, minimo: 100, valorPorPunto: 0.01, maxPuntos: max, ...(usables ? { usables } : {}) })
+    await conSesion(opts => opts.beneficios?.puntos
+      ? quoteOf(168.89, { subtotal: 170, oferta: oferta({ premio: null, puntos: pts(210, { puntos: 210, monto: 2.1 }) }), aplicados: [{ tipo: 'PUNTOS' as const, nombre: 'Recompensas — 111 puntos', monto: 1.11 }] })
+      : quoteOf(170, { subtotal: 170, oferta: oferta({ premio: null, puntos: pts(111, { puntos: 111, monto: 1.11 }) }) }))
+    await act(async () => { fireEvent.click(screen.getByRole('checkbox', { name: 'Usar 111 puntos (−$1.11)' })) })
+    await flush()
+    expect(optsOf(1)).toMatchObject({ beneficios: { puntos: 111 } })
+    expect((screen.getByRole('checkbox', { name: 'Usar 111 puntos (−$1.11)' }) as HTMLInputElement).checked).toBe(true)
+  })
+
+  it('W7 A1: `usables` en $0 (ya no cabe) ⇒ no se ofrecen puntos', async () => {
+    const sinLugar = { ...ana500, usables: { puntos: 0, monto: 0 } }
+    await conSesion(() => quoteOf(0, { subtotal: 159, oferta: oferta({ premio: null, puntos: sinLugar }), aplicados: tras }))
+    expect(screen.queryByRole('checkbox')).toBeNull()
+  })
+
   it('pulido W3: si los demás beneficios ya cubren todo, no se ofrecen puntos', async () => {
     await conSesion(() => quoteOf(0, { subtotal: 144, oferta: oferta({ premio: null, puntos: ana500 }), aplicados: tras }))
     expect(screen.queryByRole('checkbox')).toBeNull()

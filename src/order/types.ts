@@ -121,7 +121,11 @@ export interface Quote {
   oferta?: {
     /** D8: `lineIndex` = el renglón de `items` donde cae (si lo eligió) o caería (si no); falta si no es de producto gratis. */
     premio: { id: string; etiqueta: string; lineIndex?: number } | null
-    puntos: { saldo: number; minimo: number; valorPorPunto: number; maxPuntos: number } | null
+    /**
+     * `usables` (SERVIDOR con W7 A1, opcional): lo que el canje usaría y descontaría pidiendo `maxPuntos`, con su misma regla y en su
+     * punto de la cadena; `monto` 0 = ya no cabe. Un SERVIDOR viejo no lo manda.
+     */
+    puntos: { saldo: number; minimo: number; valorPorPunto: number; maxPuntos: number; usables?: { puntos: number; monto: number } } | null
     cupon: boolean
   }
   /** Lo elegido que ya no está disponible (premio usado, puntos de más, cupón agotado). */
