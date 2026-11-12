@@ -69,8 +69,9 @@ export function EntrarConCuenta({ slug, negocio, t, onEntro }: Props) {
   // «Sí» con otro contacto que tampoco tiene ficha.
   const [tampoco, setTampoco] = useState<{ contacto: string; canal: Canal } | null>(null)
   const [conOtraFicha, setConOtraFicha] = useState<SesionEmitida | null>(null)
-  // codex-w5w6-r4 #3: a dónde SÍ se pidió el código, fijado al pedirlo (como W6); reenviar, el texto y verificar van ahí, no al campo.
-  const [enviadoA, setEnviadoA] = useState<{ destino: { phone: string } | { email: string }; visible: string } | null>(null)
+  // codex-w5w6-r4 #3 y r5 #1: a dónde y por qué canal SÍ se pidió el código, fijados al pedirlo (como W6); reenviar, el título, el
+  // texto y verificar van ahí, no al campo ni al canal que se eligió después.
+  const [enviadoA, setEnviadoA] = useState<{ destino: { phone: string } | { email: string }; visible: string; canal: Canal } | null>(null)
   const idNombre = useId()
   const encabezado = useRef<HTMLHeadingElement>(null)
   const primerPintado = useRef(true)
@@ -164,7 +165,7 @@ export function EntrarConCuenta({ slug, negocio, t, onEntro }: Props) {
       return
     }
     setAviso(null)
-    const pedido = { destino: destino(), visible: visible() } // el que sale en ESTA petición, aunque el campo cambie mientras va
+    const pedido = { destino: destino(), visible: visible(), canal } // el que sale en ESTA petición, aunque el campo cambie mientras va
     void intentar(async () => {
       await api.requestOtp(slug, pedido.destino)
       setEnviadoA(pedido)
@@ -186,7 +187,7 @@ export function EntrarConCuenta({ slug, negocio, t, onEntro }: Props) {
     const a = enviadoA
     void intentar(async () => {
       const r = await api.verifyOtp(slug, { ...a.destino, code: valor, ...(prueba ? { vincular: prueba.token } : {}) })
-      terminar(r, a.visible, canal)
+      terminar(r, a.visible, a.canal)
     })
   }
   const conGoogle = (idToken: string) =>
@@ -201,7 +202,7 @@ export function EntrarConCuenta({ slug, negocio, t, onEntro }: Props) {
         setAviso(t('entrar.googleNoConfiable'))
         if (c) {
           setCorreo(c)
-          setEnviadoA({ destino: { email: c }, visible: c })
+          setEnviadoA({ destino: { email: c }, visible: c, canal: 'email' })
           setCodigo('')
           setEspera(ESPERA_S)
           setPaso('codigo')
@@ -284,15 +285,16 @@ export function EntrarConCuenta({ slug, negocio, t, onEntro }: Props) {
       </form>
     )
 
-  if (paso === 'codigo')
+  if (paso === 'codigo') {
+    const porWhatsapp = (enviadoA?.canal ?? canal) === 'phone'
     return (
       <form class="avq-animate-in" style={columna} onSubmit={e => { e.preventDefault(); verificar(codigo) }}>
         {atras(() => { setAviso(null); setPaso('contacto') })}
-        {cabeza(canal === 'phone' ? t('otp.title') : t('otp.titleEmail'))}
+        {cabeza(porWhatsapp ? t('otp.title') : t('otp.titleEmail'))}
         {aviso && <p role="status" style={{ ...texto, color: 'var(--avq-fg, #111827)', textAlign: 'center' }}>{aviso}</p>}
         {/* D17: el SERVIDOR no garantiza que el código salió (`requestOtp` responde igual): se dice que se pidió y qué hacer si no llega. */}
         <p style={{ ...texto, textAlign: 'center' }}>
-          {canal === 'phone' ? t('entrar.pedimosWhatsapp', { numero: enviadoA?.visible ?? '' }) : t('entrar.pedimosCorreo', { correo: enviadoA?.visible ?? '' })}
+          {porWhatsapp ? t('entrar.pedimosWhatsapp', { numero: enviadoA?.visible ?? '' }) : t('entrar.pedimosCorreo', { correo: enviadoA?.visible ?? '' })}
         </p>
         <div>
           <label style={etiqueta}>{t('otp.codeLabel')}</label>
@@ -307,6 +309,7 @@ export function EntrarConCuenta({ slug, negocio, t, onEntro }: Props) {
         </button>
       </form>
     )
+  }
 
   if (paso === 'pregunta') {
     const de = tampoco ?? prueba!

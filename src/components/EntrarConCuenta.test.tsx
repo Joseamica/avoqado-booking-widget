@@ -385,6 +385,22 @@ describe('D17 / codex-w5w6-r1 #4: el SERVIDOR no garantiza que el código salió
     teclearCodigo()
     await waitFor(() => expect(api.verifyOtp).toHaveBeenCalledWith(SLUG, { phone: '+525544422262', code: '123456' }))
   })
+  it('codex-w5w6-r5 #1: pidió por WhatsApp y, mientras iba, volvió y eligió correo ⇒ el texto, el título y la verificación siguen siendo de WhatsApp', async () => {
+    let responder: (r: any) => void = () => {}
+    vi.mocked(api.requestOtp).mockImplementationOnce(() => new Promise(ok => { responder = ok }))
+    show()
+    fireEvent.click(boton('Seguir con WhatsApp'))
+    escribir(screen.getByPlaceholderText('Tu número de teléfono'), '5544422262')
+    fireEvent.click(boton('Enviar código'))
+    fireEvent.click(boton(/Atrás/))
+    fireEvent.click(boton('Seguir con correo'))
+    await act(async () => { responder({ ok: true }); for (let i = 0; i < 10; i++) await Promise.resolve() })
+    expect(screen.getByText(/^Pedimos tu código por WhatsApp al 55 4442 2262\./)).toBeTruthy()
+    expect(screen.queryByText(/por correo/)).toBeNull()
+    expect(screen.getByRole('heading', { name: 'Entrar con WhatsApp' })).toBeTruthy()
+    teclearCodigo()
+    await waitFor(() => expect(api.verifyOtp).toHaveBeenCalledWith(SLUG, { phone: '+525544422262', code: '123456' }))
+  })
   it('en inglés', async () => {
     show('en')
     fireEvent.click(boton('Continue with WhatsApp'))
