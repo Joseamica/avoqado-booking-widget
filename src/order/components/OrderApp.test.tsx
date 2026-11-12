@@ -698,6 +698,19 @@ describe('pulido W6: UN solo «atrás» en la tienda, y regresa un paso', () => 
     expect(screen.getByRole('heading', { name: 'Entra a tu cuenta' })).toBeTruthy()
   })
 
+  it('codex-pulido-r1 #3: la flecha ya regresa un paso en cuanto el paso nuevo se pinta (antes de cualquier otro toque)', async () => {
+    const s = makeStore(infoOf({ requiresAcceptance: false }), menuOf(product()))
+    s.go('cuenta')
+    render(withStore(s, <OrderApp />))
+    await flush()
+    vi.advanceTimersByTime(500)
+    // Clic nativo, fuera de act: sólo corren las microtareas (lo que el navegador termina antes de atender el siguiente toque).
+    ;(screen.getByRole('button', { name: 'Seguir con correo' }) as HTMLButtonElement).click()
+    for (let i = 0; i < 30; i++) await Promise.resolve()
+    expect(screen.getByRole('heading', { name: 'Entrar con código por correo' })).toBeTruthy()
+    expect(document.querySelector('.avq-o-entrar > .avq-o-back')!.getAttribute('aria-label')).toBe('Atrás')
+  })
+
   it('«Usar en caja»: la flecha regresa a «Mi cuenta», no al menú', async () => {
     const s = tiendaConAna()
     const viva = { ...portalDeAna(), tarjetas: { items: [{ id: 'g1', last4: 'HB7T', saldo: 350, venceEl: null, codigo: 'K7Q2-9DXM-4R8H-HB7T-Q', estado: 'ACTIVA', disponible: true }], total: 1, nextCursor: null } }

@@ -49,18 +49,22 @@ const centavos = (x: number) => Math.round(x * 100) / 100
 /**
  * Pulido W3: los puntos que de verdad se usan, con la regla del SERVIDOR (`redeemPointsToOrderInTransaction`, con su redondeo): el valor
  * de `maxPuntos` se topa a lo que queda tras los demás beneficios (subtotal − descuentos; los puntos van al final de la cadena) y sólo se
- * queman los puntos de ese monto. Marcada, el monto es el de la cotización. `null` = ya no queda nada que pagar con puntos.
+ * queman los puntos de ese monto. Marcada (ya aplicados), el monto es el de la cotización y los pedidos son los que ELIGIÓ (`elegidos`,
+ * lo que se mandó; la oferta nueva puede traer otro máximo: codex-pulido-r1 #1); sin marcar, los que se mandarían (`maxPuntos`).
+ * `null` = ya no queda nada que pagar con puntos.
  * ponytail: copia de la regla del SERVIDOR; si la cotización trajera los puntos aplicables (`oferta.puntos.usables`), se usa eso.
  */
-export function puntosQueSeUsan(q: Quote): { n: number; monto: number } | null {
+export function puntosQueSeUsan(q: Quote, elegidos?: number): { n: number; monto: number } | null {
   const p = q.oferta?.puntos
   if (!p) return null
-  const valor = centavos(p.maxPuntos * p.valorPorPunto)
+  const aplicado = q.aplicados?.find(a => a.tipo === 'PUNTOS')
+  const pedidos = aplicado && elegidos ? elegidos : p.maxPuntos
+  const valor = centavos(pedidos * p.valorPorPunto)
   const otros = (q.aplicados ?? []).reduce((s, a) => (a.tipo === 'PUNTOS' ? s : s + toCents(a.monto)), 0)
   const base = Math.max(0, toCents(q.subtotal) - otros) / 100
-  const monto = q.aplicados?.find(a => a.tipo === 'PUNTOS')?.monto ?? centavos(Math.min(valor, base))
+  const monto = aplicado?.monto ?? centavos(Math.min(valor, base))
   if (!(monto > 0)) return null
-  return { n: monto < valor && p.valorPorPunto > 0 ? Math.ceil(monto / p.valorPorPunto) : p.maxPuntos, monto }
+  return { n: monto < valor && p.valorPorPunto > 0 ? Math.ceil(monto / p.valorPorPunto) : pedidos, monto }
 }
 
 /**
@@ -89,7 +93,7 @@ function Beneficios({ q }: { q: Quote }) {
   const usaPremio = !!premio && e.premioId === premio.id && !fuera.includes('PREMIO')
   const enProducto = premio?.lineIndex !== undefined ? store.cart.value[premio.lineIndex]?.name : undefined
   const puntos = o.puntos
-  const uso = puntosQueSeUsan(q)
+  const uso = puntosQueSeUsan(q, e.puntos)
   const conCupon = !!e.cupon && !fuera.includes('CUPON')
   return (
     <div class="avq-o-ben">

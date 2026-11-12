@@ -1,5 +1,5 @@
 import { h } from 'preact'
-import { useEffect, useRef, useState } from 'preact/hooks'
+import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks'
 import type { TFunction } from '../i18n'
 import * as api from '../api/booking'
 import { DEFAULT_DIAL, phoneE164 } from '../data/countries'
@@ -72,7 +72,7 @@ export function CambiarNumero({ slug, superficie, t, token, onListo, onReentrar,
     encabezado.current?.focus({ preventScroll: true })
   }, [paso])
   const alNumero = () => { setError(null); setPaso('numero') }
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!alCambiarAtras) return
     alCambiarAtras(paso === 'codigo' ? alNumero : null)
     return () => alCambiarAtras(null)

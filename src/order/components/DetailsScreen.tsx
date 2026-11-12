@@ -15,6 +15,8 @@ import { tapTime } from './focus'
 import type { PaymentMode } from '../types'
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+/** Pulido W2: el nombre que la tienda escribió sola, y de qué ficha (para no dejárselo a otra persona). */
+const nombrePuesto = new WeakMap<object, { ficha: string; nombre: string }>()
 /** Durante cuánto, al aparecer la pantalla, «Confirmar pedido» ignora los toques (ver `confirm`). */
 const ENTRY_GUARD_MS = 400
 
@@ -32,11 +34,17 @@ export function DetailsScreen() {
   const c = checkoutOf(store)
   const d = c.draft.value
   const set = (patch: Partial<typeof d>) => { c.draft.value = { ...c.draft.value, ...patch } }
-  // Pulido W2: con sesión, el nombre de su ficha ya viene escrito (y se puede cambiar); lo que ya escribió no se pisa.
+  // Pulido W2: con sesión, el nombre de su ficha ya viene escrito (y se puede cambiar); lo que ella escribió no se pisa. El que puso la
+  // tienda es de ESA ficha: si ya no es ella (salió, entró otra), se cambia por el de quien está o se borra (codex-pulido-r1 #2).
   useLayoutEffect(() => {
     const ficha = paginaDe(store.slug, 'pedidos')?.datos as Partial<ClienteDeSesion> | undefined
     const suyo = [ficha?.firstName, ficha?.lastName].filter(Boolean).join(' ').trim().slice(0, 80)
-    if (suyo && !c.draft.value.name) set({ name: suyo })
+    const puesto = nombrePuesto.get(store)
+    const escrito = c.draft.value.name
+    if (escrito && !(puesto && escrito === puesto.nombre && puesto.ficha !== ficha?.id)) return
+    nombrePuesto.delete(store)
+    if (suyo && ficha?.id) nombrePuesto.set(store, { ficha: ficha.id, nombre: suyo })
+    if (escrito !== suyo) set({ name: suyo })
   }, [])
   const info = store.info.value
   const q = store.quote.value

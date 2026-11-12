@@ -1,5 +1,5 @@
 import { h } from 'preact'
-import { useEffect, useId, useRef, useState } from 'preact/hooks'
+import { useEffect, useId, useLayoutEffect, useRef, useState } from 'preact/hooks'
 import type { TFunction } from '../i18n'
 import * as api from '../api/booking'
 import { DEFAULT_DIAL, phoneE164 } from '../data/countries'
@@ -234,7 +234,8 @@ export function EntrarConCuenta({ slug, negocio, t, onEntro, alCambiarAtras }: P
     : paso === 'nombre' ? () => setPaso('pregunta')
     : null
   const volverUnPaso = pasoAnterior && (() => { setError(null); pasoAnterior() })
-  useEffect(() => {
+  // useLayoutEffect: en el mismo pintado del paso, antes de que pueda llegar otro toque (codex-pulido-r1 #3).
+  useLayoutEffect(() => {
     if (!alCambiarAtras) return
     alCambiarAtras(volverUnPaso)
     return () => alCambiarAtras(null)

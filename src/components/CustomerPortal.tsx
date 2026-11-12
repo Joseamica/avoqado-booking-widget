@@ -1,5 +1,5 @@
 import { h } from 'preact'
-import { useState, useEffect, useRef, useId } from 'preact/hooks'
+import { useState, useEffect, useLayoutEffect, useRef, useId } from 'preact/hooks'
 import type { TFunction } from '../i18n'
 import type { CreditPackPublic, CustomerPortalData, MiTarjeta } from '../types'
 import { Spinner } from './ui/Spinner'
@@ -215,7 +215,7 @@ export function CustomerPortal({
   const prestar = alCambiarAtras ? (f: (() => void) | null) => setAtrasDeDentro(() => f) : undefined
   const subpantalla = !data || !token ? null
     : reentrar ? 'reentrar' : cambiando !== null && cambiando === epocaDe(venueSlug, sup) ? 'cambiando' : enUso ? 'usando' : null
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!alCambiarAtras) return
     const propio = subpantalla === 'reentrar' ? () => setReentrar(false)
       : subpantalla === 'cambiando' ? () => setCambiando(null)

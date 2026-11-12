@@ -831,6 +831,18 @@ describe('W3: el carrito con sus beneficios', () => {
     expect(screen.getByRole('checkbox', { name: 'Usar 160 puntos (−$15.95)' })).toBeTruthy()
   })
 
+  it('codex-pulido-r1 #1: marcada, cuenta los puntos que ELIGIÓ (111), aunque la oferta nueva traiga más (210)', async () => {
+    const pts = (max: number) => ({ saldo: max, minimo: 100, valorPorPunto: 0.01, maxPuntos: max })
+    await conSesion(opts => opts.beneficios?.puntos
+      ? quoteOf(168.89, { subtotal: 170, oferta: oferta({ premio: null, puntos: pts(210) }), aplicados: [{ tipo: 'PUNTOS' as const, nombre: 'Recompensas — 111 puntos', monto: 1.11 }] })
+      : quoteOf(170, { subtotal: 170, oferta: oferta({ premio: null, puntos: pts(111) }) }))
+    await act(async () => { fireEvent.click(screen.getByRole('checkbox', { name: 'Usar 111 puntos (−$1.11)' })) })
+    await flush()
+    expect(optsOf(1)).toMatchObject({ beneficios: { puntos: 111 } })
+    // El SERVIDOR quema 111 (no se topó: pidió 111 y valen $1.11); nunca «112».
+    expect((screen.getByRole('checkbox', { name: 'Usar 111 puntos (−$1.11)' }) as HTMLInputElement).checked).toBe(true)
+  })
+
   it('pulido W3: si los demás beneficios ya cubren todo, no se ofrecen puntos', async () => {
     await conSesion(() => quoteOf(0, { subtotal: 144, oferta: oferta({ premio: null, puntos: ana500 }), aplicados: tras }))
     expect(screen.queryByRole('checkbox')).toBeNull()

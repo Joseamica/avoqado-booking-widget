@@ -591,6 +591,33 @@ describe('pulido W2: «Tus datos» con sesión', () => {
     expect(nombre().value).toBe('Anita')
   })
 
+  it('codex-pulido-r1 #2: el nombre que puso la tienda no pasa a otra persona: sale Ana y entra Beatriz (o nadie) sin recargar', async () => {
+    const s = makeStore(infoOf({ requiresAcceptance: false }), menuOf())
+    ana(s.slug)
+    s.quote.value = { ok: true, lines: [], subtotal: 170, total: 170, minOrderAmount: 0, issues: [] }
+    s.go('details')
+    render(withStore(s, <DetailsScreen />))
+    await flush()
+    expect(nombre().value).toBe('Ana López')
+    cleanup()
+    // Sale Ana; entra Beatriz en la misma tienda (el borrador sigue en memoria).
+    fijarPagina(s.slug, 'pedidos', null)
+    guardarSesion(s.slug, {
+      token: 'tok-B', customer: { id: 'c2', firstName: 'Beatriz', lastName: null, email: null, phone: '+525599998888' },
+      contactos: [{ tipo: 'PHONE', valor: '+525599998888', metodo: 'WHATSAPP', probadoEn: 2 }], guardadaEn: Date.now(),
+    })
+    fijarPagina(s.slug, 'pedidos', loadSession(s.slug))
+    render(withStore(s, <DetailsScreen />))
+    await flush()
+    expect(nombre().value).toBe('Beatriz')
+    cleanup()
+    // Y sin nadie adentro, el nombre puesto se va (lo escrito a mano, no).
+    fijarPagina(s.slug, 'pedidos', null)
+    render(withStore(s, <DetailsScreen />))
+    await flush()
+    expect(nombre().value).toBe('')
+  })
+
   it('sin sesión el campo nace vacío; lo que ya escribió no se pisa', async () => {
     show({ requiresAcceptance: false })
     await flush()
