@@ -31,7 +31,7 @@ export function OtpScreen() {
   const [error, setError] = useState<{ text: string; offline: boolean } | null>(null)
   const [verifying, setVerifying] = useState(false)
   // D17: el SERVIDOR dijo que el código no salió (`OTP_SEND_FAILED`): sin cajas ni «Pedimos tu código…» hasta que uno sí salga.
-  const notSent = !!phone && c.otpNoSalio.value === phone
+  const notSent = !!phone && c.otpNoSalio.value.has(phone)
   // codex-r2 #2: una petición a la vez por teléfono (dos toques en el mismo turno no mandan dos).
   const enVuelo = useRef<string | null>(null)
   // La hora del último envío vive en el Checkout de la tienda: salir y volver a esta pantalla no manda otro WhatsApp.
@@ -58,17 +58,28 @@ export function OtpScreen() {
     if (!verifying && !code && first && focusLost(first)) first.focus({ preventScroll: true })
   }, [verifying])
 
+  const marcarNoSalio = (tel: string, si: boolean) => {
+    if (c.otpNoSalio.value.has(tel) === si) return
+    const otros = new Set(c.otpNoSalio.value)
+    if (si) otros.add(tel)
+    else otros.delete(tel)
+    c.otpNoSalio.value = otros
+  }
   const request = async () => {
     if (!phone || enVuelo.current === phone) return
     enVuelo.current = phone
     setError(null)
-    c.otpNoSalio.value = null
+    // Esta es ahora la última petición de este teléfono: la respuesta de una anterior (de otra pantalla) ya no cuenta.
+    const n = (c.otpPeticion.get(phone) ?? 0) + 1
+    c.otpPeticion.set(phone, n)
+    marcarNoSalio(phone, false)
     const now = Date.now()
     c.otpSentAt.set(phone, now)
     setUntil(now + RESEND_S * 1000)
     try {
       await requestOrderingOtp(store.slug, phone)
     } catch (e) {
+      if (c.otpPeticion.get(phone) !== n) return
       const offline = !(e instanceof ApiError) || e.network
       const noSalio = e instanceof ApiError && e.code === 'OTP_SEND_FAILED'
       // Sin respuesta (sin red, o ni un ApiError) se asume que el código no salió, y con `OTP_SEND_FAILED` el SERVIDOR lo dice (D17): ni
@@ -78,7 +89,7 @@ export function OtpScreen() {
         c.otpSentAt.delete(phone)
         setUntil(Date.now())
       }
-      if (noSalio) c.otpNoSalio.value = phone
+      if (noSalio) marcarNoSalio(phone, true)
       else setError({ text: errorText(t, e), offline })
     } finally {
       if (enVuelo.current === phone) enVuelo.current = null

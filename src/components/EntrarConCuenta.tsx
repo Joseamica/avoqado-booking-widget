@@ -77,6 +77,8 @@ export function EntrarConCuenta({ slug, negocio, t, onEntro }: Props) {
   const primerPintado = useRef(true)
   /** La época del negocio cuando salió la petición que puede traer una sesión (codex-r8 H3). */
   const epocaAlEmpezar = useRef('')
+  // Una petición a la vez, también con dos toques en el mismo turno (`ocupado` aún no se pinta): un «no salió» no se cruza con otra.
+  const enVuelo = useRef(false)
 
   useEffect(() => {
     if (!espera) return
@@ -146,7 +148,8 @@ export function EntrarConCuenta({ slug, negocio, t, onEntro }: Props) {
     } else onEntro(r)
   }
   async function intentar(fn: () => Promise<void>, canalDelCodigo?: Canal) {
-    if (ocupado) return
+    if (ocupado || enVuelo.current) return
+    enVuelo.current = true
     epocaAlEmpezar.current = epocaDelNegocio(slug)
     setOcupado(true)
     setError(null)
@@ -157,6 +160,7 @@ export function EntrarConCuenta({ slug, negocio, t, onEntro }: Props) {
       // Sólo un rechazo del SERVIDOR invalida lo escrito; sin red el mismo código sigue sirviendo (codex-r2 #6).
       if ((e as any)?.status) setCodigo('')
     } finally {
+      enVuelo.current = false
       setOcupado(false)
     }
   }

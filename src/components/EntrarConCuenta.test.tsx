@@ -455,6 +455,17 @@ describe('D17: el SERVIDOR dice que el código NO salió (503 OTP_SEND_FAILED) �
     fireEvent.click(boton('Send code'))
     expect(await screen.findByText("We couldn't send the code on WhatsApp. Try again in a moment.")).toBeTruthy()
   })
+  it('codex-r3 (familia): dos toques a «Enviar código» en el mismo turno mandan UNA petición (un «no salió» no se cruza con otra)', async () => {
+    let responder: (r: any) => void = () => {}
+    vi.mocked(api.requestOtp).mockImplementationOnce(() => new Promise(ok => { responder = ok }))
+    show()
+    fireEvent.click(boton('Seguir con WhatsApp'))
+    escribir(screen.getByPlaceholderText('Tu número de teléfono'), '5544422262')
+    await act(async () => { fireEvent.click(boton('Enviar código')); fireEvent.click(boton('Enviar código')) })
+    expect(api.requestOtp).toHaveBeenCalledTimes(1)
+    await act(async () => { responder({ ok: true }); for (let i = 0; i < 10; i++) await Promise.resolve() })
+    await screen.findByText(/^Pedimos tu código por WhatsApp/)
+  })
   it('un SERVIDOR viejo (503 sin código) sigue como hoy: el texto genérico', async () => {
     vi.mocked(api.requestOtp).mockRejectedValueOnce(fallo(503, { message: 'Service Unavailable' }))
     show()
