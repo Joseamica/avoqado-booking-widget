@@ -32,8 +32,11 @@ interface Props {
 }
 
 const ESPERA_S = 30
-/** Como se lee en México: «+525598765432» ⇒ «55 9876 5432»; de otro país, tal cual. */
-const comoSeLee = (e164: string) => (/^\+52\d{10}$/.test(e164) ? e164.slice(3).replace(/(\d{2})(\d{4})(\d{4})/, '$1 $2 $3') : e164)
+/** Como se lee en México: «+525598765432» (o el «5598765432» de una ficha vieja) ⇒ «55 9876 5432»; de otro país, tal cual. */
+export const comoSeLee = (tel: string) => {
+  const diez = /^(?:\+52)?(\d{10})$/.exec(tel)?.[1]
+  return diez ? diez.replace(/(\d{2})(\d{4})(\d{4})/, '$1 $2 $3') : tel
+}
 const titulo = { fontSize: '18px', fontWeight: '700', color: 'var(--avq-fg, #111827)', margin: '0 0 6px' }
 const texto = { fontSize: '14px', color: 'var(--avq-muted-fg, #6b7280)', margin: 0 }
 const etiqueta = { display: 'block', fontSize: '13px', fontWeight: '500', color: 'var(--avq-fg, #111827)', marginBottom: '6px' }

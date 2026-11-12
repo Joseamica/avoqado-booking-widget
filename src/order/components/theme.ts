@@ -123,6 +123,9 @@ export function loadStoreFonts(): void {
 export const STORE_CSS = `
 .avq-o-root{--avq-bg:#FFFFFF;--avq-fg:${T.ink};--avq-muted:${T.surface};--avq-muted-fg:${T.muted};--avq-border:${T.fieldBorder};--avq-o-display:${DISPLAY};display:flow-root;box-sizing:border-box;max-width:600px;margin:0 auto;background:#FFFFFF;color:${T.ink};font-family:${BODY};font-size:15px;font-variant-numeric:tabular-nums;color-scheme:light;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}
 .avq-o-root *,.avq-o-root *::before,.avq-o-root *::after{box-sizing:border-box}
+/* Los componentes de reservas que viven en la tienda (entrar, «Mi cuenta», cambiar de número) no traen .avq-o-btn: sin esto sus botones y
+   campos salen con la letra del navegador. :where deja que cualquier clase de la tienda gane. */
+.avq-o-root :where(button,input,select,textarea){font-family:inherit}
 .avq-o-root :focus-visible{outline:2px solid var(--avq-accent,${T.ink});outline-offset:2px}
 @media (prefers-reduced-motion:reduce){.avq-o-root *,.avq-o-root *::before,.avq-o-root *::after{animation:none!important;transition:none!important}}
 .avq-o-title{margin:0;font-family:var(--avq-o-display);font-weight:800;font-size:30px;line-height:1.1}
@@ -168,8 +171,6 @@ textarea.avq-o-input{min-height:0;padding:12px 14px;resize:none}
 .avq-o-entrar>.avq-o-back{margin-left:-8px}
 .avq-o-why{display:flex;flex-direction:column;gap:10px;margin:0 0 12px}
 .avq-o-why .avq-o-notice{margin:0}
-.avq-o-total__row--sub{font-size:15px;font-weight:400}
-.avq-o-total__row--ben{font-size:15px;font-weight:400;color:${T.okFg}}
 .avq-o-notice>svg{flex:none;margin-top:1px}
 .avq-o-notice__body{display:flex;flex-direction:column;gap:2px;flex:1;min-width:0;overflow-wrap:anywhere}
 .avq-o-notice__title{font-weight:700}
@@ -306,6 +307,9 @@ textarea.avq-o-input{min-height:0;padding:12px 14px;resize:none}
 .avq-o-cart__note>label{font-weight:600}
 .avq-o-total{display:flex;flex-direction:column;gap:6px;margin:12px 16px 0;padding-top:16px;border-top:1px solid ${T.divider}}
 .avq-o-total__row{display:flex;justify-content:space-between;align-items:baseline;gap:12px;margin:0;font-size:17px;font-weight:700}
+.avq-o-total__row>span:last-child{white-space:nowrap}
+.avq-o-total__row--sub{font-size:15px;font-weight:400}
+.avq-o-total__row--ben{font-size:15px;font-weight:400;color:${T.okFg}}
 .avq-o-total__wait{color:${T.muted};font-size:15px;font-weight:400}
 .avq-o-total__tax{margin:0;color:${T.muted};font-size:14px}
 .avq-o-cartfoot{position:sticky;bottom:0;z-index:2;margin-top:16px;padding:12px 16px calc(24px + env(safe-area-inset-bottom,0px));background:#FFFFFF;border-top:1px solid ${T.divider}}

@@ -299,6 +299,20 @@ describe('W4: se lee de nuevo al abrir, al volver a la pestaña y cuando cambia 
 })
 
 describe('W4: secciones sólo con lo prendido', () => {
+  it('W7: su número arriba se lee igual que en «Listo: tu número ahora es 55 1000 0999.» (antes salía +525510000999 y, en fichas viejas, 5510000777)', async () => {
+    anaAdentro()
+    vi.mocked(api.getCustomerPortal).mockResolvedValue(PORTAL({ customer: { ...CLIENTE, phone: '+525510000999', loyaltyPoints: 0, totalVisits: 0 } }))
+    renderPortal()
+    await screen.findByText('Hola, Ana')
+    expect(screen.getByText('55 1000 0999')).toBeTruthy()
+    expect(screen.queryByText('+525510000999')).toBeNull()
+    cleanup()
+    cuentasNuevasParaPruebas()
+    vi.mocked(api.getCustomerPortal).mockResolvedValue(PORTAL({ customer: { ...CLIENTE, phone: '5510000777', loyaltyPoints: 0, totalVisits: 0 } }))
+    renderPortal()
+    await screen.findByText('Hola, Ana')
+    expect(screen.getByText('55 1000 0777')).toBeTruthy()
+  })
   it('todo prendido: sellos y premio con Wallet, puntos y su valor, descuentos con vigencia, tarjeta, saldo a favor y pedidos con «PAGADO»', async () => {
     anaAdentro()
     vi.mocked(api.getCustomerPortal).mockResolvedValue(PORTAL())

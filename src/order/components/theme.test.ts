@@ -107,6 +107,49 @@ describe('loadStoreFonts', () => {
 })
 
 describe('STORE_CSS', () => {
+  it('W7: el desglose (carrito y ticket) — Subtotal y cada beneficio chicos y normales (1h·2, 1i, 1j), y un monto como «−$15.90» nunca se parte en dos renglones', () => {
+    // Medido en el navegador a 360 px (W7): la regla base `.avq-o-total__row` iba DESPUÉS de sus modificadores y los pisaba (17 px / 700),
+    // y «−$15.90» se partía en «−» y «$15.90» junto a un nombre de cupón largo.
+    const style = document.createElement('style')
+    style.textContent = STORE_CSS
+    document.head.appendChild(style)
+    const fila = (mod: string) => {
+      const p = document.createElement('p')
+      p.className = `avq-o-total__row ${mod}`
+      p.innerHTML = '<span>W7 Cupón 10% (W7CUPON10)</span><span>−$15.90</span>'
+      document.body.appendChild(p)
+      return p
+    }
+    try {
+      for (const mod of ['avq-o-total__row--ben', 'avq-o-total__row--sub']) {
+        const p = fila(mod)
+        expect(getComputedStyle(p).fontSize, mod).toBe('15px')
+        expect(getComputedStyle(p).fontWeight, mod).toBe('400')
+        expect(getComputedStyle(p.lastElementChild!).whiteSpace, mod).toBe('nowrap')
+      }
+      expect(getComputedStyle(fila('')).fontWeight).toBe('700')
+    } finally {
+      style.remove()
+      document.body.innerHTML = ''
+    }
+  })
+  it('W7: los botones y campos de las pantallas de reservas que viven en la tienda («Entra a tu cuenta», «Mi cuenta», «Cambiar mi número») usan la letra de la tienda, no la del navegador (Arial)', () => {
+    // Medido en el navegador a 360 px (W7): «Seguir con WhatsApp», «Usar en caja», «Cerrar sesión»… salían en Arial: un <button> no hereda
+    // la letra sola y esos componentes (de reservas) no traen la clase `.avq-o-btn`, que sí la hereda.
+    const style = document.createElement('style')
+    style.textContent = STORE_CSS
+    document.head.appendChild(style)
+    const root = document.createElement('div')
+    root.className = 'avq-o-root'
+    root.innerHTML = '<button type="button">Seguir con WhatsApp</button><input aria-label="Tu número de teléfono"><button class="avq-o-btn">Pedir</button>'
+    document.body.appendChild(root)
+    try {
+      for (const el of root.querySelectorAll('button, input')) expect(getComputedStyle(el).fontFamily, el.outerHTML).toBe('inherit')
+    } finally {
+      style.remove()
+      document.body.innerHTML = ''
+    }
+  })
   it('STORE_CSS fija las --avq-* claras en .avq-o-root', () => {
     expect(STORE_CSS).toMatch(/\.avq-o-root\s*\{[^}]*--avq-fg:\s*#000000/)
     const rule = STORE_CSS.match(/\.avq-o-root\s*\{([^}]*)\}/)?.[1] ?? ''

@@ -6,7 +6,7 @@ import { Spinner } from './ui/Spinner'
 import { Button } from './ui/Button'
 import { Input } from './ui/Input'
 import { EntrarConCuenta } from './EntrarConCuenta'
-import { CambiarNumero } from './CambiarNumero'
+import { CambiarNumero, comoSeLee } from './CambiarNumero'
 import * as api from '../api/booking'
 import {
   customerToken, setCustomerSession, clearCustomerSession, venueInfo, entroAqui, lectorDe,
@@ -660,7 +660,7 @@ export function CustomerPortal({
             <p style={{ fontSize: '13px', color: 'var(--avq-muted-fg, #6b7280)', margin: '4px 0 0' }}>{customer.email}</p>
           )}
           {customer?.phone && (
-            <p style={{ fontSize: '12px', color: 'var(--avq-muted-fg, #6b7280)', margin: '1px 0 0' }}>{customer.phone}</p>
+            <p style={{ fontSize: '12px', color: 'var(--avq-muted-fg, #6b7280)', margin: '1px 0 0' }}>{comoSeLee(customer.phone)}</p>
           )}
           {/* W6: con su código por WhatsApp (una cuenta sin teléfono no lo ve: agregar uno no está pedido). */}
           {customer?.phone && (
@@ -749,7 +749,7 @@ export function CustomerPortal({
             <div>
               <label style={labelStyle}>{t('portal.phone')}</label>
               {data?.customer?.phone && (
-                <p style={{ fontSize: '14px', color: 'var(--avq-fg, #111827)', margin: '0 0 4px' }}>{data.customer.phone}</p>
+                <p style={{ fontSize: '14px', color: 'var(--avq-fg, #111827)', margin: '0 0 4px' }}>{comoSeLee(data.customer.phone)}</p>
               )}
               <p style={{ fontSize: '12px', color: 'var(--avq-muted-fg, #6b7280)', margin: 0 }}>{t('portal.phoneChangeHint')}</p>
             </div>
