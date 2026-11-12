@@ -30,6 +30,8 @@ export function OtpScreen() {
   // `offline` = no hubo respuesta usable (sin red o ni un ApiError): es un estado normal, ámbar con la nube; lo demás va en rojo.
   const [error, setError] = useState<{ text: string; offline: boolean } | null>(null)
   const [verifying, setVerifying] = useState(false)
+  // D17: el SERVIDOR dijo que el código no salió (`OTP_SEND_FAILED`): sin cajas ni «Pedimos tu código…» hasta que uno sí salga.
+  const [notSent, setNotSent] = useState(false)
   // La hora del último envío vive en el Checkout de la tienda: salir y volver a esta pantalla no manda otro WhatsApp.
   const lastSent = () => (phone ? c.otpSentAt.get(phone) : undefined)
   const recent = () => { const at = lastSent(); return at !== undefined && Date.now() - at < RESEND_S * 1000 }
@@ -57,6 +59,7 @@ export function OtpScreen() {
   const request = async () => {
     if (!phone) return
     setError(null)
+    setNotSent(false)
     const now = Date.now()
     c.otpSentAt.set(phone, now)
     setUntil(now + RESEND_S * 1000)
@@ -64,13 +67,16 @@ export function OtpScreen() {
       await requestOrderingOtp(store.slug, phone)
     } catch (e) {
       const offline = !(e instanceof ApiError) || e.network
-      // Sin respuesta (sin red, o ni un ApiError) se asume que el código no salió: ni volver a esta pantalla ni «Reenviar código» heredan
-      // la espera de un envío que no fue. Con un error del servidor sí se espera (no se sabe si salió).
-      if (offline) {
+      const noSalio = e instanceof ApiError && e.code === 'OTP_SEND_FAILED'
+      // Sin respuesta (sin red, o ni un ApiError) se asume que el código no salió, y con `OTP_SEND_FAILED` el SERVIDOR lo dice (D17): ni
+      // volver a esta pantalla ni «Reenviar código» heredan la espera de un envío que no fue. Con otro error del servidor sí se espera (no
+      // se sabe si salió).
+      if (offline || noSalio) {
         c.otpSentAt.delete(phone)
         setUntil(Date.now())
       }
-      setError({ text: errorText(t, e), offline })
+      setNotSent(noSalio)
+      setError({ text: noSalio ? t('otp.notSent') : errorText(t, e), offline })
     }
   }
   useEffect(() => {
@@ -117,12 +123,14 @@ export function OtpScreen() {
       <div class="avq-o-otp__intro">
         <h2 id={titleId} class="avq-o-title" tabIndex={-1}>{t('otp.title')}</h2>
         {/* D17: el SERVIDOR no garantiza que el WhatsApp salió: se dice que se pidió y qué hacer si no llega. */}
-        <p id={introId}>{t('otp.sent', { phone: leible ?? '' })}</p>
+        {!notSent && <p id={introId}>{t('otp.sent', { phone: leible ?? '' })}</p>}
       </div>
       <div class="avq-o-otp__code">
-        <div ref={boxes} role="group" aria-labelledby={titleId} aria-describedby={introId}>
-          <OtpInput look="tienda" value={code} onChange={setCode} onComplete={v => void verify(v)} disabled={busy} />
-        </div>
+        {!notSent && (
+          <div ref={boxes} role="group" aria-labelledby={titleId} aria-describedby={introId}>
+            <OtpInput look="tienda" value={code} onChange={setCode} onComplete={v => void verify(v)} disabled={busy} />
+          </div>
+        )}
         {busy && <p role="status" class="avq-o-help">{t('otp.verifying')}</p>}
         {error && (error.offline
           ? <Notice role="alert" tone="warn" icon="cloudOff" text={error.text} />

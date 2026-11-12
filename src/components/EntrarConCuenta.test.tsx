@@ -409,3 +409,58 @@ describe('D17 / codex-w5w6-r1 #4: el SERVIDOR no garantiza que el código salió
     expect(await screen.findByText("We requested your code on WhatsApp for 55 4442 2262. If it doesn't arrive within a minute, check the number or request another one.")).toBeTruthy()
   })
 })
+
+describe('D17: el SERVIDOR dice que el código NO salió (503 OTP_SEND_FAILED) ⇒ lo dice y no pasa a la pantalla del código', () => {
+  const noSalio = () => fallo(503, { code: 'OTP_SEND_FAILED', message: 'del servidor' })
+  it('WhatsApp: «No pudimos mandar el código por WhatsApp. Intenta en un momento.», sigue en el número y se puede pedir otra vez', async () => {
+    vi.mocked(api.requestOtp).mockRejectedValueOnce(noSalio())
+    show()
+    fireEvent.click(boton('Seguir con WhatsApp'))
+    const numero = screen.getByPlaceholderText('Tu número de teléfono') as HTMLInputElement
+    escribir(numero, '5544422262')
+    fireEvent.click(boton('Enviar código'))
+    expect(await screen.findByText('No pudimos mandar el código por WhatsApp. Intenta en un momento.')).toBeTruthy()
+    expect(screen.queryByText(/^Pedimos tu código/)).toBeNull()
+    expect(numero.value).toBe('5544422262')
+    fireEvent.click(boton('Enviar código'))
+    await screen.findByText(/^Pedimos tu código por WhatsApp/)
+  })
+  it('correo: «No pudimos mandar el código por correo. Intenta en un momento.»', async () => {
+    vi.mocked(api.requestOtp).mockRejectedValueOnce(noSalio())
+    show()
+    fireEvent.click(boton('Seguir con correo'))
+    escribir(screen.getByPlaceholderText('tucorreo@email.com'), 'ana@correo.mx')
+    fireEvent.click(boton('Enviar código'))
+    expect(await screen.findByText('No pudimos mandar el código por correo. Intenta en un momento.')).toBeTruthy()
+    expect(screen.queryByText(/^Pedimos tu código/)).toBeNull()
+  })
+  it('«Reenviar código» que no sale ⇒ el mismo aviso, con el canal del código que se pidió', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    try {
+      show()
+      await codigoPorWhatsApp()
+      for (let i = 0; i < 31; i++) await act(async () => { vi.advanceTimersByTime(1000) })
+      vi.mocked(api.requestOtp).mockRejectedValueOnce(noSalio())
+      fireEvent.click(boton('Reenviar código'))
+      expect(await screen.findByText('No pudimos mandar el código por WhatsApp. Intenta en un momento.')).toBeTruthy()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+  it('en inglés', async () => {
+    vi.mocked(api.requestOtp).mockRejectedValueOnce(noSalio())
+    show('en')
+    fireEvent.click(boton('Continue with WhatsApp'))
+    escribir(screen.getByPlaceholderText('Your phone number'), '5544422262')
+    fireEvent.click(boton('Send code'))
+    expect(await screen.findByText("We couldn't send the code on WhatsApp. Try again in a moment.")).toBeTruthy()
+  })
+  it('un SERVIDOR viejo (503 sin código) sigue como hoy: el texto genérico', async () => {
+    vi.mocked(api.requestOtp).mockRejectedValueOnce(fallo(503, { message: 'Service Unavailable' }))
+    show()
+    fireEvent.click(boton('Seguir con WhatsApp'))
+    escribir(screen.getByPlaceholderText('Tu número de teléfono'), '5544422262')
+    fireEvent.click(boton('Enviar código'))
+    expect(await screen.findByText((es as any).errors.generic)).toBeTruthy()
+  })
+})

@@ -110,8 +110,11 @@ export function EntrarConCuenta({ slug, negocio, t, onEntro }: Props) {
     setCodigo('')
     setAviso(null)
   }
-  function fallar(e: any) {
-    if (e?.data?.code === 'CUSTOMER_PROOF_INVALID') {
+  /** `canalDelCodigo`: el del código que se pidió en ESTA petición (pedir o reenviar), para decir por dónde no salió (D17). */
+  function fallar(e: any, canalDelCodigo?: Canal) {
+    if (canalDelCodigo && e?.data?.code === 'OTP_SEND_FAILED') {
+      setError({ texto: t(canalDelCodigo === 'phone' ? 'entrar.noSalioWhatsapp' : 'entrar.noSalioCorreo'), sinRed: false })
+    } else if (e?.data?.code === 'CUSTOMER_PROOF_INVALID') {
       reiniciar()
       setError({ texto: t('entrar.pruebaVencida'), sinRed: false })
     } else if (!e?.status) setError({ texto: t('entrar.sinRed'), sinRed: true })
@@ -142,7 +145,7 @@ export function EntrarConCuenta({ slug, negocio, t, onEntro }: Props) {
       setPaso('otraFicha')
     } else onEntro(r)
   }
-  async function intentar(fn: () => Promise<void>) {
+  async function intentar(fn: () => Promise<void>, canalDelCodigo?: Canal) {
     if (ocupado) return
     epocaAlEmpezar.current = epocaDelNegocio(slug)
     setOcupado(true)
@@ -150,7 +153,7 @@ export function EntrarConCuenta({ slug, negocio, t, onEntro }: Props) {
     try {
       await fn()
     } catch (e) {
-      fallar(e)
+      fallar(e, canalDelCodigo)
       // Sólo un rechazo del SERVIDOR invalida lo escrito; sin red el mismo código sigue sirviendo (codex-r2 #6).
       if ((e as any)?.status) setCodigo('')
     } finally {
@@ -172,7 +175,7 @@ export function EntrarConCuenta({ slug, negocio, t, onEntro }: Props) {
       setCodigo('')
       setEspera(ESPERA_S)
       setPaso('codigo')
-    })
+    }, pedido.canal)
   }
   const reenviar = () => {
     if (espera > 0 || !enviadoA) return
@@ -180,7 +183,7 @@ export function EntrarConCuenta({ slug, negocio, t, onEntro }: Props) {
     void intentar(async () => {
       await api.requestOtp(slug, enviadoA.destino)
       setEspera(ESPERA_S)
-    })
+    }, enviadoA.canal)
   }
   const verificar = (valor: string) => {
     if (valor.length < 6 || !enviadoA) return

@@ -928,6 +928,28 @@ describe('W6: «Cambiar mi número» (S8)', () => {
     expect(screen.getByRole('heading', { name: 'Entra a tu cuenta' })).toBeTruthy()
   })
 
+  it('D17: 503 OTP_SEND_FAILED ⇒ «No pudimos mandar el código por WhatsApp. Intenta en un momento.» y sigue en el número', async () => {
+    anaAdentro()
+    vi.mocked(api.pedirCambioDeNumero).mockRejectedValueOnce(falla(503, 'OTP_SEND_FAILED'))
+    await abrir()
+    await pedir()
+    expect(await screen.findByText('No pudimos mandar el código por WhatsApp. Intenta en un momento.')).toBeTruthy()
+    expect(screen.queryByText(/^Pedimos tu código/)).toBeNull()
+    expect(screen.getByRole('button', { name: 'Enviar código' })).toBeTruthy()
+    // Se puede pedir otra vez enseguida (no salió nada que esperar).
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Enviar código' })) })
+    expect(await screen.findByText(/^Pedimos tu código por WhatsApp/)).toBeTruthy()
+  })
+
+  it('D17 en inglés: «We couldn’t send…» con las mismas palabras', async () => {
+    anaAdentro()
+    vi.mocked(api.pedirCambioDeNumero).mockRejectedValueOnce(falla(503, 'OTP_SEND_FAILED'))
+    await abrir('en')
+    escribir(screen.getByPlaceholderText('Your phone number'), '5598765432')
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Send code' })) })
+    expect(await screen.findByText("We couldn't send the code on WhatsApp. Try again in a moment.")).toBeTruthy()
+  })
+
   it('el mismo número ⇒ «Ese ya es tu número.» y sigue en el paso del número', async () => {
     anaAdentro()
     vi.mocked(api.pedirCambioDeNumero).mockRejectedValueOnce(falla(400, 'CUSTOMER_PHONE_SAME'))
