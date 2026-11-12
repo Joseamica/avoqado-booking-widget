@@ -69,6 +69,8 @@ export function EntrarConCuenta({ slug, negocio, t, onEntro }: Props) {
   // «Sí» con otro contacto que tampoco tiene ficha.
   const [tampoco, setTampoco] = useState<{ contacto: string; canal: Canal } | null>(null)
   const [conOtraFicha, setConOtraFicha] = useState<SesionEmitida | null>(null)
+  // codex-w5w6-r4 #3: a dónde SÍ se pidió el código, fijado al pedirlo (como W6); reenviar, el texto y verificar van ahí, no al campo.
+  const [enviadoA, setEnviadoA] = useState<{ destino: { phone: string } | { email: string }; visible: string } | null>(null)
   const idNombre = useId()
   const encabezado = useRef<HTMLHeadingElement>(null)
   const primerPintado = useRef(true)
@@ -162,26 +164,29 @@ export function EntrarConCuenta({ slug, negocio, t, onEntro }: Props) {
       return
     }
     setAviso(null)
+    const pedido = { destino: destino(), visible: visible() } // el que sale en ESTA petición, aunque el campo cambie mientras va
     void intentar(async () => {
-      await api.requestOtp(slug, destino())
+      await api.requestOtp(slug, pedido.destino)
+      setEnviadoA(pedido)
       setCodigo('')
       setEspera(ESPERA_S)
       setPaso('codigo')
     })
   }
   const reenviar = () => {
-    if (espera > 0) return
+    if (espera > 0 || !enviadoA) return
     setAviso(null)
     void intentar(async () => {
-      await api.requestOtp(slug, destino())
+      await api.requestOtp(slug, enviadoA.destino)
       setEspera(ESPERA_S)
     })
   }
   const verificar = (valor: string) => {
-    if (valor.length < 6) return
+    if (valor.length < 6 || !enviadoA) return
+    const a = enviadoA
     void intentar(async () => {
-      const r = await api.verifyOtp(slug, { ...destino(), code: valor, ...(prueba ? { vincular: prueba.token } : {}) })
-      terminar(r, visible(), canal)
+      const r = await api.verifyOtp(slug, { ...a.destino, code: valor, ...(prueba ? { vincular: prueba.token } : {}) })
+      terminar(r, a.visible, canal)
     })
   }
   const conGoogle = (idToken: string) =>
@@ -196,6 +201,7 @@ export function EntrarConCuenta({ slug, negocio, t, onEntro }: Props) {
         setAviso(t('entrar.googleNoConfiable'))
         if (c) {
           setCorreo(c)
+          setEnviadoA({ destino: { email: c }, visible: c })
           setCodigo('')
           setEspera(ESPERA_S)
           setPaso('codigo')
@@ -286,7 +292,7 @@ export function EntrarConCuenta({ slug, negocio, t, onEntro }: Props) {
         {aviso && <p role="status" style={{ ...texto, color: 'var(--avq-fg, #111827)', textAlign: 'center' }}>{aviso}</p>}
         {/* D17: el SERVIDOR no garantiza que el código salió (`requestOtp` responde igual): se dice que se pidió y qué hacer si no llega. */}
         <p style={{ ...texto, textAlign: 'center' }}>
-          {canal === 'phone' ? t('entrar.pedimosWhatsapp', { numero: visible() }) : t('entrar.pedimosCorreo', { correo: visible() })}
+          {canal === 'phone' ? t('entrar.pedimosWhatsapp', { numero: enviadoA?.visible ?? '' }) : t('entrar.pedimosCorreo', { correo: enviadoA?.visible ?? '' })}
         </p>
         <div>
           <label style={etiqueta}>{t('otp.codeLabel')}</label>

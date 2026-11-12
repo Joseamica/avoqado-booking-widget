@@ -372,6 +372,19 @@ describe('D17 / codex-w5w6-r1 #4: el SERVIDOR no garantiza que el código salió
     expect(await screen.findByText('Pedimos tu código por correo a ana@correo.mx. Si no te llega en un minuto, revisa el correo o pide otro.')).toBeTruthy()
     expect(screen.queryByText(/Te enviamos/)).toBeNull()
   })
+  it('codex-w5w6-r4 #3: el texto y la verificación van al número que se pidió, aunque lo editen mientras se mandaba', async () => {
+    let responder: (r: any) => void = () => {}
+    vi.mocked(api.requestOtp).mockImplementationOnce(() => new Promise(ok => { responder = ok }))
+    show()
+    fireEvent.click(boton('Seguir con WhatsApp'))
+    escribir(screen.getByPlaceholderText('Tu número de teléfono'), '5544422262')
+    fireEvent.click(boton('Enviar código'))
+    escribir(screen.getByPlaceholderText('Tu número de teléfono'), '5598765432') // la editó mientras iba
+    await act(async () => { responder({ ok: true }); for (let i = 0; i < 10; i++) await Promise.resolve() })
+    expect(screen.getByText(/^Pedimos tu código por WhatsApp al 55 4442 2262\./)).toBeTruthy()
+    teclearCodigo()
+    await waitFor(() => expect(api.verifyOtp).toHaveBeenCalledWith(SLUG, { phone: '+525544422262', code: '123456' }))
+  })
   it('en inglés', async () => {
     show('en')
     fireEvent.click(boton('Continue with WhatsApp'))
