@@ -215,7 +215,7 @@ export function EntrarConCuenta({ slug, negocio, t, onEntro }: Props) {
           setPaso('codigo')
         } else setPaso('contacto')
       }
-    })
+    }, 'email') // codex-r4: si el código de confirmar el correo no salió (`OTP_SEND_FAILED`), el aviso traducido «por correo»
   const crearFicha = (e?: Event) => {
     e?.preventDefault()
     if (!prueba) return

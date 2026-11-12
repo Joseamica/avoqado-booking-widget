@@ -466,6 +466,21 @@ describe('D17: el SERVIDOR dice que el código NO salió (503 OTP_SEND_FAILED) �
     await act(async () => { responder({ ok: true }); for (let i = 0; i < 10; i++) await Promise.resolve() })
     await screen.findByText(/^Pedimos tu código por WhatsApp/)
   })
+  it('codex-r4: Google con un correo que hay que confirmar y el correo no salió ⇒ el aviso traducido (no el texto crudo del SERVIDOR)', async () => {
+    vi.stubEnv('VITE_GOOGLE_CLIENT_ID', 'cliente.apps.googleusercontent.com')
+    let alEntrar: (r: { credential: string }) => void = () => {}
+    ;(window as any).google = { accounts: { id: { initialize: vi.fn(o => { alEntrar = o.callback }), renderButton: vi.fn() } } }
+    dom.reconfigure({ url: 'https://book.avoqado.io/mindform' })
+    vi.mocked(api.entrarConGoogle).mockRejectedValueOnce(
+      fallo(503, { code: 'OTP_SEND_FAILED', message: 'No pudimos mandarte el código a tu correo. Intenta otra vez o entra con WhatsApp.' }),
+    )
+    show('en')
+    await act(async () => {})
+    await act(async () => { alEntrar({ credential: idToken('ana@empresa.mx') }) })
+    expect(await screen.findByText("We couldn't send the code by email. Try again in a moment.")).toBeTruthy()
+    expect(screen.queryAllByRole('textbox')).toHaveLength(0)
+    expect(onEntro).not.toHaveBeenCalled()
+  })
   it('un SERVIDOR viejo (503 sin código) sigue como hoy: el texto genérico', async () => {
     vi.mocked(api.requestOtp).mockRejectedValueOnce(fallo(503, { message: 'Service Unavailable' }))
     show()
