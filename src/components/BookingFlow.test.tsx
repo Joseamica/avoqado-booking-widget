@@ -635,8 +635,8 @@ describe('BookingFlow booking repair', () => {
       expect(view.getByText('Clase reservada durante 10:00')).toBeTruthy()
       const button = view.getByRole('button', { name: 'Reservar clase' }) as HTMLButtonElement
       expect(button.disabled).toBe(false)
-      await new Promise(resolve => setTimeout(resolve, 1100))
-      expect(view.getByText(/Clase reservada durante 9:5[89]/)).toBeTruthy()
+      // El reloj baja de 10:00. Con la máquina cargada el primer tic puede tardar o saltar segundos: se espera hasta 3 s y basta 9:5x.
+      await vi.waitFor(() => expect(view.getByText(/Clase reservada durante 9:5\d/)).toBeTruthy(), { timeout: 3000, interval: 100 })
       const firstExpiry = state.slotHoldExpiresAt.value!
       ;(view.getByRole('button', { name: 'Atrás' }) as HTMLButtonElement).click(); await settle()
       const clock = vi.spyOn(Date, 'now').mockReturnValue(firstExpiry + 1000)
