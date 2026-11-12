@@ -5,7 +5,7 @@ import { CustomerPortal } from './CustomerPortal'
 import * as api from '../api/booking'
 import * as state from '../state/booking'
 import { createT } from '../i18n'
-import { borrarSesion, guardarSesion, leerSesion } from '../lib/sesionDeCliente'
+import { borrarSesion, guardarSesion, leerSesion, registrarSalida } from '../lib/sesionDeCliente'
 import { cuentaDe, cuentasNuevasParaPruebas } from '../state/miCuenta'
 /** «Mi cuenta» de reservas ya leída (lo anterior que la pantalla enseña al abrir). */
 const sembrar = (data: any) => { cuentaDe('testarudo', 'reservas').value = { data, leyendo: false, falla: null } }
@@ -1030,10 +1030,66 @@ describe('W6: «Cambiar mi número» (S8)', () => {
     await pedir()
     codigo()
     await waitFor(() => expect(api.confirmarCambioDeNumero).toHaveBeenCalled())
-    borrarSesion('testarudo') // «Cerrar sesión» en otra pestaña
+    // «Cerrar sesión» en otra pestaña: borra lo guardado y deja la marca de salida (lo que hace `soltarLaPagina` sin token allá).
+    borrarSesion('testarudo')
+    registrarSalida('testarudo')
     await act(async () => { responder(NUEVA) })
     expect(leerSesion('testarudo')).toBeNull()
     expect(state.customerToken.value).toBeNull()
+    expect(screen.queryByText(/tu número ahora es/)).toBeNull()
+  })
+
+  it('codex-w5w6-r2 #1: «Mi cuenta» se relee con la sesión vieja mientras confirma ⇒ su 401 (la vieja ya no vale) no tira el cambio: se guarda y se adopta', async () => {
+    anaAdentro()
+    let responder: (r: any) => void = () => {}
+    vi.mocked(api.confirmarCambioDeNumero).mockImplementationOnce(() => new Promise(ok => { responder = ok }))
+    await abrir()
+    await pedir()
+    codigo()
+    await waitFor(() => expect(api.confirmarCambioDeNumero).toHaveBeenCalled())
+    // El SERVIDOR ya cambió el número (versión nueva): la relectura al volver a la pestaña recibe 401 y suelta la sesión vieja.
+    vi.mocked(api.getCustomerPortal).mockImplementationOnce(async () => {
+      throw Object.assign(new Error('Token inválido o expirado'), { status: 401, data: { code: 'CUSTOMER_TOKEN_INVALID' }, enviado: 'tok-A' })
+    })
+    await act(async () => { document.dispatchEvent(new Event('visibilitychange')) })
+    await waitFor(() => expect(state.customerToken.value).toBeNull())
+    await act(async () => { responder(NUEVA) })
+    expect(leerSesion('testarudo')?.token).toBe('tok-N')
+    expect(state.customerToken.value).toBe('tok-N')
+    expect(await screen.findByText('Listo: tu número ahora es 55 9876 5432.')).toBeTruthy()
+  })
+
+  it('codex-w5w6-r2 #1: otra pestaña recibió el 401 de la sesión vieja (borró lo guardado, sin salir) ⇒ la de reemplazo sí se guarda', async () => {
+    anaAdentro()
+    let responder: (r: any) => void = () => {}
+    vi.mocked(api.confirmarCambioDeNumero).mockImplementationOnce(() => new Promise(ok => { responder = ok }))
+    await abrir()
+    await pedir()
+    codigo()
+    await waitFor(() => expect(api.confirmarCambioDeNumero).toHaveBeenCalled())
+    borrarSesion('testarudo') // el 401 de allá borra lo guardado; no es «Cerrar sesión»
+    await act(async () => { responder(NUEVA) })
+    expect(leerSesion('testarudo')?.token).toBe('tok-N')
+    expect(state.customerToken.value).toBe('tok-N')
+  })
+
+  it('codex-w5w6-r2 #1 (tienda): la confirmación que llega con «Mi cuenta» ya cerrada igual queda guardada y la adopta la tienda', async () => {
+    const { fijarPagina } = await import('../lib/sesionDeCliente')
+    const { desdeUnica } = await import('../order/session')
+    const sesion = { token: 'tok-T', customer: CLIENTE, contactos: [TEL], guardadaEn: Date.now() }
+    guardarSesion('testarudo', sesion)
+    fijarPagina('testarudo', 'pedidos', desdeUnica(sesion))
+    let responder: (r: any) => void = () => {}
+    vi.mocked(api.confirmarCambioDeNumero).mockImplementationOnce(() => new Promise(ok => { responder = ok }))
+    const alEntrar = vi.fn()
+    await abrir('es', { superficie: 'pedidos', alEntrar })
+    await pedir()
+    codigo()
+    await waitFor(() => expect(api.confirmarCambioDeNumero).toHaveBeenCalled())
+    cleanup() // salió de «Mi cuenta» (la tienda la desmonta)
+    await act(async () => { responder(NUEVA) })
+    expect(leerSesion('testarudo')?.token).toBe('tok-N')
+    expect(alEntrar).toHaveBeenCalledWith(NUEVA)
   })
 
   it('codex-w5w6-r1 #1: si otra pestaña sólo RENOVÓ su sesión (la misma), la de reemplazo sí se guarda y se adopta', async () => {

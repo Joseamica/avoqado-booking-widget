@@ -3,8 +3,7 @@ import { useEffect, useRef, useState } from 'preact/hooks'
 import type { TFunction } from '../i18n'
 import * as api from '../api/booking'
 import { DEFAULT_DIAL, phoneE164 } from '../data/countries'
-import { epocaDelNegocio, guardarSesion, paginaDe, type SesionEmitida, type Superficie } from '../lib/sesionDeCliente'
-import { lectorDe } from '../state/booking'
+import { epocaDelNegocio, guardarSesion, leerSesion, salidaDe, type SesionEmitida, type Superficie } from '../lib/sesionDeCliente'
 import { Button } from './ui/Button'
 import { CountryPhoneInput } from './ui/CountryPhoneInput'
 import { OtpInput } from './ui/OtpInput'
@@ -92,21 +91,20 @@ export function CambiarNumero({ slug, superficie, t, token, onListo, onReentrar,
   }
 
   /**
-   * Una petición a la vez, con el token de la superficie. Si mientras iba salió o entró otra persona en este documento (época), no pinta
-   * ni guarda. `identidad`: la sesión de la superficie al mandarla.
+   * Una petición a la vez, con el token de la superficie. Si mientras iba cambió la sesión en este documento (época), no pinta. Salvo
+   * `listoDecide`: la respuesta de confirmar decide sola con su regla (abajo), porque un 401 de la sesión vieja también cambia la época.
    */
-  async function intentar<T>(llamar: (tkn: string) => Promise<T>, listo: (r: T, tkn: string, identidad: string | undefined) => void) {
+  async function intentar<T>(llamar: (tkn: string) => Promise<T>, listo: (r: T, tkn: string) => void, listoDecide = false) {
     const tkn = token()
     if (!tkn || enVuelo.current) return
     enVuelo.current = true
     const epoca = epocaDelNegocio(slug)
-    const identidad = paginaDe(slug, superficie)?.identidad
     const enCodigo = paso === 'codigo'
     setOcupado(true)
     setError(null)
     try {
       const r = await llamar(tkn)
-      if (epocaDelNegocio(slug) === epoca) listo(r, tkn, identidad)
+      if (listoDecide || epocaDelNegocio(slug) === epoca) listo(r, tkn)
     } catch (e) {
       if (epocaDelNegocio(slug) === epoca) fallar(e, tkn, enCodigo)
     } finally {
@@ -131,18 +129,20 @@ export function CambiarNumero({ slug, superficie, t, token, onListo, onReentrar,
   const verificar = (valor: string) => {
     if (valor.length < 6) return
     const tel = destino
-    void intentar(tkn => api.confirmarCambioDeNumero(slug, tkn, tel, valor, superficie), (r, tkn, identidad) => {
-      // codex-w5w6-r1 #1: se escribe sólo si lo guardado sigue siendo la sesión que lo pidió (o su renovación, misma identidad), en UNA
-      // lectura justo antes de escribir. Otra persona que entró, o una salida, en otra pestaña ganan: no se pisan; esta página queda sin
-      // sesión (la suya ya no vale en el SERVIDOR).
-      const guardada = lectorDe(slug, superficie)()
-      if (!guardada || !identidad || guardada.identidad !== identidad) return on401(null, tkn)
+    const salida = salidaDe(slug)
+    void intentar(tkn => api.confirmarCambioDeNumero(slug, tkn, tel, valor, superficie), (r, tkn) => {
+      // Regla única de la sesión de reemplazo (codex-w5w6-r1 #1 y r2 #1; `inventario-reemplazo-w6.md`): el SERVIDOR ya cambió el número
+      // y dejó sin valor toda sesión anterior de ESA ficha. Se escribe y se adopta salvo que, mientras iba, alguien cerrara sesión a
+      // propósito (en cualquier pestaña: `salidaDe`) o lo guardado sea de OTRA persona; un 401 de la sesión vieja, una renovación o lo
+      // guardado vacío por ese 401 no lo impiden. Si no se escribe, la página queda sin sesión (la suya ya no vale).
+      const guardada = leerSesion(slug)
+      if (salidaDe(slug) !== salida || (guardada && guardada.customer.id !== r.customer.id)) return on401(null, tkn)
       // codex-r3 H7: si el navegador no la deja guardar, no se adopta una sesión que nadie recordará.
       if (guardarSesion(slug, { token: r.token, customer: r.customer, contactos: r.contactos, guardadaEn: Date.now() }) === 'fallo') {
         return setError({ texto: t('entrar.noSeGuardo'), sinRed: false })
       }
       onListo(r, comoSeLee(r.customer.phone || tel))
-    })
+    }, true)
   }
 
   const avisoDeError = error && (

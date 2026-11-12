@@ -139,6 +139,31 @@ export function salioEnOtraPagina(slug: string): boolean {
   }
 }
 
+// W6 (codex-w5w6-r2): la marca de «Cerrar sesión» A PROPÓSITO (no un 401), compartida entre pestañas y páginas como la sesión. Quien
+// recibe una sesión de reemplazo («Cambiar mi número») la compara para no revivir una salida; un 401 no la deja (la sesión vieja deja de
+// valer justo por el cambio de número).
+const nombreCerro = (slug: string) => `avq_cerro_${encodeURIComponent(slug)}`
+const cerroEnMemoria = new Map<string, string>()
+export function registrarSalida(slug: string): void {
+  const v = `${Date.now()}-${Math.random().toString(36).slice(2)}`
+  cerroEnMemoria.set(slug, v)
+  try {
+    if (esDeAvoqado()) escribirCookie(nombreCerro(slug), v)
+    else localStorage.setItem(`avq_cerro:${slug}`, v)
+  } catch {
+    /* sin almacenamiento: sólo esta pestaña */
+  }
+}
+export function salidaDe(slug: string): string | null {
+  try {
+    const v = esDeAvoqado() ? leerCookie(nombreCerro(slug)) : localStorage.getItem(`avq_cerro:${slug}`)
+    if (v !== null) return v
+  } catch {
+    /* sin almacenamiento */
+  }
+  return cerroEnMemoria.get(slug) ?? null
+}
+
 /** Los dos tokens de hoy de ese negocio (pedidos y reservas). */
 function quitarTokensDeHoy(slug: string): void {
   for (const k of [`avq_order_session:${slug}`, `avq_customer_token:${slug}`, `avq_customer_info:${slug}`]) {
@@ -322,6 +347,7 @@ export function soltarLaPagina(slug: string, s: Superficie, tokenQueFallo: strin
   const l = leer()
   const laMismaGuardada = !!p && !!l && l.identidad === p.identidad
   if ((!!tokenQueFallo && l?.token === tokenQueFallo) || (deLaPagina && laMismaGuardada)) borrarSesion(slug)
+  if (tokenQueFallo === undefined) registrarSalida(slug)
   if (deLaPagina) fijarPagina(slug, s, null)
 }
 
@@ -329,4 +355,5 @@ export function soltarLaPagina(slug: string, s: Superficie, tokenQueFallo: strin
 export function documentoNuevoParaPruebas(): void {
   paginas.clear()
   epocas.clear()
+  cerroEnMemoria.clear()
 }
