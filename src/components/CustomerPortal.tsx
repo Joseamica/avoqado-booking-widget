@@ -34,6 +34,11 @@ interface CustomerPortalProps {
   alSalir?: () => void
   /** W4 (tienda): el nombre del negocio para «¿Ya eres cliente de…?» (en la tienda no hay `venueInfo` de reservas). */
   negocio?: string | null
+  /**
+   * Pulido W6 (tienda): su flecha es el ÚNICO «atrás». Aquí se le presta el paso anterior (`null` = no hay: sale al menú): el de lo de
+   * adentro (entrar, cambiar el número) y, si no, el de «Mi cuenta» (de «Usar en caja», «Cambiar mi número» o «Entrar otra vez»).
+   */
+  alCambiarAtras?: (atras: (() => void) | null) => void
 }
 
 const statusConfig: Record<string, { bg: string; text: string }> = {
@@ -94,6 +99,7 @@ function useTokenDe(slug: string, sup: Superficie): string | null {
 
 export function CustomerPortal({
   venueSlug, timezone, venuePhone, t, onBack, onManageBooking, superficie = 'reservas', onVerPedido, pedidoDeHoy, alEntrar, alSalir, negocio,
+  alCambiarAtras,
 }: CustomerPortalProps) {
   const sup = superficie
   const enTienda = sup === 'pedidos'
@@ -198,6 +204,26 @@ export function CustomerPortal({
       loadPacks()
     }
   }, [!!data]) // una vez por apertura, no en cada relectura
+
+  // W4 (1m): «Usar en caja», con el código de la tarjeta para que la cajera lo teclee. Sale de los datos VIGENTES: si al releer ya no
+  // está activa (bloqueada, vencida, sin código) o ya no está, se regresa a «Mi cuenta», que dice por qué.
+  const enUso = usando && data
+    ? [...(data.tarjetas?.items ?? []), ...(extra.tarjetas?.items ?? [])].find(c => c.id === usando && c.estado === 'ACTIVA' && c.codigo) ?? null
+    : null
+  // Pulido W6: el paso anterior que presta lo de adentro (sólo en la tienda) y la subpantalla de «Mi cuenta» abierta (el orden de abajo).
+  const [atrasDeDentro, setAtrasDeDentro] = useState<(() => void) | null>(null)
+  const prestar = alCambiarAtras ? (f: (() => void) | null) => setAtrasDeDentro(() => f) : undefined
+  const subpantalla = !data || !token ? null
+    : reentrar ? 'reentrar' : cambiando !== null && cambiando === epocaDe(venueSlug, sup) ? 'cambiando' : enUso ? 'usando' : null
+  useEffect(() => {
+    if (!alCambiarAtras) return
+    const propio = subpantalla === 'reentrar' ? () => setReentrar(false)
+      : subpantalla === 'cambiando' ? () => setCambiando(null)
+      : subpantalla === 'usando' ? () => setUsando(null)
+      : null
+    alCambiarAtras(atrasDeDentro ?? propio)
+    return () => alCambiarAtras(null)
+  }, [atrasDeDentro, subpantalla])
 
   /** Relee «Mi cuenta» de la superficie (la última lectura gana y deja su estado para todos los lectores; `state/miCuenta.ts`). */
   async function loadPortal() {
@@ -409,7 +435,7 @@ export function CustomerPortal({
   if (data && token && reentrar) {
     return (
       <div class="avq-animate-in">
-        <EntrarConCuenta slug={venueSlug} negocio={negocio ?? venueInfo.value?.name} t={t} onEntro={r => void handleEntro(r)} />
+        <EntrarConCuenta slug={venueSlug} negocio={negocio ?? venueInfo.value?.name} t={t} onEntro={r => void handleEntro(r)} alCambiarAtras={prestar} />
         <button type="button" style={botonQuieto} onClick={() => setReentrar(false)}>{t('cuenta.volverACuenta')}</button>
       </div>
     )
@@ -433,16 +459,12 @@ export function CustomerPortal({
           onReentrar={() => { setCambiando(null); setReentrar(true) }}
           onVolver={() => setCambiando(null)}
           on401={soltar401}
+          alCambiarAtras={prestar}
         />
       </div>
     )
   }
 
-  // W4 (1m): «Usar en caja», con el código de la tarjeta para que la cajera lo teclee. Sale de los datos VIGENTES: si al releer ya no
-  // está activa (bloqueada, vencida, sin código) o ya no está, se regresa a «Mi cuenta», que dice por qué.
-  const enUso = usando && data
-    ? [...(data.tarjetas?.items ?? []), ...(extra.tarjetas?.items ?? [])].find(c => c.id === usando && c.estado === 'ACTIVA' && c.codigo) ?? null
-    : null
   if (data && token && enUso) {
     return (
       <div class="avq-animate-in" style={{ textAlign: 'center' }}>
@@ -469,7 +491,7 @@ export function CustomerPortal({
     if (enTienda) {
       return (
         <div class="avq-animate-in">
-          <EntrarConCuenta slug={venueSlug} negocio={negocio ?? venueInfo.value?.name} t={t} onEntro={r => void handleEntro(r)} />
+          <EntrarConCuenta slug={venueSlug} negocio={negocio ?? venueInfo.value?.name} t={t} onEntro={r => void handleEntro(r)} alCambiarAtras={prestar} />
           <p style={{ ...chico, margin: '16px 0 0', textAlign: 'center' }}>{t('cuenta.sinCuentaAyuda')}</p>
           <button type="button" style={botonQuieto} onClick={onBack}>{t('cuenta.pedirSinCuenta')}</button>
         </div>
@@ -479,7 +501,7 @@ export function CustomerPortal({
     if (!showEmailLogin) {
       return (
         <div class="avq-animate-in">
-          <EntrarConCuenta slug={venueSlug} negocio={negocio ?? venueInfo.value?.name} t={t} onEntro={r => void handleEntro(r)} />
+          <EntrarConCuenta slug={venueSlug} negocio={negocio ?? venueInfo.value?.name} t={t} onEntro={r => void handleEntro(r)} alCambiarAtras={prestar} />
 
           {/* Reveal the email/password login as a secondary option */}
           <div style={{ textAlign: 'center', marginTop: '16px' }}>

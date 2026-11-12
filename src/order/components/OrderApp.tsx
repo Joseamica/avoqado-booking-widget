@@ -1,6 +1,6 @@
 import { h } from 'preact'
 import { useContext, useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks'
-import { OrderStoreContext } from '../store'
+import { OrderStoreContext, type Screen } from '../store'
 import { ApiError, getTracking } from '../api'
 import { createOrderT } from '../i18n'
 import { clearLastOrder, loadLastOrder } from '../session'
@@ -135,9 +135,15 @@ export function OrderApp({ accentColor }: { accentColor?: string }) {
   const screen = store.screen.value
   const root = useRef<HTMLDivElement>(null)
   const from = useRef(screen)
+  // Pulido W6: en «entrar» y «Mi cuenta» hay UN solo «atrás», el de la tienda. Lo de adentro le presta su paso anterior (`pasoAtras`); sin
+  // él, sale a la pantalla de donde vino (entrar: carrito, datos…) o al menú («Mi cuenta»).
+  const [pasoAtras, setPasoAtras] = useState<(() => void) | null>(null)
+  const prestarAtras = (f: (() => void) | null) => setPasoAtras(() => f)
+  const vinoDe = useRef<Screen>('cart')
   useLayoutEffect(() => {
     const prev = from.current
     from.current = screen
+    if (screen === 'entrar' && prev !== 'entrar') vinoDe.current = prev
     const el = root.current
     if (!el || prev === screen || !ARRIVALS.has(screen)) return
     if (el.getBoundingClientRect().top < 0) el.scrollIntoView({ block: 'start' })
@@ -166,7 +172,7 @@ export function OrderApp({ accentColor }: { accentColor?: string }) {
   useLayoutEffect(() => {
     if (mounted.current) changedAt.current = performance.now()
     mounted.current = true
-  }, [screen, pid])
+  }, [screen, pid, pasoAtras]) // pulido W6: un paso atrás dentro de la pantalla también cambia la vista (un doble toque no salta dos)
   const dropEarly = (e: Event) => {
     if (tapTime(e) - changedAt.current >= TAP_GUARD_MS) return
     e.preventDefault()
@@ -219,14 +225,16 @@ export function OrderApp({ accentColor }: { accentColor?: string }) {
       {/* W3 (e): «Entrar otra vez» dentro de la tienda; al entrar, la página toma esa sesión y vuelve al carrito (W4 lo reutiliza). */}
       {screen === 'entrar' && (
         <div class="avq-o-entrar">
-          <button type="button" class="avq-o-back" aria-label={t('entrar.back')} onClick={() => store.go('cart')}><Back /></button>
-          <EntrarConCuenta slug={store.slug} negocio={name} t={createT(store.locale)} onEntro={r => entroEnLaTienda(store, r)} />
+          <button type="button" class="avq-o-back" aria-label={t(pasoAtras ? 'entrar.atras' : 'entrar.back')}
+            onClick={() => (pasoAtras ? pasoAtras() : store.go(vinoDe.current))}><Back /></button>
+          <EntrarConCuenta slug={store.slug} negocio={name} t={createT(store.locale)} onEntro={r => entroEnLaTienda(store, r)} alCambiarAtras={prestarAtras} />
         </div>
       )}
       {/* W4: «Mi cuenta» es la misma de reservas, con la sesión de la TIENDA; su folio de este aparato va arriba con la línea exacta. */}
       {screen === 'cuenta' && (
         <div class="avq-o-entrar">
-          <button type="button" class="avq-o-back" aria-label={t('cuenta.volver')} onClick={() => store.go('menu')}><Back /></button>
+          <button type="button" class="avq-o-back" aria-label={t(pasoAtras ? 'entrar.atras' : 'cuenta.volver')}
+            onClick={() => (pasoAtras ? pasoAtras() : store.go('menu'))}><Back /></button>
           <CustomerPortal
             venueSlug={store.slug}
             timezone={tz}
@@ -239,6 +247,7 @@ export function OrderApp({ accentColor }: { accentColor?: string }) {
             pedidoDeHoy={active ? { folio: active.tracking.orderNumber, estado: active.tracking.status, pagado: !!active.tracking.paid, linea: reminder(active.tracking).text, trackingToken: active.token } : undefined}
             alEntrar={r => entroEnLaTienda(store, r, null)}
             alSalir={() => { salioEnLaTienda(store); store.go('menu') }}
+            alCambiarAtras={prestarAtras}
           />
         </div>
       )}

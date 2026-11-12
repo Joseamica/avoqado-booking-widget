@@ -9,9 +9,10 @@ import type { CreateOrderBody } from './types'
  * SERVIDOR (llave, cuerpo y la clienta que resuelve ESE token) es la misma por construcción. Se borra con el intento al resolverse.
  * `requiereEntrar`: ese token recibió 401 (vencido o revocado); sólo entrar otra vez lo reemplaza. Un intento de antes de este cambio
  * no trae `token` (`undefined`): sale con la sesión de ahora, como entonces.
+ * `porSesion` (pulido W5): sólo para el aviso; quedó pendiente porque se cerró la sesión y ya entró otra vez. No cambia lo que se manda.
  */
 export interface PendingAttempt {
-  key: string; body: CreateOrderBody; startedAt: number; token?: string | null; requiereEntrar?: boolean
+  key: string; body: CreateOrderBody; startedAt: number; token?: string | null; requiereEntrar?: boolean; porSesion?: boolean
 }
 
 const KEY_RE = /^[A-Za-z0-9_-]{32,64}$/
@@ -50,7 +51,7 @@ export function pendingAttempt(slug: string): PendingAttempt | null {
 }
 
 /** Cambia la autorización del intento pendiente: `requiereEntrar` tras un 401; o, al entrar otra vez, el token nuevo. */
-export function autorizarIntento(slug: string, cambio: { token?: string; requiereEntrar?: boolean }): void {
+export function autorizarIntento(slug: string, cambio: { token?: string; requiereEntrar?: boolean; porSesion?: boolean }): void {
   const a = pendingAttempt(slug)
   if (!a) return
   try {
@@ -61,7 +62,7 @@ export function autorizarIntento(slug: string, cambio: { token?: string; requier
 }
 /** Al entrar otra vez: si el intento pendiente esperaba una sesión (su token recibió 401), sale con ésta (misma llave y cuerpo). */
 export function reautorizarIntento(slug: string, token: string): void {
-  if (pendingAttempt(slug)?.requiereEntrar) autorizarIntento(slug, { token, requiereEntrar: false })
+  if (pendingAttempt(slug)?.requiereEntrar) autorizarIntento(slug, { token, requiereEntrar: false, porSesion: true })
 }
 
 /** Sólo ante una respuesta DEFINITIVA del servidor (creado, precio cambiado, carrito inválido, tienda no disponible…). */

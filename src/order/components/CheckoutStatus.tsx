@@ -3,6 +3,7 @@ import { useContext } from 'preact/hooks'
 import { OrderStoreContext } from '../store'
 import { createOrderT } from '../i18n'
 import { checkoutOf, retry, send } from '../checkout'
+import { pendingAttempt } from '../attempt'
 import { formatMXN } from '../money'
 import { Notice } from './StoreStatusBanner'
 
@@ -68,7 +69,17 @@ export function CheckoutStatus() {
     )
   }
   // En la pantalla del código el intento espera la verificación, no la conexión.
-  if (c.pending.value && store.screen.value !== 'otp')
-    return <Notice tone="warn" icon="cloudOff" text={t('checkout.pending')} action={{ label: t('common.retry'), onClick: () => void retry(store) }} />
+  if (c.pending.value && store.screen.value !== 'otp') {
+    // Pulido W5: la causa real. Un 401 de su sesión (el intento espera entrar) o ya entró otra vez tras él: es la sesión, no la red.
+    const a = pendingAttempt(store.slug)
+    if (a?.requiereEntrar)
+      return (
+        <Notice role="alert" tone="warn" title={t('cart.benefits.sessionTitle')} text={t('checkout.finishSignedIn')}
+          action={{ label: t('cart.benefits.signInAgain'), onClick: () => store.go('entrar') }} />
+      )
+    return a?.porSesion
+      ? <Notice tone="warn" text={t('checkout.pendingSesion')} action={{ label: t('common.retry'), onClick: () => void retry(store) }} />
+      : <Notice tone="warn" icon="cloudOff" text={t('checkout.pending')} action={{ label: t('common.retry'), onClick: () => void retry(store) }} />
+  }
   return null
 }

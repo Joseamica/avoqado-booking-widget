@@ -173,7 +173,7 @@ describe('CustomerPortal: entrar con la sesión única (W2)', () => {
     fireEvent.click(screen.getByRole('button', { name: 'o entra con correo y contraseña' }))
     escribir(screen.getByPlaceholderText('tucorreo@email.com'), 'ana@correo.mx')
     escribir(screen.getByPlaceholderText('••••••'), 'secreta')
-    fireEvent.click(screen.getByRole('button', { name: 'Iniciar Sesión' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Iniciar sesión' }))
     fireEvent.click(await screen.findByTitle('Editar Perfil'))
     escribir(screen.getByPlaceholderText('Nombre'), 'Anita')
     fireEvent.click(screen.getByRole('button', { name: 'Guardar' }))
@@ -187,7 +187,7 @@ describe('CustomerPortal: entrar con la sesión única (W2)', () => {
     fireEvent.click(screen.getByRole('button', { name: 'o entra con correo y contraseña' }))
     escribir(screen.getByPlaceholderText('tucorreo@email.com'), 'ana@correo.mx')
     escribir(screen.getByPlaceholderText('••••••'), 'secreta')
-    fireEvent.click(screen.getByRole('button', { name: 'Iniciar Sesión' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Iniciar sesión' }))
     await waitFor(() => expect(leerSesion('testarudo')).toMatchObject({ token: 'tok-pass', contactos: [] }))
     expect(localStorage.getItem('avq_customer_token:testarudo')).toBeNull()
   })
@@ -1178,5 +1178,14 @@ describe('W6: «Cambiar mi número» (S8)', () => {
     escribir(screen.getByPlaceholderText('Your phone number'), '5598765432')
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Send code' })) })
     expect(await screen.findByText('Sign in again to change your number')).toBeTruthy()
+  })
+})
+
+describe('pulido W8: «Mi cuenta» e «Iniciar sesión» en minúscula también en reservas', () => {
+  it('es y en, en mayúscula de oración', () => {
+    const es = createT('es')
+    const en = createT('en')
+    expect([es('portal.title'), es('portal.myAccount'), es('portal.login'), es('portal.loginButton')]).toEqual(['Mi cuenta', 'Mi cuenta', 'Iniciar sesión', 'Iniciar sesión'])
+    expect([en('portal.title'), en('portal.myAccount'), en('portal.login'), en('portal.loginButton')]).toEqual(['My account', 'My account', 'Log in', 'Log in'])
   })
 })

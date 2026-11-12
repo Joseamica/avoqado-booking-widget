@@ -24,6 +24,11 @@ interface Props {
   t: TFunction
   /** Ya entró: la sesión única ya quedó guardada (W1). */
   onEntro: (s: SesionEmitida) => void
+  /**
+   * Pulido W6: quien la monta pinta el ÚNICO «atrás» (la tienda). Con esto, aquí no se pinta «← Atrás»: el paso anterior se le presta
+   * (`null` en el primer paso, donde su «atrás» ya sale de la pantalla).
+   */
+  alCambiarAtras?: (atras: (() => void) | null) => void
 }
 
 const ESPERA_S = 30
@@ -50,7 +55,7 @@ function correoDe(idToken: string): string | null {
   }
 }
 
-export function EntrarConCuenta({ slug, negocio, t, onEntro }: Props) {
+export function EntrarConCuenta({ slug, negocio, t, onEntro, alCambiarAtras }: Props) {
   const nombreNegocio = negocio || t('entrar.esteNegocio')
   const [paso, setPaso] = useState<Paso>('inicio')
   const [canal, setCanal] = useState<Canal>('phone')
@@ -221,11 +226,25 @@ export function EntrarConCuenta({ slug, negocio, t, onEntro }: Props) {
     })
   }
 
+  // El paso anterior de cada paso (el «← Atrás» propio o, en la tienda, su flecha). En el primero no hay: se sale de la pantalla.
+  const pasoAnterior: (() => void) | null =
+    paso === 'contacto' ? () => setPaso('inicio')
+    : paso === 'codigo' ? () => { setAviso(null); setPaso('contacto') }
+    : paso === 'pregunta' ? reiniciar
+    : paso === 'nombre' ? () => setPaso('pregunta')
+    : null
+  const volverUnPaso = pasoAnterior && (() => { setError(null); pasoAnterior() })
+  useEffect(() => {
+    if (!alCambiarAtras) return
+    alCambiarAtras(volverUnPaso)
+    return () => alCambiarAtras(null)
+  }, [paso])
+
   const avisoDeError = error && (
     <p role="alert" style={{ fontSize: '13px', margin: 0, color: error.sinRed ? '#92400e' : '#ef4444' }}>{error.texto}</p>
   )
-  const atras = (a: () => void) => (
-    <button type="button" style={{ ...enlace, color: 'var(--avq-muted-fg, #6b7280)', alignSelf: 'flex-start' }} onClick={() => { setError(null); a() }}>
+  const atras = () => !alCambiarAtras && volverUnPaso && (
+    <button type="button" style={{ ...enlace, color: 'var(--avq-muted-fg, #6b7280)', alignSelf: 'flex-start' }} onClick={volverUnPaso}>
       <span aria-hidden="true">← </span>{t('entrar.atras')}
     </button>
   )
@@ -257,7 +276,7 @@ export function EntrarConCuenta({ slug, negocio, t, onEntro }: Props) {
   if (paso === 'contacto')
     return (
       <form class="avq-animate-in" style={columna} onSubmit={pedirCodigo}>
-        {atras(() => setPaso('inicio'))}
+        {atras()}
         {cabeza(canal === 'phone' ? t('otp.title') : t('otp.titleEmail'))}
         {aviso && <p role="status" style={texto}>{aviso}</p>}
         {canal === 'phone' ? (
@@ -289,7 +308,7 @@ export function EntrarConCuenta({ slug, negocio, t, onEntro }: Props) {
     const porWhatsapp = (enviadoA?.canal ?? canal) === 'phone'
     return (
       <form class="avq-animate-in" style={columna} onSubmit={e => { e.preventDefault(); verificar(codigo) }}>
-        {atras(() => { setAviso(null); setPaso('contacto') })}
+        {atras()}
         {cabeza(porWhatsapp ? t('otp.title') : t('otp.titleEmail'))}
         {aviso && <p role="status" style={{ ...texto, color: 'var(--avq-fg, #111827)', textAlign: 'center' }}>{aviso}</p>}
         {/* D17: el SERVIDOR no garantiza que el código salió (`requestOtp` responde igual): se dice que se pidió y qué hacer si no llega. */}
@@ -316,11 +335,11 @@ export function EntrarConCuenta({ slug, negocio, t, onEntro }: Props) {
     const llave = `entrar.${tampoco ? 'tampoco' : 'noEncontramos'}${de.canal === 'phone' ? 'Telefono' : 'Correo'}`
     return (
       <div class="avq-animate-in" style={columna}>
-        {atras(reiniciar)}
+        {atras()}
         {cabeza(t('entrar.yaEresCliente', { negocio: nombreNegocio }), `${t(llave, { contacto: de.contacto })} ${t('entrar.siVienes')}`)}
-        {/* Los dos pesan igual a propósito: un «No» por prisa le crea una ficha en cero. */}
-        <Button variant="outline" fullWidth onClick={() => { setTampoco(null); setError(null); setPaso('inicio') }}>{t('entrar.si')}</Button>
-        <Button variant="outline" fullWidth onClick={() => { setError(null); setPaso('nombre') }}>{t('entrar.no')}</Button>
+        {/* Los dos pesan igual a propósito: un «No» por prisa le crea una ficha en cero. Llenos en gris neutro (mockup 1l, `btn neu`). */}
+        <Button variant="secondary" fullWidth onClick={() => { setTampoco(null); setError(null); setPaso('inicio') }}>{t('entrar.si')}</Button>
+        <Button variant="secondary" fullWidth onClick={() => { setError(null); setPaso('nombre') }}>{t('entrar.no')}</Button>
         {avisoDeError}
       </div>
     )
@@ -329,7 +348,7 @@ export function EntrarConCuenta({ slug, negocio, t, onEntro }: Props) {
   if (paso === 'nombre')
     return (
       <form class="avq-animate-in" style={columna} onSubmit={crearFicha}>
-        {atras(() => setPaso('pregunta'))}
+        {atras()}
         <div style={{ textAlign: 'center', marginBottom: '8px' }}>
           <h2 ref={encabezado} tabIndex={-1} style={{ ...titulo, outline: 'none' }}><label for={idNombre}>{t('otp.nameLabel')}</label></h2>
           <p style={texto}>{t('entrar.nombreAyuda', { negocio: nombreNegocio })}</p>

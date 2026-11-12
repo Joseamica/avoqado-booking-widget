@@ -101,6 +101,7 @@
     "payAtPickup": "You pay when you pick up at the business.",
     "note": "Note for the business",
     "continue": "Continue",
+    "continueWithout": "Continue without rewards",
     "pickupAt": "Pickup at {{venue}}",
     "addMore": "Add something else",
     "removeAria": "Remove {{name}}",
@@ -199,6 +200,7 @@
   },
   "checkout": {
     "pending": "Your previous order was not confirmed because of the connection. Retry to find out if it went through.",
+    "pendingSesion": "Your session ended before your previous order was confirmed. You're signed in now: retry to finish it.",
     "priceChanged": "The price changed: the new total is {{total}}. Do you confirm?",
     "confirmNewTotal": "Confirm",
     "priceChangedReview": "The price changed; review your order.",
@@ -359,7 +361,8 @@
     }
   },
   "entrar": {
-    "back": "Back to your order"
+    "back": "Back to your order",
+    "atras": "Back"
   },
   "cuenta": {
     "entrar": "Sign in",

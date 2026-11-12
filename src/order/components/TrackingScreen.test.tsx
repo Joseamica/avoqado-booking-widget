@@ -1091,6 +1091,23 @@ describe('W3: seguimiento del folio', () => {
     await showF(folio())
     expect(document.querySelector('.avq-o-ticket__price')).toBeNull()
   })
+  it('pulido W10 (1c): el precio de cada producto va a la derecha del renglón, no debajo del nombre', async () => {
+    const items = [{ name: 'Latte', quantity: 1, note: null, modifiers: [{ name: 'Leche de almendra', quantity: 1 }], unitPrice: 65, total: 65 }]
+    await showF(folio({ items, total: 65 }))
+    const li = document.querySelector('.avq-o-ticket__lines > li')!
+    const precio = li.querySelector('.avq-o-ticket__price')!
+    // El precio es hermano del bloque del nombre (la fila los reparte a los lados), no un renglón dentro del nombre.
+    expect(precio.parentElement).toBe(li)
+    expect(precio.textContent).toBe('$65')
+    expect(li.textContent).toBe('1 × LatteLeche de almendra$65')
+  })
+  it('pulido W1: pagado en caja con el estado todavía en «por pagar» (paid: true): ni «Si cierras esta página…» ni «Pagas en caja…»', async () => {
+    await showF(folio({ paid: true, canCancel: false, paidAt: '2026-10-17T19:05:00Z' }))
+    expect(screen.getByRole('heading', { name: '¡Pagado! Lo están preparando' })).toBeTruthy()
+    expect(screen.queryByText('Si cierras esta página, en caja te encuentran por tu nombre.')).toBeNull()
+    expect(screen.queryByText('Pagas en caja: tarjeta o efectivo. IVA incluido.')).toBeNull()
+    expect(screen.getByText('Pagado', { selector: '.avq-o-total__tax' })).toBeTruthy()
+  })
   it('m3: pasada la hora límite no hay «Faltan 1 min» (se oculta el chip)', async () => {
     await showF(folio())
     await tick(30 * 60_000 + 5_000)

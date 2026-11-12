@@ -300,7 +300,10 @@ describe('STORE_CSS', () => {
     // Toques de 44 px en «Cómo llegar» y «Llamar»; los nombres y direcciones largos envuelven.
     expect(rule('.avq-o-where__actions>a')).toMatch(/min-height:44px/)
     expect(rule('.avq-o-where>p')).toMatch(/overflow-wrap:anywhere/)
-    expect(rule('.avq-o-ticket__lines>li')).toMatch(/min-width:0;overflow-wrap:anywhere/)
+    // Pulido W10 (1c): el renglón reparte nombre (que envuelve) y precio (que no se parte) a los lados.
+    expect(rule('.avq-o-ticket__lines>li')).toMatch(/display:flex;justify-content:space-between/)
+    expect(rule('.avq-o-ticket__item')).toMatch(/min-width:0;overflow-wrap:anywhere/)
+    expect(rule('.avq-o-ticket__price')).toMatch(/flex:none;white-space:nowrap/)
     for (const sel of ['.avq-o-ticket', '.avq-o-steps', '.avq-o-where__actions>a', '.avq-o-track__more']) expect(rule(sel), sel).not.toMatch(/shadow/)
   })
   it('las fuentes: Figtree en el cuerpo y Bricolage Grotesque en los títulos, con respaldo del sistema', () => {

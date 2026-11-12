@@ -10,7 +10,7 @@ vi.mock('../api', async () => {
 })
 vi.mock('../../api/booking', async () => {
   const actual = await vi.importActual<typeof import('../../api/booking')>('../../api/booking')
-  return { ...actual, getCustomerPortal: vi.fn(), getCreditPacks: vi.fn(), requestOtp: vi.fn(), verifyOtp: vi.fn() }
+  return { ...actual, getCustomerPortal: vi.fn(), getCreditPacks: vi.fn(), requestOtp: vi.fn(), verifyOtp: vi.fn(), pedirCambioDeNumero: vi.fn() }
 })
 import * as bookingApi from '../../api/booking'
 import { ApiError, getTracking, quote, requestOrderingOtp } from '../api'
@@ -622,5 +622,114 @@ describe('W4 codex-w4-r3 #1: dos tiendas del mismo negocio en una página', () =
     expect(within(ca).queryByText('K7Q2-9DXM-4R8H-HB7T-Q')).toBeNull()
     expect(within(ca).queryByText('$350.00')).toBeNull()
     expect(within(ca).getByText('Bloqueada: pregunta en caja.')).toBeTruthy()
+  })
+})
+
+describe('pulido W6: UN solo «atrás» en la tienda, y regresa un paso', () => {
+  beforeEach(() => {
+    vi.mocked(bookingApi.getCustomerPortal).mockReset()
+    vi.mocked(bookingApi.getCreditPacks).mockResolvedValue([])
+    vi.mocked(bookingApi.requestOtp).mockReset()
+    vi.mocked(bookingApi.requestOtp).mockResolvedValue(undefined as any)
+  })
+  const tocar = async (el: HTMLElement) => {
+    vi.advanceTimersByTime(500) // el guardia de doble toque de la tienda
+    await act(async () => { fireEvent.click(el) })
+    await flush()
+  }
+  const atrases = () => screen.queryAllByRole('button', { name: /atrás|volver/i })
+
+  it('entrar desde «Tus datos»: sin «← Atrás» propio; la flecha de la tienda regresa un paso y, al inicio, a «Tus datos»', async () => {
+    const s = makeStore(infoOf({ requiresAcceptance: false }), menuOf(product()))
+    s.cart.value = [{ lineId: 'a', productId: 'p1', name: 'Flautas', unitPrice: 85, quantity: 1, note: null, modifiers: [] }]
+    s.go('details')
+    render(withStore(s, <OrderApp />))
+    await flush()
+    await tocar(screen.getByRole('button', { name: 'Entrar' }))
+    expect(s.screen.value).toBe('entrar')
+    await tocar(screen.getByRole('button', { name: 'Seguir con correo' }))
+    expect(screen.getByRole('heading', { name: 'Entrar con código por correo' })).toBeTruthy()
+    expect(atrases()).toHaveLength(1) // sólo la flecha de la tienda
+    await tocar(screen.getByRole('button', { name: 'Atrás' }))
+    expect(s.screen.value).toBe('entrar')
+    expect(screen.getByRole('heading', { name: 'Entra a tu cuenta' })).toBeTruthy()
+    expect(atrases()).toHaveLength(1)
+    await tocar(screen.getByRole('button', { name: 'Volver a tu pedido' }))
+    expect(s.screen.value).toBe('details')
+  })
+
+  it('entrar desde el carrito: al inicio, la flecha regresa al carrito', async () => {
+    const s = makeStore(infoOf(), menuOf(product()))
+    s.cart.value = [{ lineId: 'a', productId: 'p1', name: 'Flautas', unitPrice: 85, quantity: 1, note: null, modifiers: [] }]
+    s.go('cart')
+    render(withStore(s, <OrderApp />))
+    await flush()
+    await act(async () => { s.go('entrar') })
+    await flush()
+    await tocar(screen.getByRole('button', { name: 'Volver a tu pedido' }))
+    expect(s.screen.value).toBe('cart')
+  })
+
+  it('«Mi cuenta» sin sesión: con el correo abierto, la flecha regresa a «Entra a tu cuenta» (no al menú); de ahí, al menú', async () => {
+    const s = makeStore(infoOf({ requiresAcceptance: false }), menuOf(product()))
+    s.go('cuenta')
+    render(withStore(s, <OrderApp />))
+    await flush()
+    await tocar(screen.getByRole('button', { name: 'Seguir con correo' }))
+    expect(atrases()).toHaveLength(1)
+    await tocar(screen.getByRole('button', { name: 'Atrás' }))
+    expect(s.screen.value).toBe('cuenta')
+    expect(screen.getByRole('heading', { name: 'Entra a tu cuenta' })).toBeTruthy()
+    await tocar(screen.getByRole('button', { name: 'Volver al menú' }))
+    expect(s.screen.value).toBe('menu')
+  })
+
+  it('un doble toque en la flecha regresa UN paso, no dos: el segundo (al instante) no saca de la pantalla', async () => {
+    const s = makeStore(infoOf({ requiresAcceptance: false }), menuOf(product()))
+    s.go('cuenta')
+    render(withStore(s, <OrderApp />))
+    await flush()
+    await tocar(screen.getByRole('button', { name: 'Seguir con correo' }))
+    vi.advanceTimersByTime(500)
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Atrás' })) })
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Volver al menú' })) }) // el segundo toque, al instante
+    await flush()
+    expect(s.screen.value).toBe('cuenta')
+    expect(screen.getByRole('heading', { name: 'Entra a tu cuenta' })).toBeTruthy()
+  })
+
+  it('«Usar en caja»: la flecha regresa a «Mi cuenta», no al menú', async () => {
+    const s = tiendaConAna()
+    const viva = { ...portalDeAna(), tarjetas: { items: [{ id: 'g1', last4: 'HB7T', saldo: 350, venceEl: null, codigo: 'K7Q2-9DXM-4R8H-HB7T-Q', estado: 'ACTIVA', disponible: true }], total: 1, nextCursor: null } }
+    vi.mocked(bookingApi.getCustomerPortal).mockResolvedValue(viva)
+    s.go('cuenta')
+    render(withStore(s, <OrderApp />))
+    await flush()
+    await tocar(screen.getByRole('button', { name: 'Usar en caja' }))
+    expect(screen.getByText('K7Q2-9DXM-4R8H-HB7T-Q')).toBeTruthy()
+    await tocar(screen.getByRole('button', { name: 'Atrás' }))
+    expect(s.screen.value).toBe('cuenta')
+    expect(screen.queryByText('K7Q2-9DXM-4R8H-HB7T-Q')).toBeNull()
+    expect(screen.getByText('Hola, Ana')).toBeTruthy()
+  })
+
+  it('«Cambiar mi número» con el código pedido: sin «← Atrás» propio; la flecha regresa al número y luego a «Mi cuenta»', async () => {
+    const s = tiendaConAna()
+    vi.mocked(bookingApi.getCustomerPortal).mockResolvedValue(portalDeAna())
+    s.go('cuenta')
+    render(withStore(s, <OrderApp />))
+    await flush()
+    await tocar(screen.getByRole('button', { name: 'Cambiar mi número' }))
+    vi.mocked(bookingApi.pedirCambioDeNumero).mockResolvedValue({ ok: true })
+    fireEvent.input(screen.getByPlaceholderText('Tu número de teléfono'), { target: { value: '5510000999' } })
+    await tocar(screen.getByRole('button', { name: 'Enviar código' }))
+    expect(screen.getByText(/Pedimos tu código por WhatsApp/)).toBeTruthy()
+    expect(atrases().filter(b => b.textContent?.includes('Atrás'))).toHaveLength(0)
+    await tocar(screen.getByRole('button', { name: 'Atrás' }))
+    expect(screen.queryByText(/Pedimos tu código por WhatsApp/)).toBeNull()
+    expect(screen.getByRole('heading', { name: 'Cambiar mi número' })).toBeTruthy()
+    await tocar(screen.getByRole('button', { name: 'Atrás' }))
+    expect(s.screen.value).toBe('cuenta')
+    expect(screen.getByText('Hola, Ana')).toBeTruthy()
   })
 })

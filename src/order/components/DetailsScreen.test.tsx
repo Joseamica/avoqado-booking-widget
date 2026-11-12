@@ -8,8 +8,8 @@ vi.mock('../api', async () => {
 })
 import { API_BASE, createOrder } from '../api'
 import { loadSession, saveSession } from '../session'
-import { fijarPagina } from '../../lib/sesionDeCliente'
-import { beginAttempt, pendingAttempt } from '../attempt'
+import { fijarPagina, guardarSesion } from '../../lib/sesionDeCliente'
+import { autorizarIntento, beginAttempt, pendingAttempt, reautorizarIntento } from '../attempt'
 import { checkoutOf } from '../checkout'
 import { DetailsScreen } from './DetailsScreen'
 import { OrderApp } from './OrderApp'
@@ -511,6 +511,8 @@ describe('W3: el precio cambió por un beneficio (1h·3) o porque se cerró la s
     expect(screen.getByText('Tu café gratis ya se usó en otro pedido')).toBeTruthy()
     expect(screen.getByText('El nuevo total es $170. ¿Confirmas?')).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Confirmar $170' })).toBeTruthy()
+    // pulido W4 (mockup 1h·3): sólo «Confirmar» y «Volver a mi pedido»; el «Pedir» del pie no compite con el mismo monto.
+    expect(screen.queryByRole('button', { name: 'Pedir $170' })).toBeNull()
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Volver a mi pedido' })) })
     expect(s.screen.value).toBe('cart')
   })
@@ -523,6 +525,7 @@ describe('W3: el precio cambió por un beneficio (1h·3) o porque se cerró la s
     expect(screen.getByText('Entra otra vez para usar tus beneficios, o confirma el precio sin ellos.')).toBeTruthy()
     const [entrar, sin] = [screen.getByRole('button', { name: 'Entrar otra vez' }), screen.getByRole('button', { name: 'Pedir sin beneficios · $170' })]
     expect(entrar.compareDocumentPosition(sin) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Pedir $170' })).toBeNull() // pulido W4: tampoco aquí (1h·4)
     await act(async () => { fireEvent.click(sin) })
     expect(vi.mocked(createOrder).mock.calls[0][1]).toEqual(cuerpo)
   })
@@ -532,6 +535,75 @@ describe('W3: el precio cambió por un beneficio (1h·3) o porque se cerró la s
     await act(async () => { checkoutOf(s).feedback.value = { kind: 'priceChanged', total: 170, body: cuerpo, motivo: 'SIN_SESION' } })
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Entrar otra vez' })) })
     expect(s.screen.value).toBe('entrar')
+  })
+})
+
+describe('pulido W5: el aviso del pedido pendiente dice la causa real', () => {
+  const cuerpo = { items: [], paymentMode: 'PAY_AT_PICKUP' as const, expectedTotal: '170.00', customer: { name: 'Ana' } }
+
+  it('su sesión recibió 401 y espera entrar: «Tu sesión se cerró · Entra otra vez para terminar tu pedido», nunca «por la conexión»', async () => {
+    const s = show({ requiresAcceptance: false }, slug => {
+      beginAttempt(slug, cuerpo, 'tok-A')
+      autorizarIntento(slug, { requiereEntrar: true }) // lo que hace checkout.ts con el 401
+    })
+    await flush()
+    expect(screen.getByText('Tu sesión se cerró')).toBeTruthy()
+    expect(screen.getByText('Entra otra vez para terminar tu pedido.')).toBeTruthy()
+    expect(screen.queryByText(/por la conexión/)).toBeNull()
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Entrar otra vez' })) })
+    expect(s.screen.value).toBe('entrar')
+  })
+
+  it('ya entró otra vez: dice que fue la sesión y deja «Reintentar» (el mismo intento)', async () => {
+    show({ requiresAcceptance: false }, slug => {
+      beginAttempt(slug, cuerpo, 'tok-A')
+      autorizarIntento(slug, { requiereEntrar: true })
+      reautorizarIntento(slug, 'tok-B') // lo que hace entrar otra vez
+    })
+    await flush()
+    expect(screen.getByText('Se cerró tu sesión antes de confirmar tu pedido anterior. Ya entraste: reintenta para terminarlo.')).toBeTruthy()
+    expect(screen.queryByText(/por la conexión/)).toBeNull()
+    expect(screen.getByRole('button', { name: 'Reintentar' })).toBeTruthy()
+  })
+
+  it('sin red (sin 401): el aviso de siempre, «por la conexión»', async () => {
+    show({ requiresAcceptance: false }, slug => { beginAttempt(slug, cuerpo, null) })
+    await flush()
+    expect(screen.getByText('Tu pedido anterior no se confirmó por la conexión. Reintenta para saber si llegó.')).toBeTruthy()
+  })
+})
+
+describe('pulido W2: «Tus datos» con sesión', () => {
+  const ana = (slug: string) => {
+    guardarSesion(slug, {
+      token: 'tok-A', customer: { id: 'c1', firstName: 'Ana', lastName: 'López', email: null, phone: '+525512345678' },
+      contactos: [{ tipo: 'PHONE', valor: '+525512345678', metodo: 'WHATSAPP', probadoEn: 1 }], guardadaEn: Date.now(),
+    })
+    fijarPagina(slug, 'pedidos', loadSession(slug)) // la página abierta ya tenía esta sesión
+  }
+  const nombre = () => screen.getByLabelText('Nombre') as HTMLInputElement
+
+  it('el nombre de su ficha ya viene escrito, y se puede cambiar', async () => {
+    show({ requiresAcceptance: false }, ana)
+    await flush()
+    expect(nombre().value).toBe('Ana López')
+    fireEvent.input(nombre(), { target: { value: 'Anita' } })
+    expect(nombre().value).toBe('Anita')
+  })
+
+  it('sin sesión el campo nace vacío; lo que ya escribió no se pisa', async () => {
+    show({ requiresAcceptance: false })
+    await flush()
+    expect(nombre().value).toBe('')
+    cleanup()
+    const s = makeStore(infoOf({ requiresAcceptance: false }), menuOf())
+    ana(s.slug)
+    checkoutOf(s).draft.value = { ...checkoutOf(s).draft.value, name: 'Ana (oficina)' }
+    s.quote.value = { ok: true, lines: [], subtotal: 170, total: 170, minOrderAmount: 0, issues: [] }
+    s.go('details')
+    render(withStore(s, <DetailsScreen />))
+    await flush()
+    expect(nombre().value).toBe('Ana (oficina)')
   })
 })
 

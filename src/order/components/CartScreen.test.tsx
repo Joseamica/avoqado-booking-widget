@@ -751,7 +751,7 @@ describe('W3: el carrito con sus beneficios', () => {
     await act(async () => { llega(quoteOf(85, { oferta: oferta() })) })
     await flush()
     expect(screen.queryByText('¡Tienes café gratis! ¿Lo usas?')).toBeNull()
-    expect(continueBtn().textContent).toBe('Continuar $170')
+    expect(continueBtn().textContent).toBe('Continuar sin beneficios $170') // pulido W7: la sesión se soltó
   })
 
   it('codex-r8 H2 (A refinada): Bea entra en reservas mientras vuela la cotización de Ana; la tienda sigue con Ana y nunca manda con Bea', async () => {
@@ -804,6 +804,54 @@ describe('W3: el carrito con sus beneficios', () => {
     expect(continueBtn().textContent).toBe('Continuar $136')
   })
 
+  // W7-pulido W3: la casilla dice lo que de verdad se usa. La regla del SERVIDOR (`redeemPointsToOrderInTransaction`): el valor de los
+  // puntos se topa a lo que queda tras los demás beneficios (subtotal − descuentos) y sólo se queman los puntos de ese monto.
+  const ana500 = { saldo: 500, minimo: 100, valorPorPunto: 0.1, maxPuntos: 500 }
+  const tras = [{ tipo: 'DESCUENTO' as const, nombre: 'Regalo $15', monto: 15 }, { tipo: 'PREMIO' as const, nombre: 'Café gratis', monto: 129 }]
+
+  it('pulido W3: sin marcar, «Usar 150 puntos (−$15)» si sólo quedan $15 por pagar (no «500 puntos (−$50)»)', async () => {
+    await conSesion(() => quoteOf(15, { subtotal: 159, oferta: oferta({ premio: null, puntos: ana500 }), aplicados: tras }))
+    expect(screen.getByRole('checkbox', { name: 'Usar 150 puntos (−$15)' })).toBeTruthy()
+    expect(screen.queryByText(/500 puntos/)).toBeNull()
+  })
+
+  it('pulido W3: marcada, el monto es el de la cotización y los puntos los de ese monto', async () => {
+    await conSesion(opts => quoteOf(opts.beneficios?.puntos ? 0 : 15, {
+      subtotal: 159, oferta: oferta({ premio: null, puntos: ana500 }),
+      aplicados: opts.beneficios?.puntos ? [...tras, { tipo: 'PUNTOS' as const, nombre: 'Recompensas — 150 puntos', monto: 15 }] : tras,
+    }))
+    await act(async () => { fireEvent.click(screen.getByRole('checkbox', { name: 'Usar 150 puntos (−$15)' })) })
+    await flush()
+    expect(optsOf(1)).toMatchObject({ beneficios: { puntos: 500 } }) // se piden todos: el SERVIDOR quema sólo los que usa
+    expect((screen.getByRole('checkbox', { name: 'Usar 150 puntos (−$15)' }) as HTMLInputElement).checked).toBe(true)
+  })
+
+  it('pulido W3: con céntimos, los puntos se redondean hacia arriba como el SERVIDOR ($15.95 ⇒ 160 puntos)', async () => {
+    await conSesion(() => quoteOf(15.95, { subtotal: 30.95, oferta: oferta({ premio: null, puntos: ana500 }), aplicados: [tras[0]] }))
+    expect(screen.getByRole('checkbox', { name: 'Usar 160 puntos (−$15.95)' })).toBeTruthy()
+  })
+
+  it('pulido W3: si los demás beneficios ya cubren todo, no se ofrecen puntos', async () => {
+    await conSesion(() => quoteOf(0, { subtotal: 144, oferta: oferta({ premio: null, puntos: ana500 }), aplicados: tras }))
+    expect(screen.queryByRole('checkbox')).toBeNull()
+    expect(screen.queryByText('Más beneficios')).toBeNull()
+  })
+
+  it('pulido W7: con la sesión cerrada, el pie dice «Continuar sin beneficios» con el total (no un «Continuar» a secas)', async () => {
+    let n = 0
+    await conSesion(opts => {
+      if (n++ === 0) return quoteOf(170, { oferta: oferta() })
+      if (opts.token) throw new ApiError('Sesión vencida', 401, 'CUSTOMER_TOKEN_INVALID')
+      return quoteOf(170)
+    })
+    expect(continueBtn().textContent).toBe('Continuar $170')
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Sí' })) })
+    await flush()
+    await flush()
+    expect(screen.getByText('Tu sesión se cerró')).toBeTruthy()
+    expect(continueBtn().textContent).toBe('Continuar sin beneficios $170')
+  })
+
   it('sin puntos suficientes (sin oferta de puntos) no hay casilla; sin oferta de cupón no hay «Tengo un cupón»', async () => {
     await conSesion(() => quoteOf(170, { oferta: oferta({ premio: null }) }))
     expect(screen.queryByRole('checkbox')).toBeNull()
@@ -852,7 +900,7 @@ describe('W3: el carrito con sus beneficios', () => {
     expect(screen.getByText('Tu sesión se cerró')).toBeTruthy()
     expect(screen.getByText('Entra otra vez para usar tus beneficios, o confirma el precio sin ellos.')).toBeTruthy()
     expect(document.querySelector('.avq-o-notice--error')).toBeNull()
-    expect(continueBtn().textContent).toBe('Continuar $170')
+    expect(continueBtn().textContent).toBe('Continuar sin beneficios $170')
     expect(s.cart.value).toHaveLength(1)
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Entrar otra vez' })) })
     expect(s.screen.value).toBe('entrar')

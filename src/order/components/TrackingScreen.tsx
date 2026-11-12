@@ -345,7 +345,8 @@ export function TrackingScreen() {
     return closed && tracking.status !== 'PAYMENT_NOT_COMPLETED' ? t('tracking.card.notCharged') : tracking.paid ? t('tracking.paid') : null
   }
   // Sin cobro, «Pagas al recoger» sólo en curso o entregado (la regla de hoy): no en cancelado, rechazado, vencido ni un estado nuevo.
-  const pay = isFolio ? (tracking.status === 'PENDING_ACCEPTANCE' ? t('tracking.folio.tax') : folioPaid ? t('tracking.paid') : null) : card ? cardPay() : tracking.paid ? t('tracking.paid') : step !== undefined ? t('cart.taxPickup') : null
+  // Pulido W1: el folio mira «pagado» primero (un pago en caja puede llegar con el estado todavía en PENDING_ACCEPTANCE).
+  const pay = isFolio ? (folioPaid ? t('tracking.paid') : tracking.status === 'PENDING_ACCEPTANCE' ? t('tracking.folio.tax') : null) : card ? cardPay() : tracking.paid ? t('tracking.paid') : step !== undefined ? t('cart.taxPickup') : null
 
   // «Hoy» es el día del NEGOCIO: pasada su medianoche el pago lleva su fecha.
   const dayOf = (ms: number) => new Intl.DateTimeFormat('en-CA', { timeZone: tz }).format(ms)
@@ -466,9 +467,13 @@ export function TrackingScreen() {
               const options = optionsText(it.modifiers)
               return (
                 <li key={i}>
-                  <span>{it.quantity} × {it.name}{isFolio && it.total != null && <span class="avq-o-ticket__price">{formatMXN(it.total, store.locale)}</span>}</span>
-                  {options && <span class="avq-o-ticket__sub">{options}</span>}
-                  {it.note && <span class="avq-o-ticket__sub">{it.note}</span>}
+                  {/* Pulido W10 (1c): nombre y extras a la izquierda, el precio del renglón a la derecha. */}
+                  <span class="avq-o-ticket__item">
+                    <span>{it.quantity} × {it.name}</span>
+                    {options && <span class="avq-o-ticket__sub">{options}</span>}
+                    {it.note && <span class="avq-o-ticket__sub">{it.note}</span>}
+                  </span>
+                  {isFolio && it.total != null && <span class="avq-o-ticket__price">{formatMXN(it.total, store.locale)}</span>}
                 </li>
               )
             })}
@@ -484,7 +489,7 @@ export function TrackingScreen() {
             {/* «Pagaste $69» ya dice que se pagó (1j). */}
             {pay && !paidWithBen && <p class="avq-o-total__tax">{pay}</p>}
           </div>
-          {isFolio && tracking.status === 'PENDING_ACCEPTANCE' && <p class="avq-o-total__tax">{t('tracking.folio.closePage')}</p>}
+          {isFolio && !folioPaid && tracking.status === 'PENDING_ACCEPTANCE' && <p class="avq-o-total__tax">{t('tracking.folio.closePage')}</p>}
         </div>
       </div>
       {(contact?.address || contact?.phone) && (

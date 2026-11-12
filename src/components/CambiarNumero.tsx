@@ -27,6 +27,8 @@ interface Props {
   /** «Entrar otra vez» (sesión sin contacto probado) o «Entrar con mi teléfono» (el número es de otra ficha). */
   onReentrar: () => void
   onVolver: () => void
+  /** Pulido W6: en la tienda, su flecha es el ÚNICO «atrás»: del código se regresa al número con ella, sin «← Atrás» propio. */
+  alCambiarAtras?: (atras: (() => void) | null) => void
   /** Un 401 que no es `CUSTOMER_REAUTH_REQUIRED`, o la sesión que lo pidió ya no está guardada: se suelta (nunca la de otra persona). */
   on401: (err: any, token: string) => void
 }
@@ -46,7 +48,7 @@ const enlace = {
   color: 'var(--avq-accent, #6366f1)', fontWeight: '500', fontSize: '13px',
 }
 
-export function CambiarNumero({ slug, superficie, t, token, onListo, onReentrar, onVolver, on401 }: Props) {
+export function CambiarNumero({ slug, superficie, t, token, onListo, onReentrar, onVolver, on401, alCambiarAtras }: Props) {
   const [paso, setPaso] = useState<Paso>('numero')
   const [dial, setDial] = useState(DEFAULT_DIAL)
   const [numero, setNumero] = useState('')
@@ -68,6 +70,12 @@ export function CambiarNumero({ slug, superficie, t, token, onListo, onReentrar,
   // Cada paso nuevo lleva el foco a su título; al abrirse, también (se llegó tocando «Cambiar mi número»).
   useEffect(() => {
     encabezado.current?.focus({ preventScroll: true })
+  }, [paso])
+  const alNumero = () => { setError(null); setPaso('numero') }
+  useEffect(() => {
+    if (!alCambiarAtras) return
+    alCambiarAtras(paso === 'codigo' ? alNumero : null)
+    return () => alCambiarAtras(null)
   }, [paso])
 
   const digitos = numero.replace(/\D/g, '')
@@ -190,10 +198,11 @@ export function CambiarNumero({ slug, superficie, t, token, onListo, onReentrar,
   if (paso === 'codigo')
     return (
       <form class="avq-animate-in" style={columna} onSubmit={e => { e.preventDefault(); verificar(codigo) }}>
-        <button type="button" style={{ ...enlace, color: 'var(--avq-muted-fg, #6b7280)', alignSelf: 'flex-start' }}
-          onClick={() => { setError(null); setPaso('numero') }}>
-          <span aria-hidden="true">← </span>{t('entrar.atras')}
-        </button>
+        {!alCambiarAtras && (
+          <button type="button" style={{ ...enlace, color: 'var(--avq-muted-fg, #6b7280)', alignSelf: 'flex-start' }} onClick={alNumero}>
+            <span aria-hidden="true">← </span>{t('entrar.atras')}
+          </button>
+        )}
         {cabeza(t('cambiarNumero.titulo'))}
         {/* D17: el SERVIDOR no garantiza que el WhatsApp salió: se dice que se pidió y qué hacer si no llega. */}
         <p style={{ ...texto, textAlign: 'center' }}>{t('entrar.pedimosWhatsapp', { numero: comoSeLee(destino) })}</p>

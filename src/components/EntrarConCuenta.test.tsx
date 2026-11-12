@@ -177,6 +177,11 @@ describe('W2: entrar a la cuenta', () => {
     const no = boton('No, es mi primera vez')
     // Los dos pesan igual: un «No» por prisa le crea una ficha en cero.
     expect(si.getAttribute('style')).toBe(no.getAttribute('style'))
+    // pulido W9 (mockup 1l, `btn neu`): los dos llenos en gris neutro, sin borde; ninguno blanco con contorno.
+    for (const b of [si, no]) {
+      expect(b.style.background).toContain('--avq-muted')
+      expect(b.style.border).not.toContain('solid')
+    }
     expect(leerSesion(SLUG)).toBeNull()
 
     fireEvent.click(no)

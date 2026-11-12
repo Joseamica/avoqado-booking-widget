@@ -45,6 +45,24 @@ function issueText(t: ReturnType<typeof createOrderT>, x: QuoteIssue, q: Quote, 
 /** «Café gratis» ⇒ «café gratis» dentro de una frase («¡Tienes café gratis!»). */
 const enFrase = (s: string) => s.charAt(0).toLocaleLowerCase('es') + s.slice(1)
 
+const centavos = (x: number) => Math.round(x * 100) / 100
+/**
+ * Pulido W3: los puntos que de verdad se usan, con la regla del SERVIDOR (`redeemPointsToOrderInTransaction`, con su redondeo): el valor
+ * de `maxPuntos` se topa a lo que queda tras los demás beneficios (subtotal − descuentos; los puntos van al final de la cadena) y sólo se
+ * queman los puntos de ese monto. Marcada, el monto es el de la cotización. `null` = ya no queda nada que pagar con puntos.
+ * ponytail: copia de la regla del SERVIDOR; si la cotización trajera los puntos aplicables (`oferta.puntos.usables`), se usa eso.
+ */
+export function puntosQueSeUsan(q: Quote): { n: number; monto: number } | null {
+  const p = q.oferta?.puntos
+  if (!p) return null
+  const valor = centavos(p.maxPuntos * p.valorPorPunto)
+  const otros = (q.aplicados ?? []).reduce((s, a) => (a.tipo === 'PUNTOS' ? s : s + toCents(a.monto)), 0)
+  const base = Math.max(0, toCents(q.subtotal) - otros) / 100
+  const monto = q.aplicados?.find(a => a.tipo === 'PUNTOS')?.monto ?? centavos(Math.min(valor, base))
+  if (!(monto > 0)) return null
+  return { n: monto < valor && p.valorPorPunto > 0 ? Math.ceil(monto / p.valorPorPunto) : p.maxPuntos, monto }
+}
+
 /**
  * W3 (mockups 1h y 1h·2): sólo con sesión y sólo lo que el negocio tiene prendido (`oferta`). El premio con la pregunta del founder y
  * «Sí»/«Quitar»; «Más beneficios» junta puntos (si alcanza el mínimo) y cupón. Cambiar la elección vuelve a cotizar. Lo descartado se
@@ -71,6 +89,7 @@ function Beneficios({ q }: { q: Quote }) {
   const usaPremio = !!premio && e.premioId === premio.id && !fuera.includes('PREMIO')
   const enProducto = premio?.lineIndex !== undefined ? store.cart.value[premio.lineIndex]?.name : undefined
   const puntos = o.puntos
+  const uso = puntosQueSeUsan(q)
   const conCupon = !!e.cupon && !fuera.includes('CUPON')
   return (
     <div class="avq-o-ben">
@@ -83,12 +102,13 @@ function Beneficios({ q }: { q: Quote }) {
               : { text: t('cart.benefits.premioAsk', { premio: enFrase(premio.etiqueta) }) })}
             action={{ label: t('cart.benefits.premioYes'), onClick: () => set({ premioId: premio.id }) }} />)}
       {e.premioId && fuera.includes('PREMIO') && <p class="avq-o-ben__msg">{t('cart.benefits.premioBad')}</p>}
-      {(puntos || o.cupon) && <p class="avq-o-ben__title">{t('cart.benefits.more')}</p>}
-      {puntos && (
+      {(uso || o.cupon) && <p class="avq-o-ben__title">{t('cart.benefits.more')}</p>}
+      {/* Se piden todos (`maxPuntos`): el SERVIDOR quema sólo los que usa; la casilla dice ésos. */}
+      {puntos && uso && (
         <label class="avq-o-ben__opt">
           <input type="checkbox" class="avq-o-opt__input" checked={!!e.puntos && !fuera.includes('PUNTOS')}
             onChange={(ev: any) => set({ puntos: ev.currentTarget.checked ? puntos.maxPuntos : undefined })} />
-          <span>{t('cart.benefits.points', { n: puntos.maxPuntos, amount: formatMXN(Math.round(puntos.maxPuntos * puntos.valorPorPunto * 100) / 100, store.locale) })}</span>
+          <span>{t('cart.benefits.points', { n: uso.n, amount: formatMXN(uso.monto, store.locale) })}</span>
         </label>
       )}
       {e.puntos && fuera.includes('PUNTOS') && <p class="avq-o-ben__msg">{t('cart.benefits.pointsBad')}</p>}
@@ -295,7 +315,8 @@ export function CartScreen() {
             checkoutOf(store).feedback.value = null
             store.go('details')
           }}>
-          {q ? <><span>{t('cart.continue')}</span> <span>{formatMXN(q.total, store.locale)}</span></> : <span>{t('cart.continue')}</span>}
+          {/* Pulido W7 (1h·4): con la sesión cerrada, el precio es sin beneficios y el botón lo dice (no es «Pedir»: lleva a «Tus datos»). */}
+          {q ? <><span>{t(sesionCerrada ? 'cart.continueWithout' : 'cart.continue')}</span> <span>{formatMXN(q.total, store.locale)}</span></> : <span>{t('cart.continue')}</span>}
         </button>
       </div>
     </div>

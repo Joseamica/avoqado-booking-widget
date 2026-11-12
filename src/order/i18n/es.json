@@ -101,6 +101,7 @@
     "payAtPickup": "Pagas al recoger en el negocio.",
     "note": "Nota para el negocio",
     "continue": "Continuar",
+    "continueWithout": "Continuar sin beneficios",
     "pickupAt": "Recoges en {{venue}}",
     "addMore": "Agregar algo más",
     "removeAria": "Quitar {{name}}",
@@ -199,6 +200,7 @@
   },
   "checkout": {
     "pending": "Tu pedido anterior no se confirmó por la conexión. Reintenta para saber si llegó.",
+    "pendingSesion": "Se cerró tu sesión antes de confirmar tu pedido anterior. Ya entraste: reintenta para terminarlo.",
     "priceChanged": "El precio cambió: el nuevo total es {{total}}. ¿Confirmas?",
     "confirmNewTotal": "Confirmar",
     "priceChangedReview": "El precio cambió; revisa tu pedido.",
@@ -359,7 +361,8 @@
     }
   },
   "entrar": {
-    "back": "Volver a tu pedido"
+    "back": "Volver a tu pedido",
+    "atras": "Atrás"
   },
   "cuenta": {
     "entrar": "Entrar",

@@ -1,5 +1,6 @@
 import { h } from 'preact'
-import { useContext, useId, useState } from 'preact/hooks'
+import { useContext, useId, useLayoutEffect, useState } from 'preact/hooks'
+import { paginaDe, type ClienteDeSesion } from '../../lib/sesionDeCliente'
 import { OrderStoreContext } from '../store'
 import { createOrderT } from '../i18n'
 import { API_BASE } from '../api'
@@ -31,6 +32,12 @@ export function DetailsScreen() {
   const c = checkoutOf(store)
   const d = c.draft.value
   const set = (patch: Partial<typeof d>) => { c.draft.value = { ...c.draft.value, ...patch } }
+  // Pulido W2: con sesión, el nombre de su ficha ya viene escrito (y se puede cambiar); lo que ya escribió no se pisa.
+  useLayoutEffect(() => {
+    const ficha = paginaDe(store.slug, 'pedidos')?.datos as Partial<ClienteDeSesion> | undefined
+    const suyo = [ficha?.firstName, ficha?.lastName].filter(Boolean).join(' ').trim().slice(0, 80)
+    if (suyo && !c.draft.value.name) set({ name: suyo })
+  }, [])
   const info = store.info.value
   const q = store.quote.value
   // «Nadie»: sólo nombre y nota, sin teléfono ni código ni medio de pago que elegir (se paga en caja). Un servidor viejo = «Mi equipo».
@@ -51,6 +58,7 @@ export function DetailsScreen() {
     : !d.accepted ? t('details.needAccept')
     : null
   const busy = c.busy.value
+  const f = c.feedback.value
   const open = info?.status === 'OPEN'
   // Con un intento pendiente se manda ESE (el pedido anterior), no lo que hay en pantalla: el único camino es su «Reintentar».
   const canSend = !missing && !!q?.ok && !busy && open && !c.pending.value
@@ -161,11 +169,14 @@ export function DetailsScreen() {
         {nadie && <p class="avq-o-confirm__pay">{t('details.payAtCounter')}</p>}
         <CheckoutStatus />
         {missing && <p class="avq-o-confirm__msg">{missing}</p>}
-        <button type="button" class="avq-o-btn avq-o-btn--primary" disabled={!canSend} onClick={confirm}>
-          {busy ? <span>{t('details.sending')}</span>
-            : q ? <><span>{t(nadie ? 'details.confirmNadie' : 'details.confirm')}</span> <span>{formatMXN(q.total, store.locale)}</span></>
-            : <span>{t(nadie ? 'details.confirmNadie' : 'details.confirm')}</span>}
-        </button>
+        {/* Pulido W4 (1h·3 y 1h·4): el aviso trae sus propios botones («Confirmar» / «Pedir sin beneficios»); el del pie no compite. */}
+        {!(f?.kind === 'priceChanged' && f.motivo) && (
+          <button type="button" class="avq-o-btn avq-o-btn--primary" disabled={!canSend} onClick={confirm}>
+            {busy ? <span>{t('details.sending')}</span>
+              : q ? <><span>{t(nadie ? 'details.confirmNadie' : 'details.confirm')}</span> <span>{formatMXN(q.total, store.locale)}</span></>
+              : <span>{t(nadie ? 'details.confirmNadie' : 'details.confirm')}</span>}
+          </button>
+        )}
       </div>
     </div>
   )
