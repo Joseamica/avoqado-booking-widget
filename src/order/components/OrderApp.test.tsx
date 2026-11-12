@@ -540,7 +540,7 @@ describe('W4: «Entrar» / «Mi cuenta» en la tienda', () => {
   })
 
   // D16: el SERVIDOR dice si el negocio tiene algo de cuenta (sellos, puntos, descuentos, cupones, tarjetas, saldo a favor, paquetes).
-  it('D16: sin nada de cuenta (`cuentaConBeneficios: false`) no sale «Entrar», ni «Mi cuenta» con sesión, ni «¿Tienes premios?»', async () => {
+  it('D16: sin nada de cuenta (`cuentaConBeneficios: false`) no sale «Entrar» ni «¿Tienes premios?»; con sesión, «Mi cuenta» sí (sus pedidos y «Cerrar sesión»)', async () => {
     const sinCuenta = infoOf({ requiresAcceptance: false, cuentaConBeneficios: false })
     const s = makeStore(sinCuenta, menuOf(product()))
     render(withStore(s, <OrderApp />))
@@ -549,10 +549,20 @@ describe('W4: «Entrar» / «Mi cuenta» en la tienda', () => {
     expect(screen.queryByRole('button', { name: 'Entrar' })).toBeNull()
     expect(screen.queryByRole('button', { name: 'Mi cuenta' })).toBeNull()
     cleanup()
-    render(withStore(tiendaConAna(sinCuenta), <OrderApp />))
+    const conAna = tiendaConAna(sinCuenta)
+    render(withStore(conAna, <OrderApp />))
     await flush()
-    expect(screen.queryByRole('button', { name: 'Mi cuenta' })).toBeNull()
     expect(screen.queryByRole('button', { name: 'Entrar' })).toBeNull()
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Mi cuenta' })) })
+    await flush()
+    expect(screen.getByText('Hola, Ana')).toBeTruthy()
+    vi.advanceTimersByTime(500) // el guardia de doble toque
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Cerrar sesión' })) })
+    await flush()
+    // Al salir ya no hay sesión: tampoco «Entrar», porque el negocio no tiene nada de cuenta.
+    expect(conAna.screen.value).toBe('menu')
+    expect(screen.queryByRole('button', { name: 'Entrar' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Mi cuenta' })).toBeNull()
     cleanup()
     const d = makeStore(sinCuenta, menuOf(product()))
     d.cart.value = [{ lineId: 'a', productId: 'p1', name: 'Flautas', unitPrice: 85, quantity: 1, note: null, modifiers: [] }]

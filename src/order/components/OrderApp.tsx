@@ -176,9 +176,10 @@ export function OrderApp({ accentColor }: { accentColor?: string }) {
   const hero = hasBrand && (screen === 'menu' || screen === 'product') && !pid
   const compact = hasBrand && (screen === 'details' || screen === 'otp' || screen === 'entrar' || screen === 'cuenta')
   // W4: «Entrar» sin sesión de la tienda; con ella, «Mi cuenta». Los dos llevan a «Mi cuenta» (sin sesión, a entrar).
-  // D16: ninguno sale si el SERVIDOR dice que el negocio no tiene nada de cuenta (sin el campo, como antes).
+  // D16: sin sesión, «Entrar» no sale si el SERVIDOR dice que el negocio no tiene nada de cuenta (sin el campo, como antes). Con sesión,
+  // «Mi cuenta» sale siempre: ahí están sus pedidos y su «Cerrar sesión» (codex-d16-r1 #1).
   const conSesion = checkoutOf(store).conSesion.value
-  const hayCuenta = info?.cuentaConBeneficios !== false
+  const hayCuenta = conSesion || info?.cuentaConBeneficios !== false
   const tz = info?.venue.timezone ?? 'America/Mexico_City'
   return (
     <div ref={root} class="avq-o-root" style={{ ['--avq-accent' as any]: accent }} onClickCapture={dropEarly}>
