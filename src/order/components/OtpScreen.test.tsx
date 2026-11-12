@@ -395,6 +395,33 @@ describe('D17: el SERVIDOR dice que el código NO salió (503 OTP_SEND_FAILED)',
     await flush()
     expect(requestOrderingOtp).toHaveBeenCalledTimes(2)
   })
+  it('codex-r2 #1: si el «no salió» llega después de salir y volver, la pantalla nueva también lo dice (sin cajas ni espera)', async () => {
+    let fallar: (e: unknown) => void = () => {}
+    vi.mocked(requestOrderingOtp).mockImplementationOnce(() => new Promise((_ok, no) => { fallar = no }))
+    const s = show()
+    await flush()
+    fireEvent.click(screen.getByRole('button', { name: 'Cambiar número' }))
+    cleanup()
+    render(withStore(s, <OtpScreen />))
+    await flush()
+    expect(requestOrderingOtp).toHaveBeenCalledTimes(1) // la pantalla nueva no pide otro: el primero sigue en vuelo
+    await act(async () => { fallar(noSalio()); await vi.advanceTimersByTimeAsync(0) })
+    expect(screen.getByText('No pudimos mandar el código por WhatsApp. Intenta en un momento.')).toBeTruthy()
+    expect(screen.queryAllByRole('textbox')).toHaveLength(0)
+    expect(resend().disabled).toBe(false)
+    expect(resend().textContent).toBe('Reenviar código')
+  })
+  it('codex-r2 #2: dos toques a «Reenviar código» en el mismo turno mandan UNA petición', async () => {
+    vi.mocked(requestOrderingOtp).mockRejectedValueOnce(noSalio())
+    show()
+    await flush()
+    expect(requestOrderingOtp).toHaveBeenCalledTimes(1)
+    await act(async () => { fireEvent.click(resend()); fireEvent.click(resend()) })
+    await flush()
+    expect(requestOrderingOtp).toHaveBeenCalledTimes(2)
+    expect(screen.queryByText(/No pudimos mandar/)).toBeNull()
+    expect(screen.getAllByRole('textbox').length).toBeGreaterThan(0)
+  })
   it('en inglés', async () => {
     vi.mocked(requestOrderingOtp).mockRejectedValueOnce(noSalio())
     const s = makeStore(infoOf(), menuOf(), 'en')

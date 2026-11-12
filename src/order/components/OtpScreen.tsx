@@ -31,7 +31,9 @@ export function OtpScreen() {
   const [error, setError] = useState<{ text: string; offline: boolean } | null>(null)
   const [verifying, setVerifying] = useState(false)
   // D17: el SERVIDOR dijo que el código no salió (`OTP_SEND_FAILED`): sin cajas ni «Pedimos tu código…» hasta que uno sí salga.
-  const [notSent, setNotSent] = useState(false)
+  const notSent = !!phone && c.otpNoSalio.value === phone
+  // codex-r2 #2: una petición a la vez por teléfono (dos toques en el mismo turno no mandan dos).
+  const enVuelo = useRef<string | null>(null)
   // La hora del último envío vive en el Checkout de la tienda: salir y volver a esta pantalla no manda otro WhatsApp.
   const lastSent = () => (phone ? c.otpSentAt.get(phone) : undefined)
   const recent = () => { const at = lastSent(); return at !== undefined && Date.now() - at < RESEND_S * 1000 }
@@ -42,7 +44,7 @@ export function OtpScreen() {
     const id = setInterval(() => tick(n => n + 1), 1000)
     return () => clearInterval(id)
   }, [])
-  const wait = Math.max(0, Math.ceil((until - Date.now()) / 1000))
+  const wait = notSent ? 0 : Math.max(0, Math.ceil((until - Date.now()) / 1000))
 
   // Al llegar, el cursor ya está en la primera caja (spec §5.5) con el borde de acento, sin mover la página. El teclado no se promete: iOS no
   // lo abre con un foco que no sale de un toque (aquí se llega tras una respuesta de la red), y ahí hay que tocar la caja. Va en lugar del
@@ -57,9 +59,10 @@ export function OtpScreen() {
   }, [verifying])
 
   const request = async () => {
-    if (!phone) return
+    if (!phone || enVuelo.current === phone) return
+    enVuelo.current = phone
     setError(null)
-    setNotSent(false)
+    c.otpNoSalio.value = null
     const now = Date.now()
     c.otpSentAt.set(phone, now)
     setUntil(now + RESEND_S * 1000)
@@ -75,8 +78,10 @@ export function OtpScreen() {
         c.otpSentAt.delete(phone)
         setUntil(Date.now())
       }
-      setNotSent(noSalio)
-      setError({ text: noSalio ? t('otp.notSent') : errorText(t, e), offline })
+      if (noSalio) c.otpNoSalio.value = phone
+      else setError({ text: errorText(t, e), offline })
+    } finally {
+      if (enVuelo.current === phone) enVuelo.current = null
     }
   }
   useEffect(() => {
@@ -132,6 +137,7 @@ export function OtpScreen() {
           </div>
         )}
         {busy && <p role="status" class="avq-o-help">{t('otp.verifying')}</p>}
+        {notSent && <p role="alert" class="avq-o-issue">{t('otp.notSent')}</p>}
         {error && (error.offline
           ? <Notice role="alert" tone="warn" icon="cloudOff" text={error.text} />
           : <p role="alert" class="avq-o-issue">{error.text}</p>)}
