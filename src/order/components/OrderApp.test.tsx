@@ -539,6 +539,48 @@ describe('W4: «Entrar» / «Mi cuenta» en la tienda', () => {
     expect(screen.queryByText('¿Tienes premios en Flautas?')).toBeNull()
   })
 
+  // D16: el SERVIDOR dice si el negocio tiene algo de cuenta (sellos, puntos, descuentos, cupones, tarjetas, saldo a favor, paquetes).
+  it('D16: sin nada de cuenta (`cuentaConBeneficios: false`) no sale «Entrar», ni «Mi cuenta» con sesión, ni «¿Tienes premios?»', async () => {
+    const sinCuenta = infoOf({ requiresAcceptance: false, cuentaConBeneficios: false })
+    const s = makeStore(sinCuenta, menuOf(product()))
+    render(withStore(s, <OrderApp />))
+    await flush()
+    expect(screen.getByRole('heading', { name: 'Flautas' })).toBeTruthy() // la cabecera sí está; sólo falta el botón
+    expect(screen.queryByRole('button', { name: 'Entrar' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Mi cuenta' })).toBeNull()
+    cleanup()
+    render(withStore(tiendaConAna(sinCuenta), <OrderApp />))
+    await flush()
+    expect(screen.queryByRole('button', { name: 'Mi cuenta' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Entrar' })).toBeNull()
+    cleanup()
+    const d = makeStore(sinCuenta, menuOf(product()))
+    d.cart.value = [{ lineId: 'a', productId: 'p1', name: 'Flautas', unitPrice: 85, quantity: 1, note: null, modifiers: [] }]
+    d.go('details')
+    render(withStore(d, <OrderApp />))
+    await flush()
+    expect(screen.queryByText('¿Tienes premios en Flautas?')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Entrar' })).toBeNull()
+  })
+
+  it('D16: con algo de cuenta (`true`) sale «Entrar» y «¿Tienes premios?», igual que sin el campo (SERVIDOR viejo)', async () => {
+    const conCuenta = infoOf({ requiresAcceptance: false, cuentaConBeneficios: true })
+    render(withStore(makeStore(conCuenta, menuOf(product())), <OrderApp />))
+    await flush()
+    expect(screen.getByRole('button', { name: 'Entrar' })).toBeTruthy()
+    cleanup()
+    render(withStore(tiendaConAna(conCuenta), <OrderApp />))
+    await flush()
+    expect(screen.getByRole('button', { name: 'Mi cuenta' })).toBeTruthy()
+    cleanup()
+    const d = makeStore(conCuenta, menuOf(product()))
+    d.cart.value = [{ lineId: 'a', productId: 'p1', name: 'Flautas', unitPrice: 85, quantity: 1, note: null, modifiers: [] }]
+    d.go('details')
+    render(withStore(d, <OrderApp />))
+    await flush()
+    expect(screen.getByText('¿Tienes premios en Flautas?')).toBeTruthy()
+  })
+
   it('el aviso del menú ve cambiar su folio (pagado) ⇒ avisa avoqado:folio-cambio con su negocio', async () => {
     const folioPorPagar = {
       orderNumber: 'W7K3P', status: 'PENDING_ACCEPTANCE', paymentMode: 'PAY_AT_PICKUP', venueName: 'Flautas', venueSlug: 'a', items: [], total: 134,

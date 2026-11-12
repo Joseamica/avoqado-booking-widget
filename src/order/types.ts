@@ -38,6 +38,11 @@ export interface StoreInfo {
   requiresAcceptance?: boolean
   /** ISO del cierre de la franja de ahora (el último pedido para pagar en caja es 10 min antes); `null` sin horario. Aditivo. */
   closesAt?: string | null
+  /**
+   * D16, aditivo: `false` = el negocio no tiene nada de cuenta (sellos, puntos, descuentos, cupones, tarjetas, saldo a favor ni
+   * paquetes): la tienda no invita a «Entrar». Falta en un servidor viejo (o si no se pudo calcular): se invita como antes.
+   */
+  cuentaConBeneficios?: boolean
 }
 
 export interface MenuModifier { id: string; name: string; price: number }

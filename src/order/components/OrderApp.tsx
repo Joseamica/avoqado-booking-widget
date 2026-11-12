@@ -176,8 +176,9 @@ export function OrderApp({ accentColor }: { accentColor?: string }) {
   const hero = hasBrand && (screen === 'menu' || screen === 'product') && !pid
   const compact = hasBrand && (screen === 'details' || screen === 'otp' || screen === 'entrar' || screen === 'cuenta')
   // W4: «Entrar» sin sesión de la tienda; con ella, «Mi cuenta». Los dos llevan a «Mi cuenta» (sin sesión, a entrar).
-  // ponytail: sale siempre; esconderlo cuando el negocio no tiene nada de cuenta prendido pide un campo del SERVIDOR en /ordering/info.
+  // D16: ninguno sale si el SERVIDOR dice que el negocio no tiene nada de cuenta (sin el campo, como antes).
   const conSesion = checkoutOf(store).conSesion.value
+  const hayCuenta = info?.cuentaConBeneficios !== false
   const tz = info?.venue.timezone ?? 'America/Mexico_City'
   return (
     <div ref={root} class="avq-o-root" style={{ ['--avq-accent' as any]: accent }} onClickCapture={dropEarly}>
@@ -194,7 +195,7 @@ export function OrderApp({ accentColor }: { accentColor?: string }) {
                 {address && <p class="avq-o-hero__addr">{t('store.pickupAt', { address })}</p>}
               </div>
             )}
-            <button type="button" class="avq-o-ent" onClick={() => store.go('cuenta')}>{t(conSesion ? 'cuenta.mia' : 'cuenta.entrar')}</button>
+            {hayCuenta && <button type="button" class="avq-o-ent" onClick={() => store.go('cuenta')}>{t(conSesion ? 'cuenta.mia' : 'cuenta.entrar')}</button>}
           </div>
           {chips()}
         </header>
