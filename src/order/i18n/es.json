@@ -196,7 +196,8 @@
     "change": "Cambiar número",
     "verifying": "Verificando…",
     "notUsable": "No pudimos usar tu verificación en este navegador. Revisa tu número o ábrelo fuera del modo privado.",
-    "help": "Si no te llega, revisa que el número sea el de tu WhatsApp."
+    "help": "Si no te llega, revisa que el número sea el de tu WhatsApp.",
+    "notSent": "No pudimos mandar el código por WhatsApp. Intenta en un momento."
   },
   "checkout": {
     "pending": "Tu pedido anterior no se confirmó por la conexión. Reintenta para saber si llegó.",

@@ -30,6 +30,10 @@ export function OtpScreen() {
   // `offline` = no hubo respuesta usable (sin red o ni un ApiError): es un estado normal, ámbar con la nube; lo demás va en rojo.
   const [error, setError] = useState<{ text: string; offline: boolean } | null>(null)
   const [verifying, setVerifying] = useState(false)
+  // D17: el SERVIDOR dijo que el código no salió (`OTP_SEND_FAILED`): sin cajas ni «Pedimos tu código…» hasta que uno sí salga.
+  const notSent = !!phone && c.otpNoSalio.value.has(phone)
+  // codex-r2 #2: una petición a la vez por teléfono (dos toques en el mismo turno no mandan dos).
+  const enVuelo = useRef<string | null>(null)
   // La hora del último envío vive en el Checkout de la tienda: salir y volver a esta pantalla no manda otro WhatsApp.
   const lastSent = () => (phone ? c.otpSentAt.get(phone) : undefined)
   const recent = () => { const at = lastSent(); return at !== undefined && Date.now() - at < RESEND_S * 1000 }
@@ -40,7 +44,7 @@ export function OtpScreen() {
     const id = setInterval(() => tick(n => n + 1), 1000)
     return () => clearInterval(id)
   }, [])
-  const wait = Math.max(0, Math.ceil((until - Date.now()) / 1000))
+  const wait = notSent ? 0 : Math.max(0, Math.ceil((until - Date.now()) / 1000))
 
   // Al llegar, el cursor ya está en la primera caja (spec §5.5) con el borde de acento, sin mover la página. El teclado no se promete: iOS no
   // lo abre con un foco que no sale de un toque (aquí se llega tras una respuesta de la red), y ahí hay que tocar la caja. Va en lugar del
@@ -54,23 +58,41 @@ export function OtpScreen() {
     if (!verifying && !code && first && focusLost(first)) first.focus({ preventScroll: true })
   }, [verifying])
 
+  const marcarNoSalio = (tel: string, si: boolean) => {
+    if (c.otpNoSalio.value.has(tel) === si) return
+    const otros = new Set(c.otpNoSalio.value)
+    if (si) otros.add(tel)
+    else otros.delete(tel)
+    c.otpNoSalio.value = otros
+  }
   const request = async () => {
-    if (!phone) return
+    if (!phone || enVuelo.current === phone) return
+    enVuelo.current = phone
     setError(null)
+    // Esta es ahora la última petición de este teléfono: la respuesta de una anterior (de otra pantalla) ya no cuenta.
+    const n = (c.otpPeticion.get(phone) ?? 0) + 1
+    c.otpPeticion.set(phone, n)
+    marcarNoSalio(phone, false)
     const now = Date.now()
     c.otpSentAt.set(phone, now)
     setUntil(now + RESEND_S * 1000)
     try {
       await requestOrderingOtp(store.slug, phone)
     } catch (e) {
+      if (c.otpPeticion.get(phone) !== n) return
       const offline = !(e instanceof ApiError) || e.network
-      // Sin respuesta (sin red, o ni un ApiError) se asume que el código no salió: ni volver a esta pantalla ni «Reenviar código» heredan
-      // la espera de un envío que no fue. Con un error del servidor sí se espera (no se sabe si salió).
-      if (offline) {
+      const noSalio = e instanceof ApiError && e.code === 'OTP_SEND_FAILED'
+      // Sin respuesta (sin red, o ni un ApiError) se asume que el código no salió, y con `OTP_SEND_FAILED` el SERVIDOR lo dice (D17): ni
+      // volver a esta pantalla ni «Reenviar código» heredan la espera de un envío que no fue. Con otro error del servidor sí se espera (no
+      // se sabe si salió).
+      if (offline || noSalio) {
         c.otpSentAt.delete(phone)
         setUntil(Date.now())
       }
-      setError({ text: errorText(t, e), offline })
+      if (noSalio) marcarNoSalio(phone, true)
+      else setError({ text: errorText(t, e), offline })
+    } finally {
+      if (enVuelo.current === phone) enVuelo.current = null
     }
   }
   useEffect(() => {
@@ -117,13 +139,16 @@ export function OtpScreen() {
       <div class="avq-o-otp__intro">
         <h2 id={titleId} class="avq-o-title" tabIndex={-1}>{t('otp.title')}</h2>
         {/* D17: el SERVIDOR no garantiza que el WhatsApp salió: se dice que se pidió y qué hacer si no llega. */}
-        <p id={introId}>{t('otp.sent', { phone: leible ?? '' })}</p>
+        {!notSent && <p id={introId}>{t('otp.sent', { phone: leible ?? '' })}</p>}
       </div>
       <div class="avq-o-otp__code">
-        <div ref={boxes} role="group" aria-labelledby={titleId} aria-describedby={introId}>
-          <OtpInput look="tienda" value={code} onChange={setCode} onComplete={v => void verify(v)} disabled={busy} />
-        </div>
+        {!notSent && (
+          <div ref={boxes} role="group" aria-labelledby={titleId} aria-describedby={introId}>
+            <OtpInput look="tienda" value={code} onChange={setCode} onComplete={v => void verify(v)} disabled={busy} />
+          </div>
+        )}
         {busy && <p role="status" class="avq-o-help">{t('otp.verifying')}</p>}
+        {notSent && <p role="alert" class="avq-o-issue">{t('otp.notSent')}</p>}
         {error && (error.offline
           ? <Notice role="alert" tone="warn" icon="cloudOff" text={error.text} />
           : <p role="alert" class="avq-o-issue">{error.text}</p>)}

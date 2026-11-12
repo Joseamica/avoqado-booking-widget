@@ -95,6 +95,8 @@ export function CambiarNumero({ slug, superficie, t, token, onListo, onReentrar,
     setError(
       !e?.status ? { texto: t('entrar.sinRed'), sinRed: true }
       : code === 'CUSTOMER_PHONE_SAME' ? { texto: t('cambiarNumero.mismo'), sinRed: false }
+      // D17: el SERVIDOR dice que WhatsApp no aceptó el código: no se pasa al paso del código y se puede pedir otro enseguida.
+      : code === 'OTP_SEND_FAILED' ? { texto: t('entrar.noSalioWhatsapp'), sinRed: false }
       : e.status === 429 ? { texto: t('entrar.muchosIntentos'), sinRed: false }
       : e.status >= 500 && !code ? { texto: t('errors.generic'), sinRed: false }
       : { texto: e.data?.message || t('errors.generic'), sinRed: false },

@@ -196,7 +196,8 @@
     "change": "Change number",
     "verifying": "Verifying…",
     "notUsable": "We could not use your verification in this browser. Check your number or open it outside private mode.",
-    "help": "Didn't get it? Check that it's your WhatsApp number."
+    "help": "Didn't get it? Check that it's your WhatsApp number.",
+    "notSent": "We couldn't send the code on WhatsApp. Try again in a moment."
   },
   "checkout": {
     "pending": "Your previous order was not confirmed because of the connection. Retry to find out if it went through.",

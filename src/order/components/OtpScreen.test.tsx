@@ -364,3 +364,154 @@ describe('D17 en «Mi equipo»: el SERVIDOR no garantiza que el código salió �
     expect(screen.getByText("We requested your code on WhatsApp for 55 4442 2262. If it doesn't arrive within a minute, check the number or request another one.")).toBeTruthy()
   })
 })
+
+describe('D17: el SERVIDOR dice que el código NO salió (503 OTP_SEND_FAILED)', () => {
+  const noSalio = () => new ApiError('del servidor', 503, 'OTP_SEND_FAILED')
+  it('lo dice, no muestra las cajas ni «Pedimos tu código…», y «Reenviar código» queda listo al instante', async () => {
+    vi.mocked(requestOrderingOtp).mockRejectedValueOnce(noSalio())
+    show()
+    await flush()
+    expect(screen.getByText('No pudimos mandar el código por WhatsApp. Intenta en un momento.').className).toBe('avq-o-issue')
+    expect(screen.queryByText(/^Pedimos tu código/)).toBeNull()
+    expect(screen.queryAllByRole('textbox')).toHaveLength(0)
+    expect(resend().disabled).toBe(false)
+    expect(resend().textContent).toBe('Reenviar código')
+    // Al salir sí: vuelven las cajas, el texto de siempre y la espera de 30 s.
+    fireEvent.click(resend())
+    await flush()
+    expect(requestOrderingOtp).toHaveBeenCalledTimes(2)
+    expect(screen.queryByText(/No pudimos mandar/)).toBeNull()
+    expect(screen.getByText(/^Pedimos tu código por WhatsApp/)).toBeTruthy()
+    expect(screen.getAllByRole('textbox').length).toBeGreaterThan(0)
+    expect(resend().disabled).toBe(true)
+  })
+  it('salir y volver tras un código que no salió lo pide otra vez (no hereda una espera)', async () => {
+    vi.mocked(requestOrderingOtp).mockRejectedValueOnce(noSalio())
+    const s = show()
+    await flush()
+    fireEvent.click(screen.getByRole('button', { name: 'Cambiar número' }))
+    cleanup()
+    render(withStore(s, <OtpScreen />))
+    await flush()
+    expect(requestOrderingOtp).toHaveBeenCalledTimes(2)
+  })
+  it('codex-r2 #1: si el «no salió» llega después de salir y volver, la pantalla nueva también lo dice (sin cajas ni espera)', async () => {
+    let fallar: (e: unknown) => void = () => {}
+    vi.mocked(requestOrderingOtp).mockImplementationOnce(() => new Promise((_ok, no) => { fallar = no }))
+    const s = show()
+    await flush()
+    fireEvent.click(screen.getByRole('button', { name: 'Cambiar número' }))
+    cleanup()
+    render(withStore(s, <OtpScreen />))
+    await flush()
+    expect(requestOrderingOtp).toHaveBeenCalledTimes(1) // la pantalla nueva no pide otro: el primero sigue en vuelo
+    await act(async () => { fallar(noSalio()); await vi.advanceTimersByTimeAsync(0) })
+    expect(screen.getByText('No pudimos mandar el código por WhatsApp. Intenta en un momento.')).toBeTruthy()
+    expect(screen.queryAllByRole('textbox')).toHaveLength(0)
+    expect(resend().disabled).toBe(false)
+    expect(resend().textContent).toBe('Reenviar código')
+  })
+  it('codex-r2 #2: dos toques a «Reenviar código» en el mismo turno mandan UNA petición', async () => {
+    vi.mocked(requestOrderingOtp).mockRejectedValueOnce(noSalio())
+    show()
+    await flush()
+    expect(requestOrderingOtp).toHaveBeenCalledTimes(1)
+    await act(async () => { fireEvent.click(resend()); fireEvent.click(resend()) })
+    await flush()
+    expect(requestOrderingOtp).toHaveBeenCalledTimes(2)
+    expect(screen.queryByText(/No pudimos mandar/)).toBeNull()
+    expect(screen.getAllByRole('textbox').length).toBeGreaterThan(0)
+  })
+  // codex-r3 (familia completa): cada teléfono guarda el número de su última petición; una respuesta sólo cuenta si sigue siendo la
+  // última de SU teléfono. A y B cruzados, el mismo teléfono en dos pantallas y el éxito tardío.
+  describe('respuestas cruzadas', () => {
+    const A = '+525544422262'
+    const B = '+525598765432'
+    const NO_SALIO = 'No pudimos mandar el código por WhatsApp. Intenta en un momento.'
+    let pendientes: Array<{ tel: string; ok: () => void; no: (e: unknown) => void }>
+    beforeEach(() => {
+      pendientes = []
+      vi.mocked(requestOrderingOtp).mockImplementation(
+        (_slug, tel) => new Promise<void>((ok, no) => { pendientes.push({ tel, ok: () => ok(), no }) }),
+      )
+    })
+    const responder = async (i: number, r: 'ok' | 'no') => {
+      await act(async () => {
+        if (r === 'ok') pendientes[i].ok()
+        else pendientes[i].no(noSalio())
+        await vi.advanceTimersByTimeAsync(0)
+      })
+    }
+    /** Pide para A, sale («Cambiar número»), cambia a `tel` y vuelve: la pantalla nueva pide para `tel`. */
+    async function volverCon(tel: string, esperarMs = 0) {
+      const s = show()
+      await flush()
+      fireEvent.click(screen.getByRole('button', { name: 'Cambiar número' }))
+      cleanup()
+      if (esperarMs) await act(async () => { await vi.advanceTimersByTimeAsync(esperarMs) })
+      checkoutOf(s).lastBody.value = { ...body, customer: { ...body.customer, phone: tel } }
+      render(withStore(s, <OtpScreen />))
+      await flush()
+      expect(pendientes.map(p => p.tel)).toEqual([A, tel])
+    }
+    const conAviso = () => {
+      expect(screen.getByText(NO_SALIO)).toBeTruthy()
+      expect(screen.queryAllByRole('textbox')).toHaveLength(0)
+      expect(resend().disabled).toBe(false)
+    }
+    const sinAviso = () => {
+      expect(screen.queryByText(NO_SALIO)).toBeNull()
+      expect(screen.getAllByRole('textbox').length).toBeGreaterThan(0)
+    }
+
+    it('1. B no salió y después A no salió: el aviso de B se queda', async () => {
+      await volverCon(B)
+      await responder(1, 'no')
+      conAviso()
+      await responder(0, 'no')
+      conAviso()
+    })
+    it('2. A no salió y después B no salió: el aviso de B', async () => {
+      await volverCon(B)
+      await responder(0, 'no')
+      sinAviso()
+      await responder(1, 'no')
+      conAviso()
+    })
+    it('3. B salió y después A no salió: B sigue con sus cajas, sin aviso', async () => {
+      await volverCon(B)
+      await responder(1, 'ok')
+      await responder(0, 'no')
+      sinAviso()
+    })
+    it('4. A no salió y después B salió: B con sus cajas, sin aviso', async () => {
+      await volverCon(B)
+      await responder(0, 'no')
+      await responder(1, 'ok')
+      sinAviso()
+    })
+    it('el mismo teléfono en dos pantallas: el fallo tardío de la petición VIEJA no pisa a la nueva que sí salió', async () => {
+      await volverCon(A, 31_000)
+      await responder(1, 'ok')
+      await responder(0, 'no')
+      sinAviso()
+      expect(resend().disabled).toBe(true)
+    })
+    it('éxito tardío: la petición vieja que sí salió no borra el «no salió» de la nueva', async () => {
+      await volverCon(A, 31_000)
+      await responder(1, 'no')
+      conAviso()
+      await responder(0, 'ok')
+      conAviso()
+    })
+  })
+  it('en inglés', async () => {
+    vi.mocked(requestOrderingOtp).mockRejectedValueOnce(noSalio())
+    const s = makeStore(infoOf(), menuOf(), 'en')
+    checkoutOf(s).lastBody.value = body
+    s.go('otp')
+    render(withStore(s, <OtpScreen />))
+    await flush()
+    expect(screen.getByText("We couldn't send the code on WhatsApp. Try again in a moment.")).toBeTruthy()
+  })
+})

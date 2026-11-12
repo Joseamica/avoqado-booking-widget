@@ -82,6 +82,8 @@ export function EntrarConCuenta({ slug, negocio, t, onEntro, alCambiarAtras }: P
   const primerPintado = useRef(true)
   /** La época del negocio cuando salió la petición que puede traer una sesión (codex-r8 H3). */
   const epocaAlEmpezar = useRef('')
+  // Una petición a la vez, también con dos toques en el mismo turno (`ocupado` aún no se pinta): un «no salió» no se cruza con otra.
+  const enVuelo = useRef(false)
 
   useEffect(() => {
     if (!espera) return
@@ -115,8 +117,11 @@ export function EntrarConCuenta({ slug, negocio, t, onEntro, alCambiarAtras }: P
     setCodigo('')
     setAviso(null)
   }
-  function fallar(e: any) {
-    if (e?.data?.code === 'CUSTOMER_PROOF_INVALID') {
+  /** `canalDelCodigo`: el del código que se pidió en ESTA petición (pedir o reenviar), para decir por dónde no salió (D17). */
+  function fallar(e: any, canalDelCodigo?: Canal) {
+    if (canalDelCodigo && e?.data?.code === 'OTP_SEND_FAILED') {
+      setError({ texto: t(canalDelCodigo === 'phone' ? 'entrar.noSalioWhatsapp' : 'entrar.noSalioCorreo'), sinRed: false })
+    } else if (e?.data?.code === 'CUSTOMER_PROOF_INVALID') {
       reiniciar()
       setError({ texto: t('entrar.pruebaVencida'), sinRed: false })
     } else if (!e?.status) setError({ texto: t('entrar.sinRed'), sinRed: true })
@@ -147,18 +152,20 @@ export function EntrarConCuenta({ slug, negocio, t, onEntro, alCambiarAtras }: P
       setPaso('otraFicha')
     } else onEntro(r)
   }
-  async function intentar(fn: () => Promise<void>) {
-    if (ocupado) return
+  async function intentar(fn: () => Promise<void>, canalDelCodigo?: Canal) {
+    if (ocupado || enVuelo.current) return
+    enVuelo.current = true
     epocaAlEmpezar.current = epocaDelNegocio(slug)
     setOcupado(true)
     setError(null)
     try {
       await fn()
     } catch (e) {
-      fallar(e)
+      fallar(e, canalDelCodigo)
       // Sólo un rechazo del SERVIDOR invalida lo escrito; sin red el mismo código sigue sirviendo (codex-r2 #6).
       if ((e as any)?.status) setCodigo('')
     } finally {
+      enVuelo.current = false
       setOcupado(false)
     }
   }
@@ -177,7 +184,7 @@ export function EntrarConCuenta({ slug, negocio, t, onEntro, alCambiarAtras }: P
       setCodigo('')
       setEspera(ESPERA_S)
       setPaso('codigo')
-    })
+    }, pedido.canal)
   }
   const reenviar = () => {
     if (espera > 0 || !enviadoA) return
@@ -185,7 +192,7 @@ export function EntrarConCuenta({ slug, negocio, t, onEntro, alCambiarAtras }: P
     void intentar(async () => {
       await api.requestOtp(slug, enviadoA.destino)
       setEspera(ESPERA_S)
-    })
+    }, enviadoA.canal)
   }
   const verificar = (valor: string) => {
     if (valor.length < 6 || !enviadoA) return
@@ -213,7 +220,7 @@ export function EntrarConCuenta({ slug, negocio, t, onEntro, alCambiarAtras }: P
           setPaso('codigo')
         } else setPaso('contacto')
       }
-    })
+    }, 'email') // codex-r4: si el código de confirmar el correo no salió (`OTP_SEND_FAILED`), el aviso traducido «por correo»
   const crearFicha = (e?: Event) => {
     e?.preventDefault()
     if (!prueba) return

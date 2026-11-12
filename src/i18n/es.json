@@ -433,7 +433,9 @@
     "sesionCerrada": "Tu sesión se cerró. Entra otra vez.",
     "sesionCerradaSigue": "Tu sesión se cerró. Puedes seguir sin cuenta o entrar otra vez.",
     "pedimosWhatsapp": "Pedimos tu código por WhatsApp al {{numero}}. Si no te llega en un minuto, revisa el número o pide otro.",
-    "pedimosCorreo": "Pedimos tu código por correo a {{correo}}. Si no te llega en un minuto, revisa el correo o pide otro."
+    "pedimosCorreo": "Pedimos tu código por correo a {{correo}}. Si no te llega en un minuto, revisa el correo o pide otro.",
+    "noSalioWhatsapp": "No pudimos mandar el código por WhatsApp. Intenta en un momento.",
+    "noSalioCorreo": "No pudimos mandar el código por correo. Intenta en un momento."
   },
   "cuenta": {
     "intl": "es-MX",

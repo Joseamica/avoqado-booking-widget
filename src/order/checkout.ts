@@ -126,6 +126,13 @@ export interface Checkout {
   draft: Signal<CheckoutDraft>
   /** Hora (ms) del último código de WhatsApp pedido por teléfono: volver a la pantalla del código no manda otro antes de 30 s. */
   otpSentAt: Map<string, number>
+  /**
+   * D17: los teléfonos cuyo ÚLTIMO código el SERVIDOR dijo que NO salió (`OTP_SEND_FAILED`). Vive aquí y no en la pantalla: una respuesta
+   * que llega después de salir y volver la ve la pantalla nueva (codex-r2 #1). Uno por teléfono: el de A no toca el de B (codex-r3).
+   */
+  otpNoSalio: Signal<ReadonlySet<string>>
+  /** D17: el número de la última petición de código de cada teléfono. Una respuesta sólo cuenta si sigue siendo la última del suyo. */
+  otpPeticion: Map<string, number>
   /** W3: lo que la clienta eligió usar en este pedido (premio, puntos, cupón). Sólo se manda lo que la cotización ofreció. */
   eleccion: Signal<EleccionDeBeneficios>
   /** W3: un 401 soltó la sesión de la página en esta tienda: el carrito lo dice con calma y ofrece entrar otra vez. */
@@ -145,6 +152,8 @@ export function checkoutOf(store: OrderStore): Checkout {
       lastBody: signal(null),
       draft: signal({ note: '', name: '', dial: '52', national: '', email: '', accepted: false }),
       otpSentAt: new Map(),
+      otpNoSalio: signal(new Set<string>()),
+      otpPeticion: new Map(),
       eleccion: signal({}),
       sesionCerrada: signal(false),
       conSesion: signal(false),
