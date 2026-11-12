@@ -8,7 +8,7 @@ vi.mock('../api', async () => {
 })
 import { API_BASE, createOrder } from '../api'
 import { loadSession, saveSession } from '../session'
-import { borrarSesion, fijarPagina, guardarSesion } from '../../lib/sesionDeCliente'
+import { fijarPagina, guardarSesion } from '../../lib/sesionDeCliente'
 import { autorizarIntento, beginAttempt, pendingAttempt, reautorizarIntento } from '../attempt'
 import { checkoutOf, entroEnLaTienda } from '../checkout'
 import { createOrderStore } from '../store'
@@ -574,7 +574,8 @@ describe('pulido W5: el aviso del pedido pendiente dice la causa real', () => {
   })
 })
 
-describe('pulido W2: «Tus datos» con sesión', () => {
+describe('W2 (c), regla de parada: el nombre sólo es el que ella teclea', () => {
+  // El nombre de la ficha vuelve cuando el SERVIDOR lo mande en la sesión (conductor, 11-nov).
   const ana = (slug: string) => {
     guardarSesion(slug, {
       token: 'tok-A', customer: { id: 'c1', firstName: 'Ana', lastName: 'López', email: null, phone: '+525512345678' },
@@ -583,124 +584,63 @@ describe('pulido W2: «Tus datos» con sesión', () => {
     fijarPagina(slug, 'pedidos', loadSession(slug)) // la página abierta ya tenía esta sesión
   }
   const nombre = () => screen.getByLabelText('Nombre') as HTMLInputElement
-
-  it('el nombre de su ficha ya viene escrito, y se puede cambiar', async () => {
-    show({ requiresAcceptance: false }, ana)
-    await flush()
-    expect(nombre().value).toBe('Ana López')
-    fireEvent.input(nombre(), { target: { value: 'Anita' } })
-    expect(nombre().value).toBe('Anita')
-  })
-
-  it('codex-pulido-r1 #2: el nombre que puso la tienda no pasa a otra persona: sale Ana y entra Beatriz (o nadie) sin recargar', async () => {
-    const s = makeStore(infoOf({ requiresAcceptance: false }), menuOf())
-    ana(s.slug)
-    s.quote.value = { ok: true, lines: [], subtotal: 170, total: 170, minOrderAmount: 0, issues: [] }
-    s.go('details')
-    render(withStore(s, <DetailsScreen />))
-    await flush()
-    expect(nombre().value).toBe('Ana López')
-    cleanup()
-    // Sale Ana; entra Beatriz en la misma tienda (el borrador sigue en memoria).
-    fijarPagina(s.slug, 'pedidos', null)
-    guardarSesion(s.slug, {
-      token: 'tok-B', customer: { id: 'c2', firstName: 'Beatriz', lastName: null, email: null, phone: '+525599998888' },
-      contactos: [{ tipo: 'PHONE', valor: '+525599998888', metodo: 'WHATSAPP', probadoEn: 2 }], guardadaEn: Date.now(),
-    })
-    fijarPagina(s.slug, 'pedidos', loadSession(s.slug))
-    render(withStore(s, <DetailsScreen />))
-    await flush()
-    expect(nombre().value).toBe('Beatriz')
-    cleanup()
-    // Y sin nadie adentro, el nombre puesto se va (lo escrito a mano, no).
-    fijarPagina(s.slug, 'pedidos', null)
-    render(withStore(s, <DetailsScreen />))
-    await flush()
-    expect(nombre().value).toBe('')
-  })
-
-  // W2 (a), conductor 11-nov: el nombre de la ficha NO se escribe en el borrador; se ve (y se manda) el de la ficha que está AHORA.
-  const BEA = { id: 'c2', firstName: 'Beatriz', lastName: null, email: null, phone: '+525599998888' }
-  const TEL_BEA = { tipo: 'PHONE' as const, valor: '+525599998888', metodo: 'WHATSAPP' as const, probadoEn: 2 }
   const pedirBtn = () => screen.getByRole('button', { name: /^Pedir/ }) as HTMLButtonElement
-  const cotizada = (s: ReturnType<typeof makeStore>) => {
+  const conAna = (slug?: string) => {
+    const s = slug ? createOrderStore(slug, { locale: 'es' }) : makeStore(infoOf({ requiresAcceptance: false }), menuOf())
+    s.info.value = infoOf({ requiresAcceptance: false })
+    s.menu.value = menuOf()
+    ana(s.slug)
     s.cart.value = [{ lineId: 'a', productId: 'p1', name: 'Flautas', unitPrice: 85, quantity: 1, note: null, modifiers: [] }]
     s.quote.value = { ok: true, lines: [], subtotal: 85, total: 85, minOrderAmount: 0, issues: [] }
-  }
-
-  it('W2 (a): dos tiendas del mismo negocio; entra Beatriz en la otra con «Tus datos» abierto: se ve y se manda «Beatriz», nunca «Ana López» con su token', async () => {
-    const slug = `dos${Date.now()}`
-    ana(slug)
-    const [a, b] = [createOrderStore(slug, { locale: 'es' }), createOrderStore(slug, { locale: 'es' })]
-    for (const x of [a, b]) { x.info.value = infoOf({ requiresAcceptance: false }); x.menu.value = menuOf() }
-    cotizada(a)
-    a.go('details')
-    vi.mocked(createOrder).mockReturnValue(new Promise(() => {}))
-    render(withStore(a, <DetailsScreen />))
-    await flush()
-    expect(nombre().value).toBe('Ana López')
-    // En la OTRA tienda entra Beatriz (EntrarConCuenta ya guardó su sesión).
-    const r = { token: 'tok-B', customer: BEA, contactos: [TEL_BEA] }
-    guardarSesion(slug, { ...r, guardadaEn: Date.now() })
-    await act(async () => { entroEnLaTienda(b, r as any, null) })
-    await flush()
-    expect(nombre().value).toBe('Beatriz')
-    await pastGuard()
-    fireEvent.click(pedirBtn())
-    await flush()
-    expect(createOrder).toHaveBeenCalledTimes(1)
-    const [, body, opts] = vi.mocked(createOrder).mock.calls[0]
-    expect(body.customer.name).toBe('Beatriz')
-    expect(opts.token).toBe('tok-B')
-  })
-
-  it('W2 (a): lo que se manda es lo que se ve: si al pedir su sesión ya no está guardada, no sale «Ana López»; el campo queda vacío', async () => {
-    const s = makeStore(infoOf({ requiresAcceptance: false }), menuOf())
-    ana(s.slug)
-    cotizada(s)
     s.go('details')
+    vi.mocked(createOrder).mockReset()
     vi.mocked(createOrder).mockReturnValue(new Promise(() => {}))
     render(withStore(s, <DetailsScreen />))
+    return s
+  }
+
+  it('con sesión el campo nace vacío: no se ve ni se manda un nombre que ella no tecleó', async () => {
+    conAna()
     await flush()
-    expect(nombre().value).toBe('Ana López')
-    borrarSesion(s.slug) // salió en otra pestaña: esta página todavía no se entera
+    expect(nombre().value).toBe('')
+    expect(screen.getByText('Escribe tu nombre (de 2 a 80 caracteres).')).toBeTruthy()
     await pastGuard()
     fireEvent.click(pedirBtn())
     await flush()
     expect(createOrder).not.toHaveBeenCalled()
-    expect(nombre().value).toBe('')
-    expect(screen.getByText('Escribe tu nombre (de 2 a 80 caracteres).')).toBeTruthy()
   })
 
-  it('W2 (a): si ella borra el nombre, se queda vacío (no reaparece el de la ficha), también al volver a la pantalla', async () => {
-    const s = makeStore(infoOf({ requiresAcceptance: false }), menuOf())
-    ana(s.slug)
-    cotizada(s)
-    s.go('details')
-    render(withStore(s, <DetailsScreen />))
+  it('«Pedir» manda el nombre tecleado, aunque en otra tienda del negocio entre otra persona', async () => {
+    const slug = `dos${Date.now()}`
+    conAna(slug)
     await flush()
-    fireEvent.input(nombre(), { target: { value: '' } })
-    expect(nombre().value).toBe('')
-    cleanup()
-    render(withStore(s, <DetailsScreen />))
+    const otra = createOrderStore(slug, { locale: 'es' })
+    const r = { token: 'tok-B', customer: { id: 'c2', firstName: 'Beatriz', lastName: null, email: null, phone: '+525599998888' },
+      contactos: [{ tipo: 'PHONE' as const, valor: '+525599998888', metodo: 'WHATSAPP' as const, probadoEn: 2 }] }
+    guardarSesion(slug, { ...r, guardadaEn: Date.now() })
+    await act(async () => { entroEnLaTienda(otra, r as any, null) })
     await flush()
-    expect(nombre().value).toBe('')
-    expect(checkoutOf(s).draft.value.name).toBe('')
+    expect(nombre().value).toBe('') // nada de «Ana López» ni de «Beatriz» sin teclear
+    fireEvent.input(nombre(), { target: { value: ' Beatriz ' } })
+    await pastGuard()
+    fireEvent.click(pedirBtn())
+    await flush()
+    expect(createOrder).toHaveBeenCalledTimes(1)
+    expect(vi.mocked(createOrder).mock.calls[0][1].customer.name).toBe('Beatriz')
   })
 
-  it('sin sesión el campo nace vacío; lo que ya escribió no se pisa', async () => {
-    show({ requiresAcceptance: false })
+  it('un nombre largo cortado en 80 con un espacio al final (codex-pulido-r3 #2) se manda limpio, sin bloquear «Pedir»', async () => {
+    conAna()
     await flush()
-    expect(nombre().value).toBe('')
-    cleanup()
-    const s = makeStore(infoOf({ requiresAcceptance: false }), menuOf())
-    ana(s.slug)
-    checkoutOf(s).draft.value = { ...checkoutOf(s).draft.value, name: 'Ana (oficina)' }
-    s.quote.value = { ok: true, lines: [], subtotal: 170, total: 170, minOrderAmount: 0, issues: [] }
-    s.go('details')
-    render(withStore(s, <DetailsScreen />))
+    const largo = 'María José de los Ángeles del Sagrado Corazón Fernández de Córdoba Rodríguez de la Torre'.slice(0, 80)
+    expect(largo.endsWith(' ')).toBe(true) // lo que deja el campo (maxLength 80)
+    fireEvent.input(nombre(), { target: { value: largo } })
+    expect(pedirBtn().disabled).toBe(false)
+    await pastGuard()
+    fireEvent.click(pedirBtn())
     await flush()
-    expect(nombre().value).toBe('Ana (oficina)')
+    expect(createOrder).toHaveBeenCalledTimes(1)
+    expect(vi.mocked(createOrder).mock.calls[0][1].customer.name).toBe(largo.trim())
   })
 })
 
