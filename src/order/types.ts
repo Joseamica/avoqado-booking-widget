@@ -31,6 +31,18 @@ export interface StoreInfo {
   contact?: VenueContact
   /** Relativa al API público (`/venues/<venueId>/privacy-notice`): se le antepone `API_BASE`. */
   privacyNoticePath?: string
+  /**
+   * Tienda híbrida (etapa 1), aditivo: `false` = «Nadie» (nadie confirma; se pide con el nombre y se paga en caja con un folio).
+   * Falta en un servidor viejo: se lee como «Mi equipo» (`!== false`).
+   */
+  requiresAcceptance?: boolean
+  /** ISO del cierre de la franja de ahora (el último pedido para pagar en caja es 10 min antes); `null` sin horario. Aditivo. */
+  closesAt?: string | null
+  /**
+   * D16, aditivo: `false` = el negocio no tiene nada de cuenta (sellos, puntos, descuentos, cupones, tarjetas, saldo a favor ni
+   * paquetes): la tienda no invita a «Entrar». Falta en un servidor viejo (o si no se pudo calcular): se invita como antes.
+   */
+  cuentaConBeneficios?: boolean
 }
 
 export interface MenuModifier { id: string; name: string; price: number }
@@ -89,13 +101,35 @@ export interface QuoteIssue {
   lineIndex?: number
   message: string
 }
+/** W3 (S10/S11): lo que la clienta eligió usar; sólo cuenta con sesión. La MISMA forma al cotizar y al pedir. */
+export type BeneficioElegido = 'CUPON' | 'PREMIO' | 'PUNTOS'
+export interface EleccionDeBeneficios { premioId?: string; puntos?: number; cupon?: string }
 export interface Quote {
   ok: boolean
   lines: QuoteLine[]
   subtotal: number
+  /** S10: con sesión y beneficios calculados, el total CON beneficios (el que se manda como `expectedTotal`). */
   total: number
   minOrderAmount: number
   issues: QuoteIssue[]
+  // ── S10, opcionales y sólo con sesión.
+  /** `calculados: false` = no se simularon (mucha carga): se calculan al pedir. */
+  beneficios?: { calculados: boolean }
+  /** D8: `lineIndex` (sólo PREMIO de producto gratis) = el renglón (desde 0) de `items` donde cae. */
+  aplicados?: { tipo: 'DESCUENTO' | 'CUPON' | 'PREMIO' | 'PUNTOS'; nombre: string; monto: number; lineIndex?: number }[]
+  /** Lo que el negocio tiene prendido y ella puede usar. `cupon`: hay un cupón vigente que la tienda puede aplicar (se escribe). */
+  oferta?: {
+    /** D8: `lineIndex` = el renglón de `items` donde cae (si lo eligió) o caería (si no); falta si no es de producto gratis. */
+    premio: { id: string; etiqueta: string; lineIndex?: number } | null
+    /**
+     * `usables` (SERVIDOR con W7 A1, opcional): lo que el canje usaría y descontaría pidiendo `maxPuntos`, con su misma regla y en su
+     * punto de la cadena; `monto` 0 = ya no cabe. Un SERVIDOR viejo no lo manda.
+     */
+    puntos: { saldo: number; minimo: number; valorPorPunto: number; maxPuntos: number; usables?: { puntos: number; monto: number } } | null
+    cupon: boolean
+  }
+  /** Lo elegido que ya no está disponible (premio usado, puntos de más, cupón agotado). */
+  descartados?: BeneficioElegido[]
 }
 
 export type PaymentMode = 'PAY_AT_PICKUP' | 'CARD_ONLINE'
@@ -104,9 +138,14 @@ export interface CreateOrderBody {
   paymentMode: PaymentMode
   /** El `total` de la última cotización con dos decimales: «206.00». */
   expectedTotal: string
-  customer: { name: string; phone: string; email?: string }
+  /** `phone` falta en «Nadie» (sólo el nombre); con tarjeta en línea o en «Mi equipo» sigue siendo obligatorio. */
+  customer: { name: string; phone?: string; email?: string }
   note?: string
   whatsappConsent?: boolean
+  /** De dónde pidió la clienta (el QR del negocio o una liga); aditivo, lo llena la tarea de la liga. */
+  channel?: 'QR' | 'LINK'
+  /** W3 (S11): lo que eligió usar; sólo con sesión (sin ella el SERVIDOR responde `PRICE_CHANGED` con `motivo: 'SIN_SESION'`). */
+  beneficios?: EleccionDeBeneficios
 }
 
 export type OnlineOrderStatus =
@@ -153,7 +192,11 @@ export interface CreatedCardOrder {
   replay: boolean
 }
 
-export interface TrackingItem { name: string; quantity: number; note: string | null; modifiers: { name: string; quantity: number }[] }
+export interface TrackingItem {
+  name: string; quantity: number; note: string | null; modifiers: { name: string; quantity: number }[]
+  /** R67, opcionales (PESOS): precio de una pieza y total del renglón. */
+  unitPrice?: number; total?: number
+}
 export interface Tracking {
   orderNumber: string
   status: OnlineOrderStatus
@@ -172,6 +215,22 @@ export interface Tracking {
   canCancel: boolean
   venueTimezone?: string
   venueContact?: VenueContact
+  /** Tienda híbrida (etapa 1), aditivos: un folio de «Nadie» tiene `requiresAcceptance: false`. */
+  requiresAcceptance?: boolean
+  channel?: 'QR' | 'LINK' | null
+  /** R67, opcionales: el nombre con que se pidió y cuándo quedó pagada la cuenta (ISO). */
+  customerName?: string | null
+  paidAt?: string | null
+  /** R79, opcionales (PESOS): lo ya abonado y lo que falta. Con abono la cuenta no vence (R18). */
+  amountPaid?: number
+  remaining?: number
+  /** S14, opcionales (PESOS): las filas de descuento de la cuenta (hasta 10) y cuántas son en total. */
+  beneficios?: { nombre: string; monto: number }[]
+  beneficiosTotal?: number
+  /** S14: lo que la clienta usó en este folio ya regresó a su cuenta (el folio se anuló). */
+  beneficioRegresado?: boolean
+  /** S14: lo que sumó con esta cuenta pagada (sello con el avance de SU cartilla, y puntos); `null` = nada (nunca «no sumaste»). */
+  lealtad?: { sello?: { ganados: number; meta: number }; puntos?: number } | null
 }
 
 export interface OrderingCustomer {

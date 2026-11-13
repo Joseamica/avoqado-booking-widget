@@ -1,4 +1,6 @@
-import type { CreateOrderBody, CreatedCardOrder, CreatedOrder, Menu, OrderingCustomer, Quote, QuoteItem, StoreInfo, Tracking } from './types'
+import type { CreateOrderBody, CreatedCardOrder, CreatedOrder, EleccionDeBeneficios, Menu, Quote, QuoteItem, StoreInfo, Tracking } from './types'
+import { aplicarRenovacion, soltarLaPagina, type SesionEmitida } from '../lib/sesionDeCliente'
+import { loadSession } from './session'
 
 export const API_BASE: string =
   (import.meta.env?.VITE_API_URL as string | undefined) || 'https://api.avoqado.io/api/v1/public'
@@ -35,7 +37,14 @@ const offline = () => new ApiError('Sin conexión', 0, undefined, undefined, tru
  * Los GET no llevan cabeceras propias (petición simple: sin preflight en cada sondeo); un POST con cuerpo lleva
  * `Content-Type: application/json`. Devuelve el JSON tal cual (sin desenvolver `data`).
  */
-async function send<T>(path: string, opts: { method?: 'POST'; body?: unknown; headers?: Record<string, string> } = {}): Promise<T> {
+async function send<T>(
+  path: string,
+  opts: {
+    method?: 'POST'; body?: unknown; headers?: Record<string, string>; sesion?: { slug: string; token: string }
+    /** `false`: el 401 puede no ser de sesión (`PHONE_VERIFICATION_REQUIRED`): se lee el cuerpo y quien llama decide si la suelta. */
+    soltarAntes?: boolean
+  } = {},
+): Promise<T> {
   const ctrl = new AbortController()
   const timer = setTimeout(() => ctrl.abort(), TIMEOUT_MS)
   try {
@@ -50,6 +59,11 @@ async function send<T>(path: string, opts: { method?: 'POST'; body?: unknown; he
     } catch {
       throw offline()
     }
+    // W1: una sesión de más de un día regresa renovada en `x-customer-session` (también en una respuesta de error).
+    if (opts.sesion) aplicarRenovacion(opts.sesion.slug, res.headers, opts.sesion.token)
+    // codex-r8 H4: el 401 suelta la sesión ANTES de leer el cuerpo, como reservas y portal (un cuerpo que no llega no la deja activa).
+    const { slug, token } = opts.sesion ?? {}
+    if (res.status === 401 && slug && token && opts.soltarAntes !== false) soltarLaPagina(slug, 'pedidos', token, () => loadSession(slug))
     const body: any = await res.json().catch(() => null)
     // Un 2xx sin JSON legible (portal cautivo, lectura abortada) no dice qué pasó: se trata como sin red.
     if (res.ok) {
@@ -70,8 +84,15 @@ export const getInfo = (slug: string) => data(send<{ data: StoreInfo }>(`${order
 
 export const getMenu = (slug: string) => data(send<{ data: Menu }>(`${ordering(slug)}/menu`))
 
-export const quote = (slug: string, items: QuoteItem[]) =>
-  data(send<{ data: Quote }>(`${ordering(slug)}/quote`, { method: 'POST', body: { items } }))
+/** W3 (S10): con la sesión de la página (`token`) la cotización trae sus beneficios y aplica lo elegido. */
+export const quote = (slug: string, items: QuoteItem[], opts: { token?: string | null; beneficios?: EleccionDeBeneficios } = {}) =>
+  data(
+    send<{ data: Quote }>(`${ordering(slug)}/quote`, {
+      method: 'POST',
+      body: { items, ...(opts.token && opts.beneficios && Object.keys(opts.beneficios).length ? { beneficios: opts.beneficios } : {}) },
+      ...(opts.token ? { headers: { Authorization: `Bearer ${opts.token}` }, sesion: { slug, token: opts.token } } : {}),
+    }),
+  )
 
 /**
  * 201 al crear, 200 si es una repetición de la misma llave: `data.replay` lo dice. Con tarjeta (fase 2) no hay token (no se pide
@@ -83,6 +104,10 @@ export const createOrder = (slug: string, body: CreateOrderBody, opts: { idempot
       method: 'POST',
       body,
       headers: { 'Idempotency-Key': opts.idempotencyKey, ...(opts.token ? { Authorization: `Bearer ${opts.token}` } : {}) },
+      ...(opts.token ? { sesion: { slug, token: opts.token } } : {}),
+      // Regresión de la r9a: sólo el pedido de «Nadie» sin teléfono puede recibir `PHONE_VERIFICATION_REQUIRED` con una sesión válida;
+      // ése lee el cuerpo (tope de 15 s) y `doSubmit` suelta la sesión si el 401 no es de teléfono. Los demás, antes del cuerpo.
+      soltarAntes: !!body.customer.phone,
     }),
   )
 
@@ -110,8 +135,9 @@ export async function requestOrderingOtp(slug: string, phone: string): Promise<v
   await send(`${otp(slug)}/request`, { method: 'POST', body: { phone } })
 }
 
+/**
+ * W2: el código de «Mi equipo» entrega la sesión ÚNICA (S7, `purpose: 'SESSION'`), la misma de «Mi cuenta» y reservas. Sin
+ * `alNoEncontrar`: un teléfono sin ficha la crea como hoy (el pedido está esperando; «¿Ya eres cliente?» vive en «Entrar»).
+ */
 export const verifyOrderingOtp = (slug: string, phone: string, code: string) =>
-  send<{ token: string; customer: OrderingCustomer }>(`${otp(slug)}/verify`, {
-    method: 'POST',
-    body: { phone, code, purpose: 'ORDERING' },
-  })
+  send<SesionEmitida>(`${otp(slug)}/verify`, { method: 'POST', body: { phone, code, purpose: 'SESSION' } })

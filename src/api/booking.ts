@@ -9,28 +9,72 @@ import type {
   CustomerCreditBalance,
   CustomerPortalData,
   ModifierSelection,
+  MiDescuento,
+  MiPedido,
+  MiTarjeta,
+  PaginaDeMiCuenta,
 } from '../types'
+import {
+  aplicarRenovacion, epocaDe, renovarLaPagina, soltarLaPagina, tokenDeLaPagina, type FichaNueva, type SesionEmitida, type Superficie,
+} from '../lib/sesionDeCliente'
+import { lectorDe } from '../state/booking'
 
 const BASE = (import.meta.env?.VITE_API_URL as string | undefined)
   || 'https://api.avoqado.io/api/v1/public'
 
-async function request<T>(url: string, init?: RequestInit): Promise<T> {
+const fallaDeSesion = (status: number, code: string, message: string, enviado: string | null | undefined) =>
+  Object.assign(new Error(message), { status, data: { message, code }, enviado })
+
+/**
+ * `sesion`: la pantalla manda con la sesión de la página (`token` vacío = invitada: sigue invitada). W1, alcance A:
+ * - se manda con la sesión de ESTA superficie mientras siga guardada (`tokenDeLaPagina`, UNA lectura; la renovada si otra pestaña la
+ *   renovó). Si ya no está (salió en otra pestaña o página, entró otra ficha), la superficie queda sin sesión y se responde un 401 sin
+ *   tocar la red;
+ * - todo 401 de una llamada con sesión la cierra (codex-r3 H4);
+ * - una LECTURA que se pidió en otra época de la sesión de la superficie no se publica (codex-r3 H1). Una escritura nunca se descarta;
+ * - si el SERVIDOR la renueva (`x-customer-session`, S6), se guarda y la superficie sigue con la renovada. Los errores llevan `enviado`.
+ * W4: `superficie` (reservas por omisión): «Mi cuenta» dentro de la tienda manda con la sesión de la TIENDA (`pedidos`), nunca con la
+ * de reservas, y su 401 sólo suelta la de la tienda.
+ * W6: `pideReentrarNoCierra` («Cambiar mi número»): su 401 `CUSTOMER_REAUTH_REQUIRED` sólo dice que ESTA sesión no probó un contacto
+ * (sigue sirviendo para lo demás), así que el cuerpo se lee antes de soltarla (con el tope de 20 s): cualquier otro 401, o un cuerpo que
+ * no llega, la suelta igual.
+ */
+async function request<T>(
+  url: string, init?: RequestInit, sesion?: { slug: string; token?: string | null; superficie?: Superficie; pideReentrarNoCierra?: boolean },
+): Promise<T> {
+  const sup = sesion?.superficie ?? 'reservas'
+  const leer = sesion ? lectorDe(sesion.slug, sup) : null
+  const enviado = sesion?.token ? tokenDeLaPagina(sesion.slug, sup, leer!, sesion.token) : null
+  const epoca = sesion ? epocaDe(sesion.slug, sup) : 0
+  if (sesion?.token && !enviado) throw fallaDeSesion(401, 'CUSTOMER_SESSION_CLOSED', 'Tu sesión se cerró. Entra otra vez.', sesion.token)
+  // codex-r7 H3: lo autenticado nunca espera más de 20 s (sin red o un cuerpo que no llega dicen «sin conexión», no giran).
   const res = await fetch(url, {
     ...init,
+    ...(sesion?.token && !init?.signal ? { signal: conTope() } : {}),
     headers: {
       'Content-Type': 'application/json',
       'ngrok-skip-browser-warning': '1',
       ...(init?.headers ?? {}),
+      ...(enviado ? { Authorization: `Bearer ${enviado}` } : {}),
     },
   })
+  if (sesion && enviado && aplicarRenovacion(sesion.slug, res.headers, enviado)) renovarLaPagina(sesion.slug, sup, enviado, leer!)
   if (!res.ok) {
+    // codex-r7 H3: el 401 suelta la sesión ANTES de leer el cuerpo (un cuerpo que no llega no la deja activa).
+    const conCuerpo = res.status === 401 && !!sesion?.pideReentrarNoCierra
+    if (res.status === 401 && sesion && enviado && !conCuerpo) soltarLaPagina(sesion.slug, sup, enviado, leer!)
     let err: any
     try { err = await res.json() } catch { err = { message: `HTTP ${res.status}` } }
-    const e = Object.assign(new Error(err.message ?? 'Request failed'), { status: res.status, data: err })
+    if (conCuerpo && enviado && err?.code !== 'CUSTOMER_REAUTH_REQUIRED') soltarLaPagina(sesion!.slug, sup, enviado, leer!)
+    const e = Object.assign(new Error(err.message ?? 'Request failed'), { status: res.status, data: err, enviado })
     throw e
   }
-  if (res.status === 204) return undefined as T
-  return res.json()
+  const datos = res.status === 204 ? undefined : await res.json()
+  // Después de leer el cuerpo (codex-r5 E4): lo último que pudo cambiar antes de entregarlo.
+  if (sesion && enviado && (init?.method ?? 'GET') === 'GET' && epocaDe(sesion.slug, sup) !== epoca) {
+    throw fallaDeSesion(409, 'CUSTOMER_SESSION_CHANGED', 'Tu sesión cambió mientras cargaba.', enviado)
+  }
+  return datos as T
 }
 
 /**
@@ -93,16 +137,14 @@ export function getClassSessionsRange(slug: string, params: {
 export function createReservation(
   slug: string,
   data: PublicCreateReservationRequest,
-  /** Optional Bearer JWT. When passed, the server stamps customerId on the
-   *  reservation so the booking shows up in the customer's portal history.
-   *  Anonymous reservations omit this and the row stays guest-only. */
+  /** The page's session (empty = guest, stays guest). W1 (scope A): sent with the page's session while it is still stored;
+   *  if not, the page drops to guest and this rejects with a local 401 (nothing is sent). */
   token?: string,
 ): Promise<PublicBookingResult> {
   return request(`${BASE}/venues/${slug}/reservations`, {
     method: 'POST',
     body: JSON.stringify(data),
-    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-  })
+  }, { slug, token })
 }
 
 // ==================== Slot Hold (Square countdown UX) ====================
@@ -145,8 +187,7 @@ export function createHold(
   return request(`${BASE}/venues/${slug}/reservations/hold`, {
     method: 'POST',
     body: JSON.stringify(data),
-    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-  })
+  }, { slug, token })
 }
 
 /** Releases a hold the customer no longer needs (e.g. went back to pick a
@@ -251,9 +292,7 @@ export function getCustomerCredits(slug: string, params: {
   } else if (params.productId) {
     q.append('productId', params.productId)
   }
-  return request(`${BASE}/venues/${slug}/credit-packs/balance?${q}`, {
-    headers: { Authorization: `Bearer ${token}` },
-  })
+  return request(`${BASE}/venues/${slug}/credit-packs/balance?${q}`, undefined, { slug, token })
 }
 
 /**
@@ -266,9 +305,8 @@ export function createPackCheckout(slug: string, packId: string, data: {
 }, token?: string | null): Promise<{ checkoutUrl: string }> {
   return request(`${BASE}/venues/${slug}/credit-packs/${packId}/checkout`, {
     method: 'POST',
-    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
     body: JSON.stringify(data),
-  })
+  }, { slug, token })
 }
 
 // ==================== Customer Portal ====================
@@ -305,22 +343,86 @@ export function customerLogin(slug: string, data: { email: string; password: str
   })
 }
 
+/**
+ * Entrar nunca gira para siempre: sin respuesta en 20 s se corta y la pantalla dice «Sin conexión». Repetir no duplica nada: un
+ * código ya usado se rechaza y una ficha nueva repetida encuentra la que ya se creó (S7).
+ */
+function conTope(): AbortSignal {
+  const c = new AbortController()
+  setTimeout(() => c.abort(), 20_000)
+  return c.signal
+}
+
 export function requestOtp(slug: string, data: { phone?: string; email?: string }): Promise<{ ok: true }> {
-  return request(`${BASE}/venues/${slug}/auth/otp/request`, { method: 'POST', body: JSON.stringify(data) })
+  return request(`${BASE}/venues/${slug}/auth/otp/request`, { method: 'POST', body: JSON.stringify(data), signal: conTope() })
 }
 
 /**
- * `firstName` (14-oct-2026): lo que la persona escribió en «¿Cómo te llamas?». El servidor lo pone sólo si el cliente
- * no tenía nombre (nunca pisa uno existente). Un servidor viejo lo ignora: su zod de verify no es estricto.
+ * W2 (S7): entrar a la sesión ÚNICA con el código. Sin ficha con ese contacto, el SERVIDOR no crea nada y devuelve la prueba para
+ * preguntar «¿Ya eres cliente?». `vincular` = la prueba del PRIMER contacto: se liga a la ficha que encuentre éste. No activa
+ * reservas (el SERVIDOR lo hace al reservar o abrir el portal).
  */
-export function verifyOtp(slug: string, data: { phone?: string; email?: string; code: string; firstName?: string }): Promise<AuthResponse> {
-  return request(`${BASE}/venues/${slug}/auth/otp/verify`, { method: 'POST', body: JSON.stringify(data) })
+export function verifyOtp(
+  slug: string,
+  data: { phone?: string; email?: string; code: string; vincular?: string },
+): Promise<SesionEmitida | FichaNueva> {
+  return request(`${BASE}/venues/${slug}/auth/otp/verify`, {
+    method: 'POST',
+    body: JSON.stringify({ ...data, purpose: 'SESSION', alNoEncontrar: 'PREGUNTAR' }),
+    signal: conTope(),
+  })
 }
 
-export function getCustomerPortal(slug: string, token: string): Promise<CustomerPortalData> {
-  return request(`${BASE}/venues/${slug}/customer/portal`, {
-    headers: { Authorization: `Bearer ${token}` },
+/** W2 (S7): Google. Un correo que Google no da por suyo responde 409 `GOOGLE_EMAIL_NOT_TRUSTED` y el código ya va a ese correo. */
+export function entrarConGoogle(slug: string, data: { idToken: string; vincular?: string }): Promise<SesionEmitida | FichaNueva> {
+  return request(`${BASE}/venues/${slug}/auth/google`, {
+    method: 'POST',
+    body: JSON.stringify({ ...data, alNoEncontrar: 'PREGUNTAR' }),
+    signal: conTope(),
   })
+}
+
+/** W2 (S7): «No, es mi primera vez». La identidad sale sólo de la prueba firmada; `firstName` es obligatorio en la tienda (14-oct). */
+export function crearFichaNueva(slug: string, data: { pruebaPendiente: string; firstName: string }): Promise<SesionEmitida> {
+  return request(`${BASE}/venues/${slug}/auth/session/nueva-ficha`, { method: 'POST', body: JSON.stringify(data), signal: conTope() })
+}
+
+export function getCustomerPortal(slug: string, token: string, superficie: Superficie = 'reservas'): Promise<CustomerPortalData> {
+  return request(`${BASE}/venues/${slug}/customer/portal`, {
+    signal: conTope(), // codex-r1 #5: recién entrada, «Mi cuenta» no gira para siempre
+  }, { slug, token, superficie })
+}
+
+// W4 (S13): las páginas siguientes de «Mi cuenta» (el portal trae la primera de cada una) y «Guardar en mi cuenta».
+const pagina = <T>(lista: string) => (slug: string, token: string, cursor: string, superficie: Superficie = 'reservas') =>
+  request<PaginaDeMiCuenta<T>>(`${BASE}/venues/${slug}/customer/${lista}?cursor=${encodeURIComponent(cursor)}`, { signal: conTope() }, { slug, token, superficie })
+export const listarMisPedidos = pagina<MiPedido>('orders')
+export const listarMisTarjetas = pagina<MiTarjeta>('gift-cards')
+export const listarMisDescuentos = pagina<MiDescuento>('discounts')
+
+/** 409 `GIFT_CARD_ALREADY_SAVED` = de otra clienta; 404 = código que no es de una tarjeta viva de este negocio. No mueve saldo. */
+export function guardarTarjeta(slug: string, token: string, code: string, superficie: Superficie = 'reservas'): Promise<{ giftCardId: string; last4: string; saldo: number }> {
+  return request(`${BASE}/venues/${slug}/customer/gift-cards/claim`, { method: 'POST', body: JSON.stringify({ code }), signal: conTope() }, { slug, token, superficie })
+}
+
+/**
+ * W6 (S8): «Cambiar mi número». El código va por WhatsApp al número NUEVO. 401 `CUSTOMER_REAUTH_REQUIRED` = esta sesión no probó un
+ * contacto (token de reservas de hoy o contraseña): «Entra otra vez para cambiar tu número», sin cerrarla.
+ */
+export function pedirCambioDeNumero(slug: string, token: string, phone: string, superficie: Superficie = 'reservas'): Promise<{ ok: true }> {
+  return request(`${BASE}/venues/${slug}/customer/phone/request`, { method: 'POST', body: JSON.stringify({ phone }), signal: conTope() },
+    { slug, token, superficie, pideReentrarNoCierra: true })
+}
+
+/**
+ * W6 (S8): confirma el código y responde la sesión de REEMPLAZO (versión nueva: todas las de antes de esa ficha dejan de valer). 409
+ * `TELEFONO_DE_OTRA_FICHA` = el número es de otra ficha y no se movió nada.
+ */
+export function confirmarCambioDeNumero(
+  slug: string, token: string, phone: string, code: string, superficie: Superficie = 'reservas',
+): Promise<SesionEmitida> {
+  return request(`${BASE}/venues/${slug}/customer/phone/verify`, { method: 'POST', body: JSON.stringify({ phone, code }), signal: conTope() },
+    { slug, token, superficie, pideReentrarNoCierra: true })
 }
 
 export function updateCustomerProfile(slug: string, token: string, data: {
@@ -328,9 +430,8 @@ export function updateCustomerProfile(slug: string, token: string, data: {
 }): Promise<{ customer: AuthResponse['customer'] }> {
   return request(`${BASE}/venues/${slug}/customer/profile`, {
     method: 'PATCH',
-    headers: { Authorization: `Bearer ${token}` },
     body: JSON.stringify(data),
-  })
+  }, { slug, token })
 }
 
 /**

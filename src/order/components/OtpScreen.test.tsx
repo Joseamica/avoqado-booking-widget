@@ -9,6 +9,7 @@ vi.mock('../api', async () => {
 import { ApiError, createOrder, requestOrderingOtp, verifyOrderingOtp } from '../api'
 import { checkoutOf } from '../checkout'
 import { loadSession } from '../session'
+import { fijarPagina, guardarSesion, leerSesion, paginaDe, soltarLaPagina } from '../../lib/sesionDeCliente'
 import { OtpScreen } from './OtpScreen'
 import { infoOf, makeStore, menuOf, withStore } from './testKit'
 import type { CreateOrderBody } from '../types'
@@ -37,6 +38,11 @@ function show() {
   s.go('otp')
   render(withStore(s, <OtpScreen />))
   return s
+}
+/** W2: la sesión única que responde el código (S7). */
+const sesion = {
+  token: 'tok-otp', customer: { id: 'c1', firstName: 'Ana', lastName: null, email: null, phone: '+525544422262' },
+  contactos: [{ tipo: 'PHONE', valor: '+525544422262', metodo: 'WHATSAPP', probadoEn: 1 }], otraFicha: null,
 }
 const resend = () => screen.getByRole('button', { name: /Reenviar código/ }) as HTMLButtonElement
 
@@ -82,7 +88,7 @@ describe('código de WhatsApp', () => {
 
   it('M1: tras verificar bien, si un 401 regresa a esta pantalla antes de 30 s, sí se pide un código nuevo', async () => {
     const s = show()
-    vi.mocked(verifyOrderingOtp).mockResolvedValue({ token: 'tok-otp', customer: { id: 'c1' } } as any)
+    vi.mocked(verifyOrderingOtp).mockResolvedValue(sesion as any)
     vi.mocked(createOrder).mockRejectedValue(new ApiError('Token inválido', 401, 'CUSTOMER_TOKEN_INVALID'))
     await flush()
     expect(requestOrderingOtp).toHaveBeenCalledTimes(1)
@@ -107,9 +113,31 @@ describe('código de WhatsApp', () => {
     expect(screen.queryByText('Sin conexión. Revisa tu internet y vuelve a intentar.')).toBeNull()
   })
 
+  it('codex-r8 H3: un código que se verifica después de «Cerrar sesión» no guarda, no revive la sesión ni manda el pedido', async () => {
+    const s = makeStore(infoOf(), menuOf())
+    guardarSesion(s.slug, { ...sesion, token: 'tok-A', guardadaEn: Date.now() } as any)
+    fijarPagina(s.slug, 'pedidos', loadSession(s.slug)) // la tienda abierta con A
+    fijarPagina(s.slug, 'reservas', loadSession(s.slug)) // y el portal de al lado, abierto con la misma A
+    checkoutOf(s).lastBody.value = body
+    s.go('otp')
+    render(withStore(s, <OtpScreen />))
+    await flush()
+    let llega!: (v: unknown) => void
+    vi.mocked(verifyOrderingOtp).mockImplementationOnce(() => new Promise(r => { llega = r }) as any)
+    fireEvent.input(screen.getAllByRole('textbox')[0], { target: { value: '123456' } })
+    await flush()
+    await act(async () => { soltarLaPagina(s.slug, 'reservas', undefined, () => loadSession(s.slug)) }) // «Cerrar sesión» en el portal
+    await act(async () => { llega(sesion) })
+    await flush()
+    expect(leerSesion(s.slug)).toBeNull()
+    // A refinada: la tienda montada no cambia por el portal (se entera en su siguiente petición), pero la verificación tardía no la revive.
+    expect(paginaDe(s.slug, 'pedidos')?.token).not.toBe('tok-otp')
+    expect(createOrder).not.toHaveBeenCalled()
+  })
+
   it('al completar el código verifica, guarda la sesión con ESE teléfono y manda el pedido', async () => {
     const s = show()
-    vi.mocked(verifyOrderingOtp).mockResolvedValue({ token: 'tok-otp', customer: { id: 'c1' } } as any)
+    vi.mocked(verifyOrderingOtp).mockResolvedValue(sesion as any)
     vi.mocked(createOrder).mockResolvedValue({
       orderId: 'o1', onlineOrderId: 'oo1', trackingToken: 'T'.repeat(32), status: 'PENDING_ACCEPTANCE', orderNumber: '7',
       total: '170.00', acceptDeadlineAt: '', replay: false,
@@ -137,7 +165,7 @@ describe('código de WhatsApp', () => {
 
   it('si tras verificar bien el pedido vuelve a pedir código, lo dice claro (no se queda callado en esta pantalla)', async () => {
     const s = show()
-    vi.mocked(verifyOrderingOtp).mockResolvedValue({ token: 'tok-otp', customer: { id: 'c1' } } as any)
+    vi.mocked(verifyOrderingOtp).mockResolvedValue(sesion as any)
     vi.mocked(createOrder).mockRejectedValue(new ApiError('Verifica tu teléfono', 401, 'PHONE_VERIFICATION_REQUIRED'))
     await flush()
     fireEvent.input(screen.getAllByRole('textbox')[0], { target: { value: '123456' } })
@@ -150,7 +178,7 @@ describe('código de WhatsApp', () => {
     show()
     await flush()
     expect(screen.getByRole('heading', { name: 'Escribe tu código' })).toBeTruthy()
-    expect(screen.getByText('Te lo mandamos por WhatsApp al +525544422262.')).toBeTruthy()
+    expect(screen.getByText('Pedimos tu código por WhatsApp al 55 4442 2262. Si no te llega en un minuto, revisa el número o pide otro.')).toBeTruthy()
     expect(screen.getByText('Si no te llega, revisa que el número sea el de tu WhatsApp.')).toBeTruthy()
     const boxes = screen.getAllByRole('textbox') as HTMLInputElement[]
     expect(boxes).toHaveLength(6)
@@ -233,11 +261,11 @@ describe('código de WhatsApp', () => {
     }
   })
 
-  it('las cajas forman un grupo con nombre y descripción (el titular y «Te lo mandamos…»): quien llega con un lector de pantalla a la primera caja sabe qué se pide', async () => {
+  it('las cajas forman un grupo con nombre y descripción (el titular y «Pedimos tu código…»): quien llega con un lector de pantalla a la primera caja sabe qué se pide', async () => {
     show()
     await flush()
     const group = screen.getByRole('group', { name: 'Escribe tu código' })
-    expect(document.getElementById(group.getAttribute('aria-describedby')!)!.textContent).toBe('Te lo mandamos por WhatsApp al +525544422262.')
+    expect(document.getElementById(group.getAttribute('aria-describedby')!)!.textContent).toBe('Pedimos tu código por WhatsApp al 55 4442 2262. Si no te llega en un minuto, revisa el número o pide otro.')
     expect(within(group).getAllByRole('textbox')).toHaveLength(6)
     expect(group.contains(document.activeElement)).toBe(true)
   })
@@ -280,14 +308,210 @@ describe('código de WhatsApp', () => {
     expect(screen.queryByText(OFFLINE)).toBeNull()
   })
 
-  it('en inglés: «Enter your code» y «We sent it by WhatsApp to …»', async () => {
+  it('codex-r3 A2: sin red al verificar, el código escrito se queda (sólo un rechazo del servidor lo borra)', async () => {
+    vi.mocked(verifyOrderingOtp).mockRejectedValueOnce(new ApiError('Sin conexión', 0, undefined, undefined, true))
+    show()
+    await flush()
+    fireEvent.input(screen.getAllByRole('textbox')[0], { target: { value: '123456' } })
+    await flush()
+    expect(screen.getAllByRole('textbox').map(c => (c as HTMLInputElement).value).join('')).toBe('123456')
+    // Con la red de vuelta, «Reintentar» manda el mismo código; un rechazo del servidor sí lo borra.
+    vi.mocked(verifyOrderingOtp).mockRejectedValueOnce(new ApiError('Código incorrecto.', 400))
+    fireEvent.click(screen.getByRole('button', { name: 'Reintentar' }))
+    await flush()
+    expect(vi.mocked(verifyOrderingOtp)).toHaveBeenLastCalledWith(expect.any(String), expect.any(String), '123456')
+    expect(screen.getAllByRole('textbox').map(c => (c as HTMLInputElement).value).join('')).toBe('')
+  })
+
+  it('en inglés: «Enter your code» y «We requested your code on WhatsApp for …»', async () => {
     const s = makeStore(infoOf(), menuOf(), 'en')
     checkoutOf(s).lastBody.value = body
     s.go('otp')
     render(withStore(s, <OtpScreen />))
     await flush()
     expect(screen.getByRole('heading', { name: 'Enter your code' })).toBeTruthy()
-    expect(screen.getByText('We sent it by WhatsApp to +525544422262.')).toBeTruthy()
+    expect(screen.getByText("We requested your code on WhatsApp for 55 4442 2262. If it doesn't arrive within a minute, check the number or request another one.")).toBeTruthy()
     expect(screen.getByText("Didn't get it? Check that it's your WhatsApp number.")).toBeTruthy()
+  })
+})
+
+describe('D17 en «Mi equipo»: el SERVIDOR no garantiza que el código salió ⇒ no se promete «Te lo mandamos»', () => {
+  it('«Pedimos tu código por WhatsApp al 55 4442 2262. Si no te llega en un minuto, revisa el número o pide otro.»', async () => {
+    show()
+    await flush()
+    expect(screen.getByText('Pedimos tu código por WhatsApp al 55 4442 2262. Si no te llega en un minuto, revisa el número o pide otro.')).toBeTruthy()
+    expect(screen.queryByText(/Te lo mandamos/)).toBeNull()
+  })
+  it('el número que dice es el que se pidió y el que se verifica (no se edita en esta pantalla; «Cambiar número» sale de ella)', async () => {
+    const s = show()
+    await flush()
+    expect(requestOrderingOtp).toHaveBeenCalledWith(s.slug, '+525544422262')
+    vi.mocked(verifyOrderingOtp).mockResolvedValue(sesion as any)
+    vi.mocked(createOrder).mockResolvedValue({
+      orderId: 'o1', onlineOrderId: 'oo1', trackingToken: 'T'.repeat(32), status: 'PENDING_ACCEPTANCE', orderNumber: '7',
+      total: '170.00', acceptDeadlineAt: '', replay: false,
+    })
+    fireEvent.input(screen.getAllByRole('textbox')[0], { target: { value: '123456' } })
+    await flush()
+    expect(verifyOrderingOtp).toHaveBeenCalledWith(s.slug, '+525544422262', '123456')
+  })
+  it('en inglés', async () => {
+    const s = makeStore(infoOf(), menuOf(), 'en')
+    checkoutOf(s).lastBody.value = body
+    s.go('otp')
+    render(withStore(s, <OtpScreen />))
+    await flush()
+    expect(screen.getByText("We requested your code on WhatsApp for 55 4442 2262. If it doesn't arrive within a minute, check the number or request another one.")).toBeTruthy()
+  })
+})
+
+describe('D17: el SERVIDOR dice que el código NO salió (503 OTP_SEND_FAILED)', () => {
+  const noSalio = () => new ApiError('del servidor', 503, 'OTP_SEND_FAILED')
+  it('lo dice, no muestra las cajas ni «Pedimos tu código…», y «Reenviar código» queda listo al instante', async () => {
+    vi.mocked(requestOrderingOtp).mockRejectedValueOnce(noSalio())
+    show()
+    await flush()
+    expect(screen.getByText('No pudimos mandar el código por WhatsApp. Intenta en un momento.').className).toBe('avq-o-issue')
+    expect(screen.queryByText(/^Pedimos tu código/)).toBeNull()
+    expect(screen.queryAllByRole('textbox')).toHaveLength(0)
+    expect(resend().disabled).toBe(false)
+    expect(resend().textContent).toBe('Reenviar código')
+    // Al salir sí: vuelven las cajas, el texto de siempre y la espera de 30 s.
+    fireEvent.click(resend())
+    await flush()
+    expect(requestOrderingOtp).toHaveBeenCalledTimes(2)
+    expect(screen.queryByText(/No pudimos mandar/)).toBeNull()
+    expect(screen.getByText(/^Pedimos tu código por WhatsApp/)).toBeTruthy()
+    expect(screen.getAllByRole('textbox').length).toBeGreaterThan(0)
+    expect(resend().disabled).toBe(true)
+  })
+  it('salir y volver tras un código que no salió lo pide otra vez (no hereda una espera)', async () => {
+    vi.mocked(requestOrderingOtp).mockRejectedValueOnce(noSalio())
+    const s = show()
+    await flush()
+    fireEvent.click(screen.getByRole('button', { name: 'Cambiar número' }))
+    cleanup()
+    render(withStore(s, <OtpScreen />))
+    await flush()
+    expect(requestOrderingOtp).toHaveBeenCalledTimes(2)
+  })
+  it('codex-r2 #1: si el «no salió» llega después de salir y volver, la pantalla nueva también lo dice (sin cajas ni espera)', async () => {
+    let fallar: (e: unknown) => void = () => {}
+    vi.mocked(requestOrderingOtp).mockImplementationOnce(() => new Promise((_ok, no) => { fallar = no }))
+    const s = show()
+    await flush()
+    fireEvent.click(screen.getByRole('button', { name: 'Cambiar número' }))
+    cleanup()
+    render(withStore(s, <OtpScreen />))
+    await flush()
+    expect(requestOrderingOtp).toHaveBeenCalledTimes(1) // la pantalla nueva no pide otro: el primero sigue en vuelo
+    await act(async () => { fallar(noSalio()); await vi.advanceTimersByTimeAsync(0) })
+    expect(screen.getByText('No pudimos mandar el código por WhatsApp. Intenta en un momento.')).toBeTruthy()
+    expect(screen.queryAllByRole('textbox')).toHaveLength(0)
+    expect(resend().disabled).toBe(false)
+    expect(resend().textContent).toBe('Reenviar código')
+  })
+  it('codex-r2 #2: dos toques a «Reenviar código» en el mismo turno mandan UNA petición', async () => {
+    vi.mocked(requestOrderingOtp).mockRejectedValueOnce(noSalio())
+    show()
+    await flush()
+    expect(requestOrderingOtp).toHaveBeenCalledTimes(1)
+    await act(async () => { fireEvent.click(resend()); fireEvent.click(resend()) })
+    await flush()
+    expect(requestOrderingOtp).toHaveBeenCalledTimes(2)
+    expect(screen.queryByText(/No pudimos mandar/)).toBeNull()
+    expect(screen.getAllByRole('textbox').length).toBeGreaterThan(0)
+  })
+  // codex-r3 (familia completa): cada teléfono guarda el número de su última petición; una respuesta sólo cuenta si sigue siendo la
+  // última de SU teléfono. A y B cruzados, el mismo teléfono en dos pantallas y el éxito tardío.
+  describe('respuestas cruzadas', () => {
+    const A = '+525544422262'
+    const B = '+525598765432'
+    const NO_SALIO = 'No pudimos mandar el código por WhatsApp. Intenta en un momento.'
+    let pendientes: Array<{ tel: string; ok: () => void; no: (e: unknown) => void }>
+    beforeEach(() => {
+      pendientes = []
+      vi.mocked(requestOrderingOtp).mockImplementation(
+        (_slug, tel) => new Promise<void>((ok, no) => { pendientes.push({ tel, ok: () => ok(), no }) }),
+      )
+    })
+    const responder = async (i: number, r: 'ok' | 'no') => {
+      await act(async () => {
+        if (r === 'ok') pendientes[i].ok()
+        else pendientes[i].no(noSalio())
+        await vi.advanceTimersByTimeAsync(0)
+      })
+    }
+    /** Pide para A, sale («Cambiar número»), cambia a `tel` y vuelve: la pantalla nueva pide para `tel`. */
+    async function volverCon(tel: string, esperarMs = 0) {
+      const s = show()
+      await flush()
+      fireEvent.click(screen.getByRole('button', { name: 'Cambiar número' }))
+      cleanup()
+      if (esperarMs) await act(async () => { await vi.advanceTimersByTimeAsync(esperarMs) })
+      checkoutOf(s).lastBody.value = { ...body, customer: { ...body.customer, phone: tel } }
+      render(withStore(s, <OtpScreen />))
+      await flush()
+      expect(pendientes.map(p => p.tel)).toEqual([A, tel])
+    }
+    const conAviso = () => {
+      expect(screen.getByText(NO_SALIO)).toBeTruthy()
+      expect(screen.queryAllByRole('textbox')).toHaveLength(0)
+      expect(resend().disabled).toBe(false)
+    }
+    const sinAviso = () => {
+      expect(screen.queryByText(NO_SALIO)).toBeNull()
+      expect(screen.getAllByRole('textbox').length).toBeGreaterThan(0)
+    }
+
+    it('1. B no salió y después A no salió: el aviso de B se queda', async () => {
+      await volverCon(B)
+      await responder(1, 'no')
+      conAviso()
+      await responder(0, 'no')
+      conAviso()
+    })
+    it('2. A no salió y después B no salió: el aviso de B', async () => {
+      await volverCon(B)
+      await responder(0, 'no')
+      sinAviso()
+      await responder(1, 'no')
+      conAviso()
+    })
+    it('3. B salió y después A no salió: B sigue con sus cajas, sin aviso', async () => {
+      await volverCon(B)
+      await responder(1, 'ok')
+      await responder(0, 'no')
+      sinAviso()
+    })
+    it('4. A no salió y después B salió: B con sus cajas, sin aviso', async () => {
+      await volverCon(B)
+      await responder(0, 'no')
+      await responder(1, 'ok')
+      sinAviso()
+    })
+    it('el mismo teléfono en dos pantallas: el fallo tardío de la petición VIEJA no pisa a la nueva que sí salió', async () => {
+      await volverCon(A, 31_000)
+      await responder(1, 'ok')
+      await responder(0, 'no')
+      sinAviso()
+      expect(resend().disabled).toBe(true)
+    })
+    it('éxito tardío: la petición vieja que sí salió no borra el «no salió» de la nueva', async () => {
+      await volverCon(A, 31_000)
+      await responder(1, 'no')
+      conAviso()
+      await responder(0, 'ok')
+      conAviso()
+    })
+  })
+  it('en inglés', async () => {
+    vi.mocked(requestOrderingOtp).mockRejectedValueOnce(noSalio())
+    const s = makeStore(infoOf(), menuOf(), 'en')
+    checkoutOf(s).lastBody.value = body
+    s.go('otp')
+    render(withStore(s, <OtpScreen />))
+    await flush()
+    expect(screen.getByText("We couldn't send the code on WhatsApp. Try again in a moment.")).toBeTruthy()
   })
 })

@@ -7,7 +7,11 @@ vi.mock('../api', async () => {
   return { ...actual, quote: vi.fn(), getInfo: vi.fn(), getMenu: vi.fn() }
 })
 import { ApiError, quote } from '../api'
-import { checkoutOf } from '../checkout'
+import { checkoutOf, retry } from '../checkout'
+import { beginAttempt } from '../attempt'
+import { borrarSesion, fijarPagina, guardarSesion, leerSesion, paginaDe, soltarLaPagina } from '../../lib/sesionDeCliente'
+import { setCustomerSession } from '../../state/booking'
+import { loadSession } from '../session'
 import { CartScreen } from './CartScreen'
 import { OrderApp } from './OrderApp'
 import { STORE_CSS } from './theme'
@@ -59,7 +63,7 @@ const trashOf = (name: string) => within(rowOf(name)).getByRole('button', { name
 describe('carrito cotizado por el servidor', () => {
   it('al entrar cotiza los renglones del carrito; el total que se muestra es el de la cotización, no la estimación', async () => {
     const s = await show([flautas], quoteOf(180))
-    expect(quote).toHaveBeenCalledWith(s.slug, [{ productId: 'p1', quantity: 2, modifiers: [] }])
+    expect(quote).toHaveBeenCalledWith(s.slug, [{ productId: 'p1', quantity: 2, modifiers: [] }], {}) // sin sesión: sin token ni beneficios
     expect(totalText()).toContain('$180')
     expect(totalText()).not.toContain('$170')
     expect(s.quote.value?.total).toBe(180)
@@ -680,5 +684,375 @@ describe('la cotización vieja nunca se pinta', () => {
       mount(null, host)
       host.remove()
     }
+  })
+})
+
+describe('W3: el carrito con sus beneficios', () => {
+  const PHONE = '+525512345678'
+  const unica = (token: string) => ({
+    token, customer: { id: 'c1', firstName: 'Ana', lastName: null, email: null, phone: PHONE },
+    contactos: [{ tipo: 'PHONE' as const, valor: PHONE, metodo: 'WHATSAPP' as const, probadoEn: 1 }], guardadaEn: Date.now(),
+  })
+  const oferta = (over: Partial<NonNullable<Quote['oferta']>> = {}): NonNullable<Quote['oferta']> =>
+    ({ premio: { id: 'pr1', etiqueta: 'Café gratis' }, puntos: null, cupon: false, ...over })
+  /** Con la sesión de la página (abierta al pintar la tienda). */
+  async function conSesion(responder: (opts: any) => Quote | Promise<Quote>, info: StoreInfo = infoOf()) {
+    const s = makeStore(info, menuOf())
+    guardarSesion(s.slug, unica('tok-A'))
+    fijarPagina(s.slug, 'pedidos', loadSession(s.slug)) // la página abierta ya tenía esta sesión
+    s.cart.value = [flautas]
+    vi.mocked(quote).mockImplementation(async (_slug, _items, opts) => responder(opts ?? {}))
+    s.go('cart')
+    render(withStore(s, <CartScreen />))
+    await flush()
+    return s
+  }
+  const optsOf = (i: number) => vi.mocked(quote).mock.calls[i][2] ?? {}
+
+  it('r11 la pantalla no miente: si la tienda perdió su sesión (otra pestaña salió), deja de enseñar sus premios y lo dice con calma', async () => {
+    const s = await conSesion(opts => quoteOf(170, opts.token ? { oferta: oferta() } : {}))
+    expect(screen.getByText('¡Tienes café gratis! ¿Lo usas?')).toBeTruthy()
+    await act(async () => { borrarSesion(s.slug) }) // salió en otra pestaña
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Sí' })) })
+    await flush()
+    expect(vi.mocked(quote).mock.lastCall![2]?.token).toBeFalsy()
+    expect(screen.queryByText('¡Tienes café gratis! ¿Lo usas?')).toBeNull()
+    expect(screen.queryByText('Café gratis en tu pedido')).toBeNull()
+    expect(screen.getByText('Tu sesión se cerró')).toBeTruthy()
+    expect(document.querySelector('.avq-o-notice--error')).toBeNull()
+  })
+
+  it('r12 «Reintentar» tras perder la sesión (otra pestaña la cerró) y sin red: reenvía la petición guardada y el carrito deja de enseñar los premios', async () => {
+    const fetchMock = vi.fn(() => Promise.reject(new Error('sin red')))
+    vi.stubGlobal('fetch', fetchMock)
+    try {
+      const s = await conSesion(opts => quoteOf(170, opts.token ? { oferta: oferta() } : {}), infoOf({ requiresAcceptance: false }))
+      expect(screen.getByText('¡Tienes café gratis! ¿Lo usas?')).toBeTruthy()
+      beginAttempt(s.slug, { items: [{ productId: 'p1', quantity: 2, modifiers: [] }], paymentMode: 'PAY_AT_PICKUP', expectedTotal: '170.00', customer: { name: 'Ana' } }, 'tok-A')
+      await act(async () => { borrarSesion(s.slug) }) // otra pestaña cerró su sesión
+      await act(async () => { await retry(s) }) // «Reintentar»: vuelve a fallar la red
+      await flush()
+      await flush()
+      expect((fetchMock.mock.calls[0] as any)[1].headers.Authorization).toBe('Bearer tok-A') // W3-r3: la misma petición
+      expect(screen.queryByText('¡Tienes café gratis! ¿Lo usas?')).toBeNull()
+      expect(screen.getByText('Tu sesión se cerró')).toBeTruthy()
+      expect(vi.mocked(quote).mock.lastCall![2]?.token).toBeFalsy()
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('r12 una cotización de la sesión vieja que llega tarde se descarta, aunque el carrito siga abierto', async () => {
+    let llega!: (q: Quote) => void
+    const s = await conSesion(opts => opts.token && !llega ? new Promise<Quote>(r => { llega = r }) : quoteOf(170))
+    // Otra petición de la tienda recibió 401: la sesión se suelta mientras la cotización de Ana sigue en vuelo.
+    await act(async () => { soltarLaPagina(s.slug, 'pedidos', 'tok-A', () => loadSession(s.slug)) })
+    await flush()
+    await act(async () => { llega(quoteOf(85, { oferta: oferta() })) })
+    await flush()
+    expect(screen.queryByText('¡Tienes café gratis! ¿Lo usas?')).toBeNull()
+    expect(continueBtn().textContent).toBe('Continuar sin beneficios $170') // pulido W7: la sesión se soltó
+  })
+
+  it('codex-r8 H2 (A refinada): Bea entra en reservas mientras vuela la cotización de Ana; la tienda sigue con Ana y nunca manda con Bea', async () => {
+    let llega!: (q: Quote) => void
+    const s = await conSesion(opts => opts.token === 'tok-A' && !llega ? new Promise<Quote>(r => { llega = r }) : quoteOf(170))
+    const bea = { token: 'tok-B', customer: { id: 'c2', firstName: 'Bea', lastName: null, email: null, phone: '+525599998888' },
+      contactos: [{ tipo: 'PHONE' as const, valor: '+525599998888', metodo: 'WHATSAPP' as const, probadoEn: 2 }] }
+    await act(async () => { setCustomerSession(s.slug, bea.token, bea.customer, null, bea.contactos) }) // entró Bea en reservas
+    await act(async () => { llega(quoteOf(170, { oferta: oferta() })) })
+    await flush()
+    // La tienda montada no cambió de sesión: lo que pinta es de SU sesión (Ana); se entera de Bea al recargar.
+    expect(paginaDe(s.slug, 'pedidos')?.token).toBe('tok-A')
+    expect(paginaDe(s.slug, 'reservas')?.token).toBe('tok-B')
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Sí' })) })
+    await flush()
+    expect(vi.mocked(quote).mock.calls.map(c => c[2]?.token)).not.toContain('tok-B')
+  })
+
+  it('con sesión y premio: «¡Tienes café gratis! ¿Lo usas?»; «Sí» cotiza con el premio y enseña el desglose y «Quitar»', async () => {
+    await conSesion(opts =>
+      opts.beneficios?.premioId
+        ? quoteOf(105, { subtotal: 170, oferta: oferta(), aplicados: [{ tipo: 'PREMIO', nombre: 'Café gratis', monto: 65 }] })
+        : quoteOf(170, { oferta: oferta() }))
+    expect(optsOf(0)).toMatchObject({ token: 'tok-A' })
+    expect(screen.getByText('¡Tienes café gratis! ¿Lo usas?')).toBeTruthy()
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Sí' })) })
+    await flush()
+    expect(optsOf(1)).toMatchObject({ token: 'tok-A', beneficios: { premioId: 'pr1' } })
+    expect(screen.getByText('Café gratis en tu pedido')).toBeTruthy()
+    expect(screen.getByText('Si no pasas a pagar a tiempo, regresa a tu cuenta.')).toBeTruthy()
+    expect(screen.getByText('Café gratis (tu premio)').parentElement!.textContent).toBe('Café gratis (tu premio)−$65')
+    expect(screen.getByText('Subtotal').parentElement!.textContent).toBe('Subtotal$170')
+    expect(continueBtn().textContent).toBe('Continuar $105')
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Quitar' })) })
+    await flush()
+    expect(optsOf(2).beneficios ?? {}).toEqual({})
+    expect(continueBtn().textContent).toBe('Continuar $170')
+  })
+
+  it('«Usar N puntos (−$X)» sólo si la oferta trae puntos; marcarla los manda', async () => {
+    await conSesion(opts => quoteOf(opts.beneficios?.puntos ? 136 : 170, {
+      oferta: oferta({ premio: null, puntos: { saldo: 340, minimo: 100, valorPorPunto: 0.1, maxPuntos: 340 } }),
+      ...(opts.beneficios?.puntos ? { subtotal: 170, aplicados: [{ tipo: 'PUNTOS' as const, nombre: 'Puntos', monto: 34 }] } : {}),
+    }))
+    expect(screen.getByText('Más beneficios')).toBeTruthy()
+    expect(screen.queryByText(/¿Lo usas\?/)).toBeNull()
+    await act(async () => { fireEvent.click(screen.getByRole('checkbox', { name: 'Usar 340 puntos (−$34)' })) })
+    await flush()
+    expect(optsOf(1)).toMatchObject({ beneficios: { puntos: 340 } })
+    expect(continueBtn().textContent).toBe('Continuar $136')
+  })
+
+  // W7-pulido W3: la casilla dice lo que de verdad se usa. La regla del SERVIDOR (`redeemPointsToOrderInTransaction`): el valor de los
+  // puntos se topa a lo que queda tras los demás beneficios (subtotal − descuentos) y sólo se queman los puntos de ese monto.
+  const ana500 = { saldo: 500, minimo: 100, valorPorPunto: 0.1, maxPuntos: 500 }
+  const tras = [{ tipo: 'DESCUENTO' as const, nombre: 'Regalo $15', monto: 15 }, { tipo: 'PREMIO' as const, nombre: 'Café gratis', monto: 129 }]
+
+  it('pulido W3: sin marcar, «Usar 150 puntos (−$15)» si sólo quedan $15 por pagar (no «500 puntos (−$50)»)', async () => {
+    await conSesion(() => quoteOf(15, { subtotal: 159, oferta: oferta({ premio: null, puntos: ana500 }), aplicados: tras }))
+    expect(screen.getByRole('checkbox', { name: 'Usar 150 puntos (−$15)' })).toBeTruthy()
+    expect(screen.queryByText(/500 puntos/)).toBeNull()
+  })
+
+  it('pulido W3: marcada, el monto es el de la cotización y los puntos los de ese monto', async () => {
+    await conSesion(opts => quoteOf(opts.beneficios?.puntos ? 0 : 15, {
+      subtotal: 159, oferta: oferta({ premio: null, puntos: ana500 }),
+      aplicados: opts.beneficios?.puntos ? [...tras, { tipo: 'PUNTOS' as const, nombre: 'Recompensas — 150 puntos', monto: 15 }] : tras,
+    }))
+    await act(async () => { fireEvent.click(screen.getByRole('checkbox', { name: 'Usar 150 puntos (−$15)' })) })
+    await flush()
+    expect(optsOf(1)).toMatchObject({ beneficios: { puntos: 500 } }) // se piden todos: el SERVIDOR quema sólo los que usa
+    expect((screen.getByRole('checkbox', { name: 'Usar 150 puntos (−$15)' }) as HTMLInputElement).checked).toBe(true)
+  })
+
+  it('pulido W3: con céntimos, los puntos se redondean hacia arriba como el SERVIDOR ($15.95 ⇒ 160 puntos)', async () => {
+    await conSesion(() => quoteOf(15.95, { subtotal: 30.95, oferta: oferta({ premio: null, puntos: ana500 }), aplicados: [tras[0]] }))
+    expect(screen.getByRole('checkbox', { name: 'Usar 160 puntos (−$15.95)' })).toBeTruthy()
+  })
+
+  it('codex-pulido-r1 #1: marcada, cuenta los puntos que ELIGIÓ (111), aunque la oferta nueva traiga más (210)', async () => {
+    const pts = (max: number) => ({ saldo: max, minimo: 100, valorPorPunto: 0.01, maxPuntos: max })
+    await conSesion(opts => opts.beneficios?.puntos
+      ? quoteOf(168.89, { subtotal: 170, oferta: oferta({ premio: null, puntos: pts(210) }), aplicados: [{ tipo: 'PUNTOS' as const, nombre: 'Recompensas — 111 puntos', monto: 1.11 }] })
+      : quoteOf(170, { subtotal: 170, oferta: oferta({ premio: null, puntos: pts(111) }) }))
+    await act(async () => { fireEvent.click(screen.getByRole('checkbox', { name: 'Usar 111 puntos (−$1.11)' })) })
+    await flush()
+    expect(optsOf(1)).toMatchObject({ beneficios: { puntos: 111 } })
+    // El SERVIDOR quema 111 (no se topó: pidió 111 y valen $1.11); nunca «112».
+    expect((screen.getByRole('checkbox', { name: 'Usar 111 puntos (−$1.11)' }) as HTMLInputElement).checked).toBe(true)
+  })
+
+  // W7 A1: el SERVIDOR manda `oferta.puntos.usables` (su regla del canje en su punto de la cadena): la casilla dice eso, no la copia.
+  it('W7 A1: con `oferta.puntos.usables`, la casilla dice lo que usa el SERVIDOR (140 puntos, −$14), no la copia (150, −$15)', async () => {
+    const conUsables = { ...ana500, usables: { puntos: 140, monto: 14 } }
+    await conSesion(() => quoteOf(15, { subtotal: 159, oferta: oferta({ premio: null, puntos: conUsables }), aplicados: tras }))
+    expect(screen.getByRole('checkbox', { name: 'Usar 140 puntos (−$14)' })).toBeTruthy()
+    expect(screen.queryByText(/150 puntos/)).toBeNull()
+  })
+
+  it('W7 A1: marcada pidiendo `maxPuntos`, los puntos son los de `usables` y el monto el de lo APLICADO en la cotización', async () => {
+    const conUsables = { ...ana500, usables: { puntos: 140, monto: 14 } }
+    await conSesion(opts => quoteOf(opts.beneficios?.puntos ? 1.5 : 15, {
+      subtotal: 159, oferta: oferta({ premio: null, puntos: conUsables }),
+      aplicados: opts.beneficios?.puntos ? [...tras, { tipo: 'PUNTOS' as const, nombre: 'Recompensas — 140 puntos', monto: 13.5 }] : tras,
+    }))
+    await act(async () => { fireEvent.click(screen.getByRole('checkbox', { name: 'Usar 140 puntos (−$14)' })) })
+    await flush()
+    expect(optsOf(1)).toMatchObject({ beneficios: { puntos: 500 } })
+    expect((screen.getByRole('checkbox', { name: 'Usar 140 puntos (−$13.50)' }) as HTMLInputElement).checked).toBe(true)
+  })
+
+  it('W7 A1: marcada con otra oferta (eligió 111, la nueva trae 210 con `usables`): cuenta lo que ELIGIÓ con la copia, no `usables`', async () => {
+    const pts = (max: number, usables?: { puntos: number; monto: number }) => ({ saldo: max, minimo: 100, valorPorPunto: 0.01, maxPuntos: max, ...(usables ? { usables } : {}) })
+    await conSesion(opts => opts.beneficios?.puntos
+      ? quoteOf(168.89, { subtotal: 170, oferta: oferta({ premio: null, puntos: pts(210, { puntos: 210, monto: 2.1 }) }), aplicados: [{ tipo: 'PUNTOS' as const, nombre: 'Recompensas — 111 puntos', monto: 1.11 }] })
+      : quoteOf(170, { subtotal: 170, oferta: oferta({ premio: null, puntos: pts(111, { puntos: 111, monto: 1.11 }) }) }))
+    await act(async () => { fireEvent.click(screen.getByRole('checkbox', { name: 'Usar 111 puntos (−$1.11)' })) })
+    await flush()
+    expect(optsOf(1)).toMatchObject({ beneficios: { puntos: 111 } })
+    expect((screen.getByRole('checkbox', { name: 'Usar 111 puntos (−$1.11)' }) as HTMLInputElement).checked).toBe(true)
+  })
+
+  it('W7 A1: `usables` en $0 (ya no cabe) ⇒ no se ofrecen puntos', async () => {
+    const sinLugar = { ...ana500, usables: { puntos: 0, monto: 0 } }
+    await conSesion(() => quoteOf(0, { subtotal: 159, oferta: oferta({ premio: null, puntos: sinLugar }), aplicados: tras }))
+    expect(screen.queryByRole('checkbox')).toBeNull()
+  })
+
+  it('pulido W3: si los demás beneficios ya cubren todo, no se ofrecen puntos', async () => {
+    await conSesion(() => quoteOf(0, { subtotal: 144, oferta: oferta({ premio: null, puntos: ana500 }), aplicados: tras }))
+    expect(screen.queryByRole('checkbox')).toBeNull()
+    expect(screen.queryByText('Más beneficios')).toBeNull()
+  })
+
+  it('pulido W7: con la sesión cerrada, el pie dice «Continuar sin beneficios» con el total (no un «Continuar» a secas)', async () => {
+    let n = 0
+    await conSesion(opts => {
+      if (n++ === 0) return quoteOf(170, { oferta: oferta() })
+      if (opts.token) throw new ApiError('Sesión vencida', 401, 'CUSTOMER_TOKEN_INVALID')
+      return quoteOf(170)
+    })
+    expect(continueBtn().textContent).toBe('Continuar $170')
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Sí' })) })
+    await flush()
+    await flush()
+    expect(screen.getByText('Tu sesión se cerró')).toBeTruthy()
+    expect(continueBtn().textContent).toBe('Continuar sin beneficios $170')
+  })
+
+  it('sin puntos suficientes (sin oferta de puntos) no hay casilla; sin oferta de cupón no hay «Tengo un cupón»', async () => {
+    await conSesion(() => quoteOf(170, { oferta: oferta({ premio: null }) }))
+    expect(screen.queryByRole('checkbox')).toBeNull()
+    expect(screen.queryByText('Tengo un cupón')).toBeNull()
+    expect(screen.queryByText('Más beneficios')).toBeNull()
+  })
+
+  it('«Tengo un cupón» abre el campo; aplicarlo lo manda; si vuelve descartado se dice y no se cobra', async () => {
+    await conSesion(opts => quoteOf(170, {
+      oferta: oferta({ premio: null, cupon: true }),
+      ...(opts.beneficios?.cupon ? { descartados: ['CUPON' as const] } : {}),
+    }))
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Tengo un cupón' })) })
+    fireEvent.input(screen.getByLabelText('Tu cupón'), { target: { value: ' BIENVENIDA ' } })
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Aplicar' })) })
+    await flush()
+    expect(optsOf(1)).toMatchObject({ beneficios: { cupon: 'BIENVENIDA' } })
+    expect(screen.getByText('Ese cupón no se puede usar en este pedido.')).toBeTruthy()
+  })
+
+  it('sin cuenta no dice nada de premios y cotiza sin sesión', async () => {
+    const s = await show([flautas], quoteOf(170))
+    expect(vi.mocked(quote).mock.calls[0][2]?.token).toBeFalsy()
+    expect(screen.queryByText(/¿Lo usas\?/)).toBeNull()
+    expect(screen.queryByText('Más beneficios')).toBeNull()
+    expect(s.cart.value).toHaveLength(1)
+  })
+
+  it('beneficios sin calcular (mucha carga): dice que se calculan al pedir', async () => {
+    await conSesion(() => quoteOf(170, { beneficios: { calculados: false } }))
+    expect(screen.getByText('Tus beneficios se calculan al pedir.')).toBeTruthy()
+  })
+
+  it('(b) 401 al cotizar: suelta la sesión, vuelve a cotizar sin ella y lo dice con calma, con «Entrar otra vez»', async () => {
+    let n = 0
+    const s = await conSesion(opts => {
+      if (n++ === 0) return quoteOf(170, { oferta: oferta() })
+      if (opts.token) throw new ApiError('Sesión vencida', 401, 'CUSTOMER_TOKEN_INVALID')
+      return quoteOf(170)
+    })
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Sí' })) })
+    await flush()
+    await flush() // r12: perder la sesión vuelve a cotizar (otra espera de 300 ms)
+    expect(vi.mocked(quote).mock.lastCall![2]?.token).toBeFalsy()
+    expect(leerSesion(s.slug)).toBeNull()
+    expect(screen.getByText('Tu sesión se cerró')).toBeTruthy()
+    expect(screen.getByText('Entra otra vez para usar tus beneficios, o confirma el precio sin ellos.')).toBeTruthy()
+    expect(document.querySelector('.avq-o-notice--error')).toBeNull()
+    expect(continueBtn().textContent).toBe('Continuar sin beneficios $170')
+    expect(s.cart.value).toHaveLength(1)
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Entrar otra vez' })) })
+    expect(s.screen.value).toBe('entrar')
+  })
+
+  it('paridad en inglés: el premio y el desglose', async () => {
+    const s = makeStore(infoOf(), menuOf(), 'en')
+    guardarSesion(s.slug, unica('tok-A'))
+    fijarPagina(s.slug, 'pedidos', loadSession(s.slug))
+    s.cart.value = [flautas]
+    vi.mocked(quote).mockResolvedValue(quoteOf(170, { oferta: oferta() }))
+    render(withStore(s, <CartScreen />))
+    await flush()
+    expect(screen.getByText('You have café gratis! Use it?')).toBeTruthy()
+  })
+})
+
+describe('D8: «Va en tu Latte» (lineIndex del premio)', () => {
+  const PHONE = '+525512345678'
+  const latte: CartLine = { lineId: 'l', productId: 'p-latte', name: 'Latte', unitPrice: 65, quantity: 1, note: null, modifiers: [] }
+  const shake: CartLine = { lineId: 's', productId: 'p-shake', name: 'Shake de proteína', unitPrice: 69, quantity: 1, note: null, modifiers: [] }
+  /** En el orden del carrito (la cotización respeta el orden de `items`). */
+  let shakePrimero = false
+  const lineas = (latteTotal = 65) => (shakePrimero ? [qline('p-shake', 69), qline('p-latte', latteTotal)] : [qline('p-latte', latteTotal), qline('p-shake', 69)])
+  const premio = (lineIndex?: number) => ({ id: 'pr1', etiqueta: 'Café gratis', ...(lineIndex === undefined ? {} : { lineIndex }) })
+  const ofertaCon = (lineIndex?: number): NonNullable<Quote['oferta']> => ({ premio: premio(lineIndex), puntos: null, cupon: false })
+  async function conSesion(cart: CartLine[], responder: (opts: any) => Quote, locale: 'es' | 'en' = 'es') {
+    shakePrimero = cart[0]?.productId === 'p-shake'
+    const s = makeStore(infoOf(), menuOf(), locale)
+    guardarSesion(s.slug, {
+      token: 'tok-A', customer: { id: 'c1', firstName: 'Ana', lastName: null, email: null, phone: PHONE },
+      contactos: [{ tipo: 'PHONE' as const, valor: PHONE, metodo: 'WHATSAPP' as const, probadoEn: 1 }], guardadaEn: Date.now(),
+    })
+    fijarPagina(s.slug, 'pedidos', loadSession(s.slug))
+    s.cart.value = cart
+    vi.mocked(quote).mockImplementation(async (_slug, _items, opts) => responder(opts ?? {}))
+    s.go('cart')
+    render(withStore(s, <CartScreen />))
+    await flush()
+    return s
+  }
+  /** Sin elegir: la oferta dice dónde caería; elegido: el premio aplicado en su renglón. */
+  const cotizador = (lineIndex: number | undefined, latteTotal = 65, monto = 65) => (opts: any) =>
+    opts.beneficios?.premioId
+      ? quoteOf(134 + (latteTotal - 65) - monto, {
+          lines: lineas(latteTotal), subtotal: 134 + (latteTotal - 65), oferta: ofertaCon(lineIndex),
+          aplicados: [{ tipo: 'PREMIO', nombre: 'Café gratis', monto, ...(lineIndex === undefined ? {} : { lineIndex }) }],
+        })
+      : quoteOf(134 + (latteTotal - 65), { lines: lineas(latteTotal), subtotal: 134 + (latteTotal - 65), oferta: ofertaCon(lineIndex) })
+  const elegir = async () => {
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Sí' })) })
+    await flush()
+  }
+
+  it('la pregunta dice en qué producto va: «¡Tienes café gratis! ¿Lo usas?» / «Va en tu Latte.» (1h)', async () => {
+    await conSesion([latte, shake], cotizador(0))
+    const n = screen.getByText('Va en tu Latte.').closest('.avq-o-notice')!
+    expect(n.querySelector('.avq-o-notice__title')!.textContent).toBe('¡Tienes café gratis! ¿Lo usas?')
+  })
+
+  it('elegido: «Café gratis en tu Latte» y el Latte con su precio tachado y «Gratis»; el Shake como siempre (1h·2)', async () => {
+    await conSesion([shake, latte], cotizador(1))
+    await elegir()
+    expect(screen.getByText('Café gratis en tu Latte')).toBeTruthy()
+    expect(screen.getByText('Si no pasas a pagar a tiempo, regresa a tu cuenta.')).toBeTruthy()
+    const precioLatte = within(rowOf('Latte')).getByText('Gratis').closest('.avq-o-line__price')!
+    expect(precioLatte.querySelector('s')!.textContent).toBe('$65')
+    expect(within(rowOf('Shake de proteína')).queryByText('Gratis')).toBeNull()
+    expect(within(rowOf('Shake de proteína')).getByText('$69')).toBeTruthy()
+    expect(continueBtn().textContent).toBe('Continuar $69')
+  })
+
+  it('si el premio no cubre todo el renglón (dos Lattes), dice «en tu Latte» pero el renglón no dice «Gratis»', async () => {
+    await conSesion([{ ...latte, quantity: 2 }, shake], cotizador(0, 130, 65))
+    await elegir()
+    expect(screen.getByText('Café gratis en tu Latte')).toBeTruthy()
+    expect(within(rowOf('Latte')).queryByText('Gratis')).toBeNull()
+    expect(within(rowOf('Latte')).getByText('$130')).toBeTruthy()
+  })
+
+  it('sin lineIndex, como hoy: sin «Va en tu…», «Café gratis en tu pedido» y sin «Gratis»', async () => {
+    await conSesion([latte, shake], cotizador(undefined))
+    expect(screen.getByText('¡Tienes café gratis! ¿Lo usas?')).toBeTruthy()
+    expect(screen.queryByText(/Va en tu/)).toBeNull()
+    await elegir()
+    expect(screen.getByText('Café gratis en tu pedido')).toBeTruthy()
+    expect(screen.queryByText('Gratis')).toBeNull()
+  })
+
+  it('un lineIndex que no es un renglón del carrito no inventa producto', async () => {
+    await conSesion([latte, shake], cotizador(7))
+    expect(screen.queryByText(/Va en tu/)).toBeNull()
+    await elegir()
+    expect(screen.getByText('Café gratis en tu pedido')).toBeTruthy()
+    expect(screen.queryByText('Gratis')).toBeNull()
+  })
+
+  it('en inglés', async () => {
+    await conSesion([latte, shake], cotizador(0), 'en')
+    expect(screen.getByText('It goes on your Latte.')).toBeTruthy()
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Yes' })) })
+    await flush()
+    expect(screen.getByText('Café gratis on your Latte')).toBeTruthy()
+    expect(within(rowOf('Latte')).getByText('Free')).toBeTruthy()
   })
 })

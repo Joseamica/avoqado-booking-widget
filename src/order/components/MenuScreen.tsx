@@ -3,8 +3,9 @@ import { useContext, useEffect, useLayoutEffect, useRef, useState } from 'preact
 import { OrderStoreContext } from '../store'
 import { createOrderT } from '../i18n'
 import { formatMXN } from '../money'
-import type { Menu } from '../types'
-import { Notice, StoreStatusBanner } from './StoreStatusBanner'
+import { formatTime } from '../hours'
+import type { Menu, StoreInfo } from '../types'
+import { ClosingSoonNotice, Notice, StoreStatusBanner } from './StoreStatusBanner'
 import { ProductSheet } from './ProductSheet'
 import { CartBar } from './CartBar'
 import { TABS_H } from './theme'
@@ -207,6 +208,11 @@ export function MenuScreen() {
     <div ref={menuEl} class={product ? 'avq-o-menu avq-o-menu--sheet' : 'avq-o-menu'}>
       {err && problem(err.network ? t('store.reconnecting') : err.message || t('store.reconnecting'))}
       <StoreStatusBanner />
+      {/* «Nadie»: antes de pedir la clienta ya sabe las dos reglas: se paga en caja y tiene 30 min (FOLIO_TIMEOUT_MINUTES del servidor). */}
+      {info.status === 'OPEN' && info.requiresAcceptance === false && (
+        <Notice tone="neutral" title={t('store.counterNoticeTitle')} text={t('store.counterNoticeText')} />
+      )}
+      <ClosingSoonNotice />
       {menu.truncated && <Notice tone="neutral" text={t('menu.truncated')} />}
       {menu.categories.length === 0 ? <p role="status" class="avq-o-empty">{t('menu.empty')}</p> : product ? (
         <ProductSheet key={product.id} product={product} onLeave={had => { sheetHadFocus.current = had }} />

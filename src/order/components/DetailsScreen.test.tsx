@@ -7,9 +7,11 @@ vi.mock('../api', async () => {
   return { ...actual, createOrder: vi.fn(), requestOrderingOtp: vi.fn(), verifyOrderingOtp: vi.fn(), getInfo: vi.fn(), getMenu: vi.fn() }
 })
 import { API_BASE, createOrder } from '../api'
-import { saveSession } from '../session'
-import { beginAttempt, pendingAttempt } from '../attempt'
-import { checkoutOf } from '../checkout'
+import { loadSession, saveSession } from '../session'
+import { fijarPagina, guardarSesion } from '../../lib/sesionDeCliente'
+import { autorizarIntento, beginAttempt, pendingAttempt, reautorizarIntento } from '../attempt'
+import { checkoutOf, entroEnLaTienda } from '../checkout'
+import { createOrderStore } from '../store'
 import { DetailsScreen } from './DetailsScreen'
 import { OrderApp } from './OrderApp'
 import { infoOf, makeStore, menuOf, withStore } from './testKit'
@@ -66,6 +68,7 @@ describe('tus datos y aviso de privacidad', () => {
   it('sin la casilla no se continúa', async () => {
     const s = show()
     saveSession(s.slug, { token: 't', phone: '+525544422262', name: null, savedAt: Date.now() })
+    fijarPagina(s.slug, 'pedidos', loadSession(s.slug)) // alcance A: la página abierta ya tenía esta sesión
     fill()
     expect(confirmBtn().disabled).toBe(true)
     fireEvent.click(confirmBtn())
@@ -87,6 +90,7 @@ describe('tus datos y aviso de privacidad', () => {
   it('doble clic en «Confirmar pedido» ⇒ una sola llamada, con «Enviando…»; el teléfono va armado con phoneE164 (lada 52)', async () => {
     const s = show()
     saveSession(s.slug, { token: 'tok', phone: '+525544422262', name: 'Ana', savedAt: Date.now() })
+    fijarPagina(s.slug, 'pedidos', loadSession(s.slug)) // alcance A: la página abierta ya tenía esta sesión
     vi.mocked(createOrder).mockReturnValue(new Promise(() => {}))
     fill('Ana López', '525544422262')
     accept()
@@ -140,6 +144,7 @@ const line = (over: Partial<CartLine> = {}): CartLine =>
 function ready(cart: CartLine[] = [line()], total = 170, locale: 'es' | 'en' = 'es') {
   const s = makeStore(infoOf(), menuOf(), locale)
   saveSession(s.slug, { token: 'tok', phone: '+525544422262', name: 'Ana', savedAt: Date.now() })
+  fijarPagina(s.slug, 'pedidos', loadSession(s.slug)) // alcance A: la página abierta ya tenía esta sesión
   checkoutOf(s).draft.value = { note: '', name: 'Ana López', dial: '52', national: '5544422262', email: '', accepted: true }
   s.cart.value = cart
   s.quote.value = { ok: true, lines: [], subtotal: total, total, minOrderAmount: 0, issues: [] }
@@ -277,6 +282,7 @@ describe('«Confirmar pedido» en un pie fijo', () => {
   it('lo que falta y el aviso del envío van en el pie, arriba del botón; «Confirmar» del precio cambiado manda el total nuevo', async () => {
     const s = show()
     saveSession(s.slug, { token: 'tok', phone: '+525544422262', name: 'Ana', savedAt: Date.now() })
+    fijarPagina(s.slug, 'pedidos', loadSession(s.slug)) // alcance A: la página abierta ya tenía esta sesión
     const foot = () => confirmBtn().closest('.avq-o-cartfoot') as HTMLElement
     const above = (el: Element) => !!(el.compareDocumentPosition(confirmBtn()) & Node.DOCUMENT_POSITION_FOLLOWING)
     const missing = (text: string) => expect(above(within(foot()).getByText(text))).toBe(true)
@@ -418,5 +424,246 @@ describe('fase 2: cómo pagar', () => {
     expect(screen.getByRole('radio', { name: 'Pay now by card' })).toBeTruthy()
     expect(screen.getByRole('radio', { name: 'Pay at pickup' })).toBeTruthy()
     expect(screen.getByText('You pay now by card.')).toBeTruthy()
+  })
+})
+
+describe('«Nadie»: Tus datos (tienda híbrida, etapa 1)', () => {
+  const nadie = (over: Parameters<typeof infoOf>[0] = {}) => show({ requiresAcceptance: false, ...over })
+  const pedir = () => screen.getByRole('button', { name: /^Pedir/ }) as HTMLButtonElement
+
+  it('sólo pide nombre y nota, con «Al pedir aceptas el aviso de privacidad de <negocio>» y sin casilla, WhatsApp ni correo', () => {
+    nadie({ paymentModes: { payAtPickup: true, cardOnline: true } })
+    expect(screen.getByText('Con tu nombre te encuentran en caja y te entregan tu pedido.')).toBeTruthy()
+    expect(screen.getByLabelText('Nombre')).toBeTruthy()
+    expect(screen.getByLabelText('Nota para el negocio (opcional)')).toBeTruthy()
+    expect(screen.getByText('Al pedir aceptas el aviso de privacidad de Flautas.')).toBeTruthy()
+    expect(screen.getByRole('link', { name: 'Aviso de privacidad' })).toBeTruthy()
+    expect(screen.queryByLabelText('WhatsApp')).toBeNull()
+    expect(screen.queryByLabelText('Correo (opcional)')).toBeNull()
+    expect(screen.queryByRole('checkbox')).toBeNull()
+    // Sin medio de pago que elegir, aunque el negocio acepte tarjeta en línea.
+    expect(screen.queryByRole('radiogroup')).toBeNull()
+    expect(screen.getByText('Pagas en caja: tarjeta o efectivo.')).toBeTruthy()
+    expect(pedir().textContent).toContain('$170')
+  })
+
+  it('sin nombre dice «Escribe tu nombre (de 2 a 80 caracteres).» y no deja pedir', () => {
+    nadie()
+    expect(screen.getByText('Escribe tu nombre (de 2 a 80 caracteres).')).toBeTruthy()
+    expect(pedir().disabled).toBe(true)
+  })
+
+  it('manda el pedido sin teléfono ni token y sin pasar por el código', async () => {
+    const s = nadie()
+    vi.mocked(createOrder).mockReturnValue(new Promise(() => {}))
+    fireEvent.input(screen.getByLabelText('Nombre'), { target: { value: ' Ana ' } })
+    fireEvent.input(screen.getByLabelText('Nota para el negocio (opcional)'), { target: { value: 'sin azúcar' } })
+    await pastGuard()
+    fireEvent.click(pedir())
+    await flush()
+    expect(s.screen.value).toBe('details')
+    expect(createOrder).toHaveBeenCalledTimes(1)
+    const [, body, opts] = vi.mocked(createOrder).mock.calls[0]
+    expect(body.paymentMode).toBe('PAY_AT_PICKUP')
+    expect(body.customer).toEqual({ name: 'Ana' })
+    expect(body.note).toBe('sin azúcar')
+    expect(opts.token).toBeUndefined()
+  })
+
+  it('«Mi equipo» (requiresAcceptance true o un servidor viejo) sigue pidiendo WhatsApp y la casilla', () => {
+    show({ requiresAcceptance: true })
+    expect(screen.getByLabelText('WhatsApp')).toBeTruthy()
+    expect(screen.getByLabelText('Acepto el aviso de privacidad')).toBeTruthy()
+    expect(screen.getByRole('button', { name: /Confirmar pedido/ })).toBeTruthy()
+  })
+
+  it('en inglés', () => {
+    const s = makeStore(infoOf({ requiresAcceptance: false }), menuOf(), 'en')
+    s.quote.value = { ok: true, lines: [], subtotal: 170, total: 170, minOrderAmount: 0, issues: [] }
+    render(withStore(s, <DetailsScreen />))
+    expect(screen.getByLabelText('Note for the business (optional)')).toBeTruthy()
+    expect(screen.getByText('You pay at the counter: card or cash.')).toBeTruthy()
+    expect(screen.getByRole('button', { name: /^Order/ })).toBeTruthy()
+  })
+})
+
+describe('R82 #6: aviso de cierre cercano también en «Tus datos»', () => {
+  const inMin = (m: number) => new Date(Date.now() + m * 60_000).toISOString()
+  it('«Nadie» y cierra en menos de 30 min: «Cerramos a las HH:MM» y su frase', () => {
+    show({ requiresAcceptance: false, closesAt: inMin(20) })
+    expect(screen.getByText(/^Cerramos a las \d{1,2}:\d{2}$/)).toBeTruthy()
+    expect(screen.getByText('Si no pasas a pagar antes, tu pedido se cancela.')).toBeTruthy()
+  })
+  it('a 30 min o más, o en «Mi equipo», no sale', () => {
+    show({ requiresAcceptance: false, closesAt: inMin(31) })
+    expect(screen.queryByText(/^Cerramos a las/)).toBeNull()
+    cleanup()
+    show({ requiresAcceptance: true, closesAt: inMin(20) })
+    expect(screen.queryByText(/^Cerramos a las/)).toBeNull()
+  })
+})
+
+describe('W3: el precio cambió por un beneficio (1h·3) o porque se cerró la sesión (1h·4)', () => {
+  const cuerpo = { items: [], paymentMode: 'PAY_AT_PICKUP' as const, expectedTotal: '170.00', customer: { name: 'Ana' } }
+
+  it('1h·3: «Tu café gratis ya se usó en otro pedido», el total nuevo, «Confirmar $170» y «Volver a mi pedido»', async () => {
+    const s = show({ requiresAcceptance: false })
+    await act(async () => { checkoutOf(s).feedback.value = { kind: 'priceChanged', total: 170, body: cuerpo, motivo: 'PREMIO', premio: 'Café gratis' } })
+    expect(screen.getByText('Tu café gratis ya se usó en otro pedido')).toBeTruthy()
+    expect(screen.getByText('El nuevo total es $170. ¿Confirmas?')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Confirmar $170' })).toBeTruthy()
+    // pulido W4 (mockup 1h·3): sólo «Confirmar» y «Volver a mi pedido»; el «Pedir» del pie no compite con el mismo monto.
+    expect(screen.queryByRole('button', { name: 'Pedir $170' })).toBeNull()
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Volver a mi pedido' })) })
+    expect(s.screen.value).toBe('cart')
+  })
+
+  it('1h·4: «Tu sesión se cerró», «Entrar otra vez» primero y «Pedir sin beneficios · $170»', async () => {
+    vi.mocked(createOrder).mockResolvedValue(new Promise(() => {}) as any)
+    const s = show({ requiresAcceptance: false })
+    await act(async () => { checkoutOf(s).feedback.value = { kind: 'priceChanged', total: 170, body: cuerpo, motivo: 'SIN_SESION' } })
+    expect(screen.getByText('Tu sesión se cerró')).toBeTruthy()
+    expect(screen.getByText('Entra otra vez para usar tus beneficios, o confirma el precio sin ellos.')).toBeTruthy()
+    const [entrar, sin] = [screen.getByRole('button', { name: 'Entrar otra vez' }), screen.getByRole('button', { name: 'Pedir sin beneficios · $170' })]
+    expect(entrar.compareDocumentPosition(sin) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Pedir $170' })).toBeNull() // pulido W4: tampoco aquí (1h·4)
+    await act(async () => { fireEvent.click(sin) })
+    expect(vi.mocked(createOrder).mock.calls[0][1]).toEqual(cuerpo)
+  })
+
+  it('1h·4 «Entrar otra vez» abre la pantalla de entrar de la tienda', async () => {
+    const s = show({ requiresAcceptance: false })
+    await act(async () => { checkoutOf(s).feedback.value = { kind: 'priceChanged', total: 170, body: cuerpo, motivo: 'SIN_SESION' } })
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Entrar otra vez' })) })
+    expect(s.screen.value).toBe('entrar')
+  })
+})
+
+describe('pulido W5: el aviso del pedido pendiente dice la causa real', () => {
+  const cuerpo = { items: [], paymentMode: 'PAY_AT_PICKUP' as const, expectedTotal: '170.00', customer: { name: 'Ana' } }
+
+  it('su sesión recibió 401 y espera entrar: «Tu sesión se cerró · Entra otra vez para terminar tu pedido», nunca «por la conexión»', async () => {
+    const s = show({ requiresAcceptance: false }, slug => {
+      beginAttempt(slug, cuerpo, 'tok-A')
+      autorizarIntento(slug, { requiereEntrar: true }) // lo que hace checkout.ts con el 401
+    })
+    await flush()
+    expect(screen.getByText('Tu sesión se cerró')).toBeTruthy()
+    expect(screen.getByText('Entra otra vez para terminar tu pedido.')).toBeTruthy()
+    expect(screen.queryByText(/por la conexión/)).toBeNull()
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Entrar otra vez' })) })
+    expect(s.screen.value).toBe('entrar')
+  })
+
+  it('ya entró otra vez: dice que fue la sesión y deja «Reintentar» (el mismo intento)', async () => {
+    show({ requiresAcceptance: false }, slug => {
+      beginAttempt(slug, cuerpo, 'tok-A')
+      autorizarIntento(slug, { requiereEntrar: true })
+      reautorizarIntento(slug, 'tok-B') // lo que hace entrar otra vez
+    })
+    await flush()
+    expect(screen.getByText('Se cerró tu sesión antes de confirmar tu pedido anterior. Ya entraste: reintenta para terminarlo.')).toBeTruthy()
+    expect(screen.queryByText(/por la conexión/)).toBeNull()
+    expect(screen.getByRole('button', { name: 'Reintentar' })).toBeTruthy()
+  })
+
+  it('sin red (sin 401): el aviso de siempre, «por la conexión»', async () => {
+    show({ requiresAcceptance: false }, slug => { beginAttempt(slug, cuerpo, null) })
+    await flush()
+    expect(screen.getByText('Tu pedido anterior no se confirmó por la conexión. Reintenta para saber si llegó.')).toBeTruthy()
+  })
+})
+
+describe('W2 (c), regla de parada: el nombre sólo es el que ella teclea', () => {
+  // El nombre de la ficha vuelve cuando el SERVIDOR lo mande en la sesión (conductor, 11-nov).
+  const ana = (slug: string) => {
+    guardarSesion(slug, {
+      token: 'tok-A', customer: { id: 'c1', firstName: 'Ana', lastName: 'López', email: null, phone: '+525512345678' },
+      contactos: [{ tipo: 'PHONE', valor: '+525512345678', metodo: 'WHATSAPP', probadoEn: 1 }], guardadaEn: Date.now(),
+    })
+    fijarPagina(slug, 'pedidos', loadSession(slug)) // la página abierta ya tenía esta sesión
+  }
+  const nombre = () => screen.getByLabelText('Nombre') as HTMLInputElement
+  const pedirBtn = () => screen.getByRole('button', { name: /^Pedir/ }) as HTMLButtonElement
+  const conAna = (slug?: string) => {
+    const s = slug ? createOrderStore(slug, { locale: 'es' }) : makeStore(infoOf({ requiresAcceptance: false }), menuOf())
+    s.info.value = infoOf({ requiresAcceptance: false })
+    s.menu.value = menuOf()
+    ana(s.slug)
+    s.cart.value = [{ lineId: 'a', productId: 'p1', name: 'Flautas', unitPrice: 85, quantity: 1, note: null, modifiers: [] }]
+    s.quote.value = { ok: true, lines: [], subtotal: 85, total: 85, minOrderAmount: 0, issues: [] }
+    s.go('details')
+    vi.mocked(createOrder).mockReset()
+    vi.mocked(createOrder).mockReturnValue(new Promise(() => {}))
+    render(withStore(s, <DetailsScreen />))
+    return s
+  }
+
+  it('con sesión el campo nace vacío: no se ve ni se manda un nombre que ella no tecleó', async () => {
+    conAna()
+    await flush()
+    expect(nombre().value).toBe('')
+    expect(screen.getByText('Escribe tu nombre (de 2 a 80 caracteres).')).toBeTruthy()
+    await pastGuard()
+    fireEvent.click(pedirBtn())
+    await flush()
+    expect(createOrder).not.toHaveBeenCalled()
+  })
+
+  it('«Pedir» manda el nombre tecleado, aunque en otra tienda del negocio entre otra persona', async () => {
+    const slug = `dos${Date.now()}`
+    conAna(slug)
+    await flush()
+    const otra = createOrderStore(slug, { locale: 'es' })
+    const r = { token: 'tok-B', customer: { id: 'c2', firstName: 'Beatriz', lastName: null, email: null, phone: '+525599998888' },
+      contactos: [{ tipo: 'PHONE' as const, valor: '+525599998888', metodo: 'WHATSAPP' as const, probadoEn: 2 }] }
+    guardarSesion(slug, { ...r, guardadaEn: Date.now() })
+    await act(async () => { entroEnLaTienda(otra, r as any, null) })
+    await flush()
+    expect(nombre().value).toBe('') // nada de «Ana López» ni de «Beatriz» sin teclear
+    fireEvent.input(nombre(), { target: { value: ' Beatriz ' } })
+    await pastGuard()
+    fireEvent.click(pedirBtn())
+    await flush()
+    expect(createOrder).toHaveBeenCalledTimes(1)
+    expect(vi.mocked(createOrder).mock.calls[0][1].customer.name).toBe('Beatriz')
+  })
+
+  it('un nombre largo cortado en 80 con un espacio al final (codex-pulido-r3 #2) se manda limpio, sin bloquear «Pedir»', async () => {
+    conAna()
+    await flush()
+    const largo = 'María José de los Ángeles del Sagrado Corazón Fernández de Córdoba Rodríguez de la Torre'.slice(0, 80)
+    expect(largo.endsWith(' ')).toBe(true) // lo que deja el campo (maxLength 80)
+    fireEvent.input(nombre(), { target: { value: largo } })
+    expect(pedirBtn().disabled).toBe(false)
+    await pastGuard()
+    fireEvent.click(pedirBtn())
+    await flush()
+    expect(createOrder).toHaveBeenCalledTimes(1)
+    expect(vi.mocked(createOrder).mock.calls[0][1].customer.name).toBe(largo.trim())
+  })
+})
+
+describe('codex-w3-r1 #1: el pedido anterior salió con otra sesión', () => {
+  it('dice con calma que entre otra vez para terminarlo, sin ofrecer pedir de nuevo', async () => {
+    const s = show({ requiresAcceptance: false })
+    await act(async () => { checkoutOf(s).feedback.value = { kind: 'sesionParaTerminar' } })
+    expect(screen.getByText('Tu sesión se cerró')).toBeTruthy()
+    expect(screen.getByText('Entra otra vez para terminar tu pedido.')).toBeTruthy()
+    expect(document.querySelector('.avq-o-notice--error')).toBeNull()
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Entrar otra vez' })) })
+    expect(s.screen.value).toBe('entrar')
+  })
+})
+
+describe('W3 (e): entrar otra vez dentro de la tienda', () => {
+  it('la pantalla «entrar» enseña «Entra a tu cuenta» (EntrarConCuenta) y una flecha de regreso al pedido', async () => {
+    const s = makeStore(infoOf(), menuOf())
+    s.go('entrar')
+    render(withStore(s, <OrderApp />))
+    await flush()
+    expect(screen.getByText('Entra a tu cuenta')).toBeTruthy()
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Volver a tu pedido' })) })
+    expect(s.screen.value).toBe('cart')
   })
 })

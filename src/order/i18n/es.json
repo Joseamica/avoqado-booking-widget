@@ -53,7 +53,16 @@
     "pausedTitle": "Pedidos en pausa",
     "closedTitle": "Cerrado ahora",
     "offlineTitle": "El negocio no está conectado",
-    "disabledTitle": "Pedidos en línea apagados"
+    "disabledTitle": "Pedidos en línea apagados",
+    "payAtCounterChip": "Pagas en caja",
+    "closingSoonTitle": "Cerramos a las {{time}}",
+    "closingSoonText": "Si no pasas a pagar antes, tu pedido se cancela.",
+    "counterNoticeTitle": "Paga en caja para que lo preparen",
+    "counterNoticeText": "Después de pedir tienes 30 min para pasar a pagar.",
+    "noDeviceChip": "No está recibiendo pedidos ahora",
+    "noDeviceTitle": "Pide directo en caja",
+    "noDeviceText": "Puedes ver el menú, pero ahorita no se puede pedir por aquí.",
+    "lastOrder": "Ya no recibimos pedidos para pagar en caja hoy · cerramos a las {{time}}"
   },
   "menu": {
     "empty": "Todavía no hay productos en línea.",
@@ -92,6 +101,7 @@
     "payAtPickup": "Pagas al recoger en el negocio.",
     "note": "Nota para el negocio",
     "continue": "Continuar",
+    "continueWithout": "Continuar sin beneficios",
     "pickupAt": "Recoges en {{venue}}",
     "addMore": "Agregar algo más",
     "removeAria": "Quitar {{name}}",
@@ -111,6 +121,31 @@
       "MODIFIER_GROUP_MAX": "En «{{group}}» puedes elegir hasta {{n}}.",
       "BELOW_MINIMUM": "El pedido mínimo es de {{amount}}.",
       "checkOptions": "Revisa las opciones de este producto."
+    },
+    "benefits": {
+      "premioAsk": "¡Tienes {{premio}}! ¿Lo usas?",
+      "premioYes": "Sí",
+      "premioOn": "{{premio}} en tu pedido",
+      "premioOnText": "Si no pasas a pagar a tiempo, regresa a tu cuenta.",
+      "remove": "Quitar",
+      "more": "Más beneficios",
+      "points": "Usar {{n}} puntos (−{{amount}})",
+      "coupon": "Tengo un cupón",
+      "couponLabel": "Tu cupón",
+      "couponApply": "Aplicar",
+      "couponApplied": "Cupón {{code}}",
+      "couponBad": "Ese cupón no se puede usar en este pedido.",
+      "pointsBad": "Tus puntos no se pueden usar en este pedido.",
+      "premioBad": "Tu premio ya no está disponible.",
+      "premioRow": "{{premio}} (tu premio)",
+      "subtotal": "Subtotal",
+      "later": "Tus beneficios se calculan al pedir.",
+      "sessionTitle": "Tu sesión se cerró",
+      "sessionText": "Entra otra vez para usar tus beneficios, o confirma el precio sin ellos.",
+      "signInAgain": "Entrar otra vez",
+      "vaEn": "Va en tu {{producto}}.",
+      "premioOnIn": "{{premio}} en tu {{producto}}",
+      "free": "Gratis"
     }
   },
   "details": {
@@ -142,20 +177,31 @@
     "payHow": "¿Cómo quieres pagar?",
     "payCard": "Pagar ahora con tarjeta",
     "payPickup": "Pagar al recoger",
-    "payCardNote": "Pagas ahora con tarjeta."
+    "payCardNote": "Pagas ahora con tarjeta.",
+    "helperNadie": "Con tu nombre te encuentran en caja y te entregan tu pedido.",
+    "note": "Nota para el negocio (opcional)",
+    "notePlaceholder": "Ej. sin azúcar",
+    "privacyNadie": "Al pedir aceptas el aviso de privacidad de {{venue}}.",
+    "confirmNadie": "Pedir",
+    "payAtCounter": "Pagas en caja: tarjeta o efectivo.",
+    "premiosTitulo": "¿Tienes premios en {{venue}}?",
+    "premiosTexto": "Entra para usarlos en este pedido.",
+    "premiosEntrar": "Entrar"
   },
   "otp": {
     "title": "Escribe tu código",
-    "sent": "Te lo mandamos por WhatsApp al {{phone}}.",
+    "sent": "Pedimos tu código por WhatsApp al {{phone}}. Si no te llega en un minuto, revisa el número o pide otro.",
     "resend": "Reenviar código",
     "resendIn": "Reenviar código en {{s}} s",
     "change": "Cambiar número",
     "verifying": "Verificando…",
     "notUsable": "No pudimos usar tu verificación en este navegador. Revisa tu número o ábrelo fuera del modo privado.",
-    "help": "Si no te llega, revisa que el número sea el de tu WhatsApp."
+    "help": "Si no te llega, revisa que el número sea el de tu WhatsApp.",
+    "notSent": "No pudimos mandar el código por WhatsApp. Intenta en un momento."
   },
   "checkout": {
     "pending": "Tu pedido anterior no se confirmó por la conexión. Reintenta para saber si llegó.",
+    "pendingSesion": "Se cerró tu sesión antes de confirmar tu pedido anterior. Ya entraste: reintenta para terminarlo.",
     "priceChanged": "El precio cambió: el nuevo total es {{total}}. ¿Confirmas?",
     "confirmNewTotal": "Confirmar",
     "priceChangedReview": "El precio cambió; revisa tu pedido.",
@@ -168,7 +214,18 @@
     "cardNotAccepted": "Este negocio ya no acepta tarjeta en línea. Elige pagar al recoger.",
     "cardNotAcceptedOnly": "Este negocio ya no acepta tarjeta en línea.",
     "cardAmountOutOfRange": "El total no se puede pagar con tarjeta en línea (mínimo $10, máximo $50,000).",
-    "cardProviderUnavailable": "No pudimos abrir el pago. Intenta de nuevo."
+    "cardProviderUnavailable": "No pudimos abrir el pago. Intenta de nuevo.",
+    "tooManyUnpaid": "Hay muchos pedidos esperando pago. Pide directo en caja.",
+    "zeroTotal": "Tu pedido no tiene costo: pídelo directo en caja.",
+    "needsPhone": "Este negocio cambió cómo recibe pedidos. Escribe tu WhatsApp para pedir.",
+    "premioUsed": "Tu {{premio}} ya se usó en otro pedido",
+    "premioUsedGeneric": "Tu premio ya se usó en otro pedido",
+    "pointsGone": "Tus puntos ya no alcanzan",
+    "couponGone": "Tu cupón ya no está disponible",
+    "newTotal": "El nuevo total es {{total}}. ¿Confirmas?",
+    "backToOrder": "Volver a mi pedido",
+    "orderWithout": "Pedir sin beneficios · {{total}}",
+    "finishSignedIn": "Entra otra vez para terminar tu pedido."
   },
   "tracking": {
     "head": {
@@ -239,6 +296,78 @@
       "notCharged": "No se te cobró nada. Si viste un cargo, tu banco lo liberará en unos días.",
       "releasing": "Estamos liberando tu tarjeta…"
     },
-    "cancelPayment": "Cancelar el pago"
+    "cancelPayment": "Cancelar el pago",
+    "folio": {
+      "head": {
+        "pay": "Pasa a pagar en caja",
+        "paid": "¡Pagado! Lo están preparando",
+        "ready": "¡Listo para recoger!",
+        "completed": "Entregado",
+        "expired": "Se canceló tu pedido",
+        "staff": "El negocio canceló tu pedido"
+      },
+      "sub": {
+        "pay": "Se cancela solo a las {{time}} si no pasas a pagar.",
+        "paidEta": "Estará listo como a las {{time}}. Enseña esta pantalla al recoger.",
+        "paid": "Enseña esta pantalla al recoger.",
+        "ready": "Pasa por él y enseña esta pantalla.",
+        "completed": "¡Gracias, {{name}}!",
+        "completedAnon": "¡Gracias!",
+        "expired": "Se canceló porque no se registró el pago a tiempo. Si ya pagaste en caja, no pasa nada: muéstrale tu folio a la cajera.",
+        "staff": "Si tienes dudas, pregunta en caja."
+      },
+      "steps": {
+        "order": "Pedido",
+        "paid": "Pagado",
+        "ready": "Listo",
+        "completed": "Entregado"
+      },
+      "left": "Faltan {{n}} min",
+      "say": "Enséñalo en caja o dile tu folio.",
+      "tax": "Pagas en caja: tarjeta o efectivo. IVA incluido.",
+      "closePage": "Si cierras esta página, en caja te encuentran por tu nombre.",
+      "cancel": "Cancelar mi pedido",
+      "cancelNote": "Tu folio {{folio}} deja de servir en caja.",
+      "againTitle": "¿Todavía lo quieres?",
+      "againHint": "Pídelo directo en caja.",
+      "stamp": "PAGADO",
+      "paidBy": "{{name}} · pagado hoy",
+      "paidByAt": "{{name}} · pagado hoy a las {{time}}",
+      "paidTodayAt": "Pagado hoy a las {{time}}",
+      "reminderExpired": "Se canceló. Si ya pagaste en caja, ábrelo para ver si ya se registró.",
+      "partial": "Ya pagaste {{paid}} · Falta {{left}}: págalo en caja",
+      "paidByOn": "{{name}} · pagado el {{date}} a las {{time}}",
+      "paidTodayOn": "Pagado el {{date}} a las {{time}}",
+      "paidToday": "Pagado hoy",
+      "live": "En vivo · {{time}}",
+      "offline": "Sin conexión: te enseñamos lo último que supimos; se actualiza solo al volver.",
+      "tab": "¡Listo! · {{venue}}",
+      "reminderTitle": "Tu folio {{folio}}",
+      "reminderText": "Paga en caja antes de las {{time}}.",
+      "reminderPaid": "Tu pedido {{folio}} está pagado",
+      "totalToPay": "Total a pagar",
+      "paidTotal": "Pagaste"
+    },
+    "loyalty": {
+      "stamp": "Sumaste 1 sello ({{n}} de {{meta}})",
+      "stampFull": "Sumaste 1 sello (cartilla completa)",
+      "points": "Sumaste {{n}} puntos",
+      "point": "Sumaste 1 punto"
+    },
+    "benefits": {
+      "returned": "Tus beneficios regresaron a tu cuenta",
+      "returnedHint": "Úsalos en tu próximo pedido.",
+      "more": "y {{n}} más",
+      "unnamed": "Descuento"
+    }
+  },
+  "entrar": {
+    "back": "Volver a tu pedido",
+    "atras": "Atrás"
+  },
+  "cuenta": {
+    "entrar": "Entrar",
+    "mia": "Mi cuenta",
+    "volver": "Volver al menú"
   }
 }

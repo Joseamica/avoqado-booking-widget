@@ -541,7 +541,7 @@
     </nav>
     <button class="topnav-cta" id="nav-account" type="button">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-      Mi Cuenta
+      Mi cuenta
     </button>
     <button class="topnav-cta-credits" id="nav-credits" type="button" aria-label="Comprar créditos">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -566,7 +566,7 @@
         <a class="drawer-link" href="" data-route="appointments">Citas</a>
         <a class="drawer-link" href="" data-route="classes" data-requires="classes" hidden>Clases</a>
         <a class="drawer-link" href="" data-route="packs" data-requires="packs" hidden>Comprar paquetes</a>
-        <button class="drawer-link is-cta" id="drawer-account" type="button">Mi Cuenta</button>
+        <button class="drawer-link is-cta" id="drawer-account" type="button">Mi cuenta</button>
       </div>
 
       <!-- Appointments drawer — Square-style venue info + Iniciar sesión.
@@ -718,6 +718,8 @@
             } catch (err) { /* sin historial: recargar sólo vuelve a avisar; el servidor nunca cancela un pedido */ }
           }
         }
+        // El QR del panel trae `?canal=qr`; la liga copiada no. La barra conserva el `?` al crear el pedido, así recargar no lo pierde.
+        if (orderParams.get('canal') === 'qr') orderEl.setAttribute('channel', 'qr')
         if (orderParams.get('locale')) orderEl.setAttribute('locale', orderParams.get('locale'))
         // Cuando llega `/info`, el título lleva el nombre real del restaurante (el del slug es sólo un adelanto).
         orderEl.addEventListener('avoqado:tienda-cargada', function (e) {
@@ -727,8 +729,12 @@
         orderEl.addEventListener('avoqado:pedido-creado', function (e) {
           var token = e && e.detail && e.detail.trackingToken
           if (!token) return
+          // `canal` sólo sirve para crear el pedido: la liga de seguimiento que se comparte no lo lleva (como `pago`, se quita con URLSearchParams).
+          var track = new URLSearchParams(window.location.search)
+          track.delete('canal')
+          var trackQs = track.toString()
           try {
-            history.replaceState(null, '', '/' + slug + '/pedido/' + encodeURIComponent(token) + window.location.search)
+            history.replaceState(null, '', '/' + slug + '/pedido/' + encodeURIComponent(token) + (trackQs ? '?' + trackQs : ''))
           } catch (err) { /* sin historial: la liga sigue en el aviso */ }
         })
         var orderMount = document.getElementById('mount')

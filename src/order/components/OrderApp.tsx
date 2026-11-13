@@ -1,18 +1,23 @@
 import { h } from 'preact'
 import { useContext, useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks'
-import { OrderStoreContext } from '../store'
+import { OrderStoreContext, type Screen } from '../store'
 import { ApiError, getTracking } from '../api'
 import { createOrderT } from '../i18n'
 import { clearLastOrder, loadLastOrder } from '../session'
-import { isFinalStatus } from '../types'
-import { emitStoreLoaded } from '../events'
-import { closesAt } from '../hours'
+import { isFinalStatus, type Tracking } from '../types'
+import { avisarSiCambio, emitStoreLoaded } from '../events'
+import { closesAt, formatTime } from '../hours'
 import { MenuScreen } from './MenuScreen'
 import { CartScreen } from './CartScreen'
 import { DetailsScreen } from './DetailsScreen'
 import { OtpScreen } from './OtpScreen'
+import { EntrarConCuenta } from '../../components/EntrarConCuenta'
+import { createT } from '../../i18n'
+import { checkoutOf, entroEnLaTienda, nav, salioEnLaTienda } from '../checkout'
+import { CustomerPortal } from '../../components/CustomerPortal'
+import { Back } from './icons'
 import { CheckoutStatus } from './CheckoutStatus'
-import { TrackingScreen } from './TrackingScreen'
+import { TrackingScreen, isLapsedFolio, lateWindowOpen, partialLine, partialOf } from './TrackingScreen'
 import { Notice } from './StoreStatusBanner'
 import { STORE_CSS, accentFor, loadStoreFonts } from './theme'
 import { VenueMark, logoOf } from './VenueMark'
@@ -45,29 +50,53 @@ export function OrderApp({ accentColor }: { accentColor?: string }) {
   // ¿Queda un pedido en curso de este comensal? Aquí y no en la carta: con el plan vencido, la tienda apagada o `/info`
   // caído también tiene que poder volver a su pedido. Final o 404 ⇒ se olvida (y el 404 se avisa). Se vuelve a mirar al
   // salir del seguimiento: el pedido que se acaba de hacer también es «el pedido en curso».
-  const [active, setActive] = useState<string | null>(null)
+  const [active, setActive] = useState<{ token: string; tracking: Tracking } | null>(null)
   useEffect(() => {
     const last = loadLastOrder(store.slug)
     if (!last) return void setActive(null)
     if (last.trackingToken === token) return
     let off = false
-    getTracking(store.slug, last.trackingToken).then(
+    let timer: ReturnType<typeof setInterval> | null = null
+    const stop = () => { if (timer) clearInterval(timer); timer = null }
+    // Mientras el pedido siga vivo (o en su ventana tardía) se relee cada 30 s y al volver a la pestaña: un abono o un pago que
+    // llega con la clienta en el menú cambia el aviso. Al ser final, se olvida y se deja de leer.
+    let seen: Tracking | null = null // la última respuesta buena, para vigilar el tope aunque las lecturas fallen
+    let seq = 0 // lecturas que se traslapan (intervalo y pestaña): sólo aplica la última que salió
+    const forget = () => { stop(); clearLastOrder(store.slug); setActive(null) }
+    const read = () => {
+      if (seen && isFinalStatus(seen.status) && !lateWindowOpen(seen)) return forget()
+      const mine = ++seq
+      return getTracking(store.slug, last.trackingToken).then(
       r => {
-        if (off) return
-        if (isFinalStatus(r.status)) {
-          clearLastOrder(store.slug)
-          setActive(null)
-        } else setActive(last.trackingToken)
+        if (off || mine !== seq) return
+        avisarSiCambio(store.host, store.slug, last.trackingToken, seen, r) // W4: «Mi cuenta» se vuelve a leer
+        seen = r
+        if (isFinalStatus(r.status) && !lateWindowOpen(r)) forget()
+        else setActive({ token: last.trackingToken, tracking: r })
       },
       e => {
-        if (off || !(e instanceof ApiError) || e.status !== 404) return
+        if (off || mine !== seq || !(e instanceof ApiError) || e.status !== 404) return
+        stop()
         clearLastOrder(store.slug)
         setActive(null)
         store.notice.value = t('tracking.notFound')
       },
-    )
-    return () => { off = true }
+    ) }
+    const again = () => { if (!off && timer && document.visibilityState === 'visible') void read() }
+    timer = setInterval(again, 30_000)
+    document.addEventListener('visibilitychange', again)
+    void read()
+    return () => { off = true; stop(); document.removeEventListener('visibilitychange', again) }
   }, [store, token])
+  // Un folio de «Nadie» dice cuál es y hasta qué hora; los demás pedidos, lo de siempre.
+  const reminder = (r: Tracking): { title?: string; text: string } => {
+    if (r.requiresAcceptance !== false || r.paymentMode === 'CARD_ONLINE') return { text: t('tracking.inProgress') }
+    if (partialOf(r)) return { title: t('tracking.folio.reminderTitle', { folio: r.orderNumber }), text: partialLine(r, t, store.locale) }
+    if (isLapsedFolio(r) && !r.paid) return { title: t('tracking.folio.reminderTitle', { folio: r.orderNumber }), text: t('tracking.folio.reminderExpired') }
+    if (r.paid || r.status !== 'PENDING_ACCEPTANCE') return { text: t('tracking.folio.reminderPaid', { folio: r.orderNumber }) }
+    const tz = r.venueTimezone ?? store.info.value?.venue.timezone ?? 'America/Mexico_City'
+    return { title: t('tracking.folio.reminderTitle', { folio: r.orderNumber }), text: t('tracking.folio.reminderText', { time: formatTime(r.acceptDeadlineAt, tz, store.locale) }) }
+  }
   const info = store.info.value
   const name = info?.venue.name || null
   // La página hospedada pone el nombre real en su título (no el que adivina del slug).
@@ -83,10 +112,13 @@ export function OrderApp({ accentColor }: { accentColor?: string }) {
   // «Abierto hasta las 22:00» (el cierre de la franja de ahora); sin horario, o fuera de toda franja, «Abierto» a secas. Con la
   // tienda no abierta no hay chips: el aviso de abajo (pausa, cerrado…) ocupa su lugar.
   const chips = () => {
+    // «Nadie» sin aparato que cobre folios: sólo el chip que lo dice (el aviso de abajo explica qué hacer).
+    if (info?.status === 'OFFLINE' && info.requiresAcceptance === false)
+      return <div class="avq-o-chips"><span class="avq-o-chip">{t('store.noDeviceChip')}</span></div>
     if (info?.status !== 'OPEN') return null
     const until = closesAt(info.hours, new Date(), info.venue.timezone ?? 'America/Mexico_City')
     const { payAtPickup, cardOnline } = info.paymentModes ?? {}
-    const payChip = cardOnline ? (payAtPickup ? 'store.cardOrPickupChip' : 'store.cardChip') : payAtPickup ? 'store.payAtPickupChip' : null
+    const payChip = info.requiresAcceptance === false ? 'store.payAtCounterChip' : cardOnline ? (payAtPickup ? 'store.cardOrPickupChip' : 'store.cardChip') : payAtPickup ? 'store.payAtPickupChip' : null
     return (
       <div class="avq-o-chips">
         <span class="avq-o-chip avq-o-chip--ok">
@@ -103,9 +135,15 @@ export function OrderApp({ accentColor }: { accentColor?: string }) {
   const screen = store.screen.value
   const root = useRef<HTMLDivElement>(null)
   const from = useRef(screen)
+  // Pulido W6: en «entrar» y «Mi cuenta» hay UN solo «atrás», el de la tienda. Lo de adentro le presta su paso anterior (`pasoAtras`); sin
+  // él, sale a la pantalla de donde vino (entrar: carrito, datos…) o al menú («Mi cuenta»).
+  const [pasoAtras, setPasoAtras] = useState<(() => void) | null>(null)
+  const prestarAtras = (f: (() => void) | null) => setPasoAtras(() => f)
+  const vinoDe = useRef<Screen>('cart')
   useLayoutEffect(() => {
     const prev = from.current
     from.current = screen
+    if (screen === 'entrar' && prev !== 'entrar') vinoDe.current = prev
     const el = root.current
     if (!el || prev === screen || !ARRIVALS.has(screen)) return
     if (el.getBoundingClientRect().top < 0) el.scrollIntoView({ block: 'start' })
@@ -134,7 +172,7 @@ export function OrderApp({ accentColor }: { accentColor?: string }) {
   useLayoutEffect(() => {
     if (mounted.current) changedAt.current = performance.now()
     mounted.current = true
-  }, [screen, pid])
+  }, [screen, pid, pasoAtras]) // pulido W6: un paso atrás dentro de la pantalla también cambia la vista (un doble toque no salta dos)
   const dropEarly = (e: Event) => {
     if (tapTime(e) - changedAt.current >= TAP_GUARD_MS) return
     e.preventDefault()
@@ -142,7 +180,13 @@ export function OrderApp({ accentColor }: { accentColor?: string }) {
   }
   const hasBrand = !!(name || logo)
   const hero = hasBrand && (screen === 'menu' || screen === 'product') && !pid
-  const compact = hasBrand && (screen === 'details' || screen === 'otp')
+  const compact = hasBrand && (screen === 'details' || screen === 'otp' || screen === 'entrar' || screen === 'cuenta')
+  // W4: «Entrar» sin sesión de la tienda; con ella, «Mi cuenta». Los dos llevan a «Mi cuenta» (sin sesión, a entrar).
+  // D16: sin sesión, «Entrar» no sale si el SERVIDOR dice que el negocio no tiene nada de cuenta (sin el campo, como antes). Con sesión,
+  // «Mi cuenta» sale siempre: ahí están sus pedidos y su «Cerrar sesión» (codex-d16-r1 #1).
+  const conSesion = checkoutOf(store).conSesion.value
+  const hayCuenta = conSesion || info?.cuentaConBeneficios !== false
+  const tz = info?.venue.timezone ?? 'America/Mexico_City'
   return (
     <div ref={root} class="avq-o-root" style={{ ['--avq-accent' as any]: accent }} onClickCapture={dropEarly}>
       <style>{STORE_CSS}</style>
@@ -158,6 +202,7 @@ export function OrderApp({ accentColor }: { accentColor?: string }) {
                 {address && <p class="avq-o-hero__addr">{t('store.pickupAt', { address })}</p>}
               </div>
             )}
+            {hayCuenta && <button type="button" class="avq-o-ent" onClick={() => store.go('cuenta')}>{t(conSesion ? 'cuenta.mia' : 'cuenta.entrar')}</button>}
           </div>
           {chips()}
         </header>
@@ -169,9 +214,9 @@ export function OrderApp({ accentColor }: { accentColor?: string }) {
         </header>
       )}
       {notice && <Notice tone="neutral" text={notice} action={{ label: t('common.close'), onClick: () => { store.notice.value = null } }} />}
-      {active && screen !== 'tracking' && (
-        <Notice tone="neutral" text={t('tracking.inProgress')}
-          action={{ label: t('tracking.view'), onClick: () => { store.trackingToken.value = active; store.go('tracking') } }} />
+      {active && screen !== 'tracking' && screen !== 'cuenta' && (
+        <Notice tone="neutral" {...reminder(active.tracking)}
+          action={{ label: t('tracking.view'), onClick: () => { store.trackingToken.value = active.token; store.go('tracking') } }} />
       )}
       {/* Datos y código pintan el estado del envío junto a su botón; las demás, arriba. */}
       {(screen === 'menu' || screen === 'product' || screen === 'cart') && <CheckoutStatus />}
@@ -179,6 +224,35 @@ export function OrderApp({ accentColor }: { accentColor?: string }) {
       {screen === 'cart' && <CartScreen />}
       {screen === 'details' && <DetailsScreen />}
       {screen === 'otp' && <OtpScreen />}
+      {/* W3 (e): «Entrar otra vez» dentro de la tienda; al entrar, la página toma esa sesión y vuelve al carrito (W4 lo reutiliza). */}
+      {screen === 'entrar' && (
+        <div class="avq-o-entrar">
+          <button type="button" class="avq-o-back" aria-label={t(pasoAtras ? 'entrar.atras' : 'entrar.back')}
+            onClick={() => (pasoAtras ? pasoAtras() : store.go(vinoDe.current))}><Back /></button>
+          <EntrarConCuenta slug={store.slug} negocio={name} t={createT(store.locale)} onEntro={r => entroEnLaTienda(store, r)} alCambiarAtras={prestarAtras} />
+        </div>
+      )}
+      {/* W4: «Mi cuenta» es la misma de reservas, con la sesión de la TIENDA; su folio de este aparato va arriba con la línea exacta. */}
+      {screen === 'cuenta' && (
+        <div class="avq-o-entrar">
+          <button type="button" class="avq-o-back" aria-label={t(pasoAtras ? 'entrar.atras' : 'cuenta.volver')}
+            onClick={() => (pasoAtras ? pasoAtras() : store.go('menu'))}><Back /></button>
+          <CustomerPortal
+            venueSlug={store.slug}
+            timezone={tz}
+            t={createT(store.locale)}
+            superficie="pedidos"
+            negocio={name}
+            onBack={() => store.go('menu')}
+            onManageBooking={secret => nav.assign(`https://book.avoqado.io/${encodeURIComponent(store.slug)}?manage=${encodeURIComponent(secret)}`)}
+            onVerPedido={tt => { store.trackingToken.value = tt; store.go('tracking') }}
+            pedidoDeHoy={active ? { folio: active.tracking.orderNumber, estado: active.tracking.status, pagado: !!active.tracking.paid, linea: reminder(active.tracking).text, trackingToken: active.token } : undefined}
+            alEntrar={r => entroEnLaTienda(store, r, null)}
+            alSalir={() => { salioEnLaTienda(store); store.go('menu') }}
+            alCambiarAtras={prestarAtras}
+          />
+        </div>
+      )}
       {screen === 'tracking' && <TrackingScreen />}
     </div>
   )

@@ -7,7 +7,7 @@ import { buildOrderBody, checkoutOf, send } from '../checkout'
 import { formatMXN } from '../money'
 import { phoneE164 } from '../phone'
 import { CountryPhoneInput } from '../../components/ui/CountryPhoneInput'
-import { StoreStatusBanner } from './StoreStatusBanner'
+import { ClosingSoonNotice, Notice, StoreStatusBanner } from './StoreStatusBanner'
 import { CheckoutStatus } from './CheckoutStatus'
 import { Back } from './icons'
 import { tapTime } from './focus'
@@ -33,9 +33,11 @@ export function DetailsScreen() {
   const set = (patch: Partial<typeof d>) => { c.draft.value = { ...c.draft.value, ...patch } }
   const info = store.info.value
   const q = store.quote.value
+  // «Nadie»: sólo nombre y nota, sin teléfono ni código ni medio de pago que elegir (se paga en caja). Un servidor viejo = «Mi equipo».
+  const nadie = info?.requiresAcceptance === false
   const modes = info?.paymentModes
-  const choose = !!modes?.cardOnline && modes.payAtPickup
-  const payment: PaymentMode = modes?.cardOnline && !(choose && d.payment === 'PAY_AT_PICKUP') ? 'CARD_ONLINE' : 'PAY_AT_PICKUP'
+  const choose = !nadie && !!modes?.cardOnline && modes.payAtPickup
+  const payment: PaymentMode = !nadie && modes?.cardOnline && !(choose && d.payment === 'PAY_AT_PICKUP') ? 'CARD_ONLINE' : 'PAY_AT_PICKUP'
   const card = payment === 'CARD_ONLINE'
 
   const phone = phoneE164(d.dial, d.national)
@@ -43,11 +45,13 @@ export function DetailsScreen() {
   const email = d.email.trim()
   const missing =
     name.length < 2 || name.length > 80 ? t('details.needName')
+    : nadie ? null
     : !(d.dial === '52' ? /^\+52\d{10}$/ : /^\+\d{8,15}$/).test(phone) ? t('details.needPhone')
     : email && (!EMAIL_RE.test(email) || email.length > 120) ? t('details.needEmail')
     : !d.accepted ? t('details.needAccept')
     : null
   const busy = c.busy.value
+  const f = c.feedback.value
   const open = info?.status === 'OPEN'
   // Con un intento pendiente se manda ESE (el pedido anterior), no lo que hay en pantalla: el único camino es su «Reintentar».
   const canSend = !missing && !!q?.ok && !busy && open && !c.pending.value
@@ -58,7 +62,11 @@ export function DetailsScreen() {
     // contando la hora del TOQUE (`tapTime`), no la de atenderlo. La raíz de la tienda (OrderApp) ya descarta los toques de los 400 ms que
     // siguen a un cambio de pantalla; ésta es la guarda propia del botón, medida desde que se pinta esta pantalla.
     if (!canSend || tapTime(e) - shownAt < ENTRY_GUARD_MS) return
-    void send(store, buildOrderBody(store, { customer: { name, phone, ...(email ? { email } : {}) }, note: d.note || null, paymentMode: payment }))
+    void send(store, buildOrderBody(store, {
+      customer: nadie ? { name } : { name, phone, ...(email ? { email } : {}) },
+      note: d.note || null,
+      paymentMode: payment,
+    }))
   }
   const venue = info?.venue.name || t('details.theRestaurant')
   // Piezas, como el contador de la barra del carrito.
@@ -67,11 +75,12 @@ export function DetailsScreen() {
   return (
     <div class="avq-o-details">
       <StoreStatusBanner />
+      <ClosingSoonNotice />
       <button type="button" class="avq-o-back" aria-label={t('details.back')} onClick={() => store.go('cart')}><Back /></button>
       <div class="avq-o-form">
         <div class="avq-o-form__intro">
           <h2 class="avq-o-title" tabIndex={-1}>{t('details.title')}</h2>
-          <p>{t('details.helper')}</p>
+          <p>{t(nadie ? 'details.helperNadie' : 'details.helper')}</p>
         </div>
         <div class="avq-o-field">
           <label for={`${id}-name`}>{t('details.name')}</label>
@@ -79,6 +88,20 @@ export function DetailsScreen() {
             onInput={(e: any) => set({ name: e.currentTarget.value })} />
         </div>
         {/* El campo es compartido con reservas: `inputId` (sólo con `look="tienda"`) le pone id al número, y así «WhatsApp» es su etiqueta real. */}
+        {nadie ? (<>
+          <div class="avq-o-field">
+            <label for={`${id}-note`}>{t('details.note')}</label>
+            <textarea id={`${id}-note`} class="avq-o-input" rows={2} maxLength={300} placeholder={t('details.notePlaceholder')} value={d.note}
+              onInput={(e: any) => set({ note: e.currentTarget.value })} />
+          </div>
+          {/* W4 (1b): sin sesión, entrar para usar sus premios en ESTE pedido (de regreso al carrito, donde se eligen). D16: sólo si el negocio tiene algo de cuenta. */}
+          {!c.conSesion.value && info?.cuentaConBeneficios !== false && (
+            <div class="avq-o-why">
+              <Notice tone="neutral" title={t('details.premiosTitulo', { venue })} text={t('details.premiosTexto')}
+                action={{ label: t('details.premiosEntrar'), onClick: () => store.go('entrar') }} />
+            </div>
+          )}
+        </>) : <>
         <div class="avq-o-field">
           <label for={`${id}-phone`}>{t('details.phone')}</label>
           <CountryPhoneInput look="tienda" inputId={`${id}-phone`} dialCode={d.dial} nationalNumber={d.national}
@@ -91,6 +114,7 @@ export function DetailsScreen() {
           <input id={`${id}-email`} class="avq-o-input" type="email" autoComplete="email" maxLength={120} value={d.email}
             onInput={(e: any) => set({ email: e.currentTarget.value })} />
         </div>
+        </>}
         {choose && (
           <div class="avq-o-field">
             <h3 id={`${id}-pay`} class="avq-o-group__title">{t('details.payHow')}</h3>
@@ -109,35 +133,43 @@ export function DetailsScreen() {
           </div>
         )}
         <div class="avq-o-privacy">
-          <p class="avq-o-help">{t('details.privacy', { venue })}</p>
+          <p class="avq-o-help">{t(nadie ? 'details.privacyNadie' : 'details.privacy', { venue })}</p>
           {info?.privacyNoticePath && (
             <a href={API_BASE + info.privacyNoticePath} target="_blank" rel="noopener noreferrer">{t('details.privacyLink')}</a>
           )}
-          <label class="avq-o-check">
-            <input type="checkbox" checked={d.accepted} onChange={(e: any) => set({ accepted: e.currentTarget.checked })} />
-            <span>{t('details.accept')}</span>
-          </label>
+          {!nadie && (
+            <label class="avq-o-check">
+              <input type="checkbox" checked={d.accepted} onChange={(e: any) => set({ accepted: e.currentTarget.checked })} />
+              <span>{t('details.accept')}</span>
+            </label>
+          )}
         </div>
       </div>
       <div class="avq-o-foot">
         {info?.contact?.address && <p>{info.contact.address}</p>}
         {info?.contact?.phone && <p>{info.contact.phone}</p>}
-        <p>{card ? t('details.payCardNote') : t('cart.payAtPickup')}</p>
-        <p>{t('details.cancelPolicy')}</p>
-        <p>{t('details.updates')}</p>
+        {!nadie && <>
+          <p>{card ? t('details.payCardNote') : t('cart.payAtPickup')}</p>
+          <p>{t('details.cancelPolicy')}</p>
+          <p>{t('details.updates')}</p>
+        </>}
       </div>
       <div class="avq-o-cartfoot avq-o-confirm">
         <p class="avq-o-confirm__sum">
           <span>{n === 1 ? t('details.summaryOne') : t('details.summary', { n })}</span>
           <span>{t('details.taxIncluded')}</span>
         </p>
+        {nadie && <p class="avq-o-confirm__pay">{t('details.payAtCounter')}</p>}
         <CheckoutStatus />
         {missing && <p class="avq-o-confirm__msg">{missing}</p>}
-        <button type="button" class="avq-o-btn avq-o-btn--primary" disabled={!canSend} onClick={confirm}>
-          {busy ? <span>{t('details.sending')}</span>
-            : q ? <><span>{t('details.confirm')}</span> <span>{formatMXN(q.total, store.locale)}</span></>
-            : <span>{t('details.confirm')}</span>}
-        </button>
+        {/* Pulido W4 (1h·3 y 1h·4): el aviso trae sus propios botones («Confirmar» / «Pedir sin beneficios»); el del pie no compite. */}
+        {!(f?.kind === 'priceChanged' && f.motivo) && (
+          <button type="button" class="avq-o-btn avq-o-btn--primary" disabled={!canSend} onClick={confirm}>
+            {busy ? <span>{t('details.sending')}</span>
+              : q ? <><span>{t(nadie ? 'details.confirmNadie' : 'details.confirm')}</span> <span>{formatMXN(q.total, store.locale)}</span></>
+              : <span>{t(nadie ? 'details.confirmNadie' : 'details.confirm')}</span>}
+          </button>
+        )}
       </div>
     </div>
   )

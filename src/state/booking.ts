@@ -1,4 +1,10 @@
 import { signal, computed } from '@preact/signals'
+import {
+  abrirPagina, alCambiarLaPagina, borrarSesion, entrarAqui, epocaDe as epocaDeLaPagina, fijarPagina, guardarSesion, identidadDe, lecturaDe,
+  leerSesion, paginaDe, renovarLaPagina, salioEnOtraPagina, soltarLaPagina, tokenDeLaPagina, type ContactoProbado, type Lectura, type Pagina,
+  type SesionDeCliente, type Superficie,
+} from '../lib/sesionDeCliente'
+import { loadSession } from '../order/session'
 import type { PublicVenueInfo, Product, PublicSlot, PublicBookingResult, CreditPackPublic, CustomerCreditBalance, CustomerPortalData, FlowType, ModifierSelection, ReservationBranding } from '../types'
 
 /** Reservation branding defaults — used until the venue payload arrives (and as
@@ -119,28 +125,37 @@ export interface BookingAccessState {
   blockedBy?: 'PLAN' | 'PUBLIC_BOOKING_OFF' | 'APPROVAL'
 }
 
-interface VenueSession {
-  token: string | null
-  info: CustomerInfo | null
+/** Lo de la UI de reservas que se estaciona al cambiar de negocio en la misma página. La SESIÓN no: ésa es del guardián. */
+interface VenueUi {
   portalData: CustomerPortalData | null
   bookingAccess: BookingAccessState | null
 }
-
-const sessionByVenue = new Map<string, VenueSession>()
+const uiByVenue = new Map<string, VenueUi>()
 
 function dropLegacyGlobalKeys() {
   try { LEGACY_GLOBAL_KEYS.forEach(k => localStorage.removeItem(k)) } catch { /* storage blocked */ }
 }
 
-/** Read ONE venue's session from localStorage (synchronous — no race conditions). */
-function hydrateCustomer(slug: string): VenueSession {
+/**
+ * Lo que reservas lee AHORA de lo guardado (W1, rediseño codex-r2): la sesión única (cookie de avoqado.io, o `localStorage`
+ * incrustado) manda. El token de reservas de hoy sólo cuenta si no hay sesión única ni marca de salida de la otra página.
+ */
+function vigente(slug: string): Lectura | null {
+  const nueva = leerSesion(slug)
+  if (nueva) return { token: nueva.token, identidad: identidadDe(nueva), datos: nueva.customer }
+  if (salioEnOtraPagina(slug)) {
+    borrarSesion(slug)
+    return null
+  }
   try {
     const token = localStorage.getItem(tokenKey(slug))
     const raw = localStorage.getItem(customerKey(slug))
-    const info = raw ? JSON.parse(raw) as CustomerInfo : null
-    return { token, info, portalData: null, bookingAccess: null }
-  } catch { return { token: null, info: null, portalData: null, bookingAccess: null } }
+    return token ? { token, identidad: `hoy:reservas|${token}`, datos: raw ? JSON.parse(raw) as CustomerInfo : null } : null
+  } catch { return null }
 }
+const leer = (slug: string) => () => vigente(slug)
+/** W4: lo que lee AHORA cada superficie («Mi cuenta» vive en las dos: reservas y la tienda). */
+export const lectorDe = (slug: string, s: Superficie): (() => Lectura | null) => (s === 'reservas' ? leer(slug) : () => loadSession(slug))
 
 /** Slug whose session the signals currently reflect. */
 export const activeVenueSlug = signal<string | null>(null)
@@ -156,76 +171,116 @@ export const showPortal = signal(false)
 /** Fase 0.B — "¿puedo reservar aquí?", as the server computed it at login/portal. */
 export const bookingAccess = signal<BookingAccessState | null>(null)
 
+/** Época de la sesión de reservas en la página (el guardián): una respuesta de otra época no se pinta. */
+export const epocaDe = (slug: string): number => epocaDeLaPagina(slug, 'reservas')
+
+/** La sesión de la página vista desde reservas: la única o su token de hoy (el de la tienda no es suyo). */
+const mia = (slug: string): Pagina | null => paginaDe(slug, 'reservas')
+
+/**
+ * W1, alcance A: la sesión de la página es la del guardián (`lib/sesionDeCliente`), una por negocio y documento, compartida con la
+ * tienda. Cada cambio repinta las señales del negocio a la vista; si cambió quién está adentro, se suelta lo cargado (portal, acceso,
+ * créditos y su selección).
+ */
+alCambiarLaPagina((slug, afecta, misma) => {
+  if (!afecta.includes('reservas')) return
+  if (!misma) uiByVenue.delete(slug)
+  if (activeVenueSlug.value !== slug) return
+  const p = mia(slug)
+  const info = (p?.datos as CustomerInfo | null | undefined) ?? null
+  customerToken.value = p?.token ?? null
+  if (JSON.stringify(customerInfo.value) !== JSON.stringify(info)) customerInfo.value = info
+  if (!misma) {
+    portalData.value = null
+    bookingAccess.value = null
+    customerCredits.value = null
+    selectedCreditBalance.value = null
+  }
+})
+
+/** El token con que esta página MANDA desde reservas (el guardián decide; nunca toma otra sesión). */
+export function tokenParaMandar(slug: string, delLlamador?: string | null): string | null {
+  return tokenDeLaPagina(slug, 'reservas', leer(slug), delLlamador)
+}
+
+/**
+ * Entró en ESTA página por `EntrarConCuenta` (que ya la guardó): reservas adopta EXACTAMENTE esa sesión, sin releer lo guardado (r11:
+ * otra pestaña pudo escribir otra justo después).
+ */
+export function entroAqui(slug: string, sesion: Pick<SesionDeCliente, 'token' | 'customer' | 'contactos'>): void {
+  fijarPagina(slug, 'reservas', lecturaDe(sesion))
+}
+
+/** El SERVIDOR renovó (`x-customer-session`) el token que mandó esta página: sigue con el renovado (la misma sesión). */
+export function adoptarRenovacion(slug: string, enviado: string): void {
+  renovarLaPagina(slug, 'reservas', enviado, leer(slug))
+}
+
 /**
  * Point the session signals at `slug`. Idempotent; call it from every element
  * that mounts with a `venue` attribute, BEFORE any authenticated request.
+ * W1 (alcance A): abrir la página lee la sesión guardada UNA vez por documento (`abrirPagina`); montar otro elemento del mismo
+ * negocio, o recrearlo, nunca la relee.
  */
 export function bindCustomerSessionToVenue(slug: string) {
   if (!slug) return
   dropLegacyGlobalKeys()
-  if (activeVenueSlug.value === slug) return
-  // Park the outgoing venue's in-memory bits (portalData/bookingAccess aren't persisted).
   const prev = activeVenueSlug.value
-  if (prev) {
-    sessionByVenue.set(prev, {
-      token: customerToken.value,
-      info: customerInfo.value,
-      portalData: portalData.value,
-      bookingAccess: bookingAccess.value,
-    })
-  }
-  const next = sessionByVenue.get(slug) ?? hydrateCustomer(slug)
-  sessionByVenue.set(slug, next)
+  // Park the outgoing venue's in-memory bits (portalData/bookingAccess aren't persisted).
+  if (prev && prev !== slug) uiByVenue.set(prev, { portalData: portalData.value, bookingAccess: bookingAccess.value })
   activeVenueSlug.value = slug
-  customerToken.value = next.token
-  customerInfo.value = next.info
-  portalData.value = next.portalData
-  bookingAccess.value = next.bookingAccess
+  abrirPagina(slug, 'reservas', leer(slug))
+  if (prev === slug) return
+  const p = mia(slug)
+  const ui = uiByVenue.get(slug)
+  customerToken.value = p?.token ?? null
+  customerInfo.value = (p?.datos as CustomerInfo | null | undefined) ?? null
+  portalData.value = ui?.portalData ?? null
+  bookingAccess.value = ui?.bookingAccess ?? null
 }
 
 /**
  * Save a customer session FOR `slug` (the caller always knows its venue: `props.venue` /
- * `venueSlug`). Writes that venue's storage + Map entry; the live signals only change when
- * `slug` is the active one — so a login finished in venue A's portal can never be stored
- * under venue B's key, nor repaint B's UI (auditoría 4).
+ * `venueSlug`). The live signals only change when `slug` is the active one — so a login
+ * finished in venue A's portal can never be stored under venue B's key, nor repaint B's UI (auditoría 4).
+ * W1: con `contactos` es una entrada en esta página (se guarda y la página la toma). Sin ellos son los datos al día de la ficha de
+ * ESTA página (perfil, portal): sólo tocan lo guardado si sigue siendo su sesión; nunca otra ficha, nunca un token, y nada si la
+ * página ya salió (codex-r3 H2, codex-r4 R4-2).
  */
-export function setCustomerSession(slug: string, token: string, customer: CustomerInfo, access?: BookingAccessState | null) {
-  const isActive = activeVenueSlug.value === slug
-  const prev = sessionByVenue.get(slug)
-  const next: VenueSession = {
-    token,
-    info: customer,
-    portalData: isActive ? portalData.value : (prev?.portalData ?? null),
-    bookingAccess: access !== undefined ? access : isActive ? bookingAccess.value : (prev?.bookingAccess ?? null),
+export function setCustomerSession(
+  slug: string,
+  token: string,
+  customer: CustomerInfo,
+  access?: BookingAccessState | null,
+  contactos?: ContactoProbado[],
+): 'guardada' | 'memoria' | 'fallo' | undefined {
+  const p = mia(slug)
+  let guardada: ReturnType<typeof entrarAqui> | undefined
+  if (contactos) {
+    // r11: guarda y adopta EXACTAMENTE ésa, sin releer.
+    guardada = entrarAqui(slug, 'reservas', { token, customer, contactos, guardadaEn: Date.now() })
+  } else if (p && (p.token === token || (p.datos as CustomerInfo | null | undefined)?.id === customer.id)) {
+    const nueva = leerSesion(slug)
+    if (nueva) {
+      if (identidadDe(nueva) === p.identidad) guardarSesion(slug, { ...nueva, customer })
+    } else if (p.identidad.startsWith('hoy:')) {
+      try { localStorage.setItem(customerKey(slug), JSON.stringify(customer)) } catch { /* storage blocked */ }
+    }
+    fijarPagina(slug, 'reservas', { token: p.token, identidad: p.identidad, datos: customer })
   }
-  sessionByVenue.set(slug, next)
-  if (isActive) {
-    customerToken.value = token
-    customerInfo.value = customer
-    if (access !== undefined) bookingAccess.value = access
-  }
-  try {
-    localStorage.setItem(tokenKey(slug), token)
-    localStorage.setItem(customerKey(slug), JSON.stringify(customer))
-  } catch { /* storage blocked (3rd-party iframe) — session lives in memory */ }
+  if (access === undefined) return guardada
+  if (activeVenueSlug.value === slug) bookingAccess.value = access
+  else if (mia(slug)) uiByVenue.set(slug, { portalData: uiByVenue.get(slug)?.portalData ?? null, bookingAccess: access })
+  return guardada
 }
 
 /**
  * Clear the customer session OF `slug` only. A 401 raised by venue A's widget must never
  * wipe venue B's stored session (auditoría 4). Signals are cleared only if `slug` is active.
+ * W1 (alcance A): «Cerrar sesión» (sin token) o un 401 (`tokenQueFallo`), por el guardián (`soltarLaPagina`).
  */
-export function clearCustomerSession(slug: string) {
-  sessionByVenue.set(slug, { token: null, info: null, portalData: null, bookingAccess: null })
-  if (activeVenueSlug.value === slug) {
-    customerToken.value = null
-    customerInfo.value = null
-    portalData.value = null
-    bookingAccess.value = null
-  }
-  try {
-    localStorage.removeItem(tokenKey(slug))
-    localStorage.removeItem(customerKey(slug))
-  } catch { /* storage blocked */ }
+export function clearCustomerSession(slug: string, tokenQueFallo?: string) {
+  soltarLaPagina(slug, 'reservas', tokenQueFallo, leer(slug))
 }
 
 /**

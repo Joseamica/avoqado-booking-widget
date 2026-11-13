@@ -10,6 +10,7 @@ import { ApiError, abandonPayment, cancelOrder, getTracking } from '../api'
 import { TrackingScreen } from './TrackingScreen'
 import { STORE_CSS } from './theme'
 import { makeStore, withStore } from './testKit'
+import { saveLastOrder } from '../session'
 import type { OnlineOrderStatus, Tracking } from '../types'
 
 let visibility = 'visible'
@@ -886,5 +887,501 @@ describe('fix ronda 2 y 3: el sondeo nunca se queda parado; la intención de can
     expect(screen.getByRole('heading', { name: 'Confirmando tu pago…' })).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Cancelar el pago' })).toBeTruthy()
     vi.restoreAllMocks()
+  })
+})
+
+// Tienda híbrida, etapa 1 (W3): el folio de «Nadie» (requiresAcceptance === false), pagado en caja.
+describe('W3: seguimiento del folio', () => {
+  const NOW = '2026-10-17T19:00:00Z' // 13:00 en CDMX
+  const T32 = 'T'.repeat(32)
+  const folio = (over: Partial<Tracking> = {}): Tracking => tr({
+    orderNumber: 'W7K3P', requiresAcceptance: false, channel: 'QR', canCancel: true, total: 134,
+    acceptDeadlineAt: '2026-10-17T19:30:00Z',
+    items: [
+      { name: 'Latte', quantity: 1, note: null, modifiers: [{ name: 'Leche de almendra', quantity: 1 }] },
+      { name: 'Shake de proteína', quantity: 1, note: null, modifiers: [] },
+    ],
+    ...over,
+  })
+  async function showF(t: Tracking, locale: 'es' | 'en' = 'es', name: string | null = 'Ana') {
+    vi.setSystemTime(new Date(NOW))
+    localStorage.clear()
+    vi.mocked(getTracking).mockResolvedValue(t)
+    const s = makeStore(null, null, locale)
+    if (name) saveLastOrder(s.slug, { trackingToken: T32, orderNumber: 'W7K3P', name })
+    s.trackingToken.value = T32
+    s.go('tracking')
+    const r = render(withStore(s, <TrackingScreen />))
+    await flush()
+    return { s, r }
+  }
+
+  it('por pagar: «Pasa a pagar en caja», la hora, «Faltan 30 min», el folio en grande con el nombre, el total y el aviso de IVA', async () => {
+    await showF(folio())
+    expect(screen.getByRole('heading', { name: 'Pasa a pagar en caja' })).toBeTruthy()
+    expect(screen.getByText('Se cancela solo a las 13:30 si no pasas a pagar.')).toBeTruthy()
+    expect(screen.getByText('Faltan 30 min')).toBeTruthy()
+    expect(screen.getByText('Tu folio')).toBeTruthy()
+    const n = screen.getByText('W7K3P')
+    expect(n.classList.contains('avq-o-ticket__n')).toBe(true)
+    expect(screen.getByText('Ana').closest('.avq-o-ticket__folio')).toBeTruthy() // el nombre bajo el folio
+    expect(screen.getByText('Enséñalo en caja o dile tu folio.')).toBeTruthy()
+    expect(screen.getByText('Total').parentElement!.textContent).toContain('$134')
+    expect(screen.getByText('Pagas en caja: tarjeta o efectivo. IVA incluido.')).toBeTruthy()
+    expect(screen.getByText('Si cierras esta página, en caja te encuentran por tu nombre.')).toBeTruthy()
+    expect(screen.queryByText(/Esperando que el negocio acepte/)).toBeNull()
+    expect(screen.queryByText(/Dilo en el mostrador/)).toBeNull()
+    expect(progress()!.querySelector('[aria-current="step"]')!.textContent).toBe('Pedido')
+    expect(Array.from(progress()!.querySelectorAll('li')).map(li => li.textContent)).toEqual(['Pedido', 'Pagado', 'Listo', 'Entregado'])
+  })
+  it('sin nombre guardado, no inventa uno', async () => {
+    await showF(folio(), 'es', null)
+    expect(document.querySelector('.avq-o-ticket__folio')!.textContent).toBe('Tu folioW7K3PEnséñalo en caja o dile tu folio.')
+  })
+  it('«Faltan N min» baja cada minuto y se pone ámbar con 5 o menos (nunca rojo)', async () => {
+    await showF(folio())
+    expect(document.querySelector('.avq-o-chip--warn')).toBeNull()
+    await tick(26 * 60_000)
+    expect(screen.getByText('Faltan 4 min')).toBeTruthy()
+    const chip = screen.getByText('Faltan 4 min').closest('.avq-o-chip') as HTMLElement
+    expect(chip.classList.contains('avq-o-chip--warn')).toBe(true)
+    expect(document.querySelector('.avq-o-chip--error, .avq-o-notice--error')).toBeNull()
+  })
+  it('«Cancelar mi pedido» pregunta: «¿Cancelar tu pedido?» y «Tu folio W7K3P deja de servir en caja.»', async () => {
+    await showF(folio())
+    fireEvent.click(screen.getByRole('button', { name: 'Cancelar mi pedido' }))
+    expect(screen.getByText('¿Cancelar tu pedido?', { selector: 'p' })).toBeTruthy()
+    expect(screen.getByText('Tu folio W7K3P deja de servir en caja.')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Sí, cancelar' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'No' })).toBeTruthy()
+  })
+  it('pagado: «¡Pagado! Lo están preparando», pasos con «Pagado», «PAGADO» + folio + lo que pidió y el nombre', async () => {
+    await showF(folio({ status: 'ACCEPTED', paid: true, canCancel: false, estimatedReadyAt: '2026-10-17T19:30:00Z' }))
+    expect(screen.getByRole('heading', { name: '¡Pagado! Lo están preparando' })).toBeTruthy()
+    expect(screen.getByText('Estará listo como a las 13:30. Enseña esta pantalla al recoger.')).toBeTruthy()
+    expect(progress()!.querySelector('[aria-current="step"]')!.textContent).toBe('Pagado')
+    const card = document.querySelector('.avq-o-paid') as HTMLElement
+    expect(card.textContent).toContain('PAGADO')
+    expect(within(card).getByText('W7K3P').classList.contains('avq-o-paid__n')).toBe(true)
+    expect(card.textContent).toContain('Latte · Shake de proteína')
+    expect(card.textContent).toContain('Ana · pagado hoy')
+    expect(screen.queryByRole('button', { name: /Cancelar/ })).toBeNull()
+    expect(screen.queryByText(/Pagas en caja/)).toBeNull()
+  })
+  it('«En vivo · HH:MM:SS» avanza cada segundo (también con reducir movimiento: sólo el punto deja de latir)', async () => {
+    await showF(folio({ status: 'ACCEPTED', paid: true, canCancel: false }))
+    expect(screen.getByText('En vivo · 13:00:00')).toBeTruthy()
+    await tick(3000)
+    expect(screen.getByText('En vivo · 13:00:03')).toBeTruthy()
+    const css = STORE_CSS
+    expect(css).toMatch(/@media \(prefers-reduced-motion: reduce\)[^}]*\.avq-o-live__dot/)
+  })
+  it('listo: «¡Listo para recoger!», «Pasa por él y enseña esta pantalla.» y la pestaña «¡Listo! · Flautas» (se restaura al salir)', async () => {
+    document.title = 'Pedir'
+    const { r } = await showF(folio({ status: 'READY', paid: true, canCancel: false }))
+    expect(screen.getByRole('heading', { name: '¡Listo para recoger!' })).toBeTruthy()
+    expect(screen.getByText('Pasa por él y enseña esta pantalla.')).toBeTruthy()
+    expect(progress()!.querySelector('[aria-current="step"]')!.textContent).toBe('Listo')
+    expect(document.title).toBe('¡Listo! · Flautas')
+    r.unmount()
+    expect(document.title).toBe('Pedir')
+  })
+  it('entregado: «¡Gracias, Ana!», paso «Entregado» y deja de sondear', async () => {
+    await showF(folio({ status: 'COMPLETED', paid: true, canCancel: false }))
+    expect(screen.getByRole('heading', { name: 'Entregado' })).toBeTruthy()
+    expect(screen.getByText('¡Gracias, Ana!')).toBeTruthy()
+    expect(progress()!.querySelector('[aria-current="step"]')!.textContent).toBe('Entregado')
+    await tick(60_000)
+    expect(getTracking).toHaveBeenCalledTimes(1)
+  })
+  it('vencido en «Nadie»: su texto, «¿Todavía lo quieres?», folio tachado y NUNCA «No se te cobró nada»', async () => {
+    await showF(folio({ status: 'EXPIRED', canCancel: false }))
+    expect(screen.getByRole('heading', { name: 'Se canceló tu pedido' })).toBeTruthy()
+    expect(screen.getByText('Se canceló porque no se registró el pago a tiempo. Si ya pagaste en caja, no pasa nada: muéstrale tu folio a la cajera.')).toBeTruthy()
+    expect(screen.getByText('¿Todavía lo quieres?')).toBeTruthy()
+    expect(screen.getByText('Pídelo directo en caja.')).toBeTruthy()
+    expect(screen.getByText('W7K3P').classList.contains('avq-o-ticket__n--void')).toBe(true)
+    expect(document.body.textContent).not.toMatch(/No se te cobró nada/)
+    expect(progress()).toBeNull()
+  })
+  it('vencido: sigue consultando 2 h después de su hora, y cambia a «PAGADO» si llega el dinero', async () => {
+    await showF(folio({ status: 'EXPIRED', canCancel: false }))
+    expect(getTracking).toHaveBeenCalledTimes(1)
+    await tick(60 * 60_000) // 1 h después: sigue
+    expect(screen.getByRole('heading', { name: 'Se canceló tu pedido' })).toBeTruthy() // sigue vivo y consultando
+    vi.mocked(getTracking).mockResolvedValue(folio({ status: 'EXPIRED', paid: true, canCancel: false }))
+    await tick(10_000)
+    expect(screen.getByRole('heading', { name: '¡Pagado! Lo están preparando' })).toBeTruthy()
+    expect(document.querySelector('.avq-o-paid')!.textContent).toContain('PAGADO')
+    expect(document.body.textContent).not.toMatch(/Se canceló tu pedido/)
+  })
+  it('vencido: pasadas 2 h de su hora deja de consultar', async () => {
+    await showF(folio({ status: 'EXPIRED', canCancel: false }))
+    await tick(2 * 60 * 60_000 + 40 * 60_000) // 30 min de plazo + 2 h
+    const n = vi.mocked(getTracking).mock.calls.length
+    await tick(10 * 60_000)
+    expect(getTracking).toHaveBeenCalledTimes(n)
+  })
+  it('lo canceló el negocio: «Si tienes dudas, pregunta en caja.» y «Volver al menú»', async () => {
+    await showF(folio({ status: 'CANCELLED_BY_STAFF', canCancel: false }))
+    expect(screen.getByRole('heading', { name: 'El negocio canceló tu pedido' })).toBeTruthy()
+    expect(screen.getByText('Si tienes dudas, pregunta en caja.')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Volver al menú' })).toBeTruthy()
+  })
+  it('sin red: el folio sigue a la vista con «Sin conexión: te enseñamos lo último que supimos…», en ámbar, y sin cuenta regresiva', async () => {
+    await showF(folio())
+    vi.mocked(getTracking).mockRejectedValue(new ApiError('Sin conexión', 0, undefined, undefined, true))
+    await tick(10_000)
+    expect(screen.getByText(/Sin conexión: te enseñamos lo último que supimos/)).toBeTruthy()
+    expect(screen.getByText('W7K3P')).toBeTruthy()
+    expect(screen.getByText('Se cancela solo a las 13:30 si no pasas a pagar.')).toBeTruthy()
+    expect(screen.queryByText(/^Faltan/)).toBeNull()
+    expect(document.querySelector('.avq-o-notice--warn')).toBeTruthy()
+    expect(document.querySelector('.avq-o-notice--error')).toBeNull()
+  })
+  it('sin red y pagado: el «PAGADO» sigue a la vista', async () => {
+    await showF(folio({ status: 'ACCEPTED', paid: true, canCancel: false }))
+    vi.mocked(getTracking).mockRejectedValue(new ApiError('Sin conexión', 0, undefined, undefined, true))
+    await tick(10_000)
+    expect(screen.getByText(/lo último que supimos/)).toBeTruthy()
+    expect(document.querySelector('.avq-o-paid')!.textContent).toContain('PAGADO')
+  })
+  it('en inglés', async () => {
+    await showF(folio(), 'en')
+    expect(screen.getByRole('heading', { name: 'Go pay at the counter' })).toBeTruthy()
+    expect(screen.getByText('Your order number')).toBeTruthy()
+    cleanup()
+    await showF(folio({ status: 'ACCEPTED', paid: true, canCancel: false }), 'en')
+    expect(screen.getByRole('heading', { name: 'Paid! They are preparing it' })).toBeTruthy()
+    expect(document.querySelector('.avq-o-paid')!.textContent).toContain('PAID')
+  })
+  it('«Mi equipo» (requiresAcceptance true o ausente) no cambia', async () => {
+    for (const requiresAcceptance of [true, undefined]) {
+      await showF(tr({ requiresAcceptance }))
+      expect(screen.getByRole('heading', { name: 'Esperando que el negocio acepte' })).toBeTruthy()
+      expect(screen.getByText('Dilo en el mostrador al recoger.')).toBeTruthy()
+      expect(screen.getByRole('button', { name: 'Cancelar pedido' })).toBeTruthy()
+      expect(document.querySelector('.avq-o-paid')).toBeNull()
+      cleanup()
+    }
+  })
+
+  // ---- W3b ----
+  it('R67: con paidAt y customerName dice «<Nombre> · pagado hoy a las HH:MM» (el nombre del servidor gana al guardado)', async () => {
+    await showF(folio({ status: 'ACCEPTED', paid: true, canCancel: false, customerName: 'Ana María', paidAt: '2026-10-17T19:14:00Z' }))
+    expect(document.querySelector('.avq-o-paid__who')!.textContent).toBe('Ana María · pagado hoy a las 13:14')
+  })
+  it('R67: con paidAt y sin ningún nombre: «Pagado hoy a las HH:MM»; sin paidAt, el texto honesto de antes', async () => {
+    await showF(folio({ status: 'ACCEPTED', paid: true, canCancel: false, paidAt: '2026-10-17T19:14:00Z' }), 'es', null)
+    expect(document.querySelector('.avq-o-paid__who')!.textContent).toBe('Pagado hoy a las 13:14')
+    cleanup()
+    await showF(folio({ status: 'ACCEPTED', paid: true, canCancel: false }))
+    expect(document.querySelector('.avq-o-paid__who')!.textContent).toBe('Ana · pagado hoy')
+  })
+  it('R67: con unitPrice/total por renglón, el folio por pagar los muestra; sin ellos, no hay precios', async () => {
+    const items = [
+      { name: 'Latte', quantity: 2, note: null, modifiers: [], unitPrice: 65, total: 130 },
+      { name: 'Shake', quantity: 1, note: null, modifiers: [], unitPrice: 69, total: 69 },
+    ]
+    await showF(folio({ items, total: 199 }))
+    const rows = Array.from(document.querySelectorAll('.avq-o-ticket__lines > li'))
+    expect(rows[0].textContent).toContain('$130')
+    expect(rows[1].textContent).toContain('$69')
+    cleanup()
+    await showF(folio())
+    expect(document.querySelector('.avq-o-ticket__price')).toBeNull()
+  })
+  it('pulido W10 (1c): el precio de cada producto va a la derecha del renglón, no debajo del nombre', async () => {
+    const items = [{ name: 'Latte', quantity: 1, note: null, modifiers: [{ name: 'Leche de almendra', quantity: 1 }], unitPrice: 65, total: 65 }]
+    await showF(folio({ items, total: 65 }))
+    const li = document.querySelector('.avq-o-ticket__lines > li')!
+    const precio = li.querySelector('.avq-o-ticket__price')!
+    // El precio es hermano del bloque del nombre (la fila los reparte a los lados), no un renglón dentro del nombre.
+    expect(precio.parentElement).toBe(li)
+    expect(precio.textContent).toBe('$65')
+    expect(li.textContent).toBe('1 × LatteLeche de almendra$65')
+  })
+  it('pulido W1: pagado en caja con el estado todavía en «por pagar» (paid: true): ni «Si cierras esta página…» ni «Pagas en caja…»', async () => {
+    await showF(folio({ paid: true, canCancel: false, paidAt: '2026-10-17T19:05:00Z' }))
+    expect(screen.getByRole('heading', { name: '¡Pagado! Lo están preparando' })).toBeTruthy()
+    expect(screen.queryByText('Si cierras esta página, en caja te encuentran por tu nombre.')).toBeNull()
+    expect(screen.queryByText('Pagas en caja: tarjeta o efectivo. IVA incluido.')).toBeNull()
+    expect(screen.getByText('Pagado', { selector: '.avq-o-total__tax' })).toBeTruthy()
+  })
+  it('m3: pasada la hora límite no hay «Faltan 1 min» (se oculta el chip)', async () => {
+    await showF(folio())
+    await tick(30 * 60_000 + 5_000)
+    expect(screen.queryByText(/^Faltan/)).toBeNull()
+    expect(document.querySelector('.avq-o-chip')).toBeNull()
+  })
+  it('m3: el reloj de 1 s no corre al entregar ni en un cancelado; sí en un pagado sin entregar', async () => {
+    const spy = vi.spyOn(globalThis, 'setInterval')
+    const ticks = () => spy.mock.calls.filter(c => c[1] === 1000).length
+    await showF(folio({ status: 'COMPLETED', paid: true, canCancel: false }))
+    expect(screen.queryByText(/^En vivo/)).toBeNull()
+    expect(ticks()).toBe(0)
+    cleanup()
+    await showF(folio({ status: 'CANCELLED_BY_STAFF', canCancel: false }))
+    expect(ticks()).toBe(0)
+    cleanup()
+    await showF(folio({ status: 'ACCEPTED', paid: true, canCancel: false }))
+    expect(ticks()).toBe(1)
+    spy.mockRestore()
+  })
+  it('W3c: un vencido ya pagado SIGUE consultando (el servidor lo revive) y sigue su avance hasta «¡Listo para recoger!»', async () => {
+    await showF(folio({ status: 'EXPIRED', paid: true, canCancel: false }))
+    expect(screen.getByRole('heading', { name: '¡Pagado! Lo están preparando' })).toBeTruthy()
+    expect(screen.getByText(/^En vivo/)).toBeTruthy()
+    await tick(3000)
+    expect(screen.getByText('En vivo · 13:00:03')).toBeTruthy() // el reloj sigue corriendo
+    vi.mocked(getTracking).mockResolvedValue(folio({ status: 'READY', paid: true, canCancel: false }))
+    await tick(10_000)
+    expect(screen.getByRole('heading', { name: '¡Listo para recoger!' })).toBeTruthy()
+    vi.mocked(getTracking).mockResolvedValue(folio({ status: 'COMPLETED', paid: true, canCancel: false }))
+    await tick(10_000)
+    const n = vi.mocked(getTracking).mock.calls.length
+    await tick(60_000)
+    expect(getTracking).toHaveBeenCalledTimes(n) // sólo al entregar se detiene
+  })
+
+  // ---- Codex r1 (R79) ----
+  it('#2: cancelado por el negocio sigue consultando 2 h y, si llega dinero (el servidor lo pasa a ACCEPTED), muestra «¡Pagado!»', async () => {
+    await showF(folio({ status: 'CANCELLED_BY_STAFF', canCancel: false }))
+    await tick(60 * 60_000)
+    expect(screen.getByRole('heading', { name: 'El negocio canceló tu pedido' })).toBeTruthy()
+    vi.mocked(getTracking).mockResolvedValue(folio({ status: 'ACCEPTED', paid: true, canCancel: false }))
+    await tick(10_000)
+    expect(screen.getByRole('heading', { name: '¡Pagado! Lo están preparando' })).toBeTruthy()
+    expect(screen.getByText(/^En vivo/)).toBeTruthy()
+  })
+  it('#2: cancelado por la clienta también sigue; pasadas 2 h sin dinero deja de consultar', async () => {
+    await showF(folio({ status: 'CANCELLED_BY_CUSTOMER', canCancel: false }))
+    await tick(60 * 60_000)
+    expect(vi.mocked(getTracking).mock.calls.length).toBeGreaterThan(1)
+    await tick(2 * 60 * 60_000)
+    const n = vi.mocked(getTracking).mock.calls.length
+    await tick(10 * 60_000)
+    expect(getTracking).toHaveBeenCalledTimes(n)
+  })
+  it('#4: con abono sin pagar del todo: sin cuenta regresiva ni «Se cancela solo», dice «Ya pagaste $50 · Falta $84: págalo en caja»', async () => {
+    await showF(folio({ amountPaid: 50, remaining: 84 }))
+    expect(screen.getByRole('heading', { name: 'Pasa a pagar en caja' })).toBeTruthy()
+    expect(screen.getByText('Ya pagaste $50 · Falta $84: págalo en caja')).toBeTruthy()
+    expect(document.body.textContent).not.toMatch(/Se cancela solo|Faltan \d+ min/)
+    expect(document.querySelector('.avq-o-chip')).toBeNull()
+    cleanup()
+    await showF(folio({ amountPaid: 50, remaining: 84 }), 'en')
+    expect(screen.getByText('You already paid $50 · $84 left: pay it at the counter')).toBeTruthy()
+  })
+  it('#4: sin los campos (o con abono 0) se comporta como hoy', async () => {
+    await showF(folio({ amountPaid: 0, remaining: 134 }))
+    expect(screen.getByText('Se cancela solo a las 13:30 si no pasas a pagar.')).toBeTruthy()
+    expect(screen.getByText('Faltan 30 min')).toBeTruthy()
+  })
+  it('#7: pagado el mismo día ⇒ «pagado hoy a las»; pasada la medianoche del negocio ⇒ con la fecha (en la zona del negocio)', async () => {
+    // 23:59 del 6 nov en CDMX = 05:59Z del 7. Ahora: 7 nov 13:00 CDMX.
+    vi.setSystemTime(new Date('2026-11-07T19:00:00Z'))
+    localStorage.clear()
+    const mk = (paidAt: string, locale: 'es' | 'en') => {
+      vi.mocked(getTracking).mockResolvedValue(folio({ status: 'ACCEPTED', paid: true, canCancel: false, paidAt }))
+      const st = makeStore(null, null, locale)
+      saveLastOrder(st.slug, { trackingToken: T32, orderNumber: 'W7K3P', name: 'Ana' })
+      st.trackingToken.value = T32
+      st.go('tracking')
+      render(withStore(st, <TrackingScreen />))
+    }
+    mk('2026-11-07T17:14:00Z', 'es') // 11:14 de hoy
+    await flush()
+    expect(document.querySelector('.avq-o-paid__who')!.textContent).toBe('Ana · pagado hoy a las 11:14')
+    cleanup()
+    mk('2026-11-07T05:59:00Z', 'es') // 23:59 de AYER en CDMX
+    await flush()
+    expect(document.querySelector('.avq-o-paid__who')!.textContent).toBe('Ana · pagado el 6 nov a las 23:59')
+    cleanup()
+    mk('2026-11-07T05:59:00Z', 'en')
+    await flush()
+    expect(document.querySelector('.avq-o-paid__who')!.textContent).toBe('Ana · paid on Nov 6 at 11:59 PM')
+  })
+  it('Wc1-m1: un cancelado que dice `paid` sigue consultando hasta las 24 h de su hora y luego deja de consultar', async () => {
+    await showF(folio({ status: 'CANCELLED_BY_STAFF', paid: true, canCancel: false }))
+    vi.setSystemTime(new Date('2026-10-18T10:00:00Z')) // ~15 h después: sigue
+    await tick(10_000)
+    const n = vi.mocked(getTracking).mock.calls.length
+    await tick(10_000)
+    expect(vi.mocked(getTracking).mock.calls.length).toBeGreaterThan(n)
+    vi.setSystemTime(new Date('2026-10-18T20:00:00Z')) // > 24 h
+    await tick(10_000)
+    const m = vi.mocked(getTracking).mock.calls.length
+    await tick(60_000)
+    expect(getTracking).toHaveBeenCalledTimes(m)
+  })
+  it('tope: un EXPIRED con `paid` que nadie revive deja de consultarse a las 24 h', async () => {
+    await showF(folio({ status: 'EXPIRED', paid: true, canCancel: false }))
+    vi.setSystemTime(new Date('2026-10-18T10:00:00Z')) // ~15 h: sigue
+    await tick(10_000)
+    const n = vi.mocked(getTracking).mock.calls.length
+    await tick(10_000)
+    expect(vi.mocked(getTracking).mock.calls.length).toBeGreaterThan(n)
+    vi.setSystemTime(new Date('2026-10-18T20:00:00Z')) // > 24 h
+    await tick(10_000)
+    const m = vi.mocked(getTracking).mock.calls.length
+    await tick(60_000)
+    expect(getTracking).toHaveBeenCalledTimes(m)
+  })
+  it('R85 #4: un EXPIRED pagado recibido a las 23 h, y luego lecturas que fallan hasta pasar las 24 h ⇒ ya no se agenda ninguna', async () => {
+    await showF(folio({ status: 'EXPIRED', paid: true, canCancel: false })) // llega con la hora límite 13:30
+    vi.setSystemTime(new Date('2026-10-18T12:30:00Z')) // 23 h después de la hora límite
+    await tick(10_000)
+    vi.mocked(getTracking).mockRejectedValue(new ApiError('Sin conexión', 0, undefined, undefined, true))
+    await tick(10_000)
+    vi.setSystemTime(new Date('2026-10-18T20:00:00Z')) // > 24 h, sin una sola respuesta buena desde entonces
+    await tick(10_000)
+    const n = vi.mocked(getTracking).mock.calls.length
+    await tick(120_000)
+    expect(getTracking).toHaveBeenCalledTimes(n)
+  })
+})
+
+describe('W4: el seguimiento avisa a «Mi cuenta» cuando su folio cambia', () => {
+  it('pagado entre dos lecturas ⇒ avoqado:folio-cambio con el negocio, el folio y su estado; sin cambio, nada', async () => {
+    const oido = vi.fn()
+    document.addEventListener('avoqado:folio-cambio', oido)
+    const s = await show(tr())
+    await tick(10_000) // misma respuesta: no hay cambio
+    expect(oido).not.toHaveBeenCalled()
+    vi.mocked(getTracking).mockResolvedValue(tr({ status: 'ACCEPTED', paid: true, canCancel: false }))
+    await tick(10_000)
+    expect(oido).toHaveBeenCalledTimes(1)
+    expect(oido.mock.calls[0][0].detail).toMatchObject({ slug: s.slug, trackingToken: 'T'.repeat(32), status: 'ACCEPTED', paid: true })
+    document.removeEventListener('avoqado:folio-cambio', oido)
+  })
+})
+
+describe('W5: el seguimiento dice lo que ganó y lo que regresó (S14)', () => {
+  const NOW = '2026-10-17T19:00:00Z'
+  const T32 = 'T'.repeat(32)
+  const folio = (over: Partial<Tracking> = {}): Tracking => tr({
+    orderNumber: 'W7K3P', requiresAcceptance: false, channel: 'QR', canCancel: true, total: 69,
+    acceptDeadlineAt: '2026-10-17T19:30:00Z',
+    items: [
+      { name: 'Latte', quantity: 1, note: null, modifiers: [], unitPrice: 65, total: 65 },
+      { name: 'Shake de proteína', quantity: 1, note: null, modifiers: [], unitPrice: 69, total: 69 },
+    ],
+    ...over,
+  })
+  const pagado = (over: Partial<Tracking> = {}) => folio({ status: 'ACCEPTED', paid: true, canCancel: false, paidAt: '2026-10-17T19:14:00Z', ...over })
+  async function showW(t: Tracking, locale: 'es' | 'en' = 'es') {
+    vi.setSystemTime(new Date(NOW))
+    localStorage.clear()
+    vi.mocked(getTracking).mockResolvedValue(t)
+    const s = makeStore(null, null, locale)
+    saveLastOrder(s.slug, { trackingToken: T32, orderNumber: 'W7K3P', name: 'Ana' })
+    s.trackingToken.value = T32
+    s.go('tracking')
+    render(withStore(s, <TrackingScreen />))
+    await flush()
+    return s
+  }
+  const fila = (label: string) => screen.getByText(label).parentElement!.textContent
+
+  it('pagado con un sello ⇒ «Sumaste 1 sello (7 de 10)», en verde', async () => {
+    await showW(pagado({ lealtad: { sello: { ganados: 7, meta: 10 } } }))
+    const t = screen.getByText('Sumaste 1 sello (7 de 10)')
+    expect(t.closest('.avq-o-notice--ok')).toBeTruthy()
+  })
+  it('codex-w5w6-r1 #3: la cartilla de ese sello ya está llena ⇒ «Sumaste 1 sello (cartilla completa)»; nunca dice que ESTA compra la completó', async () => {
+    // El SERVIDOR manda el contador de HOY de la cartilla donde cayó el sello: la compra 1 vista después de que la 10 la llenó dice 10/10.
+    await showW(pagado({ lealtad: { sello: { ganados: 10, meta: 10 } } }))
+    expect(screen.getByText('Sumaste 1 sello (cartilla completa)')).toBeTruthy()
+    expect(screen.queryByText(/completaste/)).toBeNull()
+    expect(screen.queryByText(/10 de 10/)).toBeNull()
+  })
+  it('con puntos ⇒ «Sumaste 42 puntos»; con sello y puntos, las dos', async () => {
+    await showW(pagado({ lealtad: { puntos: 42 } }))
+    expect(screen.getByText('Sumaste 42 puntos')).toBeTruthy()
+    cleanup()
+    await showW(pagado({ lealtad: { sello: { ganados: 3, meta: 8 }, puntos: 1 } }))
+    expect(screen.getByText('Sumaste 1 sello (3 de 8)')).toBeTruthy()
+    expect(screen.getByText('Sumaste 1 punto')).toBeTruthy()
+  })
+  it('sin lealtad (null o sin el campo) no dice nada: nunca «no sumaste»', async () => {
+    await showW(pagado({ lealtad: null }))
+    expect(screen.queryByText(/Sumaste/)).toBeNull()
+    expect(screen.queryByText(/no sumaste/i)).toBeNull()
+    cleanup()
+    await showW(pagado())
+    expect(screen.queryByText(/Sumaste/)).toBeNull()
+  })
+  it('beneficioRegresado ⇒ «Tus beneficios regresaron a tu cuenta» / «Úsalos en tu próximo pedido.» (1i·2)', async () => {
+    await showW(folio({ status: 'EXPIRED', canCancel: false, beneficioRegresado: true, beneficios: [{ nombre: 'Café gratis', monto: 65 }], beneficiosTotal: 1 }))
+    expect(screen.getByRole('heading', { name: 'Se canceló tu pedido' })).toBeTruthy()
+    const t = screen.getByText('Tus beneficios regresaron a tu cuenta')
+    expect(t.closest('.avq-o-notice--ok')!.textContent).toContain('Úsalos en tu próximo pedido.')
+  })
+  it('beneficioRegresado false no dice nada', async () => {
+    await showW(folio({ beneficioRegresado: false, beneficios: [], beneficiosTotal: 0 }))
+    expect(screen.queryByText(/regresaron a tu cuenta/)).toBeNull()
+  })
+  it('por pagar con beneficios: cada fila con −$X encima del total, y «Total a pagar» (1i)', async () => {
+    await showW(folio({ beneficios: [{ nombre: 'Café gratis', monto: 65 }], beneficiosTotal: 1 }))
+    expect(fila('Café gratis')).toBe('Café gratis−$65')
+    expect(screen.getByText('Café gratis').parentElement!.classList.contains('avq-o-total__row--ben')).toBe(true)
+    expect(fila('Total a pagar')).toBe('Total a pagar$69')
+    const sum = document.querySelector('.avq-o-ticket__sum')!
+    expect(sum.textContent!.indexOf('Café gratis')).toBeLessThan(sum.textContent!.indexOf('Total a pagar'))
+    expect(screen.getByText('Pagas en caja: tarjeta o efectivo. IVA incluido.')).toBeTruthy()
+  })
+  it('pagado con beneficios: la fila y «Pagaste $69», sin el «Pagado» suelto (1j)', async () => {
+    await showW(pagado({ beneficios: [{ nombre: 'Café gratis', monto: 65 }], beneficiosTotal: 1, lealtad: { sello: { ganados: 1, meta: 10 } } }))
+    expect(fila('Café gratis')).toBe('Café gratis−$65')
+    expect(fila('Pagaste')).toBe('Pagaste$69')
+    expect(document.querySelector('.avq-o-ticket__sum')!.textContent).not.toContain('Pagado')
+    expect(screen.getByText('Sumaste 1 sello (1 de 10)')).toBeTruthy()
+  })
+  it('más filas que las publicadas ⇒ «y 2 más» (nunca se recorta en silencio)', async () => {
+    const diez = Array.from({ length: 10 }, (_, i) => ({ nombre: `Descuento ${i + 1}`, monto: 1 }))
+    await showW(folio({ beneficios: diez, beneficiosTotal: 12 }))
+    expect(screen.getByText('Descuento 10')).toBeTruthy()
+    expect(screen.getByText('y 2 más')).toBeTruthy()
+  })
+  it('una fila sin nombre dice «Descuento»', async () => {
+    await showW(folio({ beneficios: [{ nombre: '', monto: 5 }], beneficiosTotal: 1 }))
+    expect(fila('Descuento')).toBe('Descuento−$5')
+  })
+  it('sin los campos nuevos, como hoy: «Total», «Pagado», ni filas ni avisos', async () => {
+    await showW(pagado())
+    expect(fila('Total')).toBe('Total$69')
+    expect(document.querySelector('.avq-o-ticket__sum')!.textContent).toBe('Total$69Pagado')
+    expect(document.querySelector('.avq-o-total__row--ben')).toBeNull()
+    expect(screen.queryByText(/regresaron/)).toBeNull()
+  })
+  it('pedido de «Mi equipo» también: filas y «Sumaste», con «Total»', async () => {
+    await showW(tr({ status: 'ACCEPTED', paid: true, canCancel: false, total: 105, beneficios: [{ nombre: 'Recompensas — 340 puntos', monto: 34 }], beneficiosTotal: 1, lealtad: { puntos: 10 } }))
+    expect(fila('Recompensas — 340 puntos')).toBe('Recompensas — 340 puntos−$34')
+    expect(fila('Total')).toBe('Total$105')
+    expect(screen.getByText('Sumaste 10 puntos')).toBeTruthy()
+  })
+  it('sin red: se queda lo último que supo, con «Sumaste» y las filas', async () => {
+    await showW(pagado({ beneficios: [{ nombre: 'Café gratis', monto: 65 }], beneficiosTotal: 1, lealtad: { sello: { ganados: 7, meta: 10 } } }))
+    vi.mocked(getTracking).mockRejectedValue(new ApiError('Sin conexión', 0, undefined, undefined, true))
+    await tick(10_000)
+    expect(screen.getByText('Sin conexión: te enseñamos lo último que supimos; se actualiza solo al volver.')).toBeTruthy()
+    expect(screen.getByText('Sumaste 1 sello (7 de 10)')).toBeTruthy()
+    expect(fila('Café gratis')).toBe('Café gratis−$65')
+  })
+  it('en inglés', async () => {
+    await showW(pagado({ beneficios: [{ nombre: 'Café gratis', monto: 65 }], beneficiosTotal: 12, lealtad: { sello: { ganados: 7, meta: 10 }, puntos: 42 } }), 'en')
+    expect(screen.getByText('You earned 1 stamp (7 of 10)')).toBeTruthy()
+    expect(screen.getByText('You earned 42 points')).toBeTruthy()
+    expect(fila('You paid')).toBe('You paid$69')
+    expect(screen.getByText('and 11 more')).toBeTruthy()
+    cleanup()
+    await showW(folio({ status: 'EXPIRED', canCancel: false, beneficioRegresado: true, beneficios: [{ nombre: 'Café gratis', monto: 65 }], beneficiosTotal: 1, lealtad: { sello: { ganados: 10, meta: 10 } } }), 'en')
+    expect(screen.getByText('Your rewards went back to your account')).toBeTruthy()
+    expect(screen.getByText('Use them on your next order.')).toBeTruthy()
+    expect(screen.getByText('You earned 1 stamp (card complete)')).toBeTruthy()
+    cleanup()
+    await showW(folio({ beneficios: [{ nombre: 'Café gratis', monto: 65 }], beneficiosTotal: 1 }), 'en')
+    expect(fila('Total to pay')).toBe('Total to pay$69')
   })
 })

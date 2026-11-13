@@ -12,9 +12,11 @@ const api = vi.hoisted(() => ({
 vi.mock('./api', async () => ({ ...(await vi.importActual<typeof import('./api')>('./api')), ...api }))
 
 import { ApiError } from './api'
-import { buildOrderBody, checkoutOf, isDefinitive, nav, phoneToVerify, retry, send, storageWorks, submitOrder, verifyPhone } from './checkout'
+import { buildOrderBody, checkoutOf, entroEnLaTienda, isDefinitive, nav, phoneToVerify, retry, send, storageWorks, submitOrder, verifyPhone } from './checkout'
 import { createOrderStore, type OrderStore } from './store'
 import { loadLastOrder, loadSession, saveSession } from './session'
+import { borrarSesion, guardarSesion, leerSesion, paginaDe } from '../lib/sesionDeCliente'
+import { setCustomerSession, tokenParaMandar } from '../state/booking'
 import { pendingAttempt } from './attempt'
 import { phoneE164 } from './phone'
 import type { CartLine } from './cart'
@@ -36,18 +38,26 @@ const created = (over: Partial<CreatedOrder> = {}): CreatedOrder => ({
   total: '170.00', acceptDeadlineAt: '2026-10-17T19:00:00Z', replay: false, ...over,
 })
 const offline = () => new ApiError('Sin conexión', 0, undefined, undefined, true)
+/** W2: lo que responde el código con `purpose: 'SESSION'` (la sesión única de S7). */
+const sesion = (token: string) => ({
+  token, customer: { id: 'c1', firstName: 'Ana', lastName: null, email: null, phone: PHONE },
+  contactos: [{ tipo: 'PHONE', valor: PHONE, metodo: 'WHATSAPP', probadoEn: 1 }], otraFicha: null,
+})
 /** Un rechazo con la marca `final: true` que el servidor pone a lo que dejó guardado. */
 const fin = (status: number, code: string, details?: unknown) => new ApiError('x', status, code, details, false, true)
 const flush = async () => { for (let i = 0; i < 10; i++) await Promise.resolve() }
 
 let n = 0
-function setup(opts: { total?: number; sessionPhone?: string | null } = {}) {
-  const store = createOrderStore(`chk${++n}`, { locale: 'es' })
+/** `antes`: lo guardado ANTES de abrir la tienda (crearla abre la página y toma lo guardado en ese momento). */
+function setup(opts: { total?: number; sessionPhone?: string | null; antes?: (slug: string) => void } = {}) {
+  const slug = `chk${++n}`
+  const sessionPhone = opts.sessionPhone === undefined ? PHONE : opts.sessionPhone
+  if (sessionPhone) saveSession(slug, { token: 'tok-1', phone: sessionPhone, name: 'Ana', savedAt: Date.now() })
+  opts.antes?.(slug)
+  const store = createOrderStore(slug, { locale: 'es' })
   store.cart.value = [line()]
   store.quote.value = quoteOf(opts.total ?? 170)
   store.info.value = info
-  const sessionPhone = opts.sessionPhone === undefined ? PHONE : opts.sessionPhone
-  if (sessionPhone) saveSession(store.slug, { token: 'tok-1', phone: sessionPhone, name: 'Ana', savedAt: Date.now() })
   const body = buildOrderBody(store, { customer: { name: ' Ana López ', phone: PHONE }, note: null })
   return { store, body }
 }
@@ -65,6 +75,17 @@ beforeEach(() => {
 afterEach(() => vi.restoreAllMocks())
 
 describe('buildOrderBody', () => {
+  it('W4: con canal QR el pedido manda channel QR; sin él (la liga copiada), LINK', () => {
+    const mk = (channel?: 'QR' | 'LINK') => {
+      const store = createOrderStore(`chk${++n}`, { locale: 'es', ...(channel ? { channel } : {}) })
+      store.cart.value = [line()]
+      store.quote.value = quoteOf(170)
+      return buildOrderBody(store, { customer: { name: 'Ana' }, note: null }).channel
+    }
+    expect(mk('QR')).toBe('QR')
+    expect(mk()).toBe('LINK')
+    expect(mk('LINK')).toBe('LINK')
+  })
   it('el total que se manda es el de la cotización del servidor, con dos decimales; nombre recortado; sin correo ni nota vacíos', () => {
     const { store, body } = setup({ total: 206.5 })
     expect(body).toEqual({
@@ -72,6 +93,7 @@ describe('buildOrderBody', () => {
       paymentMode: 'PAY_AT_PICKUP',
       expectedTotal: '206.50',
       customer: { name: 'Ana López', phone: '+525544422262' },
+      channel: 'LINK',
     })
     const withAll = buildOrderBody(store, { customer: { name: 'Ana', phone: PHONE, email: ' ana@x.mx ' }, note: ' sin cebolla ' })
     expect(withAll.customer.email).toBe('ana@x.mx')
@@ -184,13 +206,73 @@ describe('submitOrder', () => {
     expect(loadSession(store.slug)).toBeNull()
     expect(pendingAttempt(store.slug)?.key).toBe(sent(0).key)
 
-    api.verifyOrderingOtp.mockResolvedValueOnce({ token: 'tok-2', customer: { id: 'c1' } })
+    api.verifyOrderingOtp.mockResolvedValueOnce(sesion('tok-2'))
     await verifyPhone(store, phoneToVerify(store)!, '123456')
     api.createOrder.mockResolvedValueOnce(created())
     expect((await submitOrder(store, body)).kind).toBe('created')
     expect(sent(1).key).toBe(sent(0).key)
     expect(sent(1).body).toEqual(sent(0).body)
     expect(sent(1).token).toBe('tok-2')
+    // W2: el código deja la sesión ÚNICA (la que también abre «Mi cuenta» y reservas), no la de pedidos de hoy.
+    expect(leerSesion(store.slug)).toMatchObject({ token: 'tok-2', contactos: [{ tipo: 'PHONE', valor: PHONE }] })
+    expect(localStorage.getItem(`avq_order_session:${store.slug}`)).toBeNull()
+
+    // W1: un 401 con la sesión única la borra (y se pide el código otra vez), sin perder el intento.
+    api.createOrder.mockRejectedValueOnce(new ApiError('Sesión vieja', 401, 'CUSTOMER_TOKEN_INVALID'))
+    expect(await submitOrder(store, body)).toEqual({ kind: 'needsOtp' })
+    expect(sent(2).token).toBe('tok-2')
+    expect(leerSesion(store.slug)).toBeNull()
+    expect(pendingAttempt(store.slug)).not.toBeNull()
+  })
+
+  it('alcance A: un 401 con la sesión vieja pide el código sin reenviar (ni con otra sesión ni con la vieja) y conserva carrito e intento', async () => {
+    const { store, body } = setup({ sessionPhone: null, antes: slug => guardarSesion(slug, { ...sesion('tok-vieja'), guardadaEn: Date.now() } as any) })
+    api.createOrder.mockImplementationOnce(async () => {
+      // Otra pestaña entró (otra prueba del teléfono: otra sesión, no una renovación).
+      guardarSesion(store.slug, { ...sesion('tok-nueva'), contactos: [{ tipo: 'PHONE', valor: PHONE, metodo: 'WHATSAPP', probadoEn: 2 }], guardadaEn: Date.now() } as any)
+      throw new ApiError('Sesión vieja', 401, 'CUSTOMER_TOKEN_INVALID')
+    })
+    expect(await submitOrder(store, body)).toEqual({ kind: 'needsOtp' })
+    expect(api.createOrder).toHaveBeenCalledTimes(1)
+    expect(pendingAttempt(store.slug)?.key).toBe(sent(0).key)
+    expect(store.cart.value).toHaveLength(1)
+    expect(leerSesion(store.slug)?.token).toBe('tok-nueva') // la de la otra pestaña no se borra
+  })
+
+  it('codex-r5 E1: la tienda pide con la sesión con que se abrió; si otra pestaña entró con otra, no la toma: pide el código', async () => {
+    const { store, body } = setup({ sessionPhone: null, antes: slug => guardarSesion(slug, { ...sesion('tok-A'), guardadaEn: Date.now() } as any) })
+    checkoutOf(store) // abrir la tienda: toma A
+    guardarSesion(store.slug, { ...sesion('tok-B'), contactos: [{ tipo: 'PHONE', valor: PHONE, metodo: 'WHATSAPP', probadoEn: 2 }], guardadaEn: Date.now() } as any)
+    expect(await submitOrder(store, body)).toEqual({ kind: 'needsOtp' })
+    expect(api.createOrder).not.toHaveBeenCalled()
+  })
+
+  it('codex-r6 #2: el 401 de A también suelta su renovación A2 (la misma sesión): no queda guardada ni vuelve al recargar', async () => {
+    const { store, body } = setup({ sessionPhone: null, antes: slug => guardarSesion(slug, { ...sesion('tok-A'), guardadaEn: Date.now() } as any) })
+    api.createOrder.mockImplementationOnce(async () => {
+      // Otra petición, autenticada antes de revocar, renovó A (misma ficha, contactos y versión).
+      guardarSesion(store.slug, { ...sesion('tok-A2'), guardadaEn: Date.now() } as any)
+      throw new ApiError('Sesión revocada', 401, 'CUSTOMER_TOKEN_INVALID')
+    })
+    expect(await submitOrder(store, body)).toEqual({ kind: 'needsOtp' })
+    expect(leerSesion(store.slug)).toBeNull()
+    vi.resetModules() // recargar la página
+    expect((await import('./session')).loadSession(store.slug)).toBeNull()
+  })
+
+  it('codex-r4 R4-4: 401 CUSTOMER_INACTIVE también suelta la sesión rechazada (el intento queda)', async () => {
+    const { store, body } = setup({ sessionPhone: null, antes: slug => guardarSesion(slug, { ...sesion('tok-1'), guardadaEn: Date.now() } as any) })
+    api.createOrder.mockRejectedValueOnce(new ApiError('Esta cuenta está desactivada', 401, 'CUSTOMER_INACTIVE'))
+    expect((await submitOrder(store, body)).kind).toBe('error')
+    expect(leerSesion(store.slug)).toBeNull()
+    expect(pendingAttempt(store.slug)).not.toBeNull()
+  })
+
+  it('codex-r2: pedir en «Mi equipo» manda la sesión vigente al momento de mandar', async () => {
+    const { store, body } = setup({ sessionPhone: null, antes: slug => { guardarSesion(slug, { ...sesion('tok-vieja'), guardadaEn: Date.now() } as any); guardarSesion(slug, { ...sesion('tok-vigente'), guardadaEn: Date.now() } as any) } })
+    api.createOrder.mockResolvedValueOnce(created())
+    expect((await submitOrder(store, body)).kind).toBe('created')
+    expect(sent().token).toBe('tok-vigente')
   })
 
   it('200 replay:true (el reintento recupera su pedido, aun con el plan vencido) ⇒ created', async () => {
@@ -317,7 +399,7 @@ describe('send (lo que ve la tienda)', () => {
     expect(store.screen.value).toBe('otp')
     const phone = phoneToVerify(store)!
     expect(phone).toBe('+525544422262')
-    api.verifyOrderingOtp.mockResolvedValueOnce({ token: 'tok-otp', customer: { id: 'c1' } })
+    api.verifyOrderingOtp.mockResolvedValueOnce(sesion('tok-otp'))
     await verifyPhone(store, phone, '654321')
     expect(api.verifyOrderingOtp).toHaveBeenCalledWith(store.slug, '+525544422262', '654321')
     expect(loadSession(store.slug)).toMatchObject({ token: 'tok-otp', phone: '+525544422262' })
@@ -475,7 +557,7 @@ describe('ronda 1 de arreglos', () => {
     const { store, body } = setup({ sessionPhone: null })
     await send(store, body)
     expect(store.screen.value).toBe('otp')
-    api.verifyOrderingOtp.mockResolvedValueOnce({ token: 'tok-otp', customer: { id: 'c1' } })
+    api.verifyOrderingOtp.mockResolvedValueOnce(sesion('tok-otp'))
     await verifyPhone(store, phoneToVerify(store)!, '123456')
     api.getInfo.mockResolvedValueOnce({ ...info, status: 'PAUSED', reason: 'MANUAL_PAUSE' })
     api.createOrder.mockRejectedValueOnce(new ApiError('Pausado', 409, 'ORDERING_PAUSED', { status: 'PAUSED', reason: 'MANUAL_PAUSE' }))
@@ -517,7 +599,7 @@ describe('fase 2: pagar con tarjeta', () => {
     const { store, body } = card()
     expect(body).toEqual({
       items: [{ productId: 'p-flauta', quantity: 2, modifiers: [{ modifierId: 'm-salsa', quantity: 1 }] }],
-      paymentMode: 'CARD_ONLINE', expectedTotal: '170.00', customer: { name: 'Ana López', phone: '+525544422262' },
+      paymentMode: 'CARD_ONLINE', expectedTotal: '170.00', customer: { name: 'Ana López', phone: '+525544422262' }, channel: 'LINK',
     })
     api.createOrder.mockResolvedValueOnce(draft())
     await send(store, body)
@@ -611,5 +693,424 @@ describe('fase 2: pagar con tarjeta', () => {
     await submitOrder(store, buildOrderBody(store, { customer: { name: 'Ana', phone: PHONE }, note: null }))
     expect(sent(1).body.paymentMode).toBe('CARD_ONLINE')
     expect(sent(1).key).toBe(sent(0).key)
+  })
+})
+
+describe('«Nadie»: pedido anónimo (sin teléfono)', () => {
+  const anon = () => {
+    const { store } = setup({ sessionPhone: null })
+    store.info.value = { ...info, requiresAcceptance: false } as StoreInfo
+    const body = buildOrderBody(store, { customer: { name: ' Ana ' }, note: null })
+    return { store, body }
+  }
+
+  it('el cuerpo no lleva teléfono, y se manda sin sesión ni token ni pasar por el código', async () => {
+    const { store, body } = anon()
+    expect(body.customer).toEqual({ name: 'Ana' })
+    api.createOrder.mockResolvedValueOnce(created())
+    expect((await submitOrder(store, body)).kind).toBe('created')
+    expect(sent().body.customer).toEqual({ name: 'Ana' })
+    expect(sent().token).toBeUndefined()
+  })
+
+  it('reintento anónimo: el negocio cambió a «Mi equipo» y la clienta recargó ⇒ MISMO cuerpo y MISMA llave, sin pedir código, y recibe SU folio', async () => {
+    const { store, body } = anon()
+    api.createOrder.mockRejectedValueOnce(offline())
+    await send(store, body)
+    const first = sent(0)
+    expect(pendingAttempt(store.slug)).not.toBeNull()
+    // Recarga: tienda nueva con el mismo slug, y /info ya dice «Mi equipo».
+    vi.resetModules()
+    const again = await import('./checkout')
+    const { createOrderStore: mk } = await import('./store')
+    const reloaded = mk(store.slug, { locale: 'es' })
+    reloaded.cart.value = [line()]
+    reloaded.quote.value = quoteOf(170)
+    reloaded.info.value = { ...info, requiresAcceptance: true } as StoreInfo
+    api.createOrder.mockResolvedValueOnce(created({ replay: true, orderNumber: 'W7KQ2' }))
+    const r = await again.retry(reloaded)
+    expect(r?.kind).toBe('created')
+    expect(api.createOrder).toHaveBeenCalledTimes(2)
+    expect(sent(1).body).toEqual(first.body)
+    expect(sent(1).key).toBe(first.key)
+    expect(sent(1).token).toBeUndefined()
+    expect(reloaded.screen.value).toBe('tracking')
+    expect(loadLastOrder(store.slug)?.orderNumber).toBe('W7KQ2')
+  })
+
+  it('R79 #1: el reintento recibe el folio REPETIDO (200 replay) tras pasar a «Mi equipo» ⇒ seguimiento de ESE folio, sin intento nuevo ni "needsPhone"', async () => {
+    const { store, body } = anon()
+    api.createOrder.mockRejectedValueOnce(offline())
+    await send(store, body)
+    api.getInfo.mockResolvedValue({ ...info, requiresAcceptance: true })
+    api.createOrder.mockResolvedValueOnce(created({ replay: true, orderNumber: 'W7KQ2' }))
+    const r = await retry(store)
+    expect(r?.kind).toBe('created')
+    expect(api.createOrder).toHaveBeenCalledTimes(2)
+    expect(pendingAttempt(store.slug)).toBeNull() // el intento se resolvió: no queda uno para crear otro folio
+    expect(loadLastOrder(store.slug)?.orderNumber).toBe('W7KQ2')
+    expect(store.screen.value).toBe('tracking')
+    expect(checkoutOf(store).feedback.value).not.toMatchObject({ kind: 'error' })
+  })
+
+  it('401 PHONE_VERIFICATION_REQUIRED al reintento ⇒ suelta el intento y pide los datos de «Mi equipo»', async () => {
+    const { store, body } = anon()
+    api.createOrder.mockRejectedValueOnce(offline())
+    await send(store, body)
+    api.getInfo.mockResolvedValue({ ...info, requiresAcceptance: true })
+    api.createOrder.mockRejectedValueOnce(new ApiError('x', 401, 'PHONE_VERIFICATION_REQUIRED'))
+    const r = await retry(store)
+    expect(r?.kind).toBe('needsPhone')
+    expect(pendingAttempt(store.slug)).toBeNull()
+    expect(checkoutOf(store).pending.value).toBe(false)
+    expect(store.screen.value).toBe('details')
+    expect(store.info.value?.requiresAcceptance).toBe(true)
+    expect(checkoutOf(store).feedback.value).toEqual({ kind: 'error', message: expect.stringContaining('WhatsApp'), retryable: false })
+  })
+
+  it.each([
+    ['TOO_MANY_UNPAID_FOLIOS', 409, 'Hay muchos pedidos esperando pago. Pide directo en caja.'],
+    ['ZERO_TOTAL', 400, 'Tu pedido no tiene costo: pídelo directo en caja.'],
+  ])('%s ⇒ su texto, sin «Reintentar», y el intento se borra', async (code, status, text) => {
+    const { store, body } = anon()
+    api.createOrder.mockRejectedValueOnce(new ApiError('texto del servidor', status, code))
+    expect(await submitOrder(store, body)).toEqual({ kind: 'error', message: text, retryable: false })
+    expect(pendingAttempt(store.slug)).toBeNull()
+  })
+
+  it('409 ORDERING_OFFLINE con NO_DEVICE ⇒ tienda no disponible con su motivo', async () => {
+    const { store, body } = anon()
+    api.createOrder.mockRejectedValueOnce(new ApiError('x', 409, 'ORDERING_OFFLINE', { status: 'OFFLINE', reason: 'NO_DEVICE' }))
+    expect(await submitOrder(store, body)).toEqual({ kind: 'storeUnavailable', status: 'OFFLINE', reason: 'NO_DEVICE' })
+  })
+})
+
+/** Otra pestaña escribe B en el almacenamiento justo DESPUÉS de la siguiente lectura (o escritura) de la sesión de `slug`. */
+function intercalar(slug: string, b: Record<string, unknown>, tras: 'leer' | 'escribir') {
+  const llave = `avq_sesion:${slug}`
+  const get = Storage.prototype.getItem
+  const set = Storage.prototype.setItem
+  let listo = false
+  const meteB = () => { listo = true; set.call(localStorage, llave, JSON.stringify(b)) }
+  if (tras === 'leer')
+    vi.spyOn(Storage.prototype, 'getItem').mockImplementation(function (this: Storage, k: string) {
+      const v = get.call(this, k)
+      if (k === llave && !listo) meteB()
+      return v
+    })
+  else
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (this: Storage, k: string, v: string) {
+      set.call(this, k, v)
+      if (k === llave && !listo) meteB()
+    })
+}
+const sesionB = () => ({
+  token: 'tok-B', customer: { id: 'c2', firstName: 'Bea', lastName: null, email: null, phone: '+525599998888' },
+  contactos: [{ tipo: 'PHONE', valor: '+525599998888', metodo: 'WHATSAPP', probadoEn: 2 }], guardadaEn: Date.now(),
+})
+
+describe('r11: leer y validar UNA vez (otra pestaña escribe B en medio)', () => {
+  afterEach(() => vi.restoreAllMocks())
+
+  it('codex-r10: la tienda manda EXACTAMENTE la sesión que validó, aunque B se escriba justo después de leerla', async () => {
+    const slug = `r11a${++n}`
+    guardarSesion(slug, { ...sesion('tok-A'), guardadaEn: Date.now() } as any)
+    const store = createOrderStore(slug, { locale: 'es' })
+    store.cart.value = [line()]
+    store.info.value = { ...info, requiresAcceptance: false } as StoreInfo
+    store.quote.value = quoteOf(170)
+    const body = buildOrderBody(store, { customer: { name: 'Ana' }, note: null })
+    api.createOrder.mockResolvedValueOnce(created())
+    intercalar(slug, sesionB(), 'leer')
+    await submitOrder(store, body)
+    expect(sent().token).toBe('tok-A') // manda exactamente la que validó (ni B ni sin sesión)
+  })
+
+  it('el código de «Mi equipo»: la tienda adopta la sesión que guardó, no la B que otra pestaña escribió justo después', async () => {
+    const { store } = setup({ sessionPhone: null })
+    api.verifyOrderingOtp.mockResolvedValueOnce(sesion('tok-2'))
+    intercalar(store.slug, sesionB(), 'escribir')
+    expect(await verifyPhone(store, PHONE, '123456')).toBe(true)
+    expect(paginaDe(store.slug, 'pedidos')?.token).toBe('tok-2')
+  })
+
+  it('«Entrar otra vez» en la tienda adopta la sesión con que entró, no la que esté guardada después', () => {
+    const { store } = setup({ sessionPhone: null })
+    guardarSesion(store.slug, sesionB() as any) // otra pestaña ya escribió B
+    entroEnLaTienda(store, { ...sesion('tok-2') } as any)
+    expect(paginaDe(store.slug, 'pedidos')?.token).toBe('tok-2')
+  })
+
+  it('W4: entrar desde «Mi cuenta» de la tienda adopta esa sesión sin cambiar de pantalla; el menú pasa a «Mi cuenta» (conSesion)', () => {
+    const { store } = setup({ sessionPhone: null })
+    store.go('cuenta')
+    entroEnLaTienda(store, { ...sesion('tok-2') } as any, null)
+    expect(paginaDe(store.slug, 'pedidos')?.token).toBe('tok-2')
+    expect(store.screen.value).toBe('cuenta')
+    expect(checkoutOf(store).conSesion.value).toBe(true)
+    expect(checkoutOf(store).sesionCerrada.value).toBe(false)
+  })
+})
+
+describe('W3: pedir con beneficios', () => {
+  const nadieInfo = { ...info, requiresAcceptance: false } as StoreInfo
+  /** «Nadie» con la sesión única de la página y lo elegido. */
+  function nadie(opts: { eleccion?: Record<string, unknown>; q?: Partial<Quote>; total?: number; mode?: 'CARD_ONLINE' } = {}) {
+    const slug = `ben${++n}`
+    guardarSesion(slug, { ...sesion('tok-A'), guardadaEn: Date.now() } as any)
+    const store = createOrderStore(slug, { locale: 'es' }) // abrir la página
+    store.cart.value = [line()]
+    store.info.value = opts.mode ? ({ ...info, paymentModes: { payAtPickup: true, cardOnline: true } } as StoreInfo) : nadieInfo
+    const c = checkoutOf(store) // abrir la página
+    if (opts.eleccion) c.eleccion.value = opts.eleccion
+    store.quote.value = quoteOf(opts.total ?? 105, {
+      subtotal: 170, oferta: { premio: { id: 'pr1', etiqueta: 'Café gratis' }, puntos: null, cupon: false }, ...opts.q,
+    })
+    const body = buildOrderBody(store, {
+      customer: opts.mode ? { name: 'Ana', phone: PHONE } : { name: 'Ana' }, note: null, paymentMode: opts.mode,
+    })
+    return { store, body, c }
+  }
+
+  it('codex-r8 H1 (A refinada + W3-r3): Bea entra en reservas a medio pedido; el 401 de Ana no reenvía (ni con Bea ni sin sesión) y Bea sigue guardada', async () => {
+    const { store, body } = nadie({ eleccion: { premioId: 'pr1' } })
+    const bea = { token: 'tok-B', customer: { id: 'c2', firstName: 'Bea', lastName: null, email: null, phone: '+525599998888' },
+      contactos: [{ tipo: 'PHONE' as const, valor: '+525599998888', metodo: 'WHATSAPP' as const, probadoEn: 2 }] }
+    api.createOrder
+      .mockImplementationOnce(async () => {
+        setCustomerSession(store.slug, bea.token, bea.customer, null, bea.contactos) // entró Bea en reservas, en la misma página
+        throw new ApiError('Sesión vencida', 401, 'CUSTOMER_TOKEN_INVALID')
+      })
+    expect((await send(store, body)).kind).toBe('needsSesion')
+    expect(api.createOrder).toHaveBeenCalledTimes(1)
+    expect(sent(0).token).toBe('tok-A')
+    expect(leerSesion(store.slug)?.token).toBe('tok-B') // nunca se borra la sesión más nueva que guardó otra superficie
+    expect(tokenParaMandar(store.slug)).toBe('tok-B') // reservas sigue con Bea
+  })
+
+  it('W3-r3 regla: un reintento reenvía LA MISMA petición — llave, cuerpo y token guardados al confirmar —, nunca la sesión de ahora', async () => {
+    const { store, body } = nadie({ eleccion: { premioId: 'pr1' } })
+    api.createOrder.mockRejectedValueOnce(offline()) // el folio pudo crearse con Ana; la respuesta se perdió
+    expect((await submitOrder(store, body)).kind).toBe('error')
+    borrarSesion(store.slug) // otra pestaña cerró su sesión (sólo en el navegador: el token sigue valiendo en el SERVIDOR)
+    api.createOrder.mockResolvedValueOnce(created({ replay: true }))
+    expect((await submitOrder(store, body)).kind).toBe('created')
+    expect(sent(1)).toMatchObject({ key: sent(0).key, body: sent(0).body, token: 'tok-A' })
+    expect(pendingAttempt(store.slug)).toBeNull() // resuelto: se borra lo guardado, también el token
+  })
+
+  it('codex-w3-r3 #1: un intento de antes del cambio (sin token) sale como en producción: «Nadie» sin sesión, «Mi equipo» con la de ahora', async () => {
+    const { store, body } = nadie({ eleccion: { premioId: 'pr1' } })
+    sessionStorage.setItem(`avq_order_attempt:${store.slug}`, JSON.stringify({ key: 'K'.repeat(43), body, startedAt: Date.now() }))
+    api.createOrder.mockResolvedValueOnce(created({ replay: true }))
+    await submitOrder(store, body)
+    expect(sent(0)).toMatchObject({ key: 'K'.repeat(43), token: undefined })
+    const mi = setup() // «Mi equipo», con la sesión de hoy del teléfono
+    sessionStorage.setItem(`avq_order_attempt:${mi.store.slug}`, JSON.stringify({ key: 'M'.repeat(43), body: mi.body, startedAt: Date.now() }))
+    api.createOrder.mockResolvedValueOnce(created({ replay: true }))
+    await submitOrder(mi.store, mi.body)
+    expect(sent(1)).toMatchObject({ key: 'M'.repeat(43), token: 'tok-1' })
+    const t = nadie({ mode: 'CARD_ONLINE' }) // tarjeta: en producción salía sin token
+    sessionStorage.setItem(`avq_order_attempt:${t.store.slug}`, JSON.stringify({ key: 'T'.repeat(43), body: t.body, startedAt: Date.now() }))
+    api.createOrder.mockResolvedValueOnce({ trackingToken: 'T'.repeat(32), checkoutUrl: '', status: 'PENDING', total: '105.00', replay: true })
+    nav.assign = vi.fn()
+    await submitOrder(t.store, t.body)
+    expect(sent(2)).toMatchObject({ key: 'T'.repeat(43), token: undefined })
+  })
+
+  it('codex-w3-r4 #1: un intento viejo de «Mi equipo» lee la sesión UNA vez: si otra pestaña escribe B justo después, sale con la que leyó', async () => {
+    const mi = setup() // «Mi equipo», con la sesión de hoy del teléfono (tok-1)
+    sessionStorage.setItem(`avq_order_attempt:${mi.store.slug}`, JSON.stringify({ key: 'M'.repeat(43), body: mi.body, startedAt: Date.now() }))
+    checkoutOf(mi.store)
+    intercalar(mi.store.slug, sesionB(), 'leer')
+    api.createOrder.mockResolvedValueOnce(created({ replay: true }))
+    await submitOrder(mi.store, mi.body)
+    vi.restoreAllMocks()
+    expect(sent(0)).toMatchObject({ key: 'M'.repeat(43), token: 'tok-1' })
+  })
+
+  it('codex-w3-r2 #1: recargar con el pedido en vuelo y la sesión cerrada en otra pestaña reenvía con el token guardado', async () => {
+    const { store, body } = nadie({ eleccion: { premioId: 'pr1' } })
+    api.createOrder.mockImplementationOnce(() => new Promise(() => {})) // en vuelo
+    void submitOrder(store, body)
+    await flush()
+    vi.resetModules() // recarga
+    const fresh = await import('./checkout')
+    const { createOrderStore: freshStore } = await import('./store')
+    borrarSesion(store.slug)
+    const reloaded = freshStore(store.slug, { locale: 'es' })
+    reloaded.info.value = nadieInfo
+    api.createOrder.mockResolvedValueOnce(created({ replay: true }))
+    expect((await fresh.retry(reloaded))?.kind).toBe('created')
+    expect(sent(1)).toMatchObject({ key: sent(0).key, token: 'tok-A' })
+  })
+
+  it('codex-w3-r2 #2: con tarjeta, volver a entrar con correo a la misma ficha no cambia el token del reintento', async () => {
+    const { store, body } = nadie({ eleccion: { premioId: 'pr1' }, mode: 'CARD_ONLINE' })
+    api.createOrder.mockRejectedValueOnce(offline())
+    await submitOrder(store, body)
+    borrarSesion(store.slug)
+    const porCorreo = { ...sesion('tok-correo'), contactos: [{ tipo: 'EMAIL', valor: 'ana@correo.mx', metodo: 'EMAIL_CODE', probadoEn: 3 }] }
+    guardarSesion(store.slug, { ...porCorreo, guardadaEn: Date.now() } as any)
+    entroEnLaTienda(store, porCorreo as any)
+    api.createOrder.mockResolvedValueOnce({ trackingToken: 'T'.repeat(32), checkoutUrl: '', status: 'PENDING', total: '105.00', replay: true })
+    nav.assign = vi.fn()
+    await submitOrder(store, body)
+    expect(sent(1)).toMatchObject({ key: sent(0).key, token: 'tok-A' })
+  })
+
+  it('codex-w3-r2 #3: un intento con el token viejo de pedidos se reenvía con ese token aunque haya entrado con la sesión nueva', async () => {
+    const slug = `ben${++n}`
+    saveSession(slug, { token: 'tok-viejo', phone: PHONE, name: 'Ana', savedAt: Date.now() })
+    const store = createOrderStore(slug, { locale: 'es' })
+    store.cart.value = [line()]
+    store.info.value = nadieInfo
+    store.quote.value = quoteOf(170)
+    const body = buildOrderBody(store, { customer: { name: 'Ana' }, note: null })
+    api.createOrder.mockRejectedValueOnce(offline())
+    await submitOrder(store, body)
+    expect(sent(0).token).toBe('tok-viejo')
+    guardarSesion(slug, { ...sesion('tok-nuevo'), guardadaEn: Date.now() } as any)
+    entroEnLaTienda(store, sesion('tok-nuevo') as any)
+    api.createOrder.mockResolvedValueOnce(created({ replay: true }))
+    expect((await submitOrder(store, body)).kind).toBe('created')
+    expect(sent(1)).toMatchObject({ key: sent(0).key, token: 'tok-viejo' })
+  })
+
+  it('un intento que salió SIN sesión se reenvía sin sesión aunque la página ya tenga una', async () => {
+    const slug = `ben${++n}`
+    const store = createOrderStore(slug, { locale: 'es' })
+    store.cart.value = [line()]
+    store.info.value = nadieInfo
+    store.quote.value = quoteOf(170)
+    const body = buildOrderBody(store, { customer: { name: 'Ana' }, note: null })
+    api.createOrder.mockRejectedValueOnce(offline())
+    await submitOrder(store, body)
+    expect(sent(0).token).toBeUndefined()
+    guardarSesion(slug, { ...sesion('tok-A'), guardadaEn: Date.now() } as any)
+    entroEnLaTienda(store, sesion('tok-A') as any) // entró después
+    api.createOrder.mockResolvedValueOnce(created({ replay: true }))
+    await submitOrder(store, body)
+    expect(sent(1)).toMatchObject({ key: sent(0).key, token: undefined })
+  })
+
+  it('el token guardado recibe 401 (revocado): «Entra otra vez para terminar tu pedido», el intento se queda; al entrar, sale con la sesión nueva y la misma llave', async () => {
+    const { store, body } = nadie({ eleccion: { premioId: 'pr1' } })
+    api.createOrder.mockRejectedValueOnce(offline())
+    await submitOrder(store, body)
+    api.createOrder.mockRejectedValueOnce(new ApiError('Sesión revocada', 401, 'CUSTOMER_TOKEN_INVALID'))
+    expect(await submitOrder(store, body)).toEqual({ kind: 'needsSesion' })
+    expect(await submitOrder(store, body)).toEqual({ kind: 'needsSesion' }) // sin entrar no se reenvía
+    expect(api.createOrder).toHaveBeenCalledTimes(2)
+    expect(pendingAttempt(store.slug)?.key).toBe(sent(0).key)
+    guardarSesion(store.slug, { ...sesion('tok-A2'), guardadaEn: Date.now() } as any)
+    entroEnLaTienda(store, sesion('tok-A2') as any)
+    api.createOrder.mockResolvedValueOnce(created({ replay: true }))
+    expect((await submitOrder(store, body)).kind).toBe('created')
+    expect(sent(2)).toMatchObject({ key: sent(0).key, token: 'tok-A2' })
+  })
+
+  it('codex-w3-r2 #4: un PRICE_CHANGED con dos descartados los quita a los dos de lo elegido', async () => {
+    const { store, body, c } = nadie({ eleccion: { premioId: 'pr1', cupon: 'X' }, q: { oferta: { premio: { id: 'pr1', etiqueta: 'Café' }, puntos: null, cupon: true } } })
+    api.createOrder.mockRejectedValueOnce(fin(409, 'PRICE_CHANGED', { quote: quoteOf(170, { descartados: ['CUPON', 'PREMIO'] }), descartados: ['CUPON', 'PREMIO'] }))
+    await send(store, body)
+    expect(c.eleccion.value).toEqual({})
+  })
+
+  it('codex-w3-r1 #2: con los beneficios sin calcular (sin oferta) lo elegido se manda para calcularse al pedir', () => {
+    const { body } = nadie({ eleccion: { puntos: 340 }, total: 170, q: { oferta: undefined, beneficios: { calculados: false } } })
+    expect(body.beneficios).toEqual({ puntos: 340 })
+  })
+
+  it('codex-w3-r1 #2: una recotización con lo aplicado y sin oferta manda lo elegido que su total ya incluye', () => {
+    const { body } = nadie({ eleccion: { puntos: 340 }, total: 136, q: { oferta: undefined, aplicados: [{ tipo: 'PUNTOS', nombre: 'Puntos', monto: 34 }] } })
+    expect(body).toMatchObject({ expectedTotal: '136.00', beneficios: { puntos: 340 } })
+  })
+
+  it('sin sesión (sin oferta, sin aplicados, sin beneficios) no se manda nada de lo elegido', () => {
+    const { body } = nadie({ eleccion: { puntos: 340 }, total: 170, q: { oferta: undefined } })
+    expect(body.beneficios).toBeUndefined()
+  })
+
+  it('codex-w3-r1 #3: con tarjeta, el PRICE_CHANGED trae totalEstricto: se confirma ESE total, no el de la cotización degradada', async () => {
+    const { store, body, c } = nadie({ eleccion: { premioId: 'pr1' }, mode: 'CARD_ONLINE' })
+    api.createOrder.mockRejectedValueOnce(fin(409, 'PRICE_CHANGED', { quote: quoteOf(250, { beneficios: { calculados: false } }), totalEstricto: 244.99, descartados: [] }))
+    await send(store, body)
+    expect(c.feedback.value).toMatchObject({ kind: 'priceChanged', total: 244.99 })
+    expect((c.feedback.value as any).body.expectedTotal).toBe('244.99')
+  })
+
+  it('el cuerpo lleva lo elegido que la cotización ofreció y el total de la cotización con lo elegido', () => {
+    const { body } = nadie({ eleccion: { premioId: 'pr1', puntos: 340 } })
+    expect(body.expectedTotal).toBe('105.00')
+    expect(body.beneficios).toEqual({ premioId: 'pr1' }) // sin oferta de puntos, los puntos no se mandan
+  })
+
+  it('lo que la cotización descartó no se manda', () => {
+    const { body } = nadie({ eleccion: { premioId: 'pr1', cupon: 'X' }, q: { oferta: { premio: { id: 'pr1', etiqueta: 'Café' }, puntos: null, cupon: true }, descartados: ['CUPON'] } })
+    expect(body.beneficios).toEqual({ premioId: 'pr1' })
+  })
+
+  it('sin elegir nada no hay `beneficios`', () => {
+    expect(nadie().body.beneficios).toBeUndefined()
+  })
+
+  it('«Nadie» con sesión manda la sesión de la página (también sin beneficios)', async () => {
+    const { store, body } = nadie({ eleccion: { premioId: 'pr1' } })
+    api.createOrder.mockResolvedValueOnce(created())
+    expect((await submitOrder(store, body)).kind).toBe('created')
+    expect(sent().token).toBe('tok-A')
+    expect(sent().body.beneficios).toEqual({ premioId: 'pr1' })
+  })
+
+  it('(c) con tarjeta en línea también manda la sesión y lo elegido', async () => {
+    const { store, body } = nadie({ eleccion: { premioId: 'pr1' }, mode: 'CARD_ONLINE' })
+    api.createOrder.mockResolvedValueOnce({ trackingToken: 'T'.repeat(32), checkoutUrl: '', status: 'PENDING', total: '105.00', replay: false })
+    nav.assign = vi.fn()
+    await submitOrder(store, body)
+    expect(sent().token).toBe('tok-A')
+    expect(sent().body.beneficios).toEqual({ premioId: 'pr1' })
+  })
+
+  it('PRICE_CHANGED con descartados [PREMIO]: quita el premio de la elección y del cuerpo a confirmar; avisa por qué', async () => {
+    const { store, body, c } = nadie({ eleccion: { premioId: 'pr1' } })
+    store.go('details')
+    api.createOrder.mockRejectedValueOnce(fin(409, 'PRICE_CHANGED', { quote: quoteOf(170, { descartados: ['PREMIO'] }), descartados: ['PREMIO'] }))
+    const r = await send(store, body)
+    expect(r.kind).toBe('priceChanged')
+    expect(c.eleccion.value).toEqual({})
+    expect(c.feedback.value).toMatchObject({ kind: 'priceChanged', total: 170, motivo: 'PREMIO', premio: 'Café gratis' })
+    const f = c.feedback.value as any
+    expect(f.body.beneficios).toBeUndefined()
+    expect(f.body.expectedTotal).toBe('170.00')
+    api.createOrder.mockResolvedValueOnce(created())
+    await send(store, f.body)
+    expect(sent(1).body.beneficios).toBeUndefined()
+  })
+
+  it('PRICE_CHANGED con motivo SIN_SESION: «Tu sesión se cerró»; confirmar manda sin beneficios y con el precio sin ellos', async () => {
+    const { store, body, c } = nadie({ eleccion: { premioId: 'pr1' } })
+    api.createOrder.mockRejectedValueOnce(fin(409, 'PRICE_CHANGED', { quote: quoteOf(170), motivo: 'SIN_SESION' }))
+    await send(store, body)
+    expect(c.feedback.value).toMatchObject({ kind: 'priceChanged', motivo: 'SIN_SESION', total: 170 })
+    expect((c.feedback.value as any).body.beneficios).toBeUndefined()
+  })
+
+  it('W3-r3: 401 en «Nadie» suelta la sesión, NO reenvía sin ella y pide entrar para terminar; el intento se queda', async () => {
+    const { store, body, c } = nadie({ eleccion: { premioId: 'pr1' } })
+    api.createOrder.mockRejectedValueOnce(new ApiError('Sesión vencida', 401, 'CUSTOMER_TOKEN_INVALID'))
+    expect((await send(store, body)).kind).toBe('needsSesion')
+    expect(api.createOrder).toHaveBeenCalledTimes(1)
+    expect(leerSesion(store.slug)).toBeNull()
+    expect(pendingAttempt(store.slug)?.key).toBe(sent(0).key)
+    expect(c.feedback.value).toEqual({ kind: 'sesionParaTerminar' })
+  })
+
+  it('un folio de $0 en «Nadie» (cerrado por el SERVIDOR) va directo al seguimiento', async () => {
+    const { store, body } = nadie({ eleccion: { premioId: 'pr1' }, total: 0 })
+    expect(body.expectedTotal).toBe('0.00')
+    api.createOrder.mockResolvedValueOnce(created({ total: '0.00', status: 'ACCEPTED' }))
+    await send(store, body)
+    expect(store.screen.value).toBe('tracking')
   })
 })

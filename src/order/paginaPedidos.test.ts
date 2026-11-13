@@ -60,6 +60,30 @@ describe('fase 2: de regreso de Stripe', () => {
   })
 })
 
+describe('W5b: la liga de seguimiento no lleva canal=qr', () => {
+  const T = 'T'.repeat(32)
+  it('al crear el pedido, la URL de seguimiento quita canal y conserva app y locale', () => {
+    window.history.replaceState({}, '', '/flautas-coyoacan?app=order&canal=qr&locale=en')
+    new Function(script())()
+    const el = document.querySelector('avoqado-order')!
+    expect(el.getAttribute('channel')).toBe('qr')
+    el.dispatchEvent(new CustomEvent('avoqado:pedido-creado', { detail: { trackingToken: T }, bubbles: true }))
+    expect(window.location.pathname + window.location.search).toBe(`/flautas-coyoacan/pedido/${T}?app=order&locale=en`)
+  })
+  it('sin ningún otro parámetro fuera de canal, la liga conserva sólo app (no queda «?» vacío)', () => {
+    window.history.replaceState({}, '', '/flautas-coyoacan?app=order&canal=qr')
+    new Function(script())()
+    document.querySelector('avoqado-order')!.dispatchEvent(new CustomEvent('avoqado:pedido-creado', { detail: { trackingToken: T }, bubbles: true }))
+    expect(window.location.pathname + window.location.search).toBe(`/flautas-coyoacan/pedido/${T}?app=order`)
+  })
+  it('sin canal, la liga queda igual que antes', () => {
+    window.history.replaceState({}, '', '/flautas-coyoacan?app=order&locale=en')
+    new Function(script())()
+    document.querySelector('avoqado-order')!.dispatchEvent(new CustomEvent('avoqado:pedido-creado', { detail: { trackingToken: T }, bubbles: true }))
+    expect(window.location.pathname + window.location.search).toBe(`/flautas-coyoacan/pedido/${T}?app=order&locale=en`)
+  })
+})
+
 describe('página propia de la tienda: de orilla a orilla en el celular y columna de 600 px en computadora', () => {
   const css = /<style>([\s\S]*?)<\/style>/.exec(pagina)![1].replace(/\/\*[\s\S]*?\*\//g, '')
   const rule = (selector: string) => css.match(new RegExp(`${selector.replace(/\./g, '\\.')}\\s*\\{([^}]*)\\}`))?.[1] ?? ''

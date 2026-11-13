@@ -11,6 +11,8 @@ import {
   verifyOrderingOtp,
 } from './api'
 import type { CreateOrderBody } from './types'
+import { abrirPagina, guardarSesion, leerSesion, paginaDe } from '../lib/sesionDeCliente'
+import { loadSession } from './session'
 
 const fetchMock = vi.fn()
 
@@ -164,16 +166,19 @@ describe('código de WhatsApp (responde sin `success`)', () => {
     expect(call().body).toEqual({ phone: '+525512345678' })
   })
 
-  it('verifyOrderingOtp manda {phone, code, purpose:"ORDERING"} y devuelve token y cliente', async () => {
+  it('W2: verifyOrderingOtp manda {phone, code, purpose:"SESSION"} y devuelve la sesión única (token, cliente y contactos)', async () => {
     const res = {
-      token: 'jwt.del.pedido',
+      token: 'jwt.de.la.sesion',
       customer: { id: 'ccust0000000000000000001', firstName: 'Ana', lastName: null, email: null, phone: '+525512345678' },
+      contactos: [{ tipo: 'PHONE', valor: '+525512345678', metodo: 'WHATSAPP', probadoEn: 1794000000 }],
+      otraFicha: null,
     }
     fetchMock.mockResolvedValue(json(200, res))
 
     await expect(verifyOrderingOtp('flautas', '+525512345678', '123456')).resolves.toEqual(res)
     expect(call().url).toBe(`${API_BASE}/venues/flautas/auth/otp/verify`)
-    expect(call().body).toEqual({ phone: '+525512345678', code: '123456', purpose: 'ORDERING' })
+    // Sin `alNoEncontrar`: un teléfono sin ficha la crea como hoy (el pedido está esperando; la pregunta vive en «Entrar»).
+    expect(call().body).toEqual({ phone: '+525512345678', code: '123456', purpose: 'SESSION' })
   })
 })
 
@@ -240,5 +245,38 @@ describe('errores', () => {
     const e = await p
     expect(signal?.aborted).toBe(true)
     expect(e).toMatchObject({ network: true, status: 0 })
+  })
+})
+
+describe('codex-r8 H4: el 401 de la tienda suelta la sesión ANTES de leer el cuerpo', () => {
+  it('con el cuerpo detenido, la sesión ya no está guardada ni es la de la página', async () => {
+    const PHONE = '+525512345678'
+    guardarSesion('h4', { token: 'tok-A', customer: { id: 'c1', firstName: 'Ana', lastName: null, email: null, phone: PHONE },
+      contactos: [{ tipo: 'PHONE', valor: PHONE, metodo: 'WHATSAPP', probadoEn: 1 }], guardadaEn: Date.now() })
+    abrirPagina('h4', 'pedidos', () => loadSession('h4'))
+    fetchMock.mockResolvedValueOnce({ ok: false, status: 401, headers: new Headers(), json: () => new Promise(() => {}) })
+    void quote('h4', [{ productId: 'p1', quantity: 1 }], { token: 'tok-A' }).catch(() => {})
+    for (let i = 0; i < 5; i++) await Promise.resolve()
+    expect(leerSesion('h4')).toBeNull()
+    expect(paginaDe('h4', 'pedidos')).toBeNull()
+  })
+})
+
+
+describe('regresión de la r9a: el 401 que pide teléfono no suelta una sesión válida', () => {
+  it('pedido de «Nadie» sin teléfono + 401 PHONE_VERIFICATION_REQUIRED ⇒ needsPhone; guardada A y página A', async () => {
+    const { createOrderStore } = await import('./store')
+    const { buildOrderBody, submitOrder } = await import('./checkout')
+    guardarSesion('r9a', { token: 'tok-A', customer: { id: 'c1', firstName: 'Ana', lastName: null, email: 'ana@correo.mx', phone: null },
+      contactos: [{ tipo: 'EMAIL', valor: 'ana@correo.mx', metodo: 'GOOGLE', probadoEn: 1 }], guardadaEn: Date.now() })
+    const store = createOrderStore('r9a', { locale: 'es' }) // abrir la página con A
+    store.info.value = { venue: { slug: 'r9a', name: 'X' }, status: 'OPEN', reason: null, requiresAcceptance: false } as any
+    store.cart.value = [{ lineId: 'l1', productId: 'p1', name: 'Flautas', unitPrice: 85, quantity: 1, note: null, modifiers: [] }]
+    store.quote.value = { ok: true, lines: [], subtotal: 85, total: 85, minOrderAmount: 0, issues: [] }
+    fetchMock.mockResolvedValueOnce(json(401, { success: false, code: 'PHONE_VERIFICATION_REQUIRED', error: 'Verifica tu teléfono' }))
+    const r = await submitOrder(store, buildOrderBody(store, { customer: { name: 'Ana' }, note: null }))
+    expect(r).toEqual({ kind: 'needsPhone' })
+    expect(leerSesion('r9a')?.token).toBe('tok-A')
+    expect(paginaDe('r9a', 'pedidos')?.token).toBe('tok-A')
   })
 })

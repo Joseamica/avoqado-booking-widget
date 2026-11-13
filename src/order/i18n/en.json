@@ -53,7 +53,16 @@
     "pausedTitle": "Orders paused",
     "closedTitle": "Closed now",
     "offlineTitle": "The business is offline",
-    "disabledTitle": "Online ordering is off"
+    "disabledTitle": "Online ordering is off",
+    "payAtCounterChip": "You pay at the counter",
+    "closingSoonTitle": "We close at {{time}}",
+    "closingSoonText": "If you don't come to pay before then, your order is cancelled.",
+    "counterNoticeTitle": "Pay at the counter so they prepare it",
+    "counterNoticeText": "After ordering you have 30 min to come and pay.",
+    "noDeviceChip": "Not taking orders right now",
+    "noDeviceTitle": "Order directly at the counter",
+    "noDeviceText": "You can browse the menu, but ordering from here is not available right now.",
+    "lastOrder": "We are no longer taking orders to pay at the counter today · we close at {{time}}"
   },
   "menu": {
     "empty": "There are no online products yet.",
@@ -92,6 +101,7 @@
     "payAtPickup": "You pay when you pick up at the business.",
     "note": "Note for the business",
     "continue": "Continue",
+    "continueWithout": "Continue without rewards",
     "pickupAt": "Pickup at {{venue}}",
     "addMore": "Add something else",
     "removeAria": "Remove {{name}}",
@@ -111,6 +121,31 @@
       "MODIFIER_GROUP_MAX": "In “{{group}}” you can choose up to {{n}}.",
       "BELOW_MINIMUM": "The minimum order is {{amount}}.",
       "checkOptions": "Check the options for this product."
+    },
+    "benefits": {
+      "premioAsk": "You have {{premio}}! Use it?",
+      "premioYes": "Yes",
+      "premioOn": "{{premio}} on your order",
+      "premioOnText": "If you don't pay in time, it goes back to your account.",
+      "remove": "Remove",
+      "more": "More rewards",
+      "points": "Use {{n}} points (−{{amount}})",
+      "coupon": "I have a coupon",
+      "couponLabel": "Your coupon",
+      "couponApply": "Apply",
+      "couponApplied": "Coupon {{code}}",
+      "couponBad": "That coupon can't be used on this order.",
+      "pointsBad": "Your points can't be used on this order.",
+      "premioBad": "Your reward is no longer available.",
+      "premioRow": "{{premio}} (your reward)",
+      "subtotal": "Subtotal",
+      "later": "Your rewards are calculated when you order.",
+      "sessionTitle": "Your session ended",
+      "sessionText": "Sign in again to use your rewards, or confirm the price without them.",
+      "signInAgain": "Sign in again",
+      "vaEn": "It goes on your {{producto}}.",
+      "premioOnIn": "{{premio}} on your {{producto}}",
+      "free": "Free"
     }
   },
   "details": {
@@ -142,20 +177,31 @@
     "payHow": "How do you want to pay?",
     "payCard": "Pay now by card",
     "payPickup": "Pay at pickup",
-    "payCardNote": "You pay now by card."
+    "payCardNote": "You pay now by card.",
+    "helperNadie": "With your name they find you at the counter and hand you your order.",
+    "note": "Note for the business (optional)",
+    "notePlaceholder": "E.g. no sugar",
+    "privacyNadie": "By ordering you accept the privacy notice of {{venue}}.",
+    "confirmNadie": "Order",
+    "payAtCounter": "You pay at the counter: card or cash.",
+    "premiosTitulo": "Do you have rewards at {{venue}}?",
+    "premiosTexto": "Sign in to use them on this order.",
+    "premiosEntrar": "Sign in"
   },
   "otp": {
     "title": "Enter your code",
-    "sent": "We sent it by WhatsApp to {{phone}}.",
+    "sent": "We requested your code on WhatsApp for {{phone}}. If it doesn't arrive within a minute, check the number or request another one.",
     "resend": "Resend code",
     "resendIn": "Resend code in {{s}} s",
     "change": "Change number",
     "verifying": "Verifying…",
     "notUsable": "We could not use your verification in this browser. Check your number or open it outside private mode.",
-    "help": "Didn't get it? Check that it's your WhatsApp number."
+    "help": "Didn't get it? Check that it's your WhatsApp number.",
+    "notSent": "We couldn't send the code on WhatsApp. Try again in a moment."
   },
   "checkout": {
     "pending": "Your previous order was not confirmed because of the connection. Retry to find out if it went through.",
+    "pendingSesion": "Your session ended before your previous order was confirmed. You're signed in now: retry to finish it.",
     "priceChanged": "The price changed: the new total is {{total}}. Do you confirm?",
     "confirmNewTotal": "Confirm",
     "priceChangedReview": "The price changed; review your order.",
@@ -168,7 +214,18 @@
     "cardNotAccepted": "This business no longer takes cards online. Choose to pay at pickup.",
     "cardNotAcceptedOnly": "This business no longer takes cards online.",
     "cardAmountOutOfRange": "This total can't be paid by card online (minimum $10, maximum $50,000).",
-    "cardProviderUnavailable": "We couldn't open the payment. Try again."
+    "cardProviderUnavailable": "We couldn't open the payment. Try again.",
+    "tooManyUnpaid": "There are many orders waiting for payment. Order directly at the counter.",
+    "zeroTotal": "Your order has no cost: ask for it directly at the counter.",
+    "needsPhone": "This business changed how it takes orders. Enter your WhatsApp to order.",
+    "premioUsed": "Your {{premio}} was already used on another order",
+    "premioUsedGeneric": "Your reward was already used on another order",
+    "pointsGone": "You no longer have enough points",
+    "couponGone": "Your coupon is no longer available",
+    "newTotal": "The new total is {{total}}. Confirm?",
+    "backToOrder": "Back to my order",
+    "orderWithout": "Order without rewards · {{total}}",
+    "finishSignedIn": "Sign in again to finish your order."
   },
   "tracking": {
     "head": {
@@ -239,6 +296,78 @@
       "notCharged": "You were not charged. If you saw a charge, your bank will release it in a few days.",
       "releasing": "We are releasing your card…"
     },
-    "cancelPayment": "Cancel the payment"
+    "cancelPayment": "Cancel the payment",
+    "folio": {
+      "head": {
+        "pay": "Go pay at the counter",
+        "paid": "Paid! They are preparing it",
+        "ready": "Ready for pickup!",
+        "completed": "Picked up",
+        "expired": "Your order was cancelled",
+        "staff": "The business cancelled your order"
+      },
+      "sub": {
+        "pay": "It cancels itself at {{time}} if you don't pay.",
+        "paidEta": "Ready around {{time}}. Show this screen when you pick it up.",
+        "paid": "Show this screen when you pick it up.",
+        "ready": "Come get it and show this screen.",
+        "completed": "Thank you, {{name}}!",
+        "completedAnon": "Thank you!",
+        "expired": "It was cancelled because no payment was recorded in time. If you already paid at the counter, don't worry: show your order number to the cashier.",
+        "staff": "If you have questions, ask at the counter."
+      },
+      "steps": {
+        "order": "Order",
+        "paid": "Paid",
+        "ready": "Ready",
+        "completed": "Picked up"
+      },
+      "left": "{{n}} min left",
+      "say": "Show it at the counter or tell them your number.",
+      "tax": "You pay at the counter: card or cash. Tax included.",
+      "closePage": "If you close this page, the counter can find you by your name.",
+      "cancel": "Cancel my order",
+      "cancelNote": "Your order number {{folio}} stops working at the counter.",
+      "againTitle": "Do you still want it?",
+      "againHint": "Order it directly at the counter.",
+      "stamp": "PAID",
+      "paidBy": "{{name}} · paid today",
+      "paidByAt": "{{name}} · paid today at {{time}}",
+      "paidTodayAt": "Paid today at {{time}}",
+      "reminderExpired": "It was cancelled. If you already paid at the counter, open it to see if it was recorded.",
+      "partial": "You already paid {{paid}} · {{left}} left: pay it at the counter",
+      "paidByOn": "{{name}} · paid on {{date}} at {{time}}",
+      "paidTodayOn": "Paid on {{date}} at {{time}}",
+      "paidToday": "Paid today",
+      "live": "Live · {{time}}",
+      "offline": "No connection: we're showing you the last thing we knew; it updates by itself when you're back online.",
+      "tab": "Ready! · {{venue}}",
+      "reminderTitle": "Your order number {{folio}}",
+      "reminderText": "Pay at the counter before {{time}}.",
+      "reminderPaid": "Your order {{folio}} is paid",
+      "totalToPay": "Total to pay",
+      "paidTotal": "You paid"
+    },
+    "loyalty": {
+      "stamp": "You earned 1 stamp ({{n}} of {{meta}})",
+      "stampFull": "You earned 1 stamp (card complete)",
+      "points": "You earned {{n}} points",
+      "point": "You earned 1 point"
+    },
+    "benefits": {
+      "returned": "Your rewards went back to your account",
+      "returnedHint": "Use them on your next order.",
+      "more": "and {{n}} more",
+      "unnamed": "Discount"
+    }
+  },
+  "entrar": {
+    "back": "Back to your order",
+    "atras": "Back"
+  },
+  "cuenta": {
+    "entrar": "Sign in",
+    "mia": "My account",
+    "volver": "Back to the menu"
   }
 }

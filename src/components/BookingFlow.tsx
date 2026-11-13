@@ -35,6 +35,7 @@ import { CreditPackBanner } from './CreditPackBanner'
 import { CreditSelector } from './CreditSelector'
 import { CheckoutModal } from './CheckoutModal'
 import { CustomerPortal } from './CustomerPortal'
+import { leerCuenta } from '../state/miCuenta'
 import { ClassSessionList } from './ClassSessionList'
 import { ClassDetailView } from './ClassDetailView'
 import { UnifiedLanding } from './UnifiedLanding'
@@ -208,6 +209,8 @@ export function BookingFlow({ props }: BookingFlowProps) {
   // handleFormSubmit short-circuits its own credit-check API call and submits
   // straight to /reservations with the chosen balance (or no balance for cash).
   const [inlinePayment, setInlinePayment] = useState<InlineChoice>(null)
+  // codex-r4 R4-5: lo que se eligió pagar con los créditos de una sesión no sigue a otra (salió o entró aquí).
+  useEffect(() => { setInlinePayment(null) }, [customerInfo.value?.id ?? null])
   // Visibility of the top-nav-triggered "Comprar créditos" modal. The host
   // page calls widget.showCreditPacks() → the widget dispatches
   // _avq_show_credit_packs on its host element → this flag flips on. Picking
@@ -557,21 +560,20 @@ export function BookingFlow({ props }: BookingFlowProps) {
 
   // Load full portal data in background if customer is logged in
   useEffect(() => {
-    if (customerToken.value && !portalData.value) {
-      api.getCustomerPortal(props.venue, customerToken.value).then(data => {
-        portalData.value = data
-        // Fase 0.B: the portal carries "¿puedo reservar aquí?" — keep it fresh.
-        if (data.bookingAccess) bookingAccess.value = data.bookingAccess
+    const enviado = customerToken.value
+    if (enviado && !portalData.value) {
+      // W4: por la misma «Mi cuenta» de reservas (la última lectura gana, deja su estado y, con un 401, suelta la sesión).
+      void leerCuenta(props.venue, 'reservas', enviado).then(data => {
+        // W1: si la sesión cambió mientras (otra ficha, o renovada), esta respuesta ya no es de la vigente: el efecto vuelve a pedir.
+        if (!data || customerToken.value !== enviado) return
         // Backfill customerInfo if not yet stored (e.g. login from older version)
         if (!customerInfo.value && data.customer) {
           const { id, firstName, lastName, email, phone } = data.customer
           setCustomerSession(props.venue, customerToken.value!, { id, firstName, lastName, email, phone })
         }
-      }).catch(() => {
-        clearCustomerSession(props.venue)
       })
     }
-  }, [props.venue])
+  }, [props.venue, customerToken.value])
 
   // Detect return from Stripe checkout via the avq_credits URL param. The webhook may
   // race with the redirect, so poll a few times before giving up.
@@ -623,7 +625,11 @@ export function BookingFlow({ props }: BookingFlowProps) {
           }
           return
         }
-      } catch { /* keep polling */ }
+      } catch (err: any) {
+        // codex-r5 E6: con un 401 (o si la sesión de la página cambió) se acaba: no sigue ni pasa a otra sesión.
+        if (err?.status === 401 || err?.data?.code === 'CUSTOMER_SESSION_CHANGED') return
+      }
+      if (attempts >= maxAttempts) return
       setTimeout(tick, 1500)
     }
     tick()
@@ -800,6 +806,8 @@ export function BookingFlow({ props }: BookingFlowProps) {
           showToast(t('errors.slotTaken'), 'error')
           return
         }
+        // W1: la sesión de la pestaña dejó de valer: queda «sin sesión» con calma (el apartado es opcional; la reserva lo intenta igual).
+        if (err?.status === 401) return
         if (err?.status && err.status !== 404) {
           showToast(err?.data?.message ?? t('errors.generic'), 'error')
         }
@@ -1406,7 +1414,8 @@ export function BookingFlow({ props }: BookingFlowProps) {
         window.location.href = result.checkoutUrl
       }
     } catch (err: any) {
-      showToast(err.data?.message ?? t('errors.generic'), 'error')
+      if (err?.status === 401) showToast(t('entrar.sesionCerradaSigue'))
+      else showToast(err.data?.message ?? t('errors.generic'), 'error')
     } finally {
       setBuyingPackId(null)
     }
@@ -1534,6 +1543,11 @@ export function BookingFlow({ props }: BookingFlowProps) {
           blockedBy: 'APPROVAL',
         }
         step.value = config.formStep
+      } else if (err?.status === 401) {
+        // W1 (alcance A): la sesión de esta pestaña dejó de valer (salió en otra, venció o la revocaron). `request` ya la dejó sin
+        // sesión; aquí no se reintenta con la vieja ni se pinta rojo: el formulario, el horario y lo escrito se quedan.
+        showToast(t('entrar.sesionCerradaSigue'))
+        expireAfterError = holdHasExpired()
       } else if (err.status === 409) {
         const continueAfterSlotConflict = () => {
           showToast(t('errors.slotTaken'), 'error')
@@ -1641,12 +1655,18 @@ export function BookingFlow({ props }: BookingFlowProps) {
           showToast(err.data?.message ?? t('errors.generic'), 'error')
           return
         }
+        // W1: la sesión de la página cambió mientras se consultaban los créditos (entró o salió aquí): se confirma otra vez.
+        if (err?.data?.code === 'CUSTOMER_SESSION_CHANGED') {
+          showToast(err.data.message)
+          return
+        }
         // Session expired / invalid mid-flow: the server said who we are is
         // not trusted anymore. Drop it and ask to sign in again — never fall
         // through to a guest booking the customer didn't intend.
         if (err?.status === 401) {
-          clearCustomerSession(props.venue)
-          showToast(t('creditPacks.loginToUseCredits'), 'error')
+          // W1: «sin sesión» con calma (sin rojo): para usar sus créditos, que entre otra vez.
+          clearCustomerSession(props.venue, err.enviado ?? sessionToken)
+          showToast(t('creditPacks.loginToUseCredits'))
           showPortal.value = true
           return
         }

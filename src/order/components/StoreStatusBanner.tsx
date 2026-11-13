@@ -20,10 +20,10 @@ export type NoticeIcon = keyof typeof ICONS
  * (`CheckoutStatus`, que avisa con `role="alert"` lo que falló o pide decidir ya).
  */
 export function Notice({ tone, icon, title, text, action, role = 'status' }: {
-  tone: 'neutral' | 'warn' | 'error'
+  tone: 'neutral' | 'warn' | 'error' | 'ok'
   icon?: NoticeIcon
   title?: string
-  text: string
+  text?: string
   action?: { label: string; onClick: () => void }
   role?: 'status' | 'alert'
 }) {
@@ -36,7 +36,7 @@ export function Notice({ tone, icon, title, text, action, role = 'status' }: {
       )}
       <div class="avq-o-notice__body">
         {title && <span class="avq-o-notice__title">{title}</span>}
-        <span>{text}</span>
+        {text && <span>{text}</span>}
       </div>
       {action && <button type="button" class="avq-o-notice__action" onClick={action.onClick}>{action.label}</button>}
     </div>
@@ -55,7 +55,12 @@ export function storeStatus(info: StoreInfo, t: ReturnType<typeof createOrderT>,
   let title: string | undefined
   let icon: NoticeIcon = 'clock'
   let tone: 'neutral' | 'warn' = 'warn'
-  if (info.status === 'CLOSED') {
+  const nadie = info.requiresAcceptance === false
+  // Último pedido para pagar en caja: la tienda de «Nadie» cierra los pedidos 10 min antes que la caja (el servidor ya dice `CLOSED`).
+  const lastOrderAt = nadie && info.status === 'CLOSED' && info.closesAt && new Date(info.closesAt).getTime() > Date.now() ? info.closesAt : null
+  if (lastOrderAt) {
+    text = t('store.lastOrder', { time: formatTime(lastOrderAt, tz, locale) })
+  } else if (info.status === 'CLOSED') {
     const ranges = todayRanges(info.hours, new Date(), tz)
     const label = (r: { open: string; close: string; overnight: boolean }) =>
       // «02:00» se dice «2:00» en la hora de cierre del día siguiente.
@@ -78,11 +83,31 @@ export function storeStatus(info: StoreInfo, t: ReturnType<typeof createOrderT>,
     title = t('store.disabledTitle')
     icon = 'lock'
     tone = 'neutral' // no es una pausa: el restaurante no vende en línea
+  } else if (nadie) {
+    // «Nadie» sin ningún aparato que cobre folios: se puede ver el menú, pero no pedir por aquí.
+    text = t('store.noDeviceText')
+    title = t('store.noDeviceTitle')
+    icon = 'cloudOff'
   } else {
     text = t('store.offline')
     icon = 'cloudOff'
   }
   return { text, title, icon, tone }
+}
+
+/** «Nadie» y cierra en menos de 30 min (R56: en los últimos 10 el servidor ya dice CLOSED y manda «Ya no recibimos»). */
+const closesSoon = (info: StoreInfo) => {
+  const ms = info.closesAt ? new Date(info.closesAt).getTime() - Date.now() : NaN
+  return ms > 0 && ms < 30 * 60_000
+}
+
+/** «Cerramos a las HH:MM» / «Si no pasas a pagar antes, tu pedido se cancela.»: lo comparten la carta y «Tus datos». */
+export function ClosingSoonNotice() {
+  const store = useContext(OrderStoreContext)!
+  const info = store.info.value
+  if (!info || info.status !== 'OPEN' || info.requiresAcceptance !== false || !closesSoon(info)) return null
+  const t = createOrderT(store.locale)
+  return <Notice tone="warn" title={t('store.closingSoonTitle', { time: formatTime(info.closesAt!, info.venue.timezone ?? 'America/Mexico_City', store.locale) })} text={t('store.closingSoonText')} />
 }
 
 /** Aviso de por qué no se puede pedir ahora. Con la tienda abierta no pinta nada. */
