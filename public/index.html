@@ -1097,7 +1097,8 @@
             headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
             body: JSON.stringify(qr ? qr : { secret: secret }),
           })
-            .then(function (r) { return r.json().then(function (j) { return { status: r.status, body: j } }) })
+            // El cuerpo puede no ser JSON (el tope de peticiones y los proxies contestan texto): eso no es «sin conexión».
+            .then(function (r) { return r.json().catch(function () { return null }).then(function (j) { return { status: r.status, body: j } }) })
             .then(function (out) {
               var code = (out.body && (out.body.code || (out.body.error && out.body.error.code))) || ''
               if (out.status >= 200 && out.status < 300) {
