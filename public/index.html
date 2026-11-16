@@ -1048,6 +1048,13 @@
         // buscaba en una llave vieja y, tras entrar con el código, la llegada nunca se mandaba (Codex r1 #2, 16-nov).
         // Separada POR NEGOCIO: un token de otro local no sirve aquí.
         function readToken() {
+          // Primero el MISMO lector del portal (incluye su respaldo en memoria cuando el navegador no deja guardar nada).
+          try {
+            if (typeof window.__avqTokenDeSesion === 'function') {
+              var delPortal = window.__avqTokenDeSesion(venueSlug)
+              if (delPortal) return delPortal
+            }
+          } catch (e) { /* sigue con la lectura directa */ }
           var crudo = null
           try {
             var host = window.location.hostname
