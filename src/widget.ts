@@ -6,6 +6,7 @@ import type { WidgetProps } from './types'
 import { createShadowContainer, readCommonAttrs } from './shared-styles'
 import { OrderApp } from './order/components/OrderApp'
 import { OrderStoreContext, createOrderStore, type OrderStore } from './order/store'
+import { leerSesion } from './lib/sesionDeCliente'
 
 // ==================== <avoqado-booking> ====================
 // Full all-in-one widget (booking flow + portal + credit packs)
@@ -201,6 +202,14 @@ class AvoqadoOrderWidget extends HTMLElement {
     )
   }
 }
+
+// ==================== La sesión, para la página del QR de llegada ====================
+//
+// Asistencia verificada (Codex r3 #5): la página del QR (`public/index.html`) es JS suelto y no ve el respaldo EN MEMORIA de
+// la sesión (cuando el navegador no deja guardar nada). Se le presta el MISMO lector del portal: sólo devuelve el token del
+// negocio que se pide, nunca otra cosa.
+;(window as unknown as { __avqTokenDeSesion?: (slug: string) => string | null }).__avqTokenDeSesion = (slug: string) =>
+  leerSesion(slug)?.token ?? null
 
 // ==================== Register custom elements ====================
 
