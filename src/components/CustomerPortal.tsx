@@ -1,4 +1,5 @@
 import { h } from 'preact'
+import { effect, signal } from '@preact/signals'
 import { useState, useEffect, useLayoutEffect, useRef, useId } from 'preact/hooks'
 import type { TFunction } from '../i18n'
 import type { CreditPackPublic, CustomerPortalData, MiTarjeta } from '../types'
@@ -78,6 +79,13 @@ const botonQuieto = {
 const aviso = (tono: 'ambar' | 'neutro') => ({
   display: 'flex', flexDirection: 'column', gap: '2px', margin: '0 0 12px', padding: '14px 16px', borderRadius: '16px', lineHeight: '1.4',
   fontSize: '14px', background: tono === 'ambar' ? '#FFF4DE' : 'var(--avq-muted, #F3F3F3)', color: tono === 'ambar' ? '#6B4300' : 'var(--avq-fg, #000)',
+})
+// D657: el último `canCharge` que la página leyó de CADA negocio. `venueInfo` es una sola para toda la página y la pisan los widgets
+// de otros negocios (codex-r1 #1, r2, r3): «Mi cuenta» decide con el de SU negocio aunque se desmonte y vuelva a montarse.
+const cobroPorNegocio = signal<Record<string, boolean | undefined>>({})
+effect(() => {
+  const v = venueInfo.value
+  if (v && cobroPorNegocio.peek()[v.slug] !== v.canCharge) cobroPorNegocio.value = { ...cobroPorNegocio.peek(), [v.slug]: v.canCharge }
 })
 const FINALES = new Set(['COMPLETED', 'REJECTED', 'EXPIRED', 'CANCELLED_BY_CUSTOMER', 'CANCELLED_BY_STAFF', 'PAYMENT_NOT_COMPLETED'])
 type Lista = 'pedidos' | 'tarjetas' | 'descuentos'
@@ -201,12 +209,17 @@ export function CustomerPortal({
   // Una página que no se pudo traer era de la lectura anterior: con datos nuevos, el aviso se va (sus páginas también).
   useEffect(() => { setFallaMas(null) }, [data])
 
+  // D657: sin cobro en línea no se ofrecen paquetes (como BookingFlow y PaymentSelector: sólo `false` apaga; sin el dato, servidor
+  // viejo, como antes). Sólo el de ESTE negocio (`cobroPorNegocio`, arriba). Se lee al pintar: si la página relee ESTE negocio,
+  // «Comprar» se va o se trae la lista.
+  const cobraEnLinea = cobroPorNegocio.value[venueSlug] !== false
+
   // Load available credit packs when portal is shown (la tienda no vende paquetes todavía: Fase B)
   useEffect(() => {
-    if (data && !enTienda) {
+    if (data && !enTienda && cobraEnLinea) {
       loadPacks()
     }
-  }, [!!data]) // una vez por apertura, no en cada relectura
+  }, [!!data, cobraEnLinea]) // una vez por apertura, no en cada relectura
 
   // W4 (1m): «Usar en caja», con el código de la tarjeta para que la cajera lo teclee. Sale de los datos VIGENTES: si al releer ya no
   // está activa (bloqueada, vencida, sin código) o ya no está, se regresa a «Mi cuenta», que dice por qué.
@@ -1034,11 +1047,11 @@ export function CustomerPortal({
           }}>
             {t('portal.buyCredits')}
           </h3>
-          {packsLoading ? (
+          {packsLoading && cobraEnLinea ? (
             <div style={{ padding: '24px', textAlign: 'center' }}>
               <Spinner size={18} />
             </div>
-          ) : packs.length === 0 ? (
+          ) : packs.length === 0 || !cobraEnLinea ? (
             <div style={{
               borderRadius: '12px', padding: '16px',
               background: 'var(--avq-muted, #f8f9fb)',

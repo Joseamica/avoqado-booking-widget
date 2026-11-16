@@ -1412,3 +1412,112 @@ describe('D656: «Comprar» una sola vez, y sólo para quien sigue en sesión', 
     expect(api.createPackCheckout).toHaveBeenCalledTimes(1)
   })
 })
+
+describe('D657: sin cobro en línea, «Mi cuenta» no ofrece paquetes', () => {
+  const PAQUETE = {
+    id: 'pk1', name: 'Mega Pack', price: 900, currency: 'MXN', validityDays: 30,
+    items: [{ id: 'i1', productId: 'p1', product: { id: 'p1', name: 'Clase', type: 'CLASS', price: 150 }, quantity: 10 }],
+  }
+  // Lo que Ana ya tiene: 3 de 10 clases de un paquete comprado antes.
+  const CON_CREDITOS = PORTAL({
+    credits: { purchases: [{ id: 'cp1', creditPack: { name: 'Paquete 10' }, status: 'ACTIVE', itemBalances: [
+      { id: 'b1', productId: 'p1', product: { id: 'p1', name: 'Clase', type: 'CLASS' }, originalQuantity: 10, remainingQuantity: 3 },
+    ] }] },
+  })
+  const negocio = (over: Record<string, unknown>) => { state.venueInfo.value = { slug: 'testarudo', name: 'Testarudo', ...over } as any }
+  beforeEach(() => {
+    anaAdentro()
+    vi.mocked(api.getCustomerPortal).mockResolvedValue(CON_CREDITOS)
+    vi.mocked(api.getCreditPacks).mockResolvedValue([PAQUETE] as any)
+  })
+  // `cobroPorNegocio` vive lo que la página: se deja a «testarudo» sin el dato, como un servidor viejo.
+  afterEach(() => { negocio({}); state.venueInfo.value = null })
+
+  it('canCharge false: ni «Comprar» ni la lista (no se pide); sí su saldo y «Contacta al negocio» (antes «Comprar» y un 400)', async () => {
+    negocio({ canCharge: false })
+    renderPortal()
+    await screen.findByText('Hola, Ana')
+    // Los efectos de Preact corren tras pintar (hasta ~100 ms sin rAF): se espera a que la carga de paquetes ya hubiera salido.
+    await act(() => new Promise(ok => setTimeout(ok, 250)))
+    expect(screen.queryByRole('button', { name: 'Comprar' })).toBeNull()
+    expect(screen.queryByText('Mega Pack')).toBeNull()
+    expect(api.getCreditPacks).not.toHaveBeenCalled()
+    expect(screen.getByText('Paquete 10')).toBeTruthy()
+    expect(screen.getByText('3/10')).toBeTruthy()
+    expect(screen.getByText('No hay paquetes a la venta por ahora. Contacta al negocio.')).toBeTruthy()
+  })
+
+  it('canCharge true: «Comprar» como hoy', async () => {
+    negocio({ canCharge: true })
+    renderPortal()
+    expect(await screen.findByRole('button', { name: 'Comprar' })).toBeTruthy()
+    expect(screen.getByText('Mega Pack')).toBeTruthy()
+  })
+
+  it('servidor viejo sin canCharge: «Comprar» como hoy', async () => {
+    negocio({})
+    renderPortal()
+    expect(await screen.findByRole('button', { name: 'Comprar' })).toBeTruthy()
+  })
+
+  it('con «Mi cuenta» abierta, el negocio se relee con canCharge false: «Comprar» se va aunque la lista ya estaba', async () => {
+    negocio({ canCharge: true })
+    renderPortal()
+    await screen.findByRole('button', { name: 'Comprar' })
+    await act(async () => { negocio({ canCharge: false }) })
+    expect(screen.queryByRole('button', { name: 'Comprar' })).toBeNull()
+    expect(screen.getByText('3/10')).toBeTruthy()
+  })
+
+  it('con «Mi cuenta» abierta, el negocio ya cobra: se trae la lista y sale «Comprar»', async () => {
+    negocio({ canCharge: false })
+    renderPortal()
+    await screen.findByText('Hola, Ana')
+    await act(() => new Promise(ok => setTimeout(ok, 250)))
+    expect(api.getCreditPacks).not.toHaveBeenCalled()
+    await act(async () => { negocio({ canCharge: true }) })
+    expect(await screen.findByRole('button', { name: 'Comprar' })).toBeTruthy()
+    expect(api.getCreditPacks).toHaveBeenCalledTimes(1)
+  })
+
+  it('codex-r1 #3: la lista todavía viene en camino y llega canCharge false: «Contacta al negocio» al momento, sin girar', async () => {
+    vi.mocked(api.getCreditPacks).mockReturnValue(new Promise(() => {}))
+    negocio({ canCharge: true })
+    renderPortal()
+    await screen.findByText('Hola, Ana')
+    await waitFor(() => expect(api.getCreditPacks).toHaveBeenCalled())
+    await act(async () => { negocio({ canCharge: false }) })
+    expect(screen.getByText('No hay paquetes a la venta por ahora. Contacta al negocio.')).toBeTruthy()
+  })
+
+  it('codex-r1 #1: el canCharge de OTRO negocio de la misma página no decide: «Comprar» como hoy', async () => {
+    negocio({ slug: 'otro-negocio', canCharge: false })
+    renderPortal()
+    expect(await screen.findByRole('button', { name: 'Comprar' })).toBeTruthy()
+  })
+
+  it('codex-r2: otro negocio pisa la señal después (con false o true): el «no cobra» de ESTE negocio se conserva', async () => {
+    negocio({ canCharge: false })
+    renderPortal()
+    await screen.findByText('Hola, Ana')
+    await act(async () => { negocio({ slug: 'otro-negocio', canCharge: false }) })
+    await act(async () => { negocio({ slug: 'otro-negocio', canCharge: true }) })
+    await act(() => new Promise(ok => setTimeout(ok, 250)))
+    expect(screen.queryByRole('button', { name: 'Comprar' })).toBeNull()
+    expect(api.getCreditPacks).not.toHaveBeenCalled()
+    expect(screen.getByText('No hay paquetes a la venta por ahora. Contacta al negocio.')).toBeTruthy()
+  })
+
+  it('codex-r3: «Mi cuenta» se desmonta (otro widget carga) y vuelve con la señal del otro negocio: sigue sin «Comprar»', async () => {
+    negocio({ canCharge: false })
+    renderPortal()
+    await screen.findByText('Hola, Ana')
+    cleanup() // PortalApp la desmonta mientras carga el otro negocio
+    negocio({ slug: 'otro-negocio', canCharge: true })
+    renderPortal()
+    await screen.findByText('Hola, Ana')
+    await act(() => new Promise(ok => setTimeout(ok, 250)))
+    expect(screen.queryByRole('button', { name: 'Comprar' })).toBeNull()
+    expect(api.getCreditPacks).not.toHaveBeenCalled()
+  })
+})
