@@ -41,6 +41,9 @@ jobs:
         env:
           # Production CDN URL — overrides .env's local /api/v1/public proxy.
           VITE_API_URL: https://api.avoqado.io/api/v1/public
+          # D655: «Entrar con Google» en la tienda. Es el cliente web «Avoqado Consumer Web» del proyecto «avoqado» (avoqado-d0a24);
+          # su lista de orígenes permitidos trae book.avoqado.io y pedidos.avoqado.io (13-nov). Un ID de cliente es público, no secreto.
+          VITE_GOOGLE_CLIENT_ID: 219752736783-5b44tjebar2d766nij3l5r3vj2rmqjib.apps.googleusercontent.com
 
       - name: Deploy to Cloudflare Pages
         uses: cloudflare/wrangler-action@v3
