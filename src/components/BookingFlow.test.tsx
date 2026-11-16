@@ -10,7 +10,7 @@ import type { PublicVenueInfo, PublicReservationDetail, WidgetProps } from '../t
 vi.mock('../api/booking', () => ({
   getVenueInfo: vi.fn(), getCreditPacks: vi.fn(), getReservation: vi.fn(),
   getAvailability: vi.fn(), getClassSessionsRange: vi.fn(), createReservation: vi.fn(), createHold: vi.fn(), cancelHold: vi.fn(),
-  getCustomerCredits: vi.fn(), getCustomerPortal: vi.fn(),
+  getCustomerCredits: vi.fn(), getCustomerPortal: vi.fn(), createPackCheckout: vi.fn(),
 }))
 const venue: PublicVenueInfo = {
   slug: 'studio-a', name: 'Studio A', type: 'SALON', logo: null, address: null, phone: null,
@@ -767,5 +767,70 @@ describe('BookingFlow deposit return through mounted components', () => {
     if (blockedWrite) expect(sessionStorage.getItem('avq:pendingReservation:studio-a')).toBeNull()
     else expect(JSON.parse(sessionStorage.getItem('avq:pendingReservation:studio-a')!)).toEqual({ venue: 'studio-a', cancelSecret: 'new-a', confirmationCode: 'NEW-A' })
     expect(sessionStorage.getItem('avq:pendingReservation')).toBeNull()
+  })
+})
+
+describe('D656: «Ir al pago» de un paquete (compra de invitada) una sola vez, y sólo para quien sigue en sesión', () => {
+  const PAQUETE = {
+    id: 'pk1', name: 'Mega Pack', price: 900, currency: 'MXN', validityDays: 30,
+    items: [{ id: 'i1', productId: 'service-a', product: { id: 'service-a', name: 'Servicio propio', type: 'APPOINTMENTS_SERVICE', price: 500 }, quantity: 5 }],
+  }
+  const TEL = { tipo: 'PHONE' as const, valor: '+525544422262', metodo: 'WHATSAPP' as const, probadoEn: 1 }
+  const ANA = { id: 'c1', firstName: 'Ana', lastName: null, email: null, phone: '+525544422262' }
+  const BEA = { ...ANA, id: 'c2', firstName: 'Bea', phone: '+525599998888' }
+  const entra = (token: string, customer: typeof ANA) => act(async () => {
+    state.bindCustomerSessionToVenue('studio-a') // lo hace `widget.ts` al montar el elemento
+    guardarSesion('studio-a', { token, customer, contactos: [TEL], guardadaEn: Date.now() })
+    state.entroAqui('studio-a', leerSesion('studio-a')!)
+  })
+  async function abrirFormulario() {
+    vi.mocked(api.getVenueInfo).mockResolvedValue({ ...venue, canCharge: true })
+    vi.mocked(api.getCreditPacks).mockResolvedValue([PAQUETE] as any)
+    window.history.replaceState({}, '', '/studio-a')
+    render(<BookingFlow props={{ ...props(), flowType: 'unified' }} />); await flush()
+    fireEvent.click(screen.getByRole('tab', { name: 'Comprar paquetes' })); await flush()
+    fireEvent.click(screen.getByRole('button', { name: 'Comprar' })); await flush()
+    fireEvent.input(screen.getByLabelText(/Teléfono/), { target: { value: '5544422262' } }); await flush()
+    return screen.getByRole('button', { name: 'Ir al pago' })
+  }
+  afterEach(() => { cleanup(); borrarSesion('studio-a'); state.clearCustomerSession('studio-a') })
+
+  it('P3: dos toques antes de que el botón se repinte ⇒ UNA sola petición de pago', async () => {
+    vi.mocked(api.createPackCheckout).mockReturnValue(new Promise(() => {}))
+    const ir = await abrirFormulario()
+    await act(async () => { ir.click(); ir.click() }); await flush()
+    expect(api.createPackCheckout).toHaveBeenCalledTimes(1)
+  })
+
+  it('P3: tras un fallo, el segundo toque sí prepara el pago y la invitada va a pagar', async () => {
+    vi.mocked(api.createPackCheckout)
+      .mockRejectedValueOnce({ status: 400, data: { message: 'Sin pagos en línea' } })
+      .mockResolvedValueOnce({ checkoutUrl: '#pago' })
+    const ir = await abrirFormulario()
+    fireEvent.click(ir); await flush()
+    fireEvent.click(screen.getByRole('button', { name: 'Ir al pago' })); await flush()
+    expect(api.createPackCheckout).toHaveBeenCalledTimes(2)
+    expect(window.location.hash).toBe('#pago')
+  })
+
+  it('P2: Ana compra con sesión, entra Bea y llega tarde la respuesta EXITOSA de Ana ⇒ no se abre su pago', async () => {
+    await entra('tok-A', ANA)
+    let resolver: (r: { checkoutUrl: string }) => void = () => {}
+    vi.mocked(api.createPackCheckout).mockImplementationOnce(() => new Promise(si => { resolver = si }))
+    fireEvent.click(await abrirFormulario()); await flush()
+    expect(vi.mocked(api.createPackCheckout).mock.calls[0][3]).toBe('tok-A')
+    await entra('tok-B', BEA)
+    await act(async () => { resolver({ checkoutUrl: '#pago-de-ana' }) }); await flush()
+    expect(window.location.hash).toBe('')
+  })
+
+  it('P2: renovar la sesión de Ana (otro token, misma clienta) no cancela su compra', async () => {
+    await entra('tok-A', ANA)
+    let resolver: (r: { checkoutUrl: string }) => void = () => {}
+    vi.mocked(api.createPackCheckout).mockImplementationOnce(() => new Promise(si => { resolver = si }))
+    fireEvent.click(await abrirFormulario()); await flush()
+    await entra('tok-A2', ANA)
+    await act(async () => { resolver({ checkoutUrl: '#pago-de-ana' }) }); await flush()
+    expect(window.location.hash).toBe('#pago-de-ana')
   })
 })

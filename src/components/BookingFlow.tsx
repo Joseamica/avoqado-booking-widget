@@ -182,6 +182,8 @@ export function BookingFlow({ props }: BookingFlowProps) {
   // picker (if layoutConfig) or the form step.
   const [classDetailActive, setClassDetailActive] = useState(false)
   const [buyingPackId, setBuyingPackId] = useState<string | null>(null)
+  // D656: candado de «Ir al pago»; no espera al repintado del botón (dos toques en el mismo instante = un solo pago preparado).
+  const buyingPackRef = useRef(false)
   const [checkoutPackId, setCheckoutPackId] = useState<string | null>(null)
   const [checkoutPhone, setCheckoutPhone] = useState('')
   const [checkoutEmail, setCheckoutEmail] = useState('')
@@ -1384,8 +1386,11 @@ export function BookingFlow({ props }: BookingFlowProps) {
   }
 
   async function handleCheckoutSubmit() {
-    if (!checkoutPackId || !checkoutPhone.trim()) return
+    if (!checkoutPackId || !checkoutPhone.trim() || buyingPackRef.current) return
+    buyingPackRef.current = true
     setBuyingPackId(checkoutPackId)
+    // D656: con sesión, la compra va a nombre de quien está adentro AHORA; si al responder ya es otra persona, no se abre ese pago.
+    const quien = customerInfo.value?.id ?? null
     try {
       const phone = checkoutPhone.trim()
       const email = checkoutEmail.trim() || undefined
@@ -1410,13 +1415,14 @@ export function BookingFlow({ props }: BookingFlowProps) {
         successUrl,
         cancelUrl,
       }, customerToken.value)
-      if (result.checkoutUrl) {
+      if (result.checkoutUrl && (customerInfo.value?.id ?? null) === quien) {
         window.location.href = result.checkoutUrl
       }
     } catch (err: any) {
       if (err?.status === 401) showToast(t('entrar.sesionCerradaSigue'))
       else showToast(err.data?.message ?? t('errors.generic'), 'error')
     } finally {
+      buyingPackRef.current = false
       setBuyingPackId(null)
     }
   }

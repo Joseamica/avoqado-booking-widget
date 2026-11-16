@@ -131,7 +131,7 @@ export function CustomerPortal({
   const [cambiando, setCambiando] = useState<number | null>(null)
   const [numeroNuevo, setNumeroNuevo] = useState<{ epoca: number; numero: string } | null>(null)
   const idCodigo = useId()
-  const enVuelo = useRef({ mas: false, guardar: false })
+  const enVuelo = useRef({ mas: false, guardar: false, comprar: false })
 
   // Profile edit state
   const [editingProfile, setEditingProfile] = useState(false)
@@ -397,7 +397,9 @@ export function CustomerPortal({
 
   async function handleBuyPack(packId: string) {
     const cust = data?.customer
-    if (!cust) return
+    // D656: el candado no espera al repintado (dos toques en el mismo instante = un solo pago preparado).
+    if (!cust || enVuelo.current.comprar) return
+    enVuelo.current.comprar = true
     setFallaCompra(null)
     setCheckoutLoading(packId)
     try {
@@ -410,10 +412,14 @@ export function CustomerPortal({
         successUrl: window.location.href,
         cancelUrl: window.location.href,
       }, customerToken.value)
-      window.location.href = result.checkoutUrl
+      // D656: sólo si quien tocó sigue en «Mi cuenta» (otra sesión la vacía al instante; renovar no). Por ficha, no por token.
+      if (cuentaDe(venueSlug, sup).peek().data?.customer?.id === cust.id) return void (window.location.href = result.checkoutUrl)
+      setCheckoutLoading(null)
     } catch (err: any) {
       if (err?.status !== 401) setFallaCompra({ packId, msg: err?.data?.message ?? t('errors.generic'), customerId: cust.id })
       setCheckoutLoading(null)
+    } finally {
+      enVuelo.current.comprar = false
     }
   }
 
