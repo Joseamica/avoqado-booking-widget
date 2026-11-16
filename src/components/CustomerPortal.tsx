@@ -145,7 +145,8 @@ export function CustomerPortal({
   const [packsLoading, setPacksLoading] = useState(false)
   const [checkoutLoading, setCheckoutLoading] = useState<string | null>(null)
   // D655: el aviso de «Comprar» va junto a SU botón; `error` no se pinta en esta vista (por eso «no pasaba nada»).
-  const [fallaCompra, setFallaCompra] = useState<{ packId: string; msg: string } | null>(null)
+  // Es de la clienta que tocó (codex-r2): no se le enseña a otra, aunque la respuesta llegue tarde; renovar su sesión no lo borra.
+  const [fallaCompra, setFallaCompra] = useState<{ packId: string; msg: string; customerId: string } | null>(null)
 
   const token = useTokenDe(venueSlug, sup)
   // codex-w4-r3: lo leído y su estado, UNO por negocio y superficie; todos los lectores de la página se pintan de aquí.
@@ -171,7 +172,6 @@ export function CustomerPortal({
     setEditingProfile(false)
     setEditFirstName('')
     setEditLastName('')
-    setFallaCompra(null) // codex-r1 (D655): el aviso de «Comprar» era de la sesión anterior
     if (!token) {
       setShowEmailLogin(false)
       setError(null)
@@ -412,7 +412,7 @@ export function CustomerPortal({
       }, customerToken.value)
       window.location.href = result.checkoutUrl
     } catch (err: any) {
-      if (err?.status !== 401) setFallaCompra({ packId, msg: err?.data?.message ?? t('errors.generic') })
+      if (err?.status !== 401) setFallaCompra({ packId, msg: err?.data?.message ?? t('errors.generic'), customerId: cust.id })
       setCheckoutLoading(null)
     }
   }
@@ -1157,7 +1157,7 @@ export function CustomerPortal({
                     {checkoutLoading === pack.id ? <Spinner size={14} /> : t('portal.buyPack')}
                   </button>
                 </div>
-                {fallaCompra?.packId === pack.id && (
+                {fallaCompra?.packId === pack.id && fallaCompra.customerId === customer.id && (
                   <p role="alert" style={{ fontSize: '13px', color: '#ef4444', margin: '8px 0 0' }}>{fallaCompra.msg}</p>
                 )}
               </div>

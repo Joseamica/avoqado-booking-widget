@@ -1261,4 +1261,41 @@ describe('D655: comprar un paquete desde «Mi cuenta»', () => {
     await screen.findByText('Hola, Bea')
     expect(screen.queryByRole('alert')).toBeNull()
   })
+
+  it('codex-r2 #1: la respuesta de Ana que llega cuando ya entró Bea no se le enseña a Bea', async () => {
+    anaAdentro()
+    vi.mocked(api.getCustomerPortal).mockResolvedValue(SIN_TELEFONO)
+    vi.mocked(api.getCreditPacks).mockResolvedValue([PAQUETE] as any)
+    let rechazar: (e: any) => void = () => {}
+    vi.mocked(api.createPackCheckout).mockImplementationOnce(() => new Promise((_, no) => { rechazar = no }))
+    renderPortal()
+    fireEvent.click(await screen.findByRole('button', { name: 'Comprar' }))
+    await waitFor(() => expect(api.createPackCheckout).toHaveBeenCalled())
+    const BEA = { ...CLIENTE, id: 'c2', firstName: 'Bea', phone: '+525599998888' }
+    vi.mocked(api.getCustomerPortal).mockResolvedValue(PORTAL({ customer: { ...BEA, loyaltyPoints: 0, totalVisits: 0 } }))
+    await act(async () => {
+      guardarSesion('testarudo', { token: 'tok-B', customer: BEA, contactos: [TEL], guardadaEn: Date.now() })
+      state.entroAqui('testarudo', leerSesion('testarudo')!)
+    })
+    await screen.findByText('Hola, Bea')
+    await act(async () => { rechazar({ status: 400, data: { message: 'Has alcanzado el limite de 1 compras para este paquete' } }) })
+    await flushAll()
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+
+  it('codex-r2 #2: renovar la sesión de Ana (otro token, misma clienta) no borra su aviso', async () => {
+    anaAdentro()
+    vi.mocked(api.getCustomerPortal).mockResolvedValue(SIN_TELEFONO)
+    vi.mocked(api.getCreditPacks).mockResolvedValue([PAQUETE] as any)
+    vi.mocked(api.createPackCheckout).mockRejectedValue({ status: 400, data: { message: 'Has alcanzado el limite de 1 compras para este paquete' } })
+    renderPortal()
+    fireEvent.click(await screen.findByRole('button', { name: 'Comprar' }))
+    await screen.findByRole('alert')
+    await act(async () => {
+      guardarSesion('testarudo', { token: 'tok-A2', customer: CLIENTE, contactos: [TEL], guardadaEn: Date.now() })
+      state.entroAqui('testarudo', leerSesion('testarudo')!)
+    })
+    await flushAll()
+    expect(screen.getByRole('alert').textContent).toBe('Has alcanzado el limite de 1 compras para este paquete')
+  })
 })
