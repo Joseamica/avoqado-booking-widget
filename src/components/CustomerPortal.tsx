@@ -9,7 +9,7 @@ import { EntrarConCuenta } from './EntrarConCuenta'
 import { CambiarNumero, comoSeLee } from './CambiarNumero'
 import * as api from '../api/booking'
 import {
-  customerToken, setCustomerSession, clearCustomerSession, venueInfo, entroAqui, lectorDe,
+  customerToken, setCustomerSession, clearCustomerSession, venueInfo, entroAqui, lectorDe, comprandoPaquete,
 } from '../state/booking'
 import { cuentaDe, leerCuenta } from '../state/miCuenta'
 import { alCambiarLaPagina, epocaDe, paginaDe, soltarLaPagina, type SesionEmitida, type Superficie } from '../lib/sesionDeCliente'
@@ -131,7 +131,7 @@ export function CustomerPortal({
   const [cambiando, setCambiando] = useState<number | null>(null)
   const [numeroNuevo, setNumeroNuevo] = useState<{ epoca: number; numero: string } | null>(null)
   const idCodigo = useId()
-  const enVuelo = useRef({ mas: false, guardar: false, comprar: false })
+  const enVuelo = useRef({ mas: false, guardar: false })
 
   // Profile edit state
   const [editingProfile, setEditingProfile] = useState(false)
@@ -397,9 +397,9 @@ export function CustomerPortal({
 
   async function handleBuyPack(packId: string) {
     const cust = data?.customer
-    // D656: el candado no espera al repintado (dos toques en el mismo instante = un solo pago preparado).
-    if (!cust || enVuelo.current.comprar) return
-    enVuelo.current.comprar = true
+    // D656: el candado no espera al repintado y es de toda la página (dos toques, otro botón u otro portal = un solo pago preparado).
+    if (!cust || comprandoPaquete.has(venueSlug)) return
+    comprandoPaquete.add(venueSlug)
     setFallaCompra(null)
     setCheckoutLoading(packId)
     try {
@@ -419,7 +419,7 @@ export function CustomerPortal({
       if (err?.status !== 401) setFallaCompra({ packId, msg: err?.data?.message ?? t('errors.generic'), customerId: cust.id })
       setCheckoutLoading(null)
     } finally {
-      enVuelo.current.comprar = false
+      comprandoPaquete.delete(venueSlug)
     }
   }
 

@@ -39,6 +39,7 @@ beforeEach(() => {
   state.customerInfo.value = null
   state.portalData.value = null
   cuentasNuevasParaPruebas()
+  state.comprandoPaquete.clear() // D656: una compra que una prueba dejó colgada no frena a la siguiente
   state.portalLoading.value = false
   state.bookingAccess.value = null
   vi.mocked(api.requestOtp).mockResolvedValue({ ok: true })
@@ -1380,5 +1381,34 @@ describe('D656: «Comprar» una sola vez, y sólo para quien sigue en sesión', 
     fireEvent.click(screen.getByRole('button', { name: 'Comprar' }))
     await waitFor(() => expect(window.location.hash).toBe('#pago'))
     expect(api.createPackCheckout).toHaveBeenCalledTimes(2)
+  })
+
+  it('codex-r1 #1: dos «Mi cuenta» en la misma página ⇒ un toque en cada una prepara UN solo pago', async () => {
+    anaAdentro()
+    vi.mocked(api.getCustomerPortal).mockResolvedValue(PORTAL())
+    vi.mocked(api.getCreditPacks).mockResolvedValue([PAQUETE] as any)
+    vi.mocked(api.createPackCheckout).mockReturnValue(new Promise(() => {}))
+    renderPortal()
+    renderPortal()
+    await waitFor(() => expect(screen.getAllByRole('button', { name: 'Comprar' })).toHaveLength(2))
+    const [uno, otro] = screen.getAllByRole('button', { name: 'Comprar' })
+    await act(async () => { uno.click(); otro.click() })
+    await flushAll()
+    expect(api.createPackCheckout).toHaveBeenCalledTimes(1)
+  })
+
+  it('codex-r1 #1: cerrar y volver a abrir «Mi cuenta» mientras se prepara el pago no prepara otro', async () => {
+    anaAdentro()
+    vi.mocked(api.getCustomerPortal).mockResolvedValue(PORTAL())
+    vi.mocked(api.getCreditPacks).mockResolvedValue([PAQUETE] as any)
+    vi.mocked(api.createPackCheckout).mockReturnValue(new Promise(() => {}))
+    const primera = renderPortal()
+    fireEvent.click(await screen.findByRole('button', { name: 'Comprar' }))
+    await waitFor(() => expect(api.createPackCheckout).toHaveBeenCalledTimes(1))
+    primera.unmount()
+    renderPortal()
+    fireEvent.click(await screen.findByRole('button', { name: 'Comprar' }))
+    await flushAll()
+    expect(api.createPackCheckout).toHaveBeenCalledTimes(1)
   })
 })
