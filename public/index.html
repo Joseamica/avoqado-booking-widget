@@ -1114,7 +1114,7 @@
                 askLogin('Para registrar tu llegada, entra con el código que te mandamos por WhatsApp o a tu correo.')
               } else if (code === 'CHECK_IN_NOT_FOUND' && qr) {
                 screen('🙋', 'No encontramos una reservación tuya para ahora',
-                  'El registro se abre 20 minutos antes de tu clase. Si reservaste con otro número, escríbelo en la pantalla o pide ayuda.')
+                  'El registro se abre 20 minutos antes de tu clase. Si te apuntó recepción o reservaste con otro número, teclea tu teléfono en la pantalla.')
               } else if (code === 'CHECK_IN_CHALLENGE_EXPIRED') {
                 screen('⌛', 'Este código ya venció', 'Vuelve a escanear el de la pantalla: se renueva solo cada pocos minutos.')
               } else if (code === 'CHECK_IN_ALREADY_CLAIMED') {
