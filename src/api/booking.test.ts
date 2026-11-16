@@ -41,6 +41,20 @@ describe('transporte autenticado de reservas y portal (codex-r7 H3)', () => {
     await vi.advanceTimersByTimeAsync(1_500)
     expect(fin).toHaveBeenCalled()
   })
+
+  it('D656 codex-r2: la compra de INVITADA (sin token) tampoco espera más de 20 s, aunque el cuerpo nunca llegue', async () => {
+    vi.useFakeTimers()
+    vi.stubGlobal('fetch', vi.fn(async (_u: string, init: RequestInit) => ({
+      ok: true, status: 200, headers: new Headers(),
+      json: () => new Promise((_, rej) => init.signal?.addEventListener('abort', () => rej(Object.assign(new Error('aborted'), { name: 'AbortError' })))),
+    }) as any))
+    const fin = vi.fn()
+    createPackCheckout('m', 'pack1', { phone: PHONE, successUrl: 'x', cancelUrl: 'y' }).then(fin, fin)
+    await vi.advanceTimersByTimeAsync(19_000)
+    expect(fin).not.toHaveBeenCalled()
+    await vi.advanceTimersByTimeAsync(1_500)
+    expect(fin).toHaveBeenCalled()
+  })
 })
 
 describe('W4: «Mi cuenta» de la tienda manda con la sesión de la TIENDA (superficie pedidos)', () => {
