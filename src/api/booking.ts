@@ -301,7 +301,7 @@ export function getCustomerCredits(slug: string, params: {
  * by the email typed in the form). Guests (no token) still buy by contact.
  */
 export function createPackCheckout(slug: string, packId: string, data: {
-  email?: string; phone: string; successUrl: string; cancelUrl: string
+  email?: string; phone?: string; successUrl: string; cancelUrl: string
 }, token?: string | null): Promise<{ checkoutUrl: string }> {
   return request(`${BASE}/venues/${slug}/credit-packs/${packId}/checkout`, {
     method: 'POST',

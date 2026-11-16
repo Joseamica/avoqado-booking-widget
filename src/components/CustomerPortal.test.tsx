@@ -15,7 +15,7 @@ vi.mock('../api/booking', async importOriginal => {
   return {
     ...real, requestOtp: vi.fn(), verifyOtp: vi.fn(), customerLogin: vi.fn(), getCustomerPortal: vi.fn(), getCreditPacks: vi.fn(),
     updateCustomerProfile: vi.fn(), listarMisPedidos: vi.fn(), listarMisTarjetas: vi.fn(), listarMisDescuentos: vi.fn(), guardarTarjeta: vi.fn(),
-    pedirCambioDeNumero: vi.fn(), confirmarCambioDeNumero: vi.fn(),
+    pedirCambioDeNumero: vi.fn(), confirmarCambioDeNumero: vi.fn(), createPackCheckout: vi.fn(),
   }
 })
 
@@ -1209,5 +1209,93 @@ describe('pulido W8: «Mi cuenta» e «Iniciar sesión» en minúscula también 
     const en = createT('en')
     expect([es('portal.title'), es('portal.myAccount'), es('portal.login'), es('portal.loginButton')]).toEqual(['Mi cuenta', 'Mi cuenta', 'Iniciar sesión', 'Iniciar sesión'])
     expect([en('portal.title'), en('portal.myAccount'), en('portal.login'), en('portal.loginButton')]).toEqual(['My account', 'My account', 'Log in', 'Log in'])
+  })
+})
+
+describe('D655: comprar un paquete desde «Mi cuenta»', () => {
+  const PAQUETE = {
+    id: 'pk1', name: 'Mega Pack', price: 900, currency: 'MXN', validityDays: 30,
+    items: [{ id: 'i1', productId: 'p1', product: { id: 'p1', name: 'Clase', type: 'CLASS', price: 150 }, quantity: 10 }],
+  }
+  const SIN_TELEFONO = PORTAL({ customer: { ...CLIENTE, email: 'ana@x.com', phone: null, loyaltyPoints: 0, totalVisits: 0 } })
+
+  it('quien entró con Google (sin teléfono) compra con su sesión y no se le inventa un teléfono', async () => {
+    anaAdentro()
+    vi.mocked(api.getCustomerPortal).mockResolvedValue(SIN_TELEFONO)
+    vi.mocked(api.getCreditPacks).mockResolvedValue([PAQUETE] as any)
+    vi.mocked(api.createPackCheckout).mockReturnValue(new Promise(() => {})) // se queda yendo a Stripe
+    renderPortal()
+    fireEvent.click(await screen.findByRole('button', { name: 'Comprar' }))
+    await waitFor(() => expect(api.createPackCheckout).toHaveBeenCalled())
+    const [slug, packId, body, token] = vi.mocked(api.createPackCheckout).mock.calls[0]
+    expect([slug, packId, token]).toEqual(['testarudo', 'pk1', 'tok-A'])
+    expect(body).toMatchObject({ email: 'ana@x.com' })
+    expect(body.phone).toBeUndefined()
+  })
+
+  it('si el pago no se puede preparar, lo dice junto al botón (antes no pasaba nada)', async () => {
+    anaAdentro()
+    vi.mocked(api.getCustomerPortal).mockResolvedValue(SIN_TELEFONO)
+    vi.mocked(api.getCreditPacks).mockResolvedValue([PAQUETE] as any)
+    vi.mocked(api.createPackCheckout).mockRejectedValue({ status: 400, data: { message: 'Este negocio aún no tiene pagos en línea configurados para vender paquetes.' } })
+    renderPortal()
+    fireEvent.click(await screen.findByRole('button', { name: 'Comprar' }))
+    expect((await screen.findByRole('alert')).textContent).toBe('Este negocio aún no tiene pagos en línea configurados para vender paquetes.')
+    expect((screen.getByRole('button', { name: 'Comprar' }) as HTMLButtonElement).disabled).toBe(false)
+  })
+
+  it('codex-r1: el aviso de Ana no se le enseña a Bea, que entra después en la misma página', async () => {
+    anaAdentro()
+    vi.mocked(api.getCustomerPortal).mockResolvedValue(SIN_TELEFONO)
+    vi.mocked(api.getCreditPacks).mockResolvedValue([PAQUETE] as any)
+    vi.mocked(api.createPackCheckout).mockRejectedValue({ status: 400, data: { message: 'Has alcanzado el limite de 1 compras para este paquete' } })
+    renderPortal()
+    fireEvent.click(await screen.findByRole('button', { name: 'Comprar' }))
+    await screen.findByRole('alert')
+    const BEA = { ...CLIENTE, id: 'c2', firstName: 'Bea', phone: '+525599998888' }
+    vi.mocked(api.getCustomerPortal).mockResolvedValue(PORTAL({ customer: { ...BEA, loyaltyPoints: 0, totalVisits: 0 } }))
+    await act(async () => {
+      guardarSesion('testarudo', { token: 'tok-B', customer: BEA, contactos: [TEL], guardadaEn: Date.now() })
+      state.entroAqui('testarudo', leerSesion('testarudo')!)
+    })
+    await screen.findByText('Hola, Bea')
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+
+  it('codex-r2 #1: la respuesta de Ana que llega cuando ya entró Bea no se le enseña a Bea', async () => {
+    anaAdentro()
+    vi.mocked(api.getCustomerPortal).mockResolvedValue(SIN_TELEFONO)
+    vi.mocked(api.getCreditPacks).mockResolvedValue([PAQUETE] as any)
+    let rechazar: (e: any) => void = () => {}
+    vi.mocked(api.createPackCheckout).mockImplementationOnce(() => new Promise((_, no) => { rechazar = no }))
+    renderPortal()
+    fireEvent.click(await screen.findByRole('button', { name: 'Comprar' }))
+    await waitFor(() => expect(api.createPackCheckout).toHaveBeenCalled())
+    const BEA = { ...CLIENTE, id: 'c2', firstName: 'Bea', phone: '+525599998888' }
+    vi.mocked(api.getCustomerPortal).mockResolvedValue(PORTAL({ customer: { ...BEA, loyaltyPoints: 0, totalVisits: 0 } }))
+    await act(async () => {
+      guardarSesion('testarudo', { token: 'tok-B', customer: BEA, contactos: [TEL], guardadaEn: Date.now() })
+      state.entroAqui('testarudo', leerSesion('testarudo')!)
+    })
+    await screen.findByText('Hola, Bea')
+    await act(async () => { rechazar({ status: 400, data: { message: 'Has alcanzado el limite de 1 compras para este paquete' } }) })
+    await flushAll()
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+
+  it('codex-r2 #2: renovar la sesión de Ana (otro token, misma clienta) no borra su aviso', async () => {
+    anaAdentro()
+    vi.mocked(api.getCustomerPortal).mockResolvedValue(SIN_TELEFONO)
+    vi.mocked(api.getCreditPacks).mockResolvedValue([PAQUETE] as any)
+    vi.mocked(api.createPackCheckout).mockRejectedValue({ status: 400, data: { message: 'Has alcanzado el limite de 1 compras para este paquete' } })
+    renderPortal()
+    fireEvent.click(await screen.findByRole('button', { name: 'Comprar' }))
+    await screen.findByRole('alert')
+    await act(async () => {
+      guardarSesion('testarudo', { token: 'tok-A2', customer: CLIENTE, contactos: [TEL], guardadaEn: Date.now() })
+      state.entroAqui('testarudo', leerSesion('testarudo')!)
+    })
+    await flushAll()
+    expect(screen.getByRole('alert').textContent).toBe('Has alcanzado el limite de 1 compras para este paquete')
   })
 })
