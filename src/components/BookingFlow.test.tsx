@@ -4,13 +4,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { BookingFlow } from './BookingFlow'
 import * as api from '../api/booking'
 import * as state from '../state/booking'
-import { borrarSesion, guardarSesion, leerSesion } from '../lib/sesionDeCliente'
+import { borrarSesion, fijarPagina, guardarSesion, leerSesion } from '../lib/sesionDeCliente'
 import type { PublicVenueInfo, PublicReservationDetail, WidgetProps } from '../types'
 
 vi.mock('../api/booking', () => ({
   getVenueInfo: vi.fn(), getCreditPacks: vi.fn(), getReservation: vi.fn(),
   getAvailability: vi.fn(), getClassSessionsRange: vi.fn(), createReservation: vi.fn(), createHold: vi.fn(), cancelHold: vi.fn(),
-  getCustomerCredits: vi.fn(), getCustomerPortal: vi.fn(),
+  getCustomerCredits: vi.fn(), getCustomerPortal: vi.fn(), createPackCheckout: vi.fn(),
+  esAndroid: () => false, // D656: «Mi cuenta» lo lee al pintarse
 }))
 const venue: PublicVenueInfo = {
   slug: 'studio-a', name: 'Studio A', type: 'SALON', logo: null, address: null, phone: null,
@@ -36,6 +37,7 @@ function resetSignals() {
   state.customerInfo.value = null; state.customerToken.value = null; state.portalData.value = null
   state.bookingAccess.value = null; state.showPortal.value = false; state.toastMessage.value = null
   state.branding.value = state.DEFAULT_BRANDING; state.flowType.value = 'unified'
+  state.comprandoPaquete.clear() // D656: una compra que una prueba dejó colgada no frena a la siguiente
 }
 beforeEach(() => {
   vi.useFakeTimers(); vi.setSystemTime(new Date('2026-10-06T18:00:00Z')); vi.resetAllMocks()
@@ -767,5 +769,112 @@ describe('BookingFlow deposit return through mounted components', () => {
     if (blockedWrite) expect(sessionStorage.getItem('avq:pendingReservation:studio-a')).toBeNull()
     else expect(JSON.parse(sessionStorage.getItem('avq:pendingReservation:studio-a')!)).toEqual({ venue: 'studio-a', cancelSecret: 'new-a', confirmationCode: 'NEW-A' })
     expect(sessionStorage.getItem('avq:pendingReservation')).toBeNull()
+  })
+})
+
+describe('D656: «Ir al pago» de un paquete (compra de invitada) una sola vez, y sólo para quien sigue en sesión', () => {
+  const PAQUETE = {
+    id: 'pk1', name: 'Mega Pack', price: 900, currency: 'MXN', validityDays: 30,
+    items: [{ id: 'i1', productId: 'service-a', product: { id: 'service-a', name: 'Servicio propio', type: 'APPOINTMENTS_SERVICE', price: 500 }, quantity: 5 }],
+  }
+  const TEL = { tipo: 'PHONE' as const, valor: '+525544422262', metodo: 'WHATSAPP' as const, probadoEn: 1 }
+  const ANA = { id: 'c1', firstName: 'Ana', lastName: null, email: null, phone: '+525544422262' }
+  const BEA = { ...ANA, id: 'c2', firstName: 'Bea', phone: '+525599998888' }
+  const entra = (token: string, customer: typeof ANA) => act(async () => {
+    state.bindCustomerSessionToVenue('studio-a') // lo hace `widget.ts` al montar el elemento
+    guardarSesion('studio-a', { token, customer, contactos: [TEL], guardadaEn: Date.now() })
+    state.entroAqui('studio-a', leerSesion('studio-a')!)
+  })
+  async function abrirFormulario() {
+    vi.mocked(api.getVenueInfo).mockResolvedValue({ ...venue, canCharge: true })
+    vi.mocked(api.getCreditPacks).mockResolvedValue([PAQUETE] as any)
+    window.history.replaceState({}, '', '/studio-a')
+    render(<BookingFlow props={{ ...props(), flowType: 'unified' }} />); await flush()
+    fireEvent.click(screen.getByRole('tab', { name: 'Comprar paquetes' })); await flush()
+    fireEvent.click(screen.getByRole('button', { name: 'Comprar' })); await flush()
+    fireEvent.input(screen.getByLabelText(/Teléfono/), { target: { value: '5544422262' } }); await flush()
+    return screen.getByRole('button', { name: 'Ir al pago' })
+  }
+  afterEach(() => { cleanup(); borrarSesion('studio-a'); state.clearCustomerSession('studio-a') })
+
+  it('P3: dos toques antes de que el botón se repinte ⇒ UNA sola petición de pago', async () => {
+    vi.mocked(api.createPackCheckout).mockReturnValue(new Promise(() => {}))
+    const ir = await abrirFormulario()
+    await act(async () => { ir.click(); ir.click() }); await flush()
+    expect(api.createPackCheckout).toHaveBeenCalledTimes(1)
+  })
+
+  it('P3: tras un fallo, el segundo toque sí prepara el pago y la invitada va a pagar', async () => {
+    vi.mocked(api.createPackCheckout)
+      .mockRejectedValueOnce({ status: 400, data: { message: 'Sin pagos en línea' } })
+      .mockResolvedValueOnce({ checkoutUrl: '#pago' })
+    const ir = await abrirFormulario()
+    fireEvent.click(ir); await flush()
+    fireEvent.click(screen.getByRole('button', { name: 'Ir al pago' })); await flush()
+    expect(api.createPackCheckout).toHaveBeenCalledTimes(2)
+    expect(window.location.hash).toBe('#pago')
+  })
+
+  it('P2: Ana compra con sesión, entra Bea y llega tarde la respuesta EXITOSA de Ana ⇒ no se abre su pago', async () => {
+    await entra('tok-A', ANA)
+    let resolver: (r: { checkoutUrl: string }) => void = () => {}
+    vi.mocked(api.createPackCheckout).mockImplementationOnce(() => new Promise(si => { resolver = si }))
+    fireEvent.click(await abrirFormulario()); await flush()
+    expect(vi.mocked(api.createPackCheckout).mock.calls[0][3]).toBe('tok-A')
+    await entra('tok-B', BEA)
+    await act(async () => { resolver({ checkoutUrl: '#pago-de-ana' }) }); await flush()
+    expect(window.location.hash).toBe('')
+  })
+
+  it('P2: renovar la sesión de Ana (otro token, misma clienta) no cancela su compra', async () => {
+    await entra('tok-A', ANA)
+    let resolver: (r: { checkoutUrl: string }) => void = () => {}
+    vi.mocked(api.createPackCheckout).mockImplementationOnce(() => new Promise(si => { resolver = si }))
+    fireEvent.click(await abrirFormulario()); await flush()
+    await entra('tok-A2', ANA)
+    await act(async () => { resolver({ checkoutUrl: '#pago-de-ana' }) }); await flush()
+    expect(window.location.hash).toBe('#pago-de-ana')
+  })
+
+  it('codex-r1 #2: sesión vieja sin ficha que se completa mientras se prepara el pago ⇒ sí va a pagar', async () => {
+    let ficha: (d: unknown) => void = () => {}
+    vi.mocked(api.getCustomerPortal).mockImplementation(() => new Promise(si => { ficha = si }) as any)
+    await act(async () => {
+      state.bindCustomerSessionToVenue('studio-a')
+      // Una sesión de antes (sólo el token de reservas, sin la ficha guardada): la ficha se completa al leer «Mi cuenta».
+      fijarPagina('studio-a', 'reservas', { token: 'tok-viejo', identidad: 'hoy:reservas|tok-viejo', datos: null })
+    })
+    let resolver: (r: { checkoutUrl: string }) => void = () => {}
+    vi.mocked(api.createPackCheckout).mockImplementationOnce(() => new Promise(si => { resolver = si }))
+    fireEvent.click(await abrirFormulario()); await flush()
+    expect(vi.mocked(api.createPackCheckout).mock.calls[0][3]).toBe('tok-viejo')
+    await act(async () => { ficha({ customer: { ...ANA, loyaltyPoints: 0, totalVisits: 0 }, credits: { purchases: [] }, reservations: { upcoming: [], past: [] } }) }); await flush()
+    expect(state.customerInfo.value?.id).toBe('c1')
+    await act(async () => { resolver({ checkoutUrl: '#pago-de-ana' }) }); await flush()
+    expect(window.location.hash).toBe('#pago-de-ana')
+  })
+
+  it('codex-r1 #1: «Ir al pago» en vuelo y la página abre «Mi cuenta» (evento): su «Comprar» no prepara otro pago', async () => {
+    await entra('tok-A', ANA)
+    const vacia = { items: [], total: 0, nextCursor: null }
+    vi.mocked(api.getCustomerPortal).mockResolvedValue({
+      customer: { ...ANA, loyaltyPoints: 0, totalVisits: 0 }, credits: { purchases: [] }, reservations: { upcoming: [], past: [] },
+      invitadaRequiereEntrar: false, descuentos: vacia, tarjetas: vacia, pedidos: vacia, otraFicha: null,
+    } as any)
+    vi.mocked(api.createPackCheckout).mockReturnValue(new Promise(() => {}))
+    const widgetProps = { ...props(), flowType: 'unified' as const }
+    vi.mocked(api.getVenueInfo).mockResolvedValue({ ...venue, canCharge: true })
+    vi.mocked(api.getCreditPacks).mockResolvedValue([PAQUETE] as any)
+    window.history.replaceState({}, '', '/studio-a')
+    render(<BookingFlow props={widgetProps} />); await flush()
+    fireEvent.click(screen.getByRole('tab', { name: 'Comprar paquetes' })); await flush()
+    fireEvent.click(screen.getByRole('button', { name: 'Comprar' })); await flush()
+    fireEvent.input(screen.getByLabelText(/Teléfono/), { target: { value: '5544422262' } }); await flush()
+    fireEvent.click(screen.getByRole('button', { name: 'Ir al pago' })); await flush()
+    await act(async () => { widgetProps.hostElement!.dispatchEvent(new CustomEvent('_avq_show_account')) }); await flush()
+    expect(state.showPortal.value).toBe(true)
+    await flush()
+    fireEvent.click(screen.getByRole('button', { name: 'Comprar' })); await flush()
+    expect(api.createPackCheckout).toHaveBeenCalledTimes(1)
   })
 })

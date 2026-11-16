@@ -11,7 +11,7 @@ import {
   hasServiceStep, hasStaffStep, getStepConfig, resetBooking, showToast,
   creditPacks, customerCredits, selectedCreditBalance, creditPacksLoading, creditPacksLoaded,
   showPortal, portalData, customerToken, customerInfo, setCustomerSession, clearCustomerSession,
-  bookingAccess,
+  bookingAccess, comprandoPaquete, epocaDe,
   flowType, visibleProducts,
   selectedProducts, selectedStaffId, totalDuration, totalPrice, selectedModifiers,
   addSelectedProduct, removeSelectedProduct,
@@ -1384,8 +1384,12 @@ export function BookingFlow({ props }: BookingFlowProps) {
   }
 
   async function handleCheckoutSubmit() {
-    if (!checkoutPackId || !checkoutPhone.trim()) return
+    // D656: el candado no espera al repintado y es de toda la página (dos toques, otro botón u otro portal = un solo pago preparado).
+    if (!checkoutPackId || !checkoutPhone.trim() || comprandoPaquete.has(props.venue)) return
+    comprandoPaquete.add(props.venue)
     setBuyingPackId(checkoutPackId)
+    // D656: si al responder ya es otra sesión (salió, entró otra), no se abre ese pago. La época no cambia al renovar ni al completar la ficha.
+    const epoca = epocaDe(props.venue)
     try {
       const phone = checkoutPhone.trim()
       const email = checkoutEmail.trim() || undefined
@@ -1410,13 +1414,14 @@ export function BookingFlow({ props }: BookingFlowProps) {
         successUrl,
         cancelUrl,
       }, customerToken.value)
-      if (result.checkoutUrl) {
+      if (result.checkoutUrl && epocaDe(props.venue) === epoca) {
         window.location.href = result.checkoutUrl
       }
     } catch (err: any) {
       if (err?.status === 401) showToast(t('entrar.sesionCerradaSigue'))
       else showToast(err.data?.message ?? t('errors.generic'), 'error')
     } finally {
+      comprandoPaquete.delete(props.venue)
       setBuyingPackId(null)
     }
   }

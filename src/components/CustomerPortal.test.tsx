@@ -39,6 +39,7 @@ beforeEach(() => {
   state.customerInfo.value = null
   state.portalData.value = null
   cuentasNuevasParaPruebas()
+  state.comprandoPaquete.clear() // D656: una compra que una prueba dejó colgada no frena a la siguiente
   state.portalLoading.value = false
   state.bookingAccess.value = null
   vi.mocked(api.requestOtp).mockResolvedValue({ ok: true })
@@ -1297,5 +1298,117 @@ describe('D655: comprar un paquete desde «Mi cuenta»', () => {
     })
     await flushAll()
     expect(screen.getByRole('alert').textContent).toBe('Has alcanzado el limite de 1 compras para este paquete')
+  })
+})
+
+describe('D656: «Comprar» una sola vez, y sólo para quien sigue en sesión', () => {
+  const PAQUETE = {
+    id: 'pk1', name: 'Mega Pack', price: 900, currency: 'MXN', validityDays: 30,
+    items: [{ id: 'i1', productId: 'p1', product: { id: 'p1', name: 'Clase', type: 'CLASS', price: 150 }, quantity: 10 }],
+  }
+  const BEA = { ...CLIENTE, id: 'c2', firstName: 'Bea', phone: '+525599998888' }
+  // La navegación a Stripe se modela con un ancla: el navegador de pruebas sí la sigue y nadie sale de la página.
+  beforeEach(() => { window.history.replaceState(null, '', '/') })
+  async function anaCompraYEspera() {
+    anaAdentro()
+    vi.mocked(api.getCustomerPortal).mockResolvedValue(PORTAL())
+    vi.mocked(api.getCreditPacks).mockResolvedValue([PAQUETE] as any)
+    let resolver: (r: { checkoutUrl: string }) => void = () => {}
+    vi.mocked(api.createPackCheckout).mockImplementationOnce(() => new Promise(si => { resolver = si }))
+    renderPortal()
+    fireEvent.click(await screen.findByRole('button', { name: 'Comprar' }))
+    await waitFor(() => expect(api.createPackCheckout).toHaveBeenCalledTimes(1))
+    return (r: { checkoutUrl: string }) => act(async () => { resolver(r) })
+  }
+
+  it('P2: Ana sale, entra Bea y llega tarde la respuesta EXITOSA de Ana ⇒ no se abre el pago de Ana', async () => {
+    const llega = await anaCompraYEspera()
+    vi.mocked(api.getCustomerPortal).mockResolvedValue(PORTAL({ customer: { ...BEA, loyaltyPoints: 0, totalVisits: 0 } }))
+    await act(async () => {
+      guardarSesion('testarudo', { token: 'tok-B', customer: BEA, contactos: [TEL], guardadaEn: Date.now() })
+      state.entroAqui('testarudo', leerSesion('testarudo')!)
+    })
+    await screen.findByText('Hola, Bea')
+    await llega({ checkoutUrl: '#pago-de-ana' })
+    await flushAll()
+    expect(window.location.hash).toBe('')
+    expect((screen.getByRole('button', { name: 'Comprar' }) as HTMLButtonElement).disabled).toBe(false)
+  })
+
+  it('P2: Ana sale y la respuesta exitosa llega con la página sin nadie ⇒ no navega', async () => {
+    const llega = await anaCompraYEspera()
+    vi.mocked(api.getCustomerPortal).mockReturnValue(new Promise(() => {}))
+    await act(async () => { state.clearCustomerSession('testarudo') })
+    await llega({ checkoutUrl: '#pago-de-ana' })
+    await flushAll()
+    expect(window.location.hash).toBe('')
+  })
+
+  it('P2: renovar la sesión de Ana (otro token, misma clienta) no cancela su compra: sí va a pagar', async () => {
+    const llega = await anaCompraYEspera()
+    await act(async () => {
+      guardarSesion('testarudo', { token: 'tok-A2', customer: CLIENTE, contactos: [TEL], guardadaEn: Date.now() })
+      state.entroAqui('testarudo', leerSesion('testarudo')!)
+    })
+    await flushAll()
+    await llega({ checkoutUrl: '#pago-de-ana' })
+    await flushAll()
+    expect(window.location.hash).toBe('#pago-de-ana')
+  })
+
+  it('P3: dos toques antes de que el botón se repinte ⇒ UNA sola petición de pago', async () => {
+    anaAdentro()
+    vi.mocked(api.getCustomerPortal).mockResolvedValue(PORTAL())
+    vi.mocked(api.getCreditPacks).mockResolvedValue([PAQUETE] as any)
+    vi.mocked(api.createPackCheckout).mockReturnValue(new Promise(() => {}))
+    renderPortal()
+    const boton = await screen.findByRole('button', { name: 'Comprar' })
+    await act(async () => { boton.click(); boton.click() })
+    await flushAll()
+    expect(api.createPackCheckout).toHaveBeenCalledTimes(1)
+  })
+
+  it('P3: tras un fallo, el candado se suelta y el segundo toque sí prepara el pago', async () => {
+    anaAdentro()
+    vi.mocked(api.getCustomerPortal).mockResolvedValue(PORTAL())
+    vi.mocked(api.getCreditPacks).mockResolvedValue([PAQUETE] as any)
+    vi.mocked(api.createPackCheckout)
+      .mockRejectedValueOnce({ status: 400, data: { message: 'Este negocio aún no tiene pagos en línea configurados para vender paquetes.' } })
+      .mockResolvedValueOnce({ checkoutUrl: '#pago' })
+    renderPortal()
+    fireEvent.click(await screen.findByRole('button', { name: 'Comprar' }))
+    await screen.findByRole('alert')
+    fireEvent.click(screen.getByRole('button', { name: 'Comprar' }))
+    await waitFor(() => expect(window.location.hash).toBe('#pago'))
+    expect(api.createPackCheckout).toHaveBeenCalledTimes(2)
+  })
+
+  it('codex-r1 #1: dos «Mi cuenta» en la misma página ⇒ un toque en cada una prepara UN solo pago', async () => {
+    anaAdentro()
+    vi.mocked(api.getCustomerPortal).mockResolvedValue(PORTAL())
+    vi.mocked(api.getCreditPacks).mockResolvedValue([PAQUETE] as any)
+    vi.mocked(api.createPackCheckout).mockReturnValue(new Promise(() => {}))
+    renderPortal()
+    renderPortal()
+    await waitFor(() => expect(screen.getAllByRole('button', { name: 'Comprar' })).toHaveLength(2))
+    const [uno, otro] = screen.getAllByRole('button', { name: 'Comprar' })
+    await act(async () => { uno.click(); otro.click() })
+    await flushAll()
+    expect(api.createPackCheckout).toHaveBeenCalledTimes(1)
+  })
+
+  it('codex-r1 #1: cerrar y volver a abrir «Mi cuenta» mientras se prepara el pago no prepara otro', async () => {
+    anaAdentro()
+    vi.mocked(api.getCustomerPortal).mockResolvedValue(PORTAL())
+    vi.mocked(api.getCreditPacks).mockResolvedValue([PAQUETE] as any)
+    vi.mocked(api.createPackCheckout).mockReturnValue(new Promise(() => {}))
+    const primera = renderPortal()
+    fireEvent.click(await screen.findByRole('button', { name: 'Comprar' }))
+    await waitFor(() => expect(api.createPackCheckout).toHaveBeenCalledTimes(1))
+    primera.unmount()
+    renderPortal()
+    fireEvent.click(await screen.findByRole('button', { name: 'Comprar' }))
+    await flushAll()
+    expect(api.createPackCheckout).toHaveBeenCalledTimes(1)
   })
 })

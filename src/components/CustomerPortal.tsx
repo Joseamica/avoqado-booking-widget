@@ -9,7 +9,7 @@ import { EntrarConCuenta } from './EntrarConCuenta'
 import { CambiarNumero, comoSeLee } from './CambiarNumero'
 import * as api from '../api/booking'
 import {
-  customerToken, setCustomerSession, clearCustomerSession, venueInfo, entroAqui, lectorDe,
+  customerToken, setCustomerSession, clearCustomerSession, venueInfo, entroAqui, lectorDe, comprandoPaquete,
 } from '../state/booking'
 import { cuentaDe, leerCuenta } from '../state/miCuenta'
 import { alCambiarLaPagina, epocaDe, paginaDe, soltarLaPagina, type SesionEmitida, type Superficie } from '../lib/sesionDeCliente'
@@ -397,7 +397,9 @@ export function CustomerPortal({
 
   async function handleBuyPack(packId: string) {
     const cust = data?.customer
-    if (!cust) return
+    // D656: el candado no espera al repintado y es de toda la página (dos toques, otro botón u otro portal = un solo pago preparado).
+    if (!cust || comprandoPaquete.has(venueSlug)) return
+    comprandoPaquete.add(venueSlug)
     setFallaCompra(null)
     setCheckoutLoading(packId)
     try {
@@ -410,10 +412,14 @@ export function CustomerPortal({
         successUrl: window.location.href,
         cancelUrl: window.location.href,
       }, customerToken.value)
-      window.location.href = result.checkoutUrl
+      // D656: sólo si quien tocó sigue en «Mi cuenta» (otra sesión la vacía al instante; renovar no). Por ficha, no por token.
+      if (cuentaDe(venueSlug, sup).peek().data?.customer?.id === cust.id) return void (window.location.href = result.checkoutUrl)
+      setCheckoutLoading(null)
     } catch (err: any) {
       if (err?.status !== 401) setFallaCompra({ packId, msg: err?.data?.message ?? t('errors.generic'), customerId: cust.id })
       setCheckoutLoading(null)
+    } finally {
+      comprandoPaquete.delete(venueSlug)
     }
   }
 

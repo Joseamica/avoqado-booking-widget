@@ -303,9 +303,12 @@ export function getCustomerCredits(slug: string, params: {
 export function createPackCheckout(slug: string, packId: string, data: {
   email?: string; phone?: string; successUrl: string; cancelUrl: string
 }, token?: string | null): Promise<{ checkoutUrl: string }> {
+  // D656 (codex-r2): también la invitada (sin token) corta a los 20 s, cuerpo incluido: mientras responde, el candado de compra de la
+  // página está tomado y una petición colgada no puede dejar muertos los «Comprar» del negocio.
   return request(`${BASE}/venues/${slug}/credit-packs/${packId}/checkout`, {
     method: 'POST',
     body: JSON.stringify(data),
+    signal: conTope(),
   }, { slug, token })
 }
 

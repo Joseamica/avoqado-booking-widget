@@ -161,6 +161,12 @@ export const lectorDe = (slug: string, s: Superficie): (() => Lectura | null) =>
 export const activeVenueSlug = signal<string | null>(null)
 
 export const customerToken = signal<string | null>(null)
+/**
+ * D656: «Comprar» un paquete en vuelo, por negocio y para TODA la página: los dos toques de un botón, «Ir al pago» y «Mi cuenta» a la
+ * vez, dos portales, «Mi cuenta» cerrada y reabierta. Una petición a la vez; se suelta al terminar, salga bien o mal.
+ * ponytail: un candado por negocio; mientras responde una compra, otro «Comprar» del mismo negocio en la página no hace nada.
+ */
+export const comprandoPaquete = new Set<string>()
 export const customerInfo = signal<CustomerInfo | null>(null)
 
 // Customer portal state (async, loaded after login)
