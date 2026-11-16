@@ -664,14 +664,22 @@
       if (flowType === 'checkin') {
         var challengeId = parts[2] || ''
         var secret = ''
+        // Asistencia verificada (16-nov-2026): el QR que firma el propio kiosco llega como
+        // /<slug>/checkin/q#v=2&k=<llave>&t=<hora>&s=<firma>. Sirve a toda la fila y sin internet en el local.
+        var qr = null
         try {
-          var hm = /(?:^|[#&])secret=([^&]+)/.exec(window.location.hash || '')
+          var h = window.location.hash || ''
+          var hm = /(?:^|[#&])secret=([^&]+)/.exec(h)
           if (hm) secret = decodeURIComponent(hm[1])
+          if (challengeId === 'q' && /(?:^|[#&])v=2(?:&|$)/.test(h)) {
+            var km = /(?:^|[#&])k=([^&]+)/.exec(h), tm = /(?:^|[#&])t=(\d+)/.exec(h), sm = /(?:^|[#&])s=([^&]+)/.exec(h)
+            if (km && tm && sm) qr = { keyId: decodeURIComponent(km[1]), ts: Number(tm[1]), sig: decodeURIComponent(sm[1]) }
+          }
         } catch (e) { /* hash ilegible: se trata como si no viniera */ }
-        if (secret) {
+        if (secret || qr) {
           try { history.replaceState(null, '', window.location.pathname) } catch (e) {}
         }
-        runKioskCheckIn(slug, challengeId, secret)
+        runKioskCheckIn(slug, challengeId, secret, qr)
         return
       }
 
@@ -1013,7 +1021,7 @@
           })
       }
 
-      function runKioskCheckIn(venueSlug, challengeId, secret) {
+      function runKioskCheckIn(venueSlug, challengeId, secret, qr) {
         var mount = document.getElementById('mount')
         var nav = document.getElementById('topnav')
         if (nav) nav.style.display = 'none'
@@ -1029,16 +1037,43 @@
             '</div>'
         }
 
-        if (!challengeId || !secret) {
+        if (!qr && (!challengeId || !secret)) {
           screen('🔗', 'Este enlace está incompleto',
             'Vuelve a escanear el código de la pantalla. Si sigue igual, pide ayuda en el mostrador.')
           return
         }
 
-        // La sesión está separada POR NEGOCIO (Fase 0): un token de otro local no
-        // sirve aquí, y usarlo daría un 401 en vez de un check-in.
+        // 🔴 La sesión la guarda el portal donde la guarda TODA la página (src/lib/sesionDeCliente.ts): una cookie de
+        // avoqado.io (`avq_sesion_<negocio>`) o, fuera de avoqado.io, `avq_sesion:<negocio>` en el almacenamiento. Antes se
+        // buscaba en una llave vieja y, tras entrar con el código, la llegada nunca se mandaba (Codex r1 #2, 16-nov).
+        // Separada POR NEGOCIO: un token de otro local no sirve aquí.
         function readToken() {
-          try { return localStorage.getItem('avq_customer_token:' + venueSlug) } catch (e) { return null }
+          var crudo = null
+          try {
+            var host = window.location.hostname
+            if (host === 'avoqado.io' || /\.avoqado\.io$/.test(host)) {
+              var nombre = 'avq_sesion_' + encodeURIComponent(venueSlug)
+              var partes = document.cookie.split('; ')
+              for (var i = 0; i < partes.length; i++) {
+                var j = partes[i].indexOf('=')
+                if (j > 0 && partes[i].slice(0, j) === nombre) crudo = decodeURIComponent(partes[i].slice(j + 1))
+              }
+            } else {
+              crudo = localStorage.getItem('avq_sesion:' + venueSlug)
+            }
+          } catch (e) { crudo = null }
+          if (crudo) {
+            try {
+              var x = JSON.parse(crudo)
+              var vigente = typeof x.guardadaEn === 'number' && Date.now() - x.guardadaEn < 30 * 24 * 60 * 60 * 1000
+              if (x && typeof x.token === 'string' && x.token && Array.isArray(x.contactos) && vigente) return x.token
+            } catch (e) { /* basura: como si no hubiera */ }
+          }
+          // El reto de la fase 5 (QR viejo) todavía acepta el token de «tus reservas de hoy».
+          if (!qr) {
+            try { return localStorage.getItem('avq_customer_token:' + venueSlug) } catch (e) { return null }
+          }
+          return null
         }
 
         function send(token) {
@@ -1047,10 +1082,13 @@
           var host = window.location.hostname
           var isLocal = host === 'localhost' || host === '127.0.0.1'
           var base = window.AVQ_API_URL || (isLocal ? 'http://localhost:3000/api/v1/public' : 'https://api.avoqado.io/api/v1/public')
-          fetch(base + '/venues/' + encodeURIComponent(venueSlug) + '/customer/checkin/' + encodeURIComponent(challengeId), {
+          var url = qr
+            ? base + '/venues/' + encodeURIComponent(venueSlug) + '/customer/checkin-qr'
+            : base + '/venues/' + encodeURIComponent(venueSlug) + '/customer/checkin/' + encodeURIComponent(challengeId)
+          fetch(url, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
-            body: JSON.stringify({ secret: secret }),
+            body: JSON.stringify(qr ? qr : { secret: secret }),
           })
             .then(function (r) { return r.json().then(function (j) { return { status: r.status, body: j } }) })
             .then(function (out) {
@@ -1063,7 +1101,13 @@
               }
               // Cada caso dice qué HACER, no qué falló: quien lee esto está de pie
               // frente a una pantalla, con gente detrás.
-              if (code === 'CHECK_IN_CHALLENGE_EXPIRED') {
+              if (code === 'CHECK_IN_NEEDS_CODE') {
+                // Su sesión no probó su celular (contraseña vieja): que entre con el código. El portal ofrece salir y volver.
+                askLogin('Para registrar tu llegada, entra con el código que te mandamos por WhatsApp o a tu correo.')
+              } else if (code === 'CHECK_IN_NOT_FOUND' && qr) {
+                screen('🙋', 'No encontramos una reservación tuya para ahora',
+                  'El registro se abre 20 minutos antes de tu clase. Si reservaste con otro número, escríbelo en la pantalla o pide ayuda.')
+              } else if (code === 'CHECK_IN_CHALLENGE_EXPIRED') {
                 screen('⌛', 'Este código ya venció', 'Vuelve a escanear el de la pantalla: se renueva solo cada pocos minutos.')
               } else if (code === 'CHECK_IN_ALREADY_CLAIMED') {
                 screen('🙋', 'Ese código ya lo usó alguien más', 'Pide uno nuevo en la pantalla y vuelve a escanear.')
@@ -1086,8 +1130,9 @@
             })
         }
 
-        function askLogin() {
-          screen('👋', 'Identifícate para continuar', 'Entra con tu teléfono o correo y seguimos con tu check-in.',
+        function askLogin(texto) {
+          var antes = readToken()
+          screen('👋', 'Identifícate para continuar', texto || 'Entra con tu teléfono o correo y seguimos con tu check-in.',
             '<div id="checkin-portal" style="margin-top:20px"></div>')
           var host = document.createElement('avoqado-portal')
           host.setAttribute('venue', venueSlug)
@@ -1097,7 +1142,8 @@
           var tries = 0
           var poll = setInterval(function () {
             var t = readToken()
-            if (t) { clearInterval(poll); send(t) }
+            // Una sesión NUEVA (otra que la que ya se rechazó): así «entra con tu código» no reintenta la misma.
+            if (t && t !== antes) { clearInterval(poll); send(t) }
             else if (++tries > 600) clearInterval(poll) // 5 minutos y se rinde
           }, 500)
         }
