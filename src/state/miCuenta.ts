@@ -13,7 +13,8 @@ export interface Cuenta {
   /** Una lectura va en camino (con datos: «Actualizando…»; sin ellos: cargando). */
   leyendo: boolean
   /** La última lectura falló (sin datos: el aviso y «Reintentar»; con ellos: «te enseñamos lo último que supimos»). */
-  falla: 'sinRed' | 'generico' | null
+  /** D10: `muchaGente` = el SERVIDOR contestó 429 (tope de lecturas por red, p. ej. el WiFi del estudio). */
+  falla: 'sinRed' | 'muchaGente' | 'generico' | null
 }
 const VACIA: Cuenta = { data: null, leyendo: false, falla: null }
 
@@ -45,6 +46,10 @@ alCambiarLaPagina((slug, afecta, misma) => {
  * Lee «Mi cuenta» con el token de la superficie y la deja en su señal si sigue siendo la última lectura y la misma sesión. En reservas
  * también al día `portalData` y `bookingAccess` (el flujo de reservas los usa). Devuelve lo que pintó, o `null`.
  */
+/** D10: cómo se dice que una lectura falló: sin red, mucha gente (429) o cualquier otra cosa. */
+export const fallaDe = (err: any): 'sinRed' | 'muchaGente' | 'generico' =>
+  !err?.status ? 'sinRed' : err.status === 429 ? 'muchaGente' : 'generico'
+
 export async function leerCuenta(slug: string, s: Superficie, token: string): Promise<CustomerPortalData | null> {
   const k = llave(slug, s)
   const n = turnoNuevo(k)
@@ -66,7 +71,7 @@ export async function leerCuenta(slug: string, s: Superficie, token: string): Pr
   } catch (err: any) {
     // W1: sólo un 401 cierra la sesión que lo recibió (el oyente de arriba vacía la cuenta); sin red no se saca a nadie.
     if (err?.status === 401) soltarLaPagina(slug, s, err?.enviado ?? token, lectorDe(slug, s))
-    else if (vigente() && err?.data?.code !== 'CUSTOMER_SESSION_CHANGED') c.value = { ...c.value, leyendo: false, falla: err?.status ? 'generico' : 'sinRed' }
+    else if (vigente() && err?.data?.code !== 'CUSTOMER_SESSION_CHANGED') c.value = { ...c.value, leyendo: false, falla: fallaDe(err) }
     return null
   }
 }

@@ -1,8 +1,10 @@
 import { h } from 'preact'
-import { useEffect } from 'preact/hooks'
+import { useEffect, useState } from 'preact/hooks'
 import { createT } from '../i18n'
 import * as api from '../api/booking'
 import { venueInfo, isLoading, showPortal } from '../state/booking'
+import { fallaDe } from '../state/miCuenta'
+import { Button } from './ui/Button'
 import { CustomerPortal } from './CustomerPortal'
 import { Spinner } from './ui/Spinner'
 import { Toast } from './ui/Toast'
@@ -21,16 +23,21 @@ interface PortalAppProps {
 export function PortalApp({ venue, locale, theme, accentColor }: PortalAppProps) {
   const t = createT(locale)
 
+  // D10 (16-nov): si leer el negocio falla, se DICE (sin red, mucha gente entrando o error) con «Reintentar». Antes el error se
+  // tragaba y el portal se quedaba girando para siempre.
+  const [falla, setFalla] = useState<ReturnType<typeof fallaDe> | null>(null)
+  const [intento, setIntento] = useState(0)
   useEffect(() => {
     if (!venue) return
     // Only load venue info if not already loaded (shared signal with booking)
     if (venueInfo.value?.slug === venue) return
     isLoading.value = true
+    setFalla(null)
     api.getVenueInfo(venue)
       .then(info => { venueInfo.value = info })
-      .catch(() => {})
+      .catch(err => setFalla(fallaDe(err)))
       .finally(() => { isLoading.value = false })
-  }, [venue])
+  }, [venue, intento])
 
   const info = venueInfo.value
 
@@ -39,6 +46,19 @@ export function PortalApp({ venue, locale, theme, accentColor }: PortalAppProps)
   // an inline style string the root element consumes via --avq-accent.
   const effectiveAccent = accentColor ?? info?.primaryColor ?? null
   const rootStyle = effectiveAccent ? `--avq-accent:${effectiveAccent}` : undefined
+
+  if (falla && !isLoading.value && !info) {
+    return (
+      <div data-avq-theme={theme} style={rootStyle} class="avq-root">
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', padding: '32px 16px', textAlign: 'center' }}>
+          <p role="alert" style={{ fontSize: '14px', margin: 0 }}>
+            {falla === 'sinRed' ? t('entrar.sinRed') : falla === 'muchaGente' ? t('errors.muchaGente') : t('errors.generic')}
+          </p>
+          <Button fullWidth onClick={() => setIntento(n => n + 1)}>{t('actions.retry')}</Button>
+        </div>
+      </div>
+    )
+  }
 
   if (isLoading.value || !info) {
     return (

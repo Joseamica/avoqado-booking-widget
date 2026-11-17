@@ -1521,3 +1521,20 @@ describe('D657: sin cobro en línea, «Mi cuenta» no ofrece paquetes', () => {
     expect(api.getCreditPacks).not.toHaveBeenCalled()
   })
 })
+
+// D10 (16-nov, Codex r13 #2 de asistencia verificada): las lecturas del portal tienen un tope por red (WiFi del estudio). Al
+// toparlo el SERVIDOR contesta 429 y la pantalla decía «Algo salió mal». Ahora lo dice como es, con «Intentar de Nuevo».
+describe('D10: mucha gente entrando por la misma red (429)', () => {
+  it('«Mi cuenta» topó el límite ⇒ «Hay mucha gente entrando…» con Reintentar; al reintentar, carga', async () => {
+    anaAdentro()
+    vi.mocked(api.getCustomerPortal)
+      .mockRejectedValueOnce(Object.assign(new Error('Too many requests'), { status: 429, data: { message: 'Too many requests' } }))
+      .mockResolvedValueOnce(PORTAL() as any)
+    renderPortal()
+    await flushAll()
+    expect(await screen.findByText('Hay mucha gente entrando en este momento. Espera unos segundos y vuelve a intentar.')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Intentar de Nuevo' }))
+    await flushAll()
+    expect(screen.queryByText('Hay mucha gente entrando en este momento. Espera unos segundos y vuelve a intentar.')).toBeNull()
+  })
+})

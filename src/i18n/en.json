@@ -188,7 +188,8 @@
     "holdReleaseFailed": "We couldn't release the held time. Retry before continuing.",
     "appointmentWindowChanged": "The duration changed. Review your services and pick a new time.",
     "generic": "Something went wrong. Please try again.",
-    "reservationQueryFailed": "We could not check the reservation"
+    "reservationQueryFailed": "We could not check the reservation",
+    "muchaGente": "Lots of people are signing in right now. Wait a few seconds and try again."
   },
   "actions": {
     "goBack": "Back",

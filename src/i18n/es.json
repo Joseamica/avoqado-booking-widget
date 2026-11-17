@@ -188,7 +188,8 @@
     "holdReleaseFailed": "No pudimos liberar el horario reservado. Reintenta antes de continuar.",
     "appointmentWindowChanged": "La duración cambió. Revisa los servicios y elige un horario nuevo.",
     "generic": "Algo salió mal. Por favor intenta de nuevo.",
-    "reservationQueryFailed": "No pudimos consultar la reserva"
+    "reservationQueryFailed": "No pudimos consultar la reserva",
+    "muchaGente": "Hay mucha gente entrando en este momento. Espera unos segundos y vuelve a intentar."
   },
   "actions": {
     "goBack": "Atrás",
