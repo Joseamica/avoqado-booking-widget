@@ -448,7 +448,7 @@ export function CustomerPortal({
   if (!data && token && fallaCarga) {
     return (
       <div class="avq-animate-in" style={{ display: 'flex', flexDirection: 'column', gap: '12px', padding: '32px 0', textAlign: 'center' }}>
-        <p role="alert" style={{ fontSize: '14px', color: 'var(--avq-fg, #111827)', margin: 0 }}>{fallaCarga === 'sinRed' ? t('entrar.sinRed') : t('errors.generic')}</p>
+        <p role="alert" style={{ fontSize: '14px', color: 'var(--avq-fg, #111827)', margin: 0 }}>{fallaCarga === 'sinRed' ? t('entrar.sinRed') : fallaCarga === 'muchaGente' ? t('errors.muchaGente') : t('errors.generic')}</p>
         <Button fullWidth onClick={() => void loadPortal()}>{t('actions.retry')}</Button>
         <Button variant="ghost" fullWidth onClick={handleLogout}>{t('portal.logout')}</Button>
       </div>
