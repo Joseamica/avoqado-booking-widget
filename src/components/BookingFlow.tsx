@@ -212,10 +212,17 @@ export function BookingFlow({ props }: BookingFlowProps) {
     if (showPortal.value) intentoDeCompra.current++
   }
   useEffect(() => {
-    // Cambió de negocio, o entró o salió de «Mi cuenta», con «Entra a tu cuenta» abierta: esa ventana ya no es de esta compra.
+    // Cambió de negocio con «Entra a tu cuenta» abierta: esa ventana ya no es de esta compra.
     setEntroComo(null)
     setCheckoutPackId(null)
-  }, [props.venue, showPortal.value])
+  }, [props.venue])
+  useEffect(() => {
+    // Abrió «Mi cuenta»: la ventana de compra queda atrás. Al VOLVER no se limpia nada: un «Comprar» tocado justo al volver se
+    // perdía (codex r6 #3).
+    if (!showPortal.value) return
+    setEntroComo(null)
+    setCheckoutPackId(null)
+  }, [showPortal.value])
   const [pendingFormData, setPendingFormData] = useState<GuestFormData | null>(null)
   const [showCreditSelector, setShowCreditSelector] = useState(false)
   const [showNoCreditsBuyPrompt, setShowNoCreditsBuyPrompt] = useState(false)
@@ -640,10 +647,12 @@ export function BookingFlow({ props }: BookingFlowProps) {
     try { compra = JSON.parse(sessionStorage.getItem(COMPRA_DE) ?? 'null'); sessionStorage.removeItem(COMPRA_DE) } catch { /* */ }
     const pollToken = customerToken.value
     const esQuienCompro = !!compra?.cliente && compra.venue === props.venue && compra.cliente === (leerSesion(props.venue)?.customer?.id ?? null)
-    if (!pollToken || !esQuienCompro) {
-      showToast(t('creditPacks.pagoRecibido'), 'success')
-      return
-    }
+    // Codex r6 #1: el aviso es siempre el neutro. «Ya están en tu cuenta» se decidía contando compras, y a quien ya tenía otras le
+    // salía antes de que llegara la nueva. El saldo se refresca solo, sin anunciarse.
+    showToast(t('creditPacks.pagoRecibido'), 'success')
+    if (!pollToken || !esQuienCompro) return
+    const vueltaRetorno = cambiosDeNegocio.current
+    const epocaRetorno = epocaDe(props.venue)
 
     // Poll the balance endpoint up to 5 times (every 1.5s) waiting for the webhook to fulfill.
     let attempts = 0
@@ -653,13 +662,12 @@ export function BookingFlow({ props }: BookingFlowProps) {
       attempts++
       try {
         const fresh = await api.getCustomerCredits(props.venue, {}, pollToken)
-        if (!montado.current) return // el widget ya no está: no publica un saldo en otro (r5 #5)
+        // No publica un saldo en un widget retirado, en otro negocio ni si la sesión cambió aquí o en otra pestaña (r5 #5, r6 #1).
+        if (!montado.current || cambiosDeNegocio.current !== vueltaRetorno || epocaDe(props.venue) !== epocaRetorno
+          || !tokenParaMandar(props.venue, pollToken)) return
         const newCount = fresh.purchases.length
         if (newCount > baselineCount || attempts >= maxAttempts) {
           customerCredits.value = fresh
-          if (newCount > baselineCount) {
-            showToast(t('creditPacks.purchaseSuccess'), 'success')
-          }
           return
         }
       } catch (err: any) {
@@ -1502,8 +1510,9 @@ export function BookingFlow({ props }: BookingFlowProps) {
           // Quién compra, para que al volver de Stripe sólo se anuncie el saldo si sigue siendo ella (codex r5 #5).
           try { sessionStorage.setItem(COMPRA_DE, JSON.stringify({ venue, cliente: leerSesion(venue)?.customer?.id ?? null })) } catch { /* */ }
           window.location.href = result.checkoutUrl
-        } else {
-          // Ya no es el mismo pago: se dice, para que no se quede esperando una liga que no llegará (r3 #4).
+        } else if (cambiosDeNegocio.current === vuelta) {
+          // Ya no es el mismo pago: se dice, para que no se quede esperando una liga que no llegará (r3 #4). En otro negocio no se
+          // dice nada: taparía el «Preparando…» de ESE negocio (r6 #2).
           showToast(t('creditPacks.pagoYaNoEsTuyo'))
         }
       }
@@ -1511,7 +1520,8 @@ export function BookingFlow({ props }: BookingFlowProps) {
       // La sesión venció: comprar pide cuenta (ya no hay «sigue sin cuenta»; codex r1 #6). No reabre la ventana sola: un 401 tardío
       // no debe cambiar el paquete de una ventana que la clienta ya abrió para otro (r2 #1); su siguiente «Comprar» la pide.
       // Un error viejo no se enseña en otro negocio ni en un widget ya retirado (codex r5 #4).
-      if (montado.current && cambiosDeNegocio.current === vuelta) {
+      // Ni a otra cuenta: si ya entró otra persona, el 401 de la sesión vieja no le dice «tu sesión se cerró» (r6 #2).
+      if (montado.current && cambiosDeNegocio.current === vuelta && epocaDe(venue) === epoca) {
         if (err?.status === 401) showToast(t('entrar.sesionCerrada'))
         else showToast(err.data?.message ?? t('errors.generic'), 'error')
       }

@@ -1170,6 +1170,42 @@ describe('Codex r1 (paquete con cuenta): la ventana y el pago no se cruzan con o
     expect(state.toastMessage.value?.text).toBe('¡Listo! Recibimos tu pago: los créditos quedan en la cuenta con la que pagaste.')
   })
 
+  it('r6 #1: vuelve de Stripe quien ya tenía otra compra ⇒ no se le dice «ya están en tu cuenta» por una compra vieja', async () => {
+    await entra('tok-A', ANA)
+    sessionStorage.setItem('avq:compraDe', JSON.stringify({ venue: 'studio-a', cliente: 'c1' }))
+    vi.mocked(api.getCustomerPortal).mockReturnValue(new Promise(() => {}))
+    vi.mocked(api.getCustomerCredits).mockResolvedValue({ purchases: [{ id: 'vieja' }] } as any) // su compra de antes
+    window.history.replaceState({}, '', '/studio-a?avq_credits=success')
+    render(<BookingFlow props={{ ...props(), flowType: 'unified' }} />); await flush()
+    await advance(100); await flush()
+    expect(state.toastMessage.value?.text).toBe('¡Listo! Recibimos tu pago: los créditos quedan en la cuenta con la que pagaste.')
+  })
+
+  it('r6 #1: el saldo del regreso de Stripe no se publica si en otra pestaña cerró su sesión mientras llegaba', async () => {
+    await entra('tok-A', ANA)
+    sessionStorage.setItem('avq:compraDe', JSON.stringify({ venue: 'studio-a', cliente: 'c1' }))
+    vi.mocked(api.getCustomerPortal).mockReturnValue(new Promise(() => {}))
+    let resolver: (r: unknown) => void = () => {}
+    vi.mocked(api.getCustomerCredits).mockImplementationOnce(() => new Promise(si => { resolver = si }) as any)
+    window.history.replaceState({}, '', '/studio-a?avq_credits=success')
+    render(<BookingFlow props={{ ...props(), flowType: 'unified' }} />); await flush()
+    state.customerCredits.value = null
+    borrarSesion('studio-a') // la otra pestaña
+    await act(async () => { resolver({ purchases: [{ id: 'nueva' }] }) }); await flush()
+    expect(state.customerCredits.value).toBeNull()
+  })
+
+  it('r6 #2: el 401 de la sesión vieja no le dice «Tu sesión se cerró» a la cuenta que entró después', async () => {
+    await entra('tok-A', ANA)
+    let rechazar: (e: unknown) => void = () => {}
+    vi.mocked(api.createPackCheckout).mockImplementationOnce(() => new Promise((_, no) => { rechazar = no }))
+    await comprar()
+    await entra('tok-B', BEA) // salió y entró otra persona
+    state.toastMessage.value = null
+    await act(async () => { rechazar({ status: 401 }) }); await flush()
+    expect(state.toastMessage.value).toBeNull()
+  })
+
   it('r2 #6: con un pago de la página en vuelo, otro «Comprar» avisa en vez de tragarse el toque', async () => {
     await entra('tok-A', ANA)
     state.comprandoPaquete.add('studio-a') // p. ej. el de «Mi cuenta»
