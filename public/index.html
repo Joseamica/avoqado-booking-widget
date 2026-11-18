@@ -96,10 +96,6 @@
       font-weight: 700;
       font-size: 14px;
     }
-    /* On /appointments we drop the avocado-purple chip and show only the venue
-       name (Square pattern). Cleaner, lets the venue brand carry the screen. */
-    body.flow-appointments .topnav-logo { display: none; }
-    body.flow-appointments .topnav-brand { font-size: 17px; letter-spacing: -0.4px; }
 
     .topnav-links {
       display: flex;
@@ -152,12 +148,8 @@
       .topnav-links, .topnav > .topnav-cta { display: none; }
       .topnav-hamburger { display: inline-flex; }
     }
-    /* Square pattern: appointments wizard hides desktop nav links + Mi Cuenta
-       and exposes the hamburger across all viewports. The drawer carries
-       account, navigation, and venue info (see .drawer-appointments below). */
-    body.flow-appointments .topnav-links,
-    body.flow-appointments .topnav > .topnav-cta { display: none !important; }
-    body.flow-appointments .topnav-hamburger { display: inline-flex !important; }
+    /* Diseño 18-nov: UNA sola cabecera en portada, citas y clases (logo, Citas · Clases · Comprar paquetes, Mi cuenta). La reserva
+       antes quitaba el logo, centraba «Comprar créditos» y forzaba la hamburguesa en escritorio: parecía otro sitio. */
 
     /* "Comprar créditos" header CTA — visible only when the appointments
        wizard is active AND the venue has at least one credit pack on offer.
@@ -182,12 +174,8 @@
       border-color: var(--accent);
       color: var(--accent);
     }
-    body.flow-appointments .topnav-cta-credits.is-available { display: inline-flex; }
-    /* Tighten the chrome on phones — keep only the icon when space is tight. */
-    @media (max-width: 480px) {
-      body.flow-appointments .topnav-cta-credits .topnav-cta-credits-label { display: none; }
-      .topnav-cta-credits { padding: 8px 10px; }
-    }
+    /* Diseño 18-nov: ya no se muestra; en la reserva «Comprar paquetes» de la cabecera abre la misma lista (ver el script). En
+       celular dejaba un ícono de tarjeta suelto. */
 
     /* MOBILE DRAWER */
     .drawer {
@@ -262,8 +250,9 @@
        for the wizard. The body class flips which group is visible. */
     .drawer-default { display: flex; flex-direction: column; gap: 4px; }
     .drawer-appointments { display: none; flex-direction: column; gap: 0; flex: 1; }
-    body.flow-appointments .drawer-default { display: none; }
-    body.flow-appointments .drawer-appointments { display: flex; }
+    /* En la reserva el menú lleva la misma navegación y, además, los datos del negocio; su «Iniciar sesión» duplicaba «Mi cuenta». */
+    body.flow-appointments .drawer-appointments { display: flex; margin-top: 18px; }
+    body.flow-appointments #drawer-signin-appointments { display: none; }
 
     .drawer-venue-name {
       font-size: 22px; font-weight: 700;
@@ -1373,6 +1362,16 @@
           if (count > 0) el.removeAttribute('hidden')
           else el.setAttribute('hidden', '')
         })
+      })
+      // Diseño 18-nov: con una sola cabecera, «Comprar paquetes» (arriba y en el menú) dentro de la reserva abre la lista de
+      // paquetes AHÍ MISMO, como hacía el botón «Comprar créditos»: ir a la portada perdía lo que llevaba elegido.
+      document.addEventListener('click', function (e) {
+        var a = e.target && e.target.closest ? e.target.closest('a[data-route="packs"]') : null
+        if (!a || flowType !== 'appointments') return
+        e.preventDefault()
+        if (drawer.classList.contains('open')) closeDrawer()
+        if (typeof el.showCreditPacks === 'function') el.showCreditPacks()
+        else el.dispatchEvent(new CustomEvent('_avq_show_credit_packs', { bubbles: false }))
       })
       if (navCredits) {
         navCredits.addEventListener('click', function () {
