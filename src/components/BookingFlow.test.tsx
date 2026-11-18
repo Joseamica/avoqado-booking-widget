@@ -965,7 +965,10 @@ describe('Codex r1 (paquete con cuenta): la ventana y el pago no se cruzan con o
 
   it('#6 y r2 #1: la sesión venció al comprar (401) ⇒ «Entra otra vez», sin «sigue sin cuenta» y sin abrir sola una ventana', async () => {
     await entra('tok-A', ANA)
-    vi.mocked(api.createPackCheckout).mockRejectedValueOnce({ status: 401 })
+    vi.mocked(api.createPackCheckout).mockImplementationOnce(async () => {
+      state.clearCustomerSession('studio-a') // como la API real: suelta la sesión antes de lanzar el 401
+      throw { status: 401, enviado: 'tok-A' }
+    })
     await comprar()
     expect(state.toastMessage.value?.text).toBe('Tu sesión se cerró. Entra otra vez.')
     // Un 401 tardío no cambia el paquete de una ventana que la clienta ya abrió para otro: no abre ninguna.
@@ -1140,7 +1143,7 @@ describe('Codex r1 (paquete con cuenta): la ventana y el pago no se cruzan con o
     vi.mocked(api.createPackCheckout).mockImplementationOnce(() => new Promise((_, no) => { rechazar = no }))
     await comprar()
     await advance(3990)
-    await act(async () => { rechazar({ status: 401 }) }); await flush()
+    await act(async () => { state.clearCustomerSession('studio-a'); rechazar({ status: 401, enviado: 'tok-A' }) }); await flush()
     await advance(20); await flush()
     expect(state.toastMessage.value?.text).toBe('Tu sesión se cerró. Entra otra vez.')
   })
@@ -1204,6 +1207,16 @@ describe('Codex r1 (paquete con cuenta): la ventana y el pago no se cruzan con o
     state.toastMessage.value = null
     await act(async () => { rechazar({ status: 401 }) }); await flush()
     expect(state.toastMessage.value).toBeNull()
+  })
+
+  it('r7 #1: se le venció SU sesión al comprar (la API la suelta antes del error) ⇒ sí se le dice «Entra otra vez»', async () => {
+    await entra('tok-A', ANA)
+    vi.mocked(api.createPackCheckout).mockImplementationOnce(async () => {
+      state.clearCustomerSession('studio-a') // lo que hace la API con un 401 antes de lanzar
+      throw { status: 401, enviado: 'tok-A' }
+    })
+    await comprar()
+    expect(state.toastMessage.value?.text).toBe('Tu sesión se cerró. Entra otra vez.')
   })
 
   it('r2 #6: con un pago de la página en vuelo, otro «Comprar» avisa en vez de tragarse el toque', async () => {

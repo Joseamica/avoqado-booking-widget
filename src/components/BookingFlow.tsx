@@ -189,6 +189,9 @@ export function BookingFlow({ props }: BookingFlowProps) {
   // El paquete que espera a que la clienta entre a su cuenta (sin sesión, «Comprar» abre «Entra a tu cuenta»), y su número de intento.
   const [checkoutPackId, setCheckoutPackId] = useState<string | null>(null)
   const intentoDeCompra = useRef(0)
+  // De qué intento es la ventana abierta: sólo se pinta si sigue siendo el vigente, así no reaparece una vieja al volver de «Mi cuenta»
+  // antes de que corra la limpieza (codex r7 #2).
+  const ventanaDelIntento = useRef(-1)
   // Ya entró desde la ventana: con qué cuenta (se le enseña antes de «Ir al pago»).
   const [entroComo, setEntroComo] = useState<{ token: string; quien: string } | null>(null)
   // Cuántas veces cambió de negocio el widget, y si sigue en la página: una compra en vuelo de un negocio que se dejó (aunque ya se
@@ -1445,6 +1448,7 @@ export function BookingFlow({ props }: BookingFlowProps) {
    */
   function pedirCuentaPara(packId: string) {
     intentoDeCompra.current++
+    ventanaDelIntento.current = intentoDeCompra.current
     setEntroComo(null)
     setCheckoutPackId(packId)
   }
@@ -1520,10 +1524,12 @@ export function BookingFlow({ props }: BookingFlowProps) {
       // La sesión venció: comprar pide cuenta (ya no hay «sigue sin cuenta»; codex r1 #6). No reabre la ventana sola: un 401 tardío
       // no debe cambiar el paquete de una ventana que la clienta ya abrió para otro (r2 #1); su siguiente «Comprar» la pide.
       // Un error viejo no se enseña en otro negocio ni en un widget ya retirado (codex r5 #4).
-      // Ni a otra cuenta: si ya entró otra persona, el 401 de la sesión vieja no le dice «tu sesión se cerró» (r6 #2).
-      if (montado.current && cambiosDeNegocio.current === vuelta && epocaDe(venue) === epoca) {
-        if (err?.status === 401) showToast(t('entrar.sesionCerrada'))
-        else showToast(err.data?.message ?? t('errors.generic'), 'error')
+      // Ni a otra cuenta: si ya entró otra persona, el 401 de la sesión vieja no le dice «tu sesión se cerró» (r6 #2). Pero el 401 de
+      // SU sesión sí: la API la suelta antes de lanzar el error, así que la época cambia; lo que cuenta es que no haya entrado otra
+      // (la página quedó sin sesión; codex r7 #1).
+      if (montado.current && cambiosDeNegocio.current === vuelta) {
+        if (err?.status === 401) { if (!tokenParaMandar(venue)) showToast(t('entrar.sesionCerrada')) }
+        else if (epocaDe(venue) === epoca) showToast(err.data?.message ?? t('errors.generic'), 'error')
       }
     } finally {
       comprandoPaquete.delete(venue)
@@ -2754,7 +2760,7 @@ export function BookingFlow({ props }: BookingFlowProps) {
       </div>
 
       {/* Checkout form overlay — accessible modal */}
-      {checkoutPackId && (
+      {checkoutPackId && ventanaDelIntento.current === intentoDeCompra.current && (
         <CheckoutModal
           // Cada intento, su propia ventana: elegir otro paquete no deja en pantalla el código del anterior, que el SERVIDOR ya
           // consumió (codex r5 #2).
