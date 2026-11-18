@@ -122,3 +122,13 @@ describe('una sola cabecera (diseño 18-nov): «Comprar paquetes» dentro de la 
     expect(evento.defaultPrevented).toBe(false)
   })
 })
+
+describe('diseño 18-nov: sin clases agendadas, la cabecera no ofrece «Clases»', () => {
+  it('el aviso del widget esconde «Clases» de la cabecera y del menú', async () => {
+    new Function(scriptDeLaPagina())()
+    await esperar()
+    document.querySelectorAll('[data-requires="classes"]').forEach(x => x.removeAttribute('hidden'))
+    widget().dispatchEvent(new CustomEvent('avoqado:classes-availability', { detail: { hayClases: false } }))
+    document.querySelectorAll('[data-requires="classes"]').forEach(x => expect(x.hasAttribute('hidden')).toBe(true))
+  })
+})

@@ -1408,6 +1408,11 @@
       // its host element with { name, address, phone, hours }. We read it here
       // and populate the drawer rows. If the event never fires (offline, error),
       // the drawer still renders with the slug-derived name + static defaults.
+      // Diseño 18-nov: el widget avisa si no hay clases agendadas en 30 días; entonces «Clases» se esconde de la cabecera y el menú.
+      el.addEventListener('avoqado:classes-availability', function (e) {
+        if (!e || !e.detail || e.detail.hayClases !== false) return
+        document.querySelectorAll('[data-requires="classes"]').forEach(function (x) { x.setAttribute('hidden', '') })
+      })
       el.addEventListener('avoqado:venue-loaded', function (e) {
         var info = e && e.detail && e.detail.venue
         if (!info) return
