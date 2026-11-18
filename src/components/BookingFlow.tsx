@@ -188,14 +188,14 @@ export function BookingFlow({ props }: BookingFlowProps) {
   const intentoDeCompra = useRef(0)
   // Ya entró desde la ventana: con qué cuenta (se le enseña antes de «Ir al pago»).
   const [entroComo, setEntroComo] = useState<{ token: string; quien: string } | null>(null)
-  // El negocio que el widget enseña AHORA, y si sigue en la página (una compra en vuelo de otro negocio o de un widget retirado no
-  // abre su pago; codex r1 #3, r2 #3).
-  const venueActual = useRef(props.venue)
-  venueActual.current = props.venue
+  // Cuántas veces cambió de negocio el widget, y si sigue en la página: una compra en vuelo de un negocio que se dejó (aunque ya se
+  // haya vuelto a él) o de un widget retirado no abre su pago (codex r1 #3, r2 #3, r3 #3).
+  const cambiosDeNegocio = useRef(0)
   const montado = useRef(true)
   useEffect(() => () => { montado.current = false }, [])
   useEffect(() => {
     // Cambió de negocio con «Entra a tu cuenta» abierta: ese paquete era del otro.
+    cambiosDeNegocio.current++
     intentoDeCompra.current++
     setEntroComo(null)
     setCheckoutPackId(null)
@@ -1396,8 +1396,17 @@ export function BookingFlow({ props }: BookingFlowProps) {
   // La sesión se mira por NEGOCIO (en una página con dos negocios la «activa» puede ser la del otro; codex r1 #4, r2 #5).
   function handleBuyPack(packId: string) {
     const token = tokenParaMandar(props.venue)
-    if (token) void comprarPaquete(packId, token)
-    else pedirCuentaPara(packId)
+    if (!token) return pedirCuentaPara(packId)
+    // Eligió otro paquete por otro lado (p. ej. la cabecera de un sitio externo): la confirmación del anterior se cierra (codex r3 #1).
+    cerrarCuenta()
+    void comprarPaquete(packId, token)
+  }
+
+  /** «Usar otra cuenta» en la confirmación: la que entró no es ella (p. ej. Google respondió tarde tras cambiar a correo; r3 #2). */
+  function usarOtraCuenta() {
+    const packId = checkoutPackId
+    clearCustomerSession(props.venue)
+    if (packId) pedirCuentaPara(packId)
   }
 
   /**
@@ -1449,6 +1458,7 @@ export function BookingFlow({ props }: BookingFlowProps) {
     setBuyingPackId(packId)
     // D656: si al responder ya es otra sesión (salió, entró otra), no se abre ese pago. La época no cambia al renovar ni al completar la ficha.
     const epoca = epocaDe(venue)
+    const vuelta = cambiosDeNegocio.current
     try {
       // Build success URL with a flag so we know we came back from a successful checkout.
       const url = new URL(window.location.href)
@@ -1461,9 +1471,14 @@ export function BookingFlow({ props }: BookingFlowProps) {
       const result = await api.createPackCheckout(venue, packId, { successUrl, cancelUrl }, token)
       // Sólo si sigue siendo la misma clienta en el mismo negocio: ni otra sesión en esta pestaña (época), ni otra en otra pestaña
       // del mismo negocio (lo guardado; la renovación sí cuenta como la misma), ni el widget ya cambiado a otro negocio (codex r1 #2, #3).
-      // Ni un widget ya retirado de la página (r2 #3).
-      if (result.checkoutUrl && montado.current && venueActual.current === venue && epocaDe(venue) === epoca && tokenParaMandar(venue, token)) {
-        window.location.href = result.checkoutUrl
+      // Ni un widget ya retirado de la página (r2 #3), ni uno que se fue a otro negocio aunque ya haya vuelto (r3 #3).
+      if (result.checkoutUrl && montado.current) {
+        if (cambiosDeNegocio.current === vuelta && epocaDe(venue) === epoca && tokenParaMandar(venue, token)) {
+          window.location.href = result.checkoutUrl
+        } else {
+          // Ya no es el mismo pago: se dice, para que no se quede esperando una liga que no llegará (r3 #4).
+          showToast(t('creditPacks.pagoYaNoEsTuyo'))
+        }
       }
     } catch (err: any) {
       // La sesión venció: comprar pide cuenta (ya no hay «sigue sin cuenta»; codex r1 #6). No reabre la ventana sola: un 401 tardío
@@ -2706,6 +2721,7 @@ export function BookingFlow({ props }: BookingFlowProps) {
           entroComo={entroComo?.quien ?? null}
           paquete={creditPacks.value.find(p => p.id === checkoutPackId)?.name ?? null}
           onIrAlPago={irAlPagoConCuenta}
+          onOtraCuenta={usarOtraCuenta}
           onClose={cerrarCuenta}
           t={t}
         />

@@ -307,7 +307,9 @@
     "continueToPayment": "Continue to payment",
     "loginToUseCredits": "Sign in to use your credits.",
     "otroPagoEnCurso": "A payment is already being prepared on this page. If it doesn’t open, tap “Buy” again in a moment.",
-    "entrasteComo": "Signed in as {{quien}}"
+    "entrasteComo": "Signed in as {{quien}}",
+    "usarOtraCuenta": "Use another account",
+    "pagoYaNoEsTuyo": "The account or business changed while we prepared your payment. Tap “Buy” again."
   },
   "portal": {
     "title": "My account",

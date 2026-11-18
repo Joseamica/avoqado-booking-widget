@@ -16,6 +16,8 @@ interface CheckoutModalProps {
   paquete: string | null
   /** Su toque en «Ir al pago»: el pago nunca arranca solo al entrar (una entrada tardía no manda a pagar). */
   onIrAlPago: () => void
+  /** «Usar otra cuenta»: la que entró no es ella; sale de esa cuenta y vuelve a «Entra a tu cuenta». */
+  onOtraCuenta: () => void
   onClose: () => void
   t: TFunction
 }
@@ -28,7 +30,7 @@ interface CheckoutModalProps {
  *
  * Accesibilidad: role=dialog + aria-modal; Escape y el fondo cierran; Tab no sale de la ventana.
  */
-export function CheckoutModal({ slug, negocio, onEntro, entroComo, paquete, onIrAlPago, onClose, t }: CheckoutModalProps) {
+export function CheckoutModal({ slug, negocio, onEntro, entroComo, paquete, onIrAlPago, onOtraCuenta, onClose, t }: CheckoutModalProps) {
   const panelRef = useRef<HTMLDivElement>(null)
   const titleId = 'avq-checkout-title'
 
@@ -121,6 +123,16 @@ export function CheckoutModal({ slug, negocio, onEntro, entroComo, paquete, onIr
               }}
             >
               {t('creditPacks.continueToPayment')}
+            </button>
+            <button
+              type="button"
+              onClick={onOtraCuenta}
+              style={{
+                background: 'none', border: 'none', padding: '4px', cursor: 'pointer', fontSize: '13px',
+                color: 'var(--avq-muted-fg, #6b7280)', textDecoration: 'underline',
+              }}
+            >
+              {t('creditPacks.usarOtraCuenta')}
             </button>
           </div>
         ) : (

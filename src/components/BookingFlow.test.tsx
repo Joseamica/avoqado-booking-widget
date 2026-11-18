@@ -1009,6 +1009,66 @@ describe('Codex r1 (paquete con cuenta): la ventana y el pago no se cruzan con o
     expect(vi.mocked(api.createPackCheckout).mock.calls[0][3]).toBe('tok-A')
   })
 
+  it('r3 #1: con la confirmación del paquete 1 abierta elige el 2 por otro lado ⇒ la del 1 se cierra (no queda para pagarla después)', async () => {
+    await act(async () => { state.bindCustomerSessionToVenue('studio-a') })
+    ;(globalThis as any).__entradaDePrueba = ENTRADA_G
+    vi.mocked(api.getVenueInfo).mockResolvedValue({ ...venue, canCharge: true })
+    vi.mocked(api.getCreditPacks).mockResolvedValue([PAQUETE, { ...PAQUETE, id: 'pk2', name: 'Mini Pack' }] as any)
+    window.history.replaceState({}, '', '/studio-a')
+    render(<BookingFlow props={{ ...props(), flowType: 'unified' }} />); await flush()
+    fireEvent.click(screen.getByRole('tab', { name: 'Comprar paquetes' })); await flush()
+    fireEvent.click(screen.getAllByRole('button', { name: 'Comprar' })[0]); await flush()
+    fireEvent.click(screen.getByRole('button', { name: 'Simular entrar' })); await flush()
+    expect(screen.getByRole('button', { name: 'Ir al pago' })).toBeTruthy()
+    vi.mocked(api.createPackCheckout).mockRejectedValueOnce({ status: 400, data: { message: 'falló' } })
+    fireEvent.click(screen.getAllByRole('button', { name: 'Comprar' })[1]); await flush() // el 2, p. ej. desde la cabecera
+    expect(vi.mocked(api.createPackCheckout).mock.calls[0][1]).toBe('pk2')
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Ir al pago' })).toBeNull()
+  })
+
+  it('r3 #2: «Usar otra cuenta» en la confirmación sale de esa cuenta y vuelve a «Entra a tu cuenta»', async () => {
+    await act(async () => { state.bindCustomerSessionToVenue('studio-a') })
+    ;(globalThis as any).__entradaDePrueba = ENTRADA_G
+    await comprar()
+    fireEvent.click(screen.getByRole('button', { name: 'Simular entrar' })); await flush()
+    expect(state.customerToken.value).toBe('tok-G')
+    fireEvent.click(screen.getByRole('button', { name: 'Usar otra cuenta' })); await flush()
+    expect(state.customerToken.value).toBeNull()
+    expect(screen.getByRole('heading', { name: 'Entra a tu cuenta' })).toBeTruthy()
+    expect(api.createPackCheckout).not.toHaveBeenCalled()
+  })
+
+  it('r3 #3: pago en vuelo en A, el widget va a B y regresa a A antes de la respuesta ⇒ no se abre', async () => {
+    await entra('tok-A', ANA)
+    let resolver: (r: { checkoutUrl: string }) => void = () => {}
+    vi.mocked(api.createPackCheckout).mockImplementationOnce(() => new Promise(si => { resolver = si }))
+    vi.mocked(api.getVenueInfo).mockResolvedValue({ ...venue, canCharge: true })
+    vi.mocked(api.getCreditPacks).mockResolvedValue([PAQUETE] as any)
+    window.history.replaceState({}, '', '/studio-a')
+    const { rerender } = render(<BookingFlow props={{ ...props(), flowType: 'unified' }} />); await flush()
+    fireEvent.click(screen.getByRole('tab', { name: 'Comprar paquetes' })); await flush()
+    fireEvent.click(screen.getByRole('button', { name: 'Comprar' })); await flush()
+    rerender(<BookingFlow props={{ ...props('studio-b'), flowType: 'unified' }} />); await flush()
+    rerender(<BookingFlow props={{ ...props(), flowType: 'unified' }} />); await flush()
+    await act(async () => { resolver({ checkoutUrl: '#pago-de-a' }) }); await flush()
+    expect(window.location.hash).toBe('')
+  })
+
+  it('r3 #4: «Ir al pago» y otra pestaña cambia la sesión ⇒ no se abre y se le dice por qué', async () => {
+    await act(async () => { state.bindCustomerSessionToVenue('studio-a') })
+    ;(globalThis as any).__entradaDePrueba = ENTRADA_G
+    let resolver: (r: { checkoutUrl: string }) => void = () => {}
+    vi.mocked(api.createPackCheckout).mockImplementationOnce(() => new Promise(si => { resolver = si }))
+    await comprar()
+    fireEvent.click(screen.getByRole('button', { name: 'Simular entrar' })); await flush()
+    fireEvent.click(screen.getByRole('button', { name: 'Ir al pago' })); await flush()
+    borrarSesion('studio-a') // la otra pestaña
+    await act(async () => { resolver({ checkoutUrl: '#pago' }) }); await flush()
+    expect(window.location.hash).toBe('')
+    expect(state.toastMessage.value?.text).toBe('Cambió la cuenta o el negocio mientras preparábamos tu pago. Vuelve a tocar «Comprar».')
+  })
+
   it('r2 #6: con un pago de la página en vuelo, otro «Comprar» avisa en vez de tragarse el toque', async () => {
     await entra('tok-A', ANA)
     state.comprandoPaquete.add('studio-a') // p. ej. el de «Mi cuenta»
