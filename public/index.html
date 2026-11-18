@@ -641,6 +641,21 @@
 
   <script>
     (function () {
+      // El mismo tono de la marca, oscurecido hasta que el texto blanco encima dé 4.5:1 (copia de `acentoLegible` en
+      // src/order/components/theme.ts: esta página no importa módulos). Lo que no es #rgb/#rrggbb se queda igual.
+      function acentoLegible(color) {
+        if (!/^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(color)) return color
+        var h = color.slice(1)
+        if (h.length === 3) h = h.replace(/./g, '$&$&')
+        var rgb = [0, 2, 4].map(function (i) { return parseInt(h.slice(i, i + 2), 16) })
+        function lum() {
+          var c = rgb.map(function (v) { v = Math.round(v) / 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4) })
+          return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]
+        }
+        for (var i = 0; i < 60 && 1.05 / (lum() + 0.05) < 4.5; i++) rgb = rgb.map(function (v) { return v * 0.96 })
+        return '#' + rgb.map(function (v) { var s = Math.round(v).toString(16); return s.length < 2 ? '0' + s : s }).join('')
+      }
+
       // Parse path: /<venueSlug>[/appointments|/classes]
       var rawPath = window.location.pathname.replace(/^\/+|\/+$/g, '')
       var parts = rawPath.split('/').filter(Boolean)
@@ -1419,7 +1434,9 @@
         var brand = info.primaryColor
         if (!urlAccent && typeof brand === 'string' && /^(#|rgb|hsl|oklch|color\()/i.test(brand.trim())) {
           var trimmed = brand.trim()
-          document.documentElement.style.setProperty('--accent', trimmed)
+          // La cabecera («Mi cuenta», pestaña activa) usa el MISMO tono que el widget: oscurecido hasta 4.5:1 con texto blanco
+          // (misma regla que `acentoLegible` de src/order/components/theme.ts; diseño 18-nov).
+          document.documentElement.style.setProperty('--accent', acentoLegible(trimmed))
           // Widget reads `accent-color` HTML attribute → maps to --avq-accent
           // CSS token (see App.tsx). Without this line /clases and
           // /appointments ignored the venue admin's primaryColor and used the

@@ -39,6 +39,23 @@ function luminance(hex: string): number {
 }
 
 /**
+ * Reservas (book.avoqado.io): el MISMO tono de la marca, oscurecido lo justo para que el texto blanco encima dé 4.5:1. A diferencia de
+ * `accentFor` (que cae a negro), aquí se conserva el tono: el rosa de Mindform (#cda2a2, 2.3:1 con blanco) sale rosa más oscuro, no
+ * negro. Lo que no sea `#rgb`/`#rrggbb` se queda como viene.
+ */
+export function acentoLegible(color: string): string
+export function acentoLegible(color: string | null | undefined): string | undefined
+export function acentoLegible(color: string | null | undefined): string | undefined {
+  if (!color || !HEX.test(color)) return color ?? undefined
+  let h = color.slice(1)
+  if (h.length === 3) h = h.replace(/./g, '$&$&')
+  let rgb = [0, 2, 4].map(i => parseInt(h.slice(i, i + 2), 16))
+  const hex = () => '#' + rgb.map(v => Math.round(v).toString(16).padStart(2, '0')).join('')
+  for (let i = 0; i < 60 && 1.05 / (luminance(hex()) + 0.05) < 4.5; i++) rgb = rgb.map(v => v * 0.96)
+  return hex()
+}
+
+/**
  * Color del botón principal y de los acentos. Es el color de la marca (o del atributo `accent-color`) sólo si es `#rgb` o
  * `#rrggbb` y da 4.5:1 o más contra el texto blanco que lleva encima; si no, negro. Un amarillo de marca nunca deja ilegible
  * el botón.
