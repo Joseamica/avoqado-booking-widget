@@ -1216,6 +1216,16 @@
         activeNow = activeRoute()
         applyActive(nav)
         applyActive(drawer)
+        // The widget follows the URL too. Its `flow-type` used to be set only at first paint, so after «Citas» and the
+        // browser's back button the page went back to the narrow landing while the widget kept the booking wizard
+        // (founder, 18-nov). Deferred so the widget never re-renders inside its own click handler (it pushState'd).
+        Promise.resolve().then(function () {
+          if (!el) return
+          var widgetFlow = nextFlow === 'appointments' || nextFlow === 'classes' ? nextFlow : null
+          if (el.getAttribute('flow-type') === widgetFlow) return
+          if (widgetFlow) el.setAttribute('flow-type', widgetFlow)
+          else el.removeAttribute('flow-type')
+        })
       }
       window.addEventListener('popstate', syncFlowFromUrl)
       // pushState/replaceState don't emit events natively — patch them so we
