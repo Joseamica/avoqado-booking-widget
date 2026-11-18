@@ -193,10 +193,16 @@ export function BookingFlow({ props }: BookingFlowProps) {
   const cambiosDeNegocio = useRef(0)
   const montado = useRef(true)
   useEffect(() => () => { montado.current = false }, [])
-  useEffect(() => {
-    // Cambió de negocio con «Entra a tu cuenta» abierta: ese paquete era del otro.
+  // Se cuenta AL PINTAR, no en un efecto: una liga que responde justo después del cambio, antes de que corran los efectos, ya lo ve
+  // (codex r4 #2). Cambiar de negocio también invalida la ventana abierta.
+  const negocioVisto = useRef(props.venue)
+  if (negocioVisto.current !== props.venue) {
+    negocioVisto.current = props.venue
     cambiosDeNegocio.current++
     intentoDeCompra.current++
+  }
+  useEffect(() => {
+    // Cambió de negocio con «Entra a tu cuenta» abierta: ese paquete era del otro.
     setEntroComo(null)
     setCheckoutPackId(null)
   }, [props.venue])
@@ -1431,7 +1437,8 @@ export function BookingFlow({ props }: BookingFlowProps) {
    * no se adopta: pudo terminar con otra persona frente a la página (codex r1 #1).
    */
   function handleEntroParaComprar(r: SesionEmitida, intento: number) {
-    if (intento !== intentoDeCompra.current) return
+    // Ni de un intento viejo ni de un widget ya retirado de la página: esa entrada pudo terminar con otra persona enfrente (r4 #1).
+    if (!montado.current || intento !== intentoDeCompra.current) return
     entroAqui(props.venue, r)
     const c = r.customer
     setEntroComo({ token: r.token, quien: [c.firstName, c.email ?? c.phone].filter(Boolean).join(' · ') })
@@ -1456,6 +1463,8 @@ export function BookingFlow({ props }: BookingFlowProps) {
     }
     comprandoPaquete.add(venue)
     setBuyingPackId(packId)
+    // Desde la cabecera la lista se cierra: que vea que su pago se está preparando, y de qué paquete (codex r4 #4).
+    showToast(t('creditPacks.preparandoPago', { paquete: creditPacks.value.find(p => p.id === packId)?.name ?? '' }))
     // D656: si al responder ya es otra sesión (salió, entró otra), no se abre ese pago. La época no cambia al renovar ni al completar la ficha.
     const epoca = epocaDe(venue)
     const vuelta = cambiosDeNegocio.current

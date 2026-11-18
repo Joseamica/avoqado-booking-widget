@@ -309,7 +309,8 @@
     "otroPagoEnCurso": "Ya estamos preparando un pago en esta página. Si no se abre, vuelve a tocar «Comprar» en un momento.",
     "entrasteComo": "Entraste como {{quien}}",
     "usarOtraCuenta": "Usar otra cuenta",
-    "pagoYaNoEsTuyo": "Cambió la cuenta o el negocio mientras preparábamos tu pago. Vuelve a tocar «Comprar»."
+    "pagoYaNoEsTuyo": "Cambió la cuenta o el negocio mientras preparábamos tu pago. Vuelve a tocar «Comprar».",
+    "preparandoPago": "Preparando tu pago de {{paquete}}…"
   },
   "portal": {
     "title": "Mi cuenta",

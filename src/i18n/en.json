@@ -309,7 +309,8 @@
     "otroPagoEnCurso": "A payment is already being prepared on this page. If it doesn’t open, tap “Buy” again in a moment.",
     "entrasteComo": "Signed in as {{quien}}",
     "usarOtraCuenta": "Use another account",
-    "pagoYaNoEsTuyo": "The account or business changed while we prepared your payment. Tap “Buy” again."
+    "pagoYaNoEsTuyo": "The account or business changed while we prepared your payment. Tap “Buy” again.",
+    "preparandoPago": "Preparing your payment for {{paquete}}…"
   },
   "portal": {
     "title": "My account",

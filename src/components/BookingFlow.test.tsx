@@ -1069,6 +1069,43 @@ describe('Codex r1 (paquete con cuenta): la ventana y el pago no se cruzan con o
     expect(state.toastMessage.value?.text).toBe('Cambió la cuenta o el negocio mientras preparábamos tu pago. Vuelve a tocar «Comprar».')
   })
 
+  it('r4 #1: el widget se retira con «Entra a tu cuenta» validando ⇒ esa entrada tardía no activa su cuenta en la página', async () => {
+    await act(async () => { state.bindCustomerSessionToVenue('studio-a') })
+    await comprar()
+    const entradaVieja = (globalThis as any).__onEntro
+    cleanup() // la clienta salió de la sección de reservas
+    await act(async () => {
+      guardarSesion('studio-a', { ...ENTRADA_G, guardadaEn: Date.now() } as any)
+      entradaVieja(ENTRADA_G)
+    }); await flush()
+    expect(state.customerToken.value).toBeNull()
+  })
+
+  it('r4 #2: la liga de A responde justo al cambiar a B, antes de que corran los efectos ⇒ no se abre', async () => {
+    await entra('tok-A', ANA)
+    let resolver: (r: { checkoutUrl: string }) => void = () => {}
+    vi.mocked(api.createPackCheckout).mockImplementationOnce(() => new Promise(si => { resolver = si }))
+    vi.mocked(api.getVenueInfo).mockResolvedValue({ ...venue, canCharge: true })
+    vi.mocked(api.getCreditPacks).mockResolvedValue([PAQUETE] as any)
+    window.history.replaceState({}, '', '/studio-a')
+    const { rerender } = render(<BookingFlow props={{ ...props(), flowType: 'unified' }} />); await flush()
+    fireEvent.click(screen.getByRole('tab', { name: 'Comprar paquetes' })); await flush()
+    fireEvent.click(screen.getByRole('button', { name: 'Comprar' })); await flush()
+    await act(async () => {
+      rerender(<BookingFlow props={{ ...props('studio-b'), flowType: 'unified' }} />)
+      resolver({ checkoutUrl: '#pago-de-a' })
+      await Promise.resolve(); await Promise.resolve()
+    }); await flush()
+    expect(window.location.hash).toBe('')
+  })
+
+  it('r4 #4: con sesión, «Comprar» dice que se está preparando el pago y de qué paquete', async () => {
+    await entra('tok-A', ANA)
+    vi.mocked(api.createPackCheckout).mockReturnValue(new Promise(() => {}))
+    await comprar()
+    expect(state.toastMessage.value?.text).toBe('Preparando tu pago de Mega Pack…')
+  })
+
   it('r2 #6: con un pago de la página en vuelo, otro «Comprar» avisa en vez de tragarse el toque', async () => {
     await entra('tok-A', ANA)
     state.comprandoPaquete.add('studio-a') // p. ej. el de «Mi cuenta»
