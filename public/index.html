@@ -415,6 +415,14 @@
     }
     .textus-fab:hover { box-shadow: 0 10px 28px rgba(15,15,16,0.18); transform: translateY(-1px); }
     .textus-fab svg { width: 18px; height: 18px; flex-shrink: 0; }
+    /* Diseño 18-nov: en celular la píldora «Envíanos un mensaje» tapaba la lista. Ahí es un círculo de 52 px (el texto queda
+       para lectores de pantalla en aria-label) y la página deja espacio abajo para que nada quede debajo de él. */
+    @media (max-width: 480px) {
+      .textus-fab { padding: 0; width: 52px; height: 52px; justify-content: center; border-radius: 999px; }
+      .textus-fab span { display: none; }
+      .textus-fab svg { width: 22px; height: 22px; }
+      .page { padding-bottom: 88px; }
+    }
 
     .textus-modal-overlay {
       position: fixed; inset: 0;
