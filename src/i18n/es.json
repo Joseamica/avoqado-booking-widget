@@ -306,7 +306,8 @@
     "checkoutSubtitle": "Tus créditos quedan en tu cuenta. Después te llevamos al pago seguro de Stripe.",
     "continueToPayment": "Ir al pago",
     "loginToUseCredits": "Inicia sesión para usar tus créditos.",
-    "otroPagoEnCurso": "Ya se está preparando otro pago en esta página. Vuelve a tocar «Comprar» en un momento."
+    "otroPagoEnCurso": "Ya estamos preparando un pago en esta página. Si no se abre, vuelve a tocar «Comprar» en un momento.",
+    "entrasteComo": "Entraste como {{quien}}"
   },
   "portal": {
     "title": "Mi cuenta",

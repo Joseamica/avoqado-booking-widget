@@ -306,7 +306,8 @@
     "checkoutSubtitle": "Your credits stay in your account. Then we take you to Stripe’s secure checkout.",
     "continueToPayment": "Continue to payment",
     "loginToUseCredits": "Sign in to use your credits.",
-    "otroPagoEnCurso": "Another payment is already being prepared on this page. Tap “Buy” again in a moment."
+    "otroPagoEnCurso": "A payment is already being prepared on this page. If it doesn’t open, tap “Buy” again in a moment.",
+    "entrasteComo": "Signed in as {{quien}}"
   },
   "portal": {
     "title": "My account",

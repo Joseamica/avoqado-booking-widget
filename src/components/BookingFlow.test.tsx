@@ -828,7 +828,7 @@ describe('Founder 18-nov («A», con WhatsApp, correo o Google): «Comprar» un 
     expect(api.createPackCheckout).not.toHaveBeenCalled()
   })
 
-  it('sin sesión: entra con Google (sin teléfono) y sigue sola al pago con SU sesión', async () => {
+  it('sin sesión: entra con Google (sin teléfono), ve con qué cuenta entró y SU toque en «Ir al pago» paga con su sesión', async () => {
     await act(async () => { state.bindCustomerSessionToVenue('studio-a') })
     ;(globalThis as any).__entradaDePrueba = {
       token: 'tok-G', customer: { ...ANA, phone: null, email: 'ana@gmail.com' },
@@ -837,6 +837,10 @@ describe('Founder 18-nov («A», con WhatsApp, correo o Google): «Comprar» un 
     vi.mocked(api.createPackCheckout).mockResolvedValue({ checkoutUrl: '#pago-de-ana' })
     await comprar()
     fireEvent.click(screen.getByRole('button', { name: 'Simular entrar' })); await flush()
+    expect(api.createPackCheckout).not.toHaveBeenCalled() // entrar no manda a pagar solo
+    expect(screen.getByText('Entraste como Ana · ana@gmail.com')).toBeTruthy()
+    expect(within(screen.getByRole('dialog')).getByText('Mega Pack')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Ir al pago' })); await flush()
     expect(api.createPackCheckout).toHaveBeenCalledTimes(1)
     const [, packId, data, token] = vi.mocked(api.createPackCheckout).mock.calls[0]
     expect(packId).toBe('pk1')
@@ -867,6 +871,7 @@ describe('Founder 18-nov («A», con WhatsApp, correo o Google): «Comprar» un 
   })
 })
 
+const OTRO_PAGO = 'Ya estamos preparando un pago en esta página. Si no se abre, vuelve a tocar «Comprar» en un momento.'
 describe('Codex r1 (paquete con cuenta): la ventana y el pago no se cruzan con otra elección, sesión o negocio', () => {
   const ENTRADA_G = {
     token: 'tok-G', customer: { ...ANA, phone: null, email: 'ana@gmail.com' },
@@ -939,6 +944,7 @@ describe('Codex r1 (paquete con cuenta): la ventana y el pago no se cruzan con o
     await comprar()
     await act(async () => { state.bindCustomerSessionToVenue('studio-b') }) // se montó el portal de B al final
     fireEvent.click(screen.getByRole('button', { name: 'Simular entrar' })); await flush()
+    fireEvent.click(screen.getByRole('button', { name: 'Ir al pago' })); await flush()
     expect(api.createPackCheckout).toHaveBeenCalledTimes(1)
     expect(vi.mocked(api.createPackCheckout).mock.calls[0][0]).toBe('studio-a')
     expect(vi.mocked(api.createPackCheckout).mock.calls[0][3]).toBe('tok-G')
@@ -951,16 +957,64 @@ describe('Codex r1 (paquete con cuenta): la ventana y el pago no se cruzan con o
     await comprar()
     state.comprandoPaquete.add('studio-a') // el pago de la sesión anterior todavía no responde
     fireEvent.click(screen.getByRole('button', { name: 'Simular entrar' })); await flush()
+    fireEvent.click(screen.getByRole('button', { name: 'Ir al pago' })); await flush()
     expect(api.createPackCheckout).not.toHaveBeenCalled()
-    expect(state.toastMessage.value?.text).toBe('Ya se está preparando otro pago en esta página. Vuelve a tocar «Comprar» en un momento.')
+    expect(state.toastMessage.value?.text).toBe(OTRO_PAGO)
   })
 
-  it('#6: la sesión venció al comprar (401) ⇒ vuelve a pedir la cuenta con el mismo paquete, sin «sigue sin cuenta»', async () => {
+  it('#6 y r2 #1: la sesión venció al comprar (401) ⇒ «Entra otra vez», sin «sigue sin cuenta» y sin abrir sola una ventana', async () => {
     await entra('tok-A', ANA)
     vi.mocked(api.createPackCheckout).mockRejectedValueOnce({ status: 401 })
     await comprar()
-    expect(screen.getByRole('dialog')).toBeTruthy()
     expect(state.toastMessage.value?.text).toBe('Tu sesión se cerró. Entra otra vez.')
+    // Un 401 tardío no cambia el paquete de una ventana que la clienta ya abrió para otro: no abre ninguna.
+    expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
+  it('r2 #3: el widget se retira de la página con el pago en vuelo ⇒ no se abre', async () => {
+    await entra('tok-A', ANA)
+    let resolver: (r: { checkoutUrl: string }) => void = () => {}
+    vi.mocked(api.createPackCheckout).mockImplementationOnce(() => new Promise(si => { resolver = si }))
+    await comprar()
+    cleanup()
+    await act(async () => { resolver({ checkoutUrl: '#pago-de-ana' }) }); await flush()
+    expect(window.location.hash).toBe('')
+  })
+
+  it('r2 #4: cambia de Google a correo y responden las dos ⇒ la ventana enseña la última cuenta y paga con ésa', async () => {
+    await act(async () => { state.bindCustomerSessionToVenue('studio-a') })
+    vi.mocked(api.createPackCheckout).mockResolvedValue({ checkoutUrl: '#pago' })
+    await comprar()
+    const entrar = (globalThis as any).__onEntro
+    const CORREO = { token: 'tok-C', customer: { ...ANA, firstName: 'Ana', phone: null, email: 'ana@correo.mx' },
+      contactos: [{ tipo: 'EMAIL', valor: 'ana@correo.mx', metodo: 'CODIGO', probadoEn: 1 }] }
+    await act(async () => {
+      guardarSesion('studio-a', { ...CORREO, guardadaEn: Date.now() } as any); entrar(CORREO)
+      guardarSesion('studio-a', { ...ENTRADA_G, guardadaEn: Date.now() } as any); entrar(ENTRADA_G) // Google respondió tarde
+    }); await flush()
+    expect(api.createPackCheckout).not.toHaveBeenCalled()
+    expect(screen.getByText('Entraste como Ana · ana@gmail.com')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Ir al pago' })); await flush()
+    expect(vi.mocked(api.createPackCheckout).mock.calls[0][3]).toBe('tok-G')
+  })
+
+  it('r2 #5: página con dos negocios y sesión en A (la activa es B) ⇒ «Comprar» de A va directo, sin pedir entrar', async () => {
+    await entra('tok-A', ANA)
+    vi.mocked(api.createPackCheckout).mockResolvedValue({ checkoutUrl: '#pago-de-ana' })
+    const boton = await abrirPaquetes()
+    await act(async () => { state.bindCustomerSessionToVenue('studio-b') })
+    fireEvent.click(boton); await flush()
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(vi.mocked(api.createPackCheckout).mock.calls[0][0]).toBe('studio-a')
+    expect(vi.mocked(api.createPackCheckout).mock.calls[0][3]).toBe('tok-A')
+  })
+
+  it('r2 #6: con un pago de la página en vuelo, otro «Comprar» avisa en vez de tragarse el toque', async () => {
+    await entra('tok-A', ANA)
+    state.comprandoPaquete.add('studio-a') // p. ej. el de «Mi cuenta»
+    await comprar()
+    expect(api.createPackCheckout).not.toHaveBeenCalled()
+    expect(state.toastMessage.value?.text).toBe(OTRO_PAGO)
   })
 })
 

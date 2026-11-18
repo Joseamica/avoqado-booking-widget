@@ -186,12 +186,18 @@ export function BookingFlow({ props }: BookingFlowProps) {
   // El paquete que espera a que la clienta entre a su cuenta (sin sesión, «Comprar» abre «Entra a tu cuenta»), y su número de intento.
   const [checkoutPackId, setCheckoutPackId] = useState<string | null>(null)
   const intentoDeCompra = useRef(0)
-  // El negocio que el widget enseña AHORA (una compra en vuelo de otro negocio no abre su pago; codex r1 #3).
+  // Ya entró desde la ventana: con qué cuenta (se le enseña antes de «Ir al pago»).
+  const [entroComo, setEntroComo] = useState<{ token: string; quien: string } | null>(null)
+  // El negocio que el widget enseña AHORA, y si sigue en la página (una compra en vuelo de otro negocio o de un widget retirado no
+  // abre su pago; codex r1 #3, r2 #3).
   const venueActual = useRef(props.venue)
   venueActual.current = props.venue
+  const montado = useRef(true)
+  useEffect(() => () => { montado.current = false }, [])
   useEffect(() => {
     // Cambió de negocio con «Entra a tu cuenta» abierta: ese paquete era del otro.
     intentoDeCompra.current++
+    setEntroComo(null)
     setCheckoutPackId(null)
   }, [props.venue])
   const [pendingFormData, setPendingFormData] = useState<GuestFormData | null>(null)
@@ -1387,46 +1393,58 @@ export function BookingFlow({ props }: BookingFlowProps) {
 
   // Founder 18-nov («A», con WhatsApp, correo o Google): un paquete se compra CON la cuenta, nunca con un teléfono escrito a mano.
   // Con sesión va directo al pago (el SERVIDOR liga la compra a la sesión, D655); sin sesión, primero «Entra a tu cuenta».
+  // La sesión se mira por NEGOCIO (en una página con dos negocios la «activa» puede ser la del otro; codex r1 #4, r2 #5).
   function handleBuyPack(packId: string) {
-    if (customerToken.value) void comprarPaquete(packId)
+    const token = tokenParaMandar(props.venue)
+    if (token) void comprarPaquete(packId, token)
     else pedirCuentaPara(packId)
   }
 
   /**
    * Abre «Entra a tu cuenta» para ESTE paquete. Cada apertura es un intento: cerrar, cambiar de negocio o abrir otra invalida al
-   * anterior, así que una entrada que termina tarde (el código se validaba al cerrar) no compra lo que la clienta ya descartó (codex r1 #1).
+   * anterior, así que una entrada que termina tarde (el código se validaba al cerrar) no se toma (codex r1 #1).
    */
   function pedirCuentaPara(packId: string) {
     intentoDeCompra.current++
+    setEntroComo(null)
     setCheckoutPackId(packId)
   }
   function cerrarCuenta() {
     intentoDeCompra.current++
+    setEntroComo(null)
     setCheckoutPackId(null)
   }
 
   /**
-   * Entró desde «Antes de pagar»: la página adopta ESA sesión (r11, sin releer lo guardado) y sigue sola al pago del paquete, con el
-   * token de ESA entrada (en un sitio con dos negocios, la sesión «activa» puede ser la del otro; codex r1 #4). Una entrada de un intento
-   * viejo no se adopta ni compra: pudo terminar con otra persona frente a la página (codex r1 #1).
+   * Entró desde «Antes de pagar»: la página adopta ESA sesión (r11, sin releer lo guardado) y la ventana dice con qué cuenta entró.
+   * El pago NO arranca solo: lo arranca su toque en «Ir al pago» (rediseño tras Codex r2: una entrada que termina tarde —Google que
+   * responde después de cambiar a correo, un 401 viejo, un widget retirado— ya no puede mandar a pagar). Una entrada de un intento viejo
+   * no se adopta: pudo terminar con otra persona frente a la página (codex r1 #1).
    */
-  function handleEntroParaComprar(r: SesionEmitida, intento: number, packId: string) {
+  function handleEntroParaComprar(r: SesionEmitida, intento: number) {
     if (intento !== intentoDeCompra.current) return
     entroAqui(props.venue, r)
-    cerrarCuenta()
-    if (comprandoPaquete.has(props.venue)) {
-      // Otro pago de esta página sigue en vuelo (D656): no se descarta en silencio (codex r1 #5).
-      showToast(t('creditPacks.otroPagoEnCurso'), 'error')
-      return
-    }
-    void comprarPaquete(packId, r.token)
+    const c = r.customer
+    setEntroComo({ token: r.token, quien: [c.firstName, c.email ?? c.phone].filter(Boolean).join(' · ') })
   }
 
-  async function comprarPaquete(packId: string, delLlamador?: string) {
+  /** Su toque en «Ir al pago», ya con su cuenta y en ESTA ventana. */
+  function irAlPagoConCuenta() {
+    const packId = checkoutPackId
+    const sesion = entroComo
+    if (!packId || !sesion) return
+    cerrarCuenta()
+    void comprarPaquete(packId, sesion.token)
+  }
+
+  async function comprarPaquete(packId: string, token: string) {
     // D656: el candado no espera al repintado y es de toda la página (dos toques, otro botón u otro portal = un solo pago preparado).
+    // Si ya hay uno en vuelo, se avisa en vez de tragarse el toque en silencio (codex r1 #5, r2 #6).
     const venue = props.venue
-    const token = delLlamador ?? customerToken.value
-    if (!token || comprandoPaquete.has(venue)) return
+    if (comprandoPaquete.has(venue)) {
+      showToast(t('creditPacks.otroPagoEnCurso'))
+      return
+    }
     comprandoPaquete.add(venue)
     setBuyingPackId(packId)
     // D656: si al responder ya es otra sesión (salió, entró otra), no se abre ese pago. La época no cambia al renovar ni al completar la ficha.
@@ -1443,15 +1461,15 @@ export function BookingFlow({ props }: BookingFlowProps) {
       const result = await api.createPackCheckout(venue, packId, { successUrl, cancelUrl }, token)
       // Sólo si sigue siendo la misma clienta en el mismo negocio: ni otra sesión en esta pestaña (época), ni otra en otra pestaña
       // del mismo negocio (lo guardado; la renovación sí cuenta como la misma), ni el widget ya cambiado a otro negocio (codex r1 #2, #3).
-      if (result.checkoutUrl && venueActual.current === venue && epocaDe(venue) === epoca && tokenParaMandar(venue, token)) {
+      // Ni un widget ya retirado de la página (r2 #3).
+      if (result.checkoutUrl && montado.current && venueActual.current === venue && epocaDe(venue) === epoca && tokenParaMandar(venue, token)) {
         window.location.href = result.checkoutUrl
       }
     } catch (err: any) {
-      // La sesión venció: comprar pide cuenta, así que se vuelve a pedir con el mismo paquete (ya no hay «sigue sin cuenta»; codex r1 #6).
-      if (err?.status === 401) {
-        showToast(t('entrar.sesionCerrada'))
-        if (venueActual.current === venue) pedirCuentaPara(packId)
-      } else showToast(err.data?.message ?? t('errors.generic'), 'error')
+      // La sesión venció: comprar pide cuenta (ya no hay «sigue sin cuenta»; codex r1 #6). No reabre la ventana sola: un 401 tardío
+      // no debe cambiar el paquete de una ventana que la clienta ya abrió para otro (r2 #1); su siguiente «Comprar» la pide.
+      if (err?.status === 401) showToast(t('entrar.sesionCerrada'))
+      else showToast(err.data?.message ?? t('errors.generic'), 'error')
     } finally {
       comprandoPaquete.delete(venue)
       setBuyingPackId(null)
@@ -2684,7 +2702,10 @@ export function BookingFlow({ props }: BookingFlowProps) {
         <CheckoutModal
           slug={props.venue}
           negocio={venueInfo.value?.name}
-          onEntro={(intento => (r: SesionEmitida) => handleEntroParaComprar(r, intento, checkoutPackId))(intentoDeCompra.current)}
+          onEntro={(intento => (r: SesionEmitida) => handleEntroParaComprar(r, intento))(intentoDeCompra.current)}
+          entroComo={entroComo?.quien ?? null}
+          paquete={creditPacks.value.find(p => p.id === checkoutPackId)?.name ?? null}
+          onIrAlPago={irAlPagoConCuenta}
           onClose={cerrarCuenta}
           t={t}
         />
