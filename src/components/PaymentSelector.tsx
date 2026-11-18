@@ -2,6 +2,7 @@ import { h } from 'preact'
 import { useMemo } from 'preact/hooks'
 import type { CustomerCreditBalance, Product, UpfrontPolicy } from '../types'
 import type { TFunction } from '../i18n'
+import { precio } from '../lib/precio'
 
 interface PaymentSelectorProps {
   product: Product
@@ -201,7 +202,7 @@ export function PaymentSelector({
 }
 
 function formatPrice(amount: number): string {
-  return new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(amount)
+  return precio(amount) // diseño 18-nov: un solo formato (src/lib/precio.ts)
 }
 
 function paymentOptionStyle(enabled: boolean, dashed: boolean = false): h.JSX.CSSProperties {

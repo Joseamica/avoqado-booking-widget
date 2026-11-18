@@ -8,16 +8,11 @@ import { Spinner } from './ui/Spinner'
 import { CapacityBadge } from './CapacityBadge'
 import { CalendarView } from './CalendarView'
 import { InstructorAvatar } from './InstructorAvatar'
+import { precio } from '../lib/precio'
 
 /** MXN price formatter — mirrors AppointmentSummarySidebar/ServiceSelector. */
 function formatPriceMXN(amount: number): string {
-  try {
-    return new Intl.NumberFormat('es-MX', {
-      style: 'currency', currency: 'MXN', maximumFractionDigits: 0,
-    }).format(amount)
-  } catch {
-    return `$${Math.round(amount).toLocaleString('es-MX')}`
-  }
+  return precio(amount) // diseño 18-nov: un solo formato (src/lib/precio.ts)
 }
 
 /** Render minutes as "1 h", "45 min", "1 h 30 min". */

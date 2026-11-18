@@ -3,16 +3,11 @@ import { useState } from 'preact/hooks'
 import type { Product, PublicSlot } from '../types'
 import type { TFunction } from '../i18n'
 import { selectedModifiers } from '../state/booking'
+import { precio } from '../lib/precio'
 
 /** Format MXN with thousand separators, no decimals. Mirrors ServiceSelector. */
 function formatPriceMXN(amount: number): string {
-  try {
-    return new Intl.NumberFormat('es-MX', {
-      style: 'currency', currency: 'MXN', maximumFractionDigits: 0,
-    }).format(amount)
-  } catch {
-    return `$${Math.round(amount).toLocaleString('es-MX')}`
-  }
+  return precio(amount) // diseño 18-nov: un solo formato (src/lib/precio.ts)
 }
 
 /** Render minutes as "1 h", "45 min", "1 h 30 min". */

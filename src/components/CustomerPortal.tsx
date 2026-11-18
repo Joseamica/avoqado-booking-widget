@@ -15,6 +15,7 @@ import {
 import { cuentaDe, leerCuenta } from '../state/miCuenta'
 import { alCambiarLaPagina, epocaDe, paginaDe, soltarLaPagina, type SesionEmitida, type Superficie } from '../lib/sesionDeCliente'
 import { FOLIO_CAMBIO, trackingUrl, type FolioCambioDetail } from '../order/events'
+import { precio } from '../lib/precio'
 
 interface CustomerPortalProps {
   venueSlug: string
@@ -1133,7 +1134,7 @@ export function CustomerPortal({
                     whiteSpace: 'nowrap', flexShrink: 0,
                     fontVariantNumeric: 'tabular-nums',
                   }}>
-                    ${Number(pack.price).toFixed(0)}
+                    {precio(Number(pack.price), pack.currency)}
                     <span style={{ fontSize: '11px', color: 'var(--avq-muted-fg, #6b7280)', fontWeight: '500', marginLeft: '4px' }}>{pack.currency}</span>
                   </span>
                 </div>

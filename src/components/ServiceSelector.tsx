@@ -3,19 +3,12 @@ import { useEffect, useMemo, useState } from 'preact/hooks'
 import type { Product } from '../types'
 import type { TFunction } from '../i18n'
 import { branding } from '../state/booking'
+import { precio } from '../lib/precio'
 
 /** Format MXN with thousand separators ("$6,962" not "$6962"). Drops cents to
  *  keep service-list rows scannable. */
 function formatPriceMXN(amount: number): string {
-  try {
-    return new Intl.NumberFormat('es-MX', {
-      style: 'currency',
-      currency: 'MXN',
-      maximumFractionDigits: 0,
-    }).format(amount)
-  } catch {
-    return `$${Math.round(amount).toLocaleString('es-MX')}`
-  }
+  return precio(amount) // diseño 18-nov: un solo formato (src/lib/precio.ts)
 }
 
 /** Strip accents + lowercase for fuzzy match (so "polygel" finds "Polígel"

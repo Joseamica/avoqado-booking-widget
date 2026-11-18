@@ -2,17 +2,10 @@ import { h } from 'preact'
 import type { PublicBookingResult, PublicVenueInfo, Product } from '../types'
 import type { TFunction } from '../i18n'
 import { selectedModifiers } from '../state/booking'
+import { precio } from '../lib/precio'
 
 function formatPriceMXN(amount: number): string {
-  try {
-    return new Intl.NumberFormat('es-MX', {
-      style: 'currency',
-      currency: 'MXN',
-      maximumFractionDigits: 0,
-    }).format(amount)
-  } catch {
-    return `$${Math.round(amount).toLocaleString('es-MX')}`
-  }
+  return precio(amount) // diseño 18-nov: un solo formato (src/lib/precio.ts)
 }
 
 function buildIcsContent(booking: PublicBookingResult, venueName: string): string {

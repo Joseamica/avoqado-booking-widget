@@ -1,6 +1,7 @@
 import { h } from 'preact'
 import type { CustomerCreditBalance, Product, UpfrontPolicy } from '../types'
 import type { TFunction } from '../i18n'
+import { precio } from '../lib/precio'
 
 /** What the customer picked. The widget reads this on submit:
  *  - 'credits' + balanceIds[]: every service maps to a balance, redeem from each
@@ -28,13 +29,7 @@ interface PaymentChoiceInlineProps {
 }
 
 function formatPriceMXN(amount: number): string {
-  try {
-    return new Intl.NumberFormat('es-MX', {
-      style: 'currency', currency: 'MXN', maximumFractionDigits: 0,
-    }).format(amount)
-  } catch {
-    return `$${Math.round(amount).toLocaleString('es-MX')}`
-  }
+  return precio(amount) // diseño 18-nov: un solo formato (src/lib/precio.ts)
 }
 
 interface MatchingBalance {

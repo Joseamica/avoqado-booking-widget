@@ -2,23 +2,14 @@ import { h } from 'preact'
 import type { ModifierSelection } from '../types'
 import type { TFunction } from '../i18n'
 import { optionCap as optionCapFor, setModifierQuantity, toggleModifier, type PickerGroup } from '../state/modifierSelection'
+import { precio } from '../lib/precio'
 
 // `PickerGroup` vive con las reglas de selección; se reexporta para que `import { PickerGroup } from './ModifierPicker'` siga valiendo.
 export type { PickerGroup }
 
 // Enteros sin centavos ($15); con centavos si no es entero ($12.50).
 function formatPriceMXN(amount: number): string {
-  const digits = Number.isInteger(amount) ? 0 : 2
-  try {
-    return new Intl.NumberFormat('es-MX', {
-      style: 'currency',
-      currency: 'MXN',
-      minimumFractionDigits: digits,
-      maximumFractionDigits: digits,
-    }).format(amount)
-  } catch {
-    return `$${amount.toLocaleString('es-MX', { minimumFractionDigits: digits, maximumFractionDigits: digits })}`
-  }
+  return precio(amount) // diseño 18-nov: un solo formato (src/lib/precio.ts)
 }
 
 interface ModifierPickerProps {

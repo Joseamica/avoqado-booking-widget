@@ -3,6 +3,7 @@ import type { PublicClassSessionSlot, Product } from '../types'
 import type { TFunction } from '../i18n'
 import { branding } from '../state/booking'
 import { InstructorAvatar } from './InstructorAvatar'
+import { precio } from '../lib/precio'
 
 interface ClassDetailViewProps {
   /** The slot the customer tapped on the listing. */
@@ -295,12 +296,6 @@ export function ClassDetailView({
 }
 
 function formatPrice(amount: number, locale: 'en' | 'es'): string {
-  try {
-    return new Intl.NumberFormat(locale === 'es' ? 'es-MX' : 'en-US', {
-      style: 'currency', currency: 'MXN', maximumFractionDigits: 0,
-    }).format(amount)
-  } catch {
-    return `$${Math.round(amount)}`
-  }
+  return precio(amount, 'MXN', locale) // diseño 18-nov: un solo formato (src/lib/precio.ts)
 }
 
