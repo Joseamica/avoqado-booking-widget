@@ -14,6 +14,8 @@ export function ReservationHero({ imageUrl, alt }: ReservationHeroProps) {
       style={{
         width: '100%',
         aspectRatio: '16 / 5',
+        // Diseño 18-nov: en escritorio 16:5 eran ~360 px de foto antes de poder elegir un servicio. Tope de 200 px.
+        maxHeight: '200px',
         borderRadius: '14px',
         overflow: 'hidden',
         marginBottom: '20px',

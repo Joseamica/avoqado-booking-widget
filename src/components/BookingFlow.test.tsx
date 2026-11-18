@@ -1313,3 +1313,19 @@ describe('D656: el pago de un paquete se prepara una sola vez, y sólo para quie
     expect(api.createPackCheckout).toHaveBeenCalledTimes(1)
   })
 })
+
+describe('diseño 18-nov: la portada de la reserva no se repite en el detalle de un servicio', () => {
+  afterEach(() => { cleanup() })
+  it('se ve en la lista de servicios y no en el detalle', async () => {
+    vi.mocked(api.getVenueInfo).mockResolvedValue({
+      ...venue, heroImageUrl: 'https://img.test/portada.png',
+      branding: { ...state.DEFAULT_BRANDING, showHeroImage: true },
+      products: [...venue.products, { ...venue.products[0], id: 'service-b', name: 'Otro servicio' }],
+    } as any)
+    render(<BookingFlow props={props()} />); await flush()
+    expect(document.querySelector('.avq-hero')).not.toBeNull()
+    fireEvent.click(screen.getByText('Otro servicio')); await flush()
+    expect(screen.getByRole('heading', { name: 'Otro servicio' })).toBeTruthy()
+    expect(document.querySelector('.avq-hero')).toBeNull()
+  })
+})

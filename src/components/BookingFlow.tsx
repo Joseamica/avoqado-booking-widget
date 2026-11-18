@@ -1964,7 +1964,8 @@ export function BookingFlow({ props }: BookingFlowProps) {
       <div class="avq-animate-in" key={`${step.value}-${showLanding}`}>
         {/* Reservation hero — wide cover photo above the appointments service
             step, gated by branding.showHeroImage + a configured heroImageUrl. */}
-        {!showLanding && flowType.value === 'appointments' && step.value === config.serviceStep &&
+        {/* Diseño 18-nov: no en el detalle de un servicio (repetía la misma foto encima de una sola línea). */}
+        {!showLanding && flowType.value === 'appointments' && step.value === config.serviceStep && !detailViewProduct &&
           branding.value.showHeroImage && info.heroImageUrl && (
           <ReservationHero imageUrl={info.heroImageUrl} alt={info.name} />
         )}
