@@ -7,6 +7,7 @@ import { VenueChatModal } from './components/VenueChatModal'
 import { getVenueInfo } from './api/booking'
 import { branding, flowType } from './state/booking'
 import { loadBrandingFont } from './lib/brandingFont'
+import { acentoLegible } from './order/components/theme'
 
 export default function App(props: WidgetProps) {
   // The default container max-width keeps the booking flow narrow + focused.
@@ -79,7 +80,9 @@ export default function App(props: WidgetProps) {
   const accent = b.accentColor ?? props.accentColor
   const shapeRadius = b.buttonShape === 'square' ? '0px' : b.buttonShape === 'pill' ? '9999px' : '0.5rem'
   const rootStyle: Record<string, string> = { '--avq-btn-radius': shapeRadius }
-  if (accent) rootStyle['--avq-accent'] = accent
+  // El mismo tono, oscurecido si hace falta: los botones llevan texto blanco y un color de marca claro los dejaba ilegibles y con
+  // cara de apagados (rosa de Mindform 2.3:1; diseño 18-nov).
+  if (accent) rootStyle['--avq-accent'] = acentoLegible(accent)
   if (b.fontFamily) rootStyle['--avq-font'] = `"${b.fontFamily}", system-ui, sans-serif`
 
   useEffect(() => {

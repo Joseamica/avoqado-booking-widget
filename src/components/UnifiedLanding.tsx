@@ -3,6 +3,7 @@ import { useState } from 'preact/hooks'
 import type { Product, CreditPackPublic } from '../types'
 import type { TFunction } from '../i18n'
 import { Spinner } from './ui/Spinner'
+import { precio } from '../lib/precio'
 
 interface UnifiedLandingProps {
   /** Product list from venueInfo — used to decide which CTAs to surface. */
@@ -328,11 +329,7 @@ function TabButton({ active, onClick, children }: { active: boolean; onClick: ()
 }
 
 function formatPrice(amount: number, currency: string): string {
-  try {
-    return new Intl.NumberFormat('es-MX', { style: 'currency', currency: currency || 'MXN' }).format(amount)
-  } catch {
-    return `$${amount.toFixed(2)}`
-  }
+  return precio(amount, currency) // diseño 18-nov: un solo formato (src/lib/precio.ts)
 }
 
 function titleStyle(): h.JSX.CSSProperties {

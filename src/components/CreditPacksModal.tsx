@@ -1,6 +1,7 @@
 import { h } from 'preact'
 import type { CreditPackPublic } from '../types'
 import type { TFunction } from '../i18n'
+import { precio } from '../lib/precio'
 
 interface CreditPacksModalProps {
   packs: CreditPackPublic[]
@@ -12,13 +13,7 @@ interface CreditPacksModalProps {
 }
 
 function formatPrice(amount: number, currency: string): string {
-  try {
-    return new Intl.NumberFormat('es-MX', {
-      style: 'currency', currency: currency || 'MXN', maximumFractionDigits: 0,
-    }).format(amount)
-  } catch {
-    return `$${Math.round(amount)}`
-  }
+  return precio(amount, currency) // diseño 18-nov: un solo formato (src/lib/precio.ts)
 }
 
 /**

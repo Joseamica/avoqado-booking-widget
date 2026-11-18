@@ -95,3 +95,40 @@ describe('portada ↔ reservar con atrás y adelante (book.avoqado.io)', () => {
     expect(widget().getAttribute('flow-type')).toBe('appointments')
   })
 })
+
+describe('una sola cabecera (diseño 18-nov): «Comprar paquetes» dentro de la reserva abre la lista ahí mismo', () => {
+  it('en /appointments el enlace de la cabecera abre los paquetes sin salir de la reserva', async () => {
+    window.history.replaceState({}, '', '/mindform/appointments')
+    new Function(scriptDeLaPagina())()
+    await esperar()
+    const abrir = vi.fn()
+    ;(widget() as unknown as { showCreditPacks: () => void }).showCreditPacks = abrir
+    const enlace = document.querySelector<HTMLAnchorElement>('#topnav a[data-route="packs"]')!
+    const evento = new MouseEvent('click', { bubbles: true, cancelable: true })
+    enlace.dispatchEvent(evento)
+    expect(abrir).toHaveBeenCalledTimes(1)
+    expect(evento.defaultPrevented).toBe(true)
+    expect(window.location.pathname).toBe('/mindform/appointments')
+  })
+
+  it('en la portada el enlace sigue llevando a la pestaña de paquetes (no se intercepta)', async () => {
+    new Function(scriptDeLaPagina())()
+    await esperar()
+    const abrir = vi.fn()
+    ;(widget() as unknown as { showCreditPacks: () => void }).showCreditPacks = abrir
+    const evento = new MouseEvent('click', { bubbles: true, cancelable: true })
+    document.querySelector<HTMLAnchorElement>('#topnav a[data-route="packs"]')!.dispatchEvent(evento)
+    expect(abrir).not.toHaveBeenCalled()
+    expect(evento.defaultPrevented).toBe(false)
+  })
+})
+
+describe('diseño 18-nov: sin clases agendadas, la cabecera no ofrece «Clases»', () => {
+  it('el aviso del widget esconde «Clases» de la cabecera y del menú', async () => {
+    new Function(scriptDeLaPagina())()
+    await esperar()
+    document.querySelectorAll('[data-requires="classes"]').forEach(x => x.removeAttribute('hidden'))
+    widget().dispatchEvent(new CustomEvent('avoqado:classes-availability', { detail: { hayClases: false } }))
+    document.querySelectorAll('[data-requires="classes"]').forEach(x => expect(x.hasAttribute('hidden')).toBe(true))
+  })
+})

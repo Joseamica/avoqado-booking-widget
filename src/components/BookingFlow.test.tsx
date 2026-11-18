@@ -1313,3 +1313,54 @@ describe('D656: el pago de un paquete se prepara una sola vez, y sólo para quie
     expect(api.createPackCheckout).toHaveBeenCalledTimes(1)
   })
 })
+
+describe('diseño 18-nov: la portada de la reserva no se repite en el detalle de un servicio', () => {
+  afterEach(() => { cleanup() })
+  it('se ve en la lista de servicios y no en el detalle', async () => {
+    vi.mocked(api.getVenueInfo).mockResolvedValue({
+      ...venue, heroImageUrl: 'https://img.test/portada.png',
+      branding: { ...state.DEFAULT_BRANDING, showHeroImage: true },
+      products: [...venue.products, { ...venue.products[0], id: 'service-b', name: 'Otro servicio' }],
+    } as any)
+    render(<BookingFlow props={props()} />); await flush()
+    expect(document.querySelector('.avq-hero')).not.toBeNull()
+    fireEvent.click(screen.getByText('Otro servicio')); await flush()
+    expect(screen.getByRole('heading', { name: 'Otro servicio' })).toBeTruthy()
+    expect(document.querySelector('.avq-hero')).toBeNull()
+  })
+})
+
+describe('diseño 18-nov: «Clases» se esconde si no hay clases agendadas en 30 días', () => {
+  afterEach(() => { cleanup(); state.hayClasesProximas.value = null })
+  const conClases = {
+    ...venue,
+    products: [...venue.products, { ...venue.products[0], id: 'clase-1', name: 'Yoga', type: 'CLASS' }],
+  }
+  async function portada() {
+    vi.mocked(api.getVenueInfo).mockResolvedValue(conClases as any)
+    window.history.replaceState({}, '', '/studio-a')
+    const host = document.createElement('div')
+    const avisos: unknown[] = []
+    host.addEventListener('avoqado:classes-availability', e => avisos.push((e as CustomEvent).detail))
+    render(<BookingFlow props={{ ...props(), flowType: 'unified', hostElement: host }} />); await flush()
+    return avisos
+  }
+  it('sin clases agendadas: la portada no ofrece «Clases» y avisa a la página', async () => {
+    vi.mocked(api.getClassSessionsRange).mockResolvedValue({ dateFrom: '2026-10-06', dateTo: '2026-11-05', slots: [] })
+    const avisos = await portada()
+    expect(screen.queryByRole('button', { name: /Clases/ })).toBeNull()
+    expect(screen.getByRole('button', { name: /Citas/ })).toBeTruthy()
+    expect(avisos).toEqual([{ hayClases: false }])
+  })
+  it('con clases agendadas: «Clases» sigue', async () => {
+    vi.mocked(api.getClassSessionsRange).mockResolvedValue({ dateFrom: '2026-10-06', dateTo: '2026-11-05', slots: [{ id: 's1' }] } as any)
+    const avisos = await portada()
+    expect(screen.getByRole('button', { name: /Clases/ })).toBeTruthy()
+    expect(avisos).toEqual([{ hayClases: true }])
+  })
+  it('si la consulta falla, «Clases» se queda (como antes)', async () => {
+    vi.mocked(api.getClassSessionsRange).mockRejectedValue(new Error('sin red'))
+    await portada()
+    expect(screen.getByRole('button', { name: /Clases/ })).toBeTruthy()
+  })
+})

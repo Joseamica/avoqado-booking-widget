@@ -88,7 +88,8 @@
       width: 28px;
       height: 28px;
       border-radius: 8px;
-      background: linear-gradient(135deg, var(--accent), #4F46E5);
+      /* Diseño 18-nov: el color de la marca, sólido. El degradado hacia índigo (#4F46E5) teñía de morado el logo de cualquier negocio. */
+      background: var(--accent);
       color: white;
       display: inline-flex;
       align-items: center;
@@ -96,10 +97,6 @@
       font-weight: 700;
       font-size: 14px;
     }
-    /* On /appointments we drop the avocado-purple chip and show only the venue
-       name (Square pattern). Cleaner, lets the venue brand carry the screen. */
-    body.flow-appointments .topnav-logo { display: none; }
-    body.flow-appointments .topnav-brand { font-size: 17px; letter-spacing: -0.4px; }
 
     .topnav-links {
       display: flex;
@@ -152,12 +149,8 @@
       .topnav-links, .topnav > .topnav-cta { display: none; }
       .topnav-hamburger { display: inline-flex; }
     }
-    /* Square pattern: appointments wizard hides desktop nav links + Mi Cuenta
-       and exposes the hamburger across all viewports. The drawer carries
-       account, navigation, and venue info (see .drawer-appointments below). */
-    body.flow-appointments .topnav-links,
-    body.flow-appointments .topnav > .topnav-cta { display: none !important; }
-    body.flow-appointments .topnav-hamburger { display: inline-flex !important; }
+    /* Diseño 18-nov: UNA sola cabecera en portada, citas y clases (logo, Citas · Clases · Comprar paquetes, Mi cuenta). La reserva
+       antes quitaba el logo, centraba «Comprar créditos» y forzaba la hamburguesa en escritorio: parecía otro sitio. */
 
     /* "Comprar créditos" header CTA — visible only when the appointments
        wizard is active AND the venue has at least one credit pack on offer.
@@ -182,12 +175,8 @@
       border-color: var(--accent);
       color: var(--accent);
     }
-    body.flow-appointments .topnav-cta-credits.is-available { display: inline-flex; }
-    /* Tighten the chrome on phones — keep only the icon when space is tight. */
-    @media (max-width: 480px) {
-      body.flow-appointments .topnav-cta-credits .topnav-cta-credits-label { display: none; }
-      .topnav-cta-credits { padding: 8px 10px; }
-    }
+    /* Diseño 18-nov: ya no se muestra; en la reserva «Comprar paquetes» de la cabecera abre la misma lista (ver el script). En
+       celular dejaba un ícono de tarjeta suelto. */
 
     /* MOBILE DRAWER */
     .drawer {
@@ -262,8 +251,9 @@
        for the wizard. The body class flips which group is visible. */
     .drawer-default { display: flex; flex-direction: column; gap: 4px; }
     .drawer-appointments { display: none; flex-direction: column; gap: 0; flex: 1; }
-    body.flow-appointments .drawer-default { display: none; }
-    body.flow-appointments .drawer-appointments { display: flex; }
+    /* En la reserva el menú lleva la misma navegación y, además, los datos del negocio; su «Iniciar sesión» duplicaba «Mi cuenta». */
+    body.flow-appointments .drawer-appointments { display: flex; margin-top: 18px; }
+    body.flow-appointments #drawer-signin-appointments { display: none; }
 
     .drawer-venue-name {
       font-size: 22px; font-weight: 700;
@@ -426,6 +416,14 @@
     }
     .textus-fab:hover { box-shadow: 0 10px 28px rgba(15,15,16,0.18); transform: translateY(-1px); }
     .textus-fab svg { width: 18px; height: 18px; flex-shrink: 0; }
+    /* Diseño 18-nov: en celular la píldora «Envíanos un mensaje» tapaba la lista. Ahí es un círculo de 52 px (el texto queda
+       para lectores de pantalla en aria-label) y la página deja espacio abajo para que nada quede debajo de él. */
+    @media (max-width: 480px) {
+      .textus-fab { padding: 0; width: 52px; height: 52px; justify-content: center; border-radius: 999px; }
+      .textus-fab span { display: none; }
+      .textus-fab svg { width: 22px; height: 22px; }
+      .page { padding-bottom: 88px; }
+    }
 
     .textus-modal-overlay {
       position: fixed; inset: 0;
@@ -641,6 +639,21 @@
 
   <script>
     (function () {
+      // El mismo tono de la marca, oscurecido hasta que el texto blanco encima dé 4.5:1 (copia de `acentoLegible` en
+      // src/order/components/theme.ts: esta página no importa módulos). Lo que no es #rgb/#rrggbb se queda igual.
+      function acentoLegible(color) {
+        if (!/^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(color)) return color
+        var h = color.slice(1)
+        if (h.length === 3) h = h.replace(/./g, '$&$&')
+        var rgb = [0, 2, 4].map(function (i) { return parseInt(h.slice(i, i + 2), 16) })
+        function lum() {
+          var c = rgb.map(function (v) { v = Math.round(v) / 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4) })
+          return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]
+        }
+        for (var i = 0; i < 60 && 1.05 / (lum() + 0.05) < 4.5; i++) rgb = rgb.map(function (v) { return v * 0.96 })
+        return '#' + rgb.map(function (v) { var s = Math.round(v).toString(16); return s.length < 2 ? '0' + s : s }).join('')
+      }
+
       // Parse path: /<venueSlug>[/appointments|/classes]
       var rawPath = window.location.pathname.replace(/^\/+|\/+$/g, '')
       var parts = rawPath.split('/').filter(Boolean)
@@ -1359,6 +1372,16 @@
           else el.setAttribute('hidden', '')
         })
       })
+      // Diseño 18-nov: con una sola cabecera, «Comprar paquetes» (arriba y en el menú) dentro de la reserva abre la lista de
+      // paquetes AHÍ MISMO, como hacía el botón «Comprar créditos»: ir a la portada perdía lo que llevaba elegido.
+      document.addEventListener('click', function (e) {
+        var a = e.target && e.target.closest ? e.target.closest('a[data-route="packs"]') : null
+        if (!a || flowType !== 'appointments') return
+        e.preventDefault()
+        if (drawer.classList.contains('open')) closeDrawer()
+        if (typeof el.showCreditPacks === 'function') el.showCreditPacks()
+        else el.dispatchEvent(new CustomEvent('_avq_show_credit_packs', { bubbles: false }))
+      })
       if (navCredits) {
         navCredits.addEventListener('click', function () {
           if (typeof el.showCreditPacks === 'function') {
@@ -1394,6 +1417,11 @@
       // its host element with { name, address, phone, hours }. We read it here
       // and populate the drawer rows. If the event never fires (offline, error),
       // the drawer still renders with the slug-derived name + static defaults.
+      // Diseño 18-nov: el widget avisa si no hay clases agendadas en 30 días; entonces «Clases» se esconde de la cabecera y el menú.
+      el.addEventListener('avoqado:classes-availability', function (e) {
+        if (!e || !e.detail || e.detail.hayClases !== false) return
+        document.querySelectorAll('[data-requires="classes"]').forEach(function (x) { x.setAttribute('hidden', '') })
+      })
       el.addEventListener('avoqado:venue-loaded', function (e) {
         var info = e && e.detail && e.detail.venue
         if (!info) return
@@ -1419,7 +1447,9 @@
         var brand = info.primaryColor
         if (!urlAccent && typeof brand === 'string' && /^(#|rgb|hsl|oklch|color\()/i.test(brand.trim())) {
           var trimmed = brand.trim()
-          document.documentElement.style.setProperty('--accent', trimmed)
+          // La cabecera («Mi cuenta», pestaña activa) usa el MISMO tono que el widget: oscurecido hasta 4.5:1 con texto blanco
+          // (misma regla que `acentoLegible` de src/order/components/theme.ts; diseño 18-nov).
+          document.documentElement.style.setProperty('--accent', acentoLegible(trimmed))
           // Widget reads `accent-color` HTML attribute → maps to --avq-accent
           // CSS token (see App.tsx). Without this line /clases and
           // /appointments ignored the venue admin's primaryColor and used the

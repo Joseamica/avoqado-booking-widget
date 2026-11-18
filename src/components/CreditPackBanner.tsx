@@ -2,6 +2,7 @@ import { h } from 'preact'
 import type { CreditPackPublic } from '../types'
 import type { TFunction } from '../i18n'
 import { Spinner } from './ui/Spinner'
+import { precio } from '../lib/precio'
 
 interface CreditPackBannerProps {
   packs: CreditPackPublic[]
@@ -60,7 +61,7 @@ export function CreditPackBanner({ packs, onBuy, buyingPackId, t }: CreditPackBa
                   whiteSpace: 'nowrap', flexShrink: 0,
                   fontVariantNumeric: 'tabular-nums',
                 }}>
-                  ${Number(pack.price).toFixed(0)}
+                  {precio(Number(pack.price), pack.currency)}
                   <span style={{
                     fontSize: '11px', color: 'var(--avq-muted-fg, #6b7280)',
                     fontWeight: '500', marginLeft: '4px',

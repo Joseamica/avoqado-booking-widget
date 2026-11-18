@@ -8,7 +8,7 @@ vi.mock('../api', async () => {
 })
 import { OrderApp } from './OrderApp'
 import { infoOf, makeStore, menuOf, product, withStore } from './testKit'
-import { STORE_CSS, T, accentFor, initialsOf, loadStoreFonts } from './theme'
+import { STORE_CSS, T, accentFor, acentoLegible, initialsOf, loadStoreFonts } from './theme'
 
 const fontLinks = () => document.head.querySelectorAll('link[data-avq-store-fonts]')
 beforeEach(() => { sessionStorage.clear(); localStorage.clear(); fontLinks().forEach(l => l.remove()) })
@@ -343,5 +343,31 @@ describe('OrderApp con la hoja de la tienda', () => {
     expect(accentOf(null, '#1E3A8A')).toBe('#1E3A8A')
     expect(accentOf(null)).toBe('#000000')
     expect(accentOf('#FFD600', '#1E3A8A')).toBe('#000000')
+  })
+})
+
+describe('acentoLegible (reservas): el mismo tono, oscurecido hasta 4.5:1 con texto blanco', () => {
+  const contraste = (hex: string) => {
+    const lum = (h: string) => {
+      const [r, g, b] = [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16) / 255)
+        .map(c => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4))
+      return 0.2126 * r + 0.7152 * g + 0.0722 * b
+    }
+    return 1.05 / (lum(hex) + 0.05)
+  }
+  it('el rosa de Mindform (2.3:1) sale más oscuro, del mismo tono, y ya da 4.5:1', () => {
+    const c = acentoLegible('#cda2a2')
+    expect(contraste(c)).toBeGreaterThanOrEqual(4.5)
+    const [r, g, b] = [1, 3, 5].map(i => parseInt(c.slice(i, i + 2), 16))
+    expect(r).toBeGreaterThan(g) // sigue siendo rosa: el rojo manda
+    expect(g).toBe(b)
+  })
+  it('un color que ya se lee se queda igual', () => {
+    expect(acentoLegible('#111827')).toBe('#111827')
+  })
+  it('#rgb corto también, y lo que no es hex se queda como viene', () => {
+    expect(contraste(acentoLegible('#fc0'))).toBeGreaterThanOrEqual(4.5)
+    expect(acentoLegible('rgb(1, 2, 3)')).toBe('rgb(1, 2, 3)')
+    expect(acentoLegible(null)).toBeUndefined()
   })
 })

@@ -11,7 +11,7 @@ import {
   hasServiceStep, hasStaffStep, getStepConfig, resetBooking, showToast,
   creditPacks, customerCredits, selectedCreditBalance, creditPacksLoading, creditPacksLoaded,
   showPortal, portalData, customerToken, customerInfo, setCustomerSession, clearCustomerSession,
-  bookingAccess, comprandoPaquete, epocaDe, entroAqui, tokenParaMandar,
+  bookingAccess, comprandoPaquete, epocaDe, entroAqui, tokenParaMandar, hayClasesProximas,
   flowType, visibleProducts,
   selectedProducts, selectedStaffId, totalDuration, totalPrice, selectedModifiers,
   addSelectedProduct, removeSelectedProduct,
@@ -543,6 +543,24 @@ export function BookingFlow({ props }: BookingFlowProps) {
             },
           },
         }))
+        // Diseño 18-nov: con productos de clase pero ninguna clase agendada en 30 días, «Clases» era un callejón sin salida. Una
+        // consulta (el SERVIDOR ya la topa en 30 días); si falla, se queda como antes (se muestra).
+        hayClasesProximas.value = null
+        if (hasClasses) {
+          const venueDeLaConsulta = props.venue
+          const hoy = new Date().toLocaleDateString('en-CA', { timeZone: info.timezone })
+          Promise.resolve()
+            .then(() => api.getClassSessionsRange(venueDeLaConsulta, { dateFrom: hoy }))
+            .then(res => {
+              if (venueInfo.value?.slug !== venueDeLaConsulta) return
+              const hay = (res?.slots?.length ?? 0) > 0
+              hayClasesProximas.value = hay
+              props.hostElement.dispatchEvent(new CustomEvent('avoqado:classes-availability', {
+                bubbles: true, composed: true, detail: { hayClases: hay },
+              }))
+            })
+            .catch(() => { /* sin dato: «Clases» se queda visible */ })
+        }
         // Load credit packs in background — but ONLY if the venue can actually
         // collect money online. When it can't (no chargeable e-commerce
         // merchant, info.canCharge === false), the pack storefront would just
@@ -1964,14 +1982,15 @@ export function BookingFlow({ props }: BookingFlowProps) {
       <div class="avq-animate-in" key={`${step.value}-${showLanding}`}>
         {/* Reservation hero — wide cover photo above the appointments service
             step, gated by branding.showHeroImage + a configured heroImageUrl. */}
-        {!showLanding && flowType.value === 'appointments' && step.value === config.serviceStep &&
+        {/* Diseño 18-nov: no en el detalle de un servicio (repetía la misma foto encima de una sola línea). */}
+        {!showLanding && flowType.value === 'appointments' && step.value === config.serviceStep && !detailViewProduct &&
           branding.value.showHeroImage && info.heroImageUrl && (
           <ReservationHero imageUrl={info.heroImageUrl} alt={info.name} />
         )}
         {/* Unified landing: two-CTA picker shown only when entering via /<slug>. */}
         {showLanding && flowType.value === 'unified' && (
           <UnifiedLanding
-            products={info.products}
+            products={hayClasesProximas.value === false ? info.products.filter(p => p.type !== 'CLASS') : info.products}
             creditPacks={creditPacks.value}
             buyingPackId={buyingPackId}
             initialTab={landingInitialTab}

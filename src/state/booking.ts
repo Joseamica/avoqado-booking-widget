@@ -78,6 +78,11 @@ export const creditPacksLoading = signal(false)
  *  landing-auto-skip effect distinguish "no packs configured" from "still
  *  loading" — both produce creditPacks.value.length === 0. */
 export const creditPacksLoaded = signal(false)
+/**
+ * Diseño 18-nov: ¿hay clases agendadas en los próximos 30 días? `null` mientras no se sabe (o si falla la consulta: se muestra
+ * «Clases», como antes). `false` esconde «Clases» de la portada y de la cabecera: era un callejón sin salida.
+ */
+export const hayClasesProximas = signal<boolean | null>(null)
 
 // Customer session state (persisted in localStorage)
 export interface CustomerInfo {
