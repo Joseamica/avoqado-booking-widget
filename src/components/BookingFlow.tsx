@@ -11,7 +11,7 @@ import {
   hasServiceStep, hasStaffStep, getStepConfig, resetBooking, showToast,
   creditPacks, customerCredits, selectedCreditBalance, creditPacksLoading, creditPacksLoaded,
   showPortal, portalData, customerToken, customerInfo, setCustomerSession, clearCustomerSession,
-  bookingAccess, comprandoPaquete, epocaDe,
+  bookingAccess, comprandoPaquete, epocaDe, entroAqui, tokenParaMandar,
   flowType, visibleProducts,
   selectedProducts, selectedStaffId, totalDuration, totalPrice, selectedModifiers,
   addSelectedProduct, removeSelectedProduct,
@@ -19,6 +19,10 @@ import {
   branding, DEFAULT_BRANDING,
 } from '../state/booking'
 import { resolveDepositReturn, savePendingReservation, clearPendingReservation, depositCheckoutUrl } from '../lib/depositReturn'
+import { leerSesion, type SesionEmitida } from '../lib/sesionDeCliente'
+
+/** Quién compró el paquete en esta pestaña (para el regreso de Stripe). */
+const COMPRA_DE = 'avq:compraDe'
 import { Button } from './ui/Button'
 import { StepIndicator } from './StepIndicator'
 import { ServiceSelector } from './ServiceSelector'
@@ -182,9 +186,46 @@ export function BookingFlow({ props }: BookingFlowProps) {
   // picker (if layoutConfig) or the form step.
   const [classDetailActive, setClassDetailActive] = useState(false)
   const [buyingPackId, setBuyingPackId] = useState<string | null>(null)
+  // El paquete que espera a que la clienta entre a su cuenta (sin sesión, «Comprar» abre «Entra a tu cuenta»), y su número de intento.
   const [checkoutPackId, setCheckoutPackId] = useState<string | null>(null)
-  const [checkoutPhone, setCheckoutPhone] = useState('')
-  const [checkoutEmail, setCheckoutEmail] = useState('')
+  const intentoDeCompra = useRef(0)
+  // De qué intento es la ventana abierta: sólo se pinta si sigue siendo el vigente, así no reaparece una vieja al volver de «Mi cuenta»
+  // antes de que corra la limpieza (codex r7 #2).
+  const ventanaDelIntento = useRef(-1)
+  // Ya entró desde la ventana: con qué cuenta (se le enseña antes de «Ir al pago»).
+  const [entroComo, setEntroComo] = useState<{ token: string; quien: string } | null>(null)
+  // Cuántas veces cambió de negocio el widget, y si sigue en la página: una compra en vuelo de un negocio que se dejó (aunque ya se
+  // haya vuelto a él) o de un widget retirado no abre su pago (codex r1 #3, r2 #3, r3 #3).
+  const cambiosDeNegocio = useRef(0)
+  const montado = useRef(true)
+  useEffect(() => () => { montado.current = false }, [])
+  // Se cuenta AL PINTAR, no en un efecto: una liga que responde justo después del cambio, antes de que corran los efectos, ya lo ve
+  // (codex r4 #2). Cambiar de negocio también invalida la ventana abierta.
+  const negocioVisto = useRef(props.venue)
+  if (negocioVisto.current !== props.venue) {
+    negocioVisto.current = props.venue
+    cambiosDeNegocio.current++
+    intentoDeCompra.current++
+  }
+  // Abrir «Mi cuenta» también deja atrás la ventana de compra (la tapa): su entrada en vuelo ya no cuenta, y al volver no reaparece una
+  // confirmación vieja (codex r5 #1). Al pintar, como el negocio.
+  const portalVisto = useRef(showPortal.value)
+  if (portalVisto.current !== showPortal.value) {
+    portalVisto.current = showPortal.value
+    if (showPortal.value) intentoDeCompra.current++
+  }
+  useEffect(() => {
+    // Cambió de negocio con «Entra a tu cuenta» abierta: esa ventana ya no es de esta compra.
+    setEntroComo(null)
+    setCheckoutPackId(null)
+  }, [props.venue])
+  useEffect(() => {
+    // Abrió «Mi cuenta»: la ventana de compra queda atrás. Al VOLVER no se limpia nada: un «Comprar» tocado justo al volver se
+    // perdía (codex r6 #3).
+    if (!showPortal.value) return
+    setEntroComo(null)
+    setCheckoutPackId(null)
+  }, [showPortal.value])
   const [pendingFormData, setPendingFormData] = useState<GuestFormData | null>(null)
   const [showCreditSelector, setShowCreditSelector] = useState(false)
   const [showNoCreditsBuyPrompt, setShowNoCreditsBuyPrompt] = useState(false)
@@ -603,11 +644,18 @@ export function BookingFlow({ props }: BookingFlowProps) {
     // Fase 0.B: the balance is account data — only a logged-in customer can
     // poll it. A guest purchase still succeeds server-side (bound by contact);
     // we just can't show the fresh balance without a session.
+    // Codex r5 #5: y sólo si quien vuelve es quien compró (en otra pestaña pudo entrar otra persona mientras pagaba en Stripe). Si no,
+    // un aviso neutro: el SERVIDOR acredita a quien pagó, no a la sesión de ahora.
+    let compra: { venue?: string; cliente?: string | null } | null = null
+    try { compra = JSON.parse(sessionStorage.getItem(COMPRA_DE) ?? 'null'); sessionStorage.removeItem(COMPRA_DE) } catch { /* */ }
     const pollToken = customerToken.value
-    if (!pollToken) {
-      showToast(t('creditPacks.purchaseSuccess'), 'success')
-      return
-    }
+    const esQuienCompro = !!compra?.cliente && compra.venue === props.venue && compra.cliente === (leerSesion(props.venue)?.customer?.id ?? null)
+    // Codex r6 #1: el aviso es siempre el neutro. «Ya están en tu cuenta» se decidía contando compras, y a quien ya tenía otras le
+    // salía antes de que llegara la nueva. El saldo se refresca solo, sin anunciarse.
+    showToast(t('creditPacks.pagoRecibido'), 'success')
+    if (!pollToken || !esQuienCompro) return
+    const vueltaRetorno = cambiosDeNegocio.current
+    const epocaRetorno = epocaDe(props.venue)
 
     // Poll the balance endpoint up to 5 times (every 1.5s) waiting for the webhook to fulfill.
     let attempts = 0
@@ -617,12 +665,12 @@ export function BookingFlow({ props }: BookingFlowProps) {
       attempts++
       try {
         const fresh = await api.getCustomerCredits(props.venue, {}, pollToken)
+        // No publica un saldo en un widget retirado, en otro negocio ni si la sesión cambió aquí o en otra pestaña (r5 #5, r6 #1).
+        if (!montado.current || cambiosDeNegocio.current !== vueltaRetorno || epocaDe(props.venue) !== epocaRetorno
+          || !tokenParaMandar(props.venue, pollToken)) return
         const newCount = fresh.purchases.length
         if (newCount > baselineCount || attempts >= maxAttempts) {
           customerCredits.value = fresh
-          if (newCount > baselineCount) {
-            showToast(t('creditPacks.purchaseSuccess'), 'success')
-          }
           return
         }
       } catch (err: any) {
@@ -1376,29 +1424,79 @@ export function BookingFlow({ props }: BookingFlowProps) {
     } else if (step.value === config.dateStep && hasServiceStep.value) step.value = config.serviceStep
   }
 
-  // Handle buying a credit pack — show checkout form first
+  // Founder 18-nov («A», con WhatsApp, correo o Google): un paquete se compra CON la cuenta, nunca con un teléfono escrito a mano.
+  // Con sesión va directo al pago (el SERVIDOR liga la compra a la sesión, D655); sin sesión, primero «Entra a tu cuenta».
+  // La sesión se mira por NEGOCIO (en una página con dos negocios la «activa» puede ser la del otro; codex r1 #4, r2 #5).
   function handleBuyPack(packId: string) {
-    setCheckoutPackId(packId)
-    setCheckoutPhone('')
-    setCheckoutEmail('')
+    const token = tokenParaMandar(props.venue)
+    if (!token) return pedirCuentaPara(packId)
+    // Eligió otro paquete por otro lado (p. ej. la cabecera de un sitio externo): la confirmación del anterior se cierra (codex r3 #1).
+    cerrarCuenta()
+    void comprarPaquete(packId, token)
   }
 
-  async function handleCheckoutSubmit() {
+  /** «Usar otra cuenta» en la confirmación: la que entró no es ella (p. ej. Google respondió tarde tras cambiar a correo; r3 #2). */
+  function usarOtraCuenta() {
+    const packId = checkoutPackId
+    clearCustomerSession(props.venue)
+    if (packId) pedirCuentaPara(packId)
+  }
+
+  /**
+   * Abre «Entra a tu cuenta» para ESTE paquete. Cada apertura es un intento: cerrar, cambiar de negocio o abrir otra invalida al
+   * anterior, así que una entrada que termina tarde (el código se validaba al cerrar) no se toma (codex r1 #1).
+   */
+  function pedirCuentaPara(packId: string) {
+    intentoDeCompra.current++
+    ventanaDelIntento.current = intentoDeCompra.current
+    setEntroComo(null)
+    setCheckoutPackId(packId)
+  }
+  function cerrarCuenta() {
+    intentoDeCompra.current++
+    setEntroComo(null)
+    setCheckoutPackId(null)
+  }
+
+  /**
+   * Entró desde «Antes de pagar»: la página adopta ESA sesión (r11, sin releer lo guardado) y la ventana dice con qué cuenta entró.
+   * El pago NO arranca solo: lo arranca su toque en «Ir al pago» (rediseño tras Codex r2: una entrada que termina tarde —Google que
+   * responde después de cambiar a correo, un 401 viejo, un widget retirado— ya no puede mandar a pagar). Una entrada de un intento viejo
+   * no se adopta: pudo terminar con otra persona frente a la página (codex r1 #1).
+   */
+  function handleEntroParaComprar(r: SesionEmitida, intento: number) {
+    // Ni de un intento viejo ni de un widget ya retirado de la página: esa entrada pudo terminar con otra persona enfrente (r4 #1).
+    if (!montado.current || intento !== intentoDeCompra.current) return
+    entroAqui(props.venue, r)
+    const c = r.customer
+    setEntroComo({ token: r.token, quien: [c.firstName, c.email ?? c.phone].filter(Boolean).join(' · ') })
+  }
+
+  /** Su toque en «Ir al pago», ya con su cuenta y en ESTA ventana. */
+  function irAlPagoConCuenta() {
+    const packId = checkoutPackId
+    const sesion = entroComo
+    if (!packId || !sesion) return
+    cerrarCuenta()
+    void comprarPaquete(packId, sesion.token)
+  }
+
+  async function comprarPaquete(packId: string, token: string) {
     // D656: el candado no espera al repintado y es de toda la página (dos toques, otro botón u otro portal = un solo pago preparado).
-    if (!checkoutPackId || !checkoutPhone.trim() || comprandoPaquete.has(props.venue)) return
-    comprandoPaquete.add(props.venue)
-    setBuyingPackId(checkoutPackId)
+    // Si ya hay uno en vuelo, se avisa en vez de tragarse el toque en silencio (codex r1 #5, r2 #6).
+    const venue = props.venue
+    if (comprandoPaquete.has(venue)) {
+      showToast(t('creditPacks.otroPagoEnCurso'))
+      return
+    }
+    comprandoPaquete.add(venue)
+    setBuyingPackId(packId)
+    // Desde la cabecera la lista se cierra: que vea que su pago se está preparando, y de qué paquete (codex r4 #4).
+    showToast(t('creditPacks.preparandoPago', { paquete: creditPacks.value.find(p => p.id === packId)?.name ?? '' }))
     // D656: si al responder ya es otra sesión (salió, entró otra), no se abre ese pago. La época no cambia al renovar ni al completar la ficha.
-    const epoca = epocaDe(props.venue)
+    const epoca = epocaDe(venue)
+    const vuelta = cambiosDeNegocio.current
     try {
-      const phone = checkoutPhone.trim()
-      const email = checkoutEmail.trim() || undefined
-
-      // Stash the contact info so we can re-fetch the balance when Stripe redirects back.
-      try {
-        sessionStorage.setItem('avq:pendingCheckout', JSON.stringify({ phone, email, venue: props.venue }))
-      } catch { /* sessionStorage may be blocked in 3rd-party iframes — non-fatal */ }
-
       // Build success URL with a flag so we know we came back from a successful checkout.
       const url = new URL(window.location.href)
       url.searchParams.set('avq_credits', 'success')
@@ -1406,23 +1504,37 @@ export function BookingFlow({ props }: BookingFlowProps) {
       url.searchParams.set('avq_credits', 'cancel')
       const cancelUrl = url.toString()
 
-      // Fase 0.B: with a session the purchase binds to the logged-in customer
-      // (server metadata.customerId), not to the contact typed in the form.
-      const result = await api.createPackCheckout(props.venue, checkoutPackId, {
-        phone,
-        email,
-        successUrl,
-        cancelUrl,
-      }, customerToken.value)
-      if (result.checkoutUrl && epocaDe(props.venue) === epoca) {
-        window.location.href = result.checkoutUrl
+      // Fase 0.B / D655: la compra se liga a la clienta de la sesión (metadata.customerId del SERVIDOR), sin teléfono ni correo.
+      const result = await api.createPackCheckout(venue, packId, { successUrl, cancelUrl }, token)
+      // Sólo si sigue siendo la misma clienta en el mismo negocio: ni otra sesión en esta pestaña (época), ni otra en otra pestaña
+      // del mismo negocio (lo guardado; la renovación sí cuenta como la misma), ni el widget ya cambiado a otro negocio (codex r1 #2, #3).
+      // Ni un widget ya retirado de la página (r2 #3), ni uno que se fue a otro negocio aunque ya haya vuelto (r3 #3).
+      if (result.checkoutUrl && montado.current) {
+        if (cambiosDeNegocio.current === vuelta && epocaDe(venue) === epoca && tokenParaMandar(venue, token)) {
+          // Quién compra, para que al volver de Stripe sólo se anuncie el saldo si sigue siendo ella (codex r5 #5).
+          try { sessionStorage.setItem(COMPRA_DE, JSON.stringify({ venue, cliente: leerSesion(venue)?.customer?.id ?? null })) } catch { /* */ }
+          window.location.href = result.checkoutUrl
+        } else if (cambiosDeNegocio.current === vuelta) {
+          // Ya no es el mismo pago: se dice, para que no se quede esperando una liga que no llegará (r3 #4). En otro negocio no se
+          // dice nada: taparía el «Preparando…» de ESE negocio (r6 #2).
+          showToast(t('creditPacks.pagoYaNoEsTuyo'))
+        }
       }
     } catch (err: any) {
-      if (err?.status === 401) showToast(t('entrar.sesionCerradaSigue'))
-      else showToast(err.data?.message ?? t('errors.generic'), 'error')
+      // La sesión venció: comprar pide cuenta (ya no hay «sigue sin cuenta»; codex r1 #6). No reabre la ventana sola: un 401 tardío
+      // no debe cambiar el paquete de una ventana que la clienta ya abrió para otro (r2 #1); su siguiente «Comprar» la pide.
+      // Un error viejo no se enseña en otro negocio ni en un widget ya retirado (codex r5 #4).
+      // Ni a otra cuenta: si ya entró otra persona, el 401 de la sesión vieja no le dice «tu sesión se cerró» (r6 #2). Pero el 401 de
+      // SU sesión sí: la API la suelta antes de lanzar el error, así que la época cambia; lo que cuenta es que no haya entrado otra
+      // (la página quedó sin sesión; codex r7 #1).
+      if (montado.current && cambiosDeNegocio.current === vuelta) {
+        if (err?.status === 401) { if (!tokenParaMandar(venue)) showToast(t('entrar.sesionCerrada')) }
+        else if (epocaDe(venue) === epoca) showToast(err.data?.message ?? t('errors.generic'), 'error')
+      }
     } finally {
-      comprandoPaquete.delete(props.venue)
-      setBuyingPackId(null)
+      comprandoPaquete.delete(venue)
+      // Sólo quita SU indicador, no el de otro pago que ya empezó (r5 #4).
+      setBuyingPackId(actual => (actual === packId ? null : actual))
     }
   }
 
@@ -2648,15 +2760,19 @@ export function BookingFlow({ props }: BookingFlowProps) {
       </div>
 
       {/* Checkout form overlay — accessible modal */}
-      {checkoutPackId && (
+      {checkoutPackId && ventanaDelIntento.current === intentoDeCompra.current && (
         <CheckoutModal
-          phone={checkoutPhone}
-          email={checkoutEmail}
-          onPhoneChange={setCheckoutPhone}
-          onEmailChange={setCheckoutEmail}
-          onClose={() => setCheckoutPackId(null)}
-          onSubmit={handleCheckoutSubmit}
-          submitting={!!buyingPackId}
+          // Cada intento, su propia ventana: elegir otro paquete no deja en pantalla el código del anterior, que el SERVIDOR ya
+          // consumió (codex r5 #2).
+          key={intentoDeCompra.current}
+          slug={props.venue}
+          negocio={venueInfo.value?.name}
+          onEntro={(intento => (r: SesionEmitida) => handleEntroParaComprar(r, intento))(intentoDeCompra.current)}
+          entroComo={entroComo?.quien ?? null}
+          paquete={creditPacks.value.find(p => p.id === checkoutPackId)?.name ?? null}
+          onIrAlPago={irAlPagoConCuenta}
+          onOtraCuenta={usarOtraCuenta}
+          onClose={cerrarCuenta}
           t={t}
         />
       )}

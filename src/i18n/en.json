@@ -193,7 +193,8 @@
   "actions": {
     "goBack": "Back",
     "retry": "Try Again",
-    "open": "Book Now"
+    "open": "Book Now",
+    "close": "Close"
   },
   "status": {
     "PENDING": "Pending",
@@ -302,9 +303,15 @@
     "purchaseSuccess": "Done! Your credits are in your account.",
     "checkoutCancelled": "Purchase cancelled",
     "checkoutTitle": "Before you pay",
-    "checkoutSubtitle": "We need your phone to link the credits to your account. We'll take you to Stripe's secure checkout.",
+    "checkoutSubtitle": "Your credits stay in your account. Then we take you to Stripe’s secure checkout.",
     "continueToPayment": "Continue to payment",
-    "loginToUseCredits": "Sign in to use your credits."
+    "loginToUseCredits": "Sign in to use your credits.",
+    "otroPagoEnCurso": "A payment is already being prepared on this page. If it doesn’t open, tap “Buy” again in a moment.",
+    "entrasteComo": "Signed in as {{quien}}",
+    "usarOtraCuenta": "Use another account",
+    "pagoYaNoEsTuyo": "The account or business changed while we prepared your payment. Tap “Buy” again.",
+    "preparandoPago": "Preparing your payment for {{paquete}}…",
+    "pagoRecibido": "Done! We received your payment: the credits go to the account you paid with."
   },
   "portal": {
     "title": "My account",
