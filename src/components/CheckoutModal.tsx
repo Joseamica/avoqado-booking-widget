@@ -1,45 +1,35 @@
 import { h } from 'preact'
 import { useEffect, useRef } from 'preact/hooks'
 import type { TFunction } from '../i18n'
-import { Spinner } from './ui/Spinner'
+import type { SesionEmitida } from '../lib/sesionDeCliente'
+import { EntrarConCuenta } from './EntrarConCuenta'
 
 interface CheckoutModalProps {
-  phone: string
-  email: string
-  onPhoneChange: (v: string) => void
-  onEmailChange: (v: string) => void
+  /** Negocio de la tienda: la cuenta es la de ESTE negocio (la misma de «Mi cuenta» y de pedidos.avoqado.io). */
+  slug: string
+  negocio?: string | null
+  /** Ya entró (EntrarConCuenta guardó la sesión): quien la monta adopta esa sesión y sigue al pago. */
+  onEntro: (s: SesionEmitida) => void
   onClose: () => void
-  onSubmit: () => void
-  submitting: boolean
   t: TFunction
 }
 
-const TX = 'background 0.15s var(--avq-ease), border-color 0.15s var(--avq-ease), color 0.15s var(--avq-ease), opacity 0.15s var(--avq-ease)'
-
 /**
- * Stripe-checkout pre-fill modal.
+ * «Antes de pagar» un paquete sin sesión (founder 18-nov, «A» con más de una opción): la clienta entra a su cuenta con WhatsApp,
+ * correo o Google —la misma pantalla de «Mi cuenta» y de pedidos.avoqado.io— y los créditos quedan a su nombre por su sesión.
+ * Antes pedía un teléfono escrito a mano, sin verificar: un error de dedo dejaba los créditos en otra ficha, y quien entró con
+ * Google (sin teléfono) tenía que inventar uno.
  *
- * Accessibility:
- * - role=dialog + aria-modal=true so screen readers know they're trapped in a modal
- * - aria-labelledby points at the title
- * - Autofocuses the phone input on open
- * - Escape closes
- * - Click on backdrop closes (but not click inside the panel)
- * - Focus trap: Tab cycles between modal interactive elements only
+ * Accesibilidad: role=dialog + aria-modal; Escape y el fondo cierran; Tab no sale de la ventana.
  */
-export function CheckoutModal({ phone, email, onPhoneChange, onEmailChange, onClose, onSubmit, submitting, t }: CheckoutModalProps) {
-  const phoneRef = useRef<HTMLInputElement>(null)
+export function CheckoutModal({ slug, negocio, onEntro, onClose, t }: CheckoutModalProps) {
   const panelRef = useRef<HTMLDivElement>(null)
   const titleId = 'avq-checkout-title'
-  const canSubmit = phone.trim().length > 0 && !submitting
 
   useEffect(() => {
-    // Autofocus phone on open
-    phoneRef.current?.focus()
-
-    // Escape closes; Tab traps inside panel
+    panelRef.current?.querySelector<HTMLElement>('button:not([disabled]), input:not([disabled])')?.focus()
     function onKey(e: KeyboardEvent) {
-      if (e.key === 'Escape' && !submitting) {
+      if (e.key === 'Escape') {
         e.stopPropagation()
         onClose()
         return
@@ -63,14 +53,13 @@ export function CheckoutModal({ phone, email, onPhoneChange, onEmailChange, onCl
     }
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
-  }, [onClose, submitting])
+  }, [onClose])
 
   return (
     <div
       role="presentation"
       onClick={(e) => {
-        // Close on backdrop click (not when clicking inside the panel)
-        if (e.target === e.currentTarget && !submitting) onClose()
+        if (e.target === e.currentTarget) onClose()
       }}
       style={{
         position: 'fixed', inset: 0, zIndex: 100,
@@ -87,98 +76,32 @@ export function CheckoutModal({ phone, email, onPhoneChange, onEmailChange, onCl
         aria-modal="true"
         aria-labelledby={titleId}
         style={{
+          position: 'relative',
           background: 'var(--avq-bg, #ffffff)', borderRadius: '18px',
-          padding: '24px', width: '100%', maxWidth: '380px',
+          padding: '24px', width: '100%', maxWidth: '380px', maxHeight: 'calc(100vh - 32px)', overflowY: 'auto',
           boxShadow: '0 20px 50px -12px color-mix(in srgb, #000 30%, transparent)',
           border: '1px solid var(--avq-border, #e8eaed)',
         }}
       >
-        <h3 id={titleId} style={{ fontSize: '17px', fontWeight: '700', color: 'var(--avq-fg, #111827)', margin: '0 0 6px', letterSpacing: '-0.01em' }}>
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label={t('actions.close')}
+          style={{
+            position: 'absolute', top: '12px', right: '12px', width: '32px', height: '32px',
+            borderRadius: '999px', border: 'none', background: 'transparent', cursor: 'pointer',
+            fontSize: '20px', lineHeight: '1', color: 'var(--avq-muted-fg, #6b7280)',
+          }}
+        >
+          <span aria-hidden="true">×</span>
+        </button>
+        <p id={titleId} style={{ fontSize: '12px', fontWeight: '600', color: 'var(--avq-muted-fg, #6b7280)', margin: '0 0 12px', paddingRight: '32px', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
           {t('creditPacks.checkoutTitle')}
-        </h3>
-        <p style={{ fontSize: '13px', color: 'var(--avq-muted-fg, #6b7280)', margin: '0 0 18px', lineHeight: '1.5' }}>
+        </p>
+        <EntrarConCuenta slug={slug} negocio={negocio} t={t} onEntro={onEntro} />
+        <p style={{ fontSize: '12px', color: 'var(--avq-muted-fg, #6b7280)', margin: '16px 0 0', lineHeight: '1.5' }}>
           {t('creditPacks.checkoutSubtitle')}
         </p>
-
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-          <div>
-            <label htmlFor="avq-checkout-phone" style={{ display: 'block', fontSize: '12px', fontWeight: '500', color: 'var(--avq-muted-fg, #6b7280)', marginBottom: '6px' }}>
-              {t('form.phone')} <span style={{ color: 'var(--avq-danger-accent)' }} aria-hidden="true">*</span>
-            </label>
-            <input
-              id="avq-checkout-phone"
-              ref={phoneRef}
-              type="tel"
-              autoComplete="tel"
-              required
-              placeholder={t('form.phonePlaceholder')}
-              value={phone}
-              onInput={(e) => onPhoneChange((e.target as HTMLInputElement).value)}
-              style={{
-                width: '100%', height: '44px', padding: '0 14px', borderRadius: '12px',
-                border: '1.5px solid var(--avq-border, #e8eaed)', fontSize: '14px',
-                background: 'var(--avq-bg, #ffffff)', color: 'var(--avq-fg, #111827)',
-                outline: 'none', boxSizing: 'border-box',
-                transition: TX,
-              }}
-            />
-          </div>
-          <div>
-            <label htmlFor="avq-checkout-email" style={{ display: 'block', fontSize: '12px', fontWeight: '500', color: 'var(--avq-muted-fg, #6b7280)', marginBottom: '6px' }}>
-              {t('form.email')}
-            </label>
-            <input
-              id="avq-checkout-email"
-              type="email"
-              autoComplete="email"
-              placeholder={t('form.emailPlaceholder')}
-              value={email}
-              onInput={(e) => onEmailChange((e.target as HTMLInputElement).value)}
-              style={{
-                width: '100%', height: '44px', padding: '0 14px', borderRadius: '12px',
-                border: '1.5px solid var(--avq-border, #e8eaed)', fontSize: '14px',
-                background: 'var(--avq-bg, #ffffff)', color: 'var(--avq-fg, #111827)',
-                outline: 'none', boxSizing: 'border-box',
-                transition: TX,
-              }}
-            />
-          </div>
-        </div>
-
-        <div style={{ display: 'flex', gap: '10px', marginTop: '20px' }}>
-          <button
-            type="button"
-            onClick={onClose}
-            disabled={submitting}
-            style={{
-              flex: 1, height: '44px', borderRadius: 'var(--avq-btn-radius, 12px)',
-              border: '1.5px solid var(--avq-border, #e8eaed)',
-              background: 'var(--avq-bg, #ffffff)',
-              fontSize: '14px', fontWeight: '500', color: 'var(--avq-fg, #111827)',
-              cursor: submitting ? 'not-allowed' : 'pointer',
-              opacity: submitting ? 0.5 : 1,
-              transition: TX,
-            }}
-          >
-            {t('actions.goBack')}
-          </button>
-          <button
-            type="button"
-            onClick={onSubmit}
-            disabled={!canSubmit}
-            style={{
-              flex: 1, height: '44px', borderRadius: 'var(--avq-btn-radius, 12px)',
-              border: 'none', background: 'var(--avq-accent, #6366f1)',
-              fontSize: '14px', fontWeight: '600', color: '#ffffff',
-              cursor: canSubmit ? 'pointer' : 'not-allowed',
-              opacity: canSubmit ? 1 : 0.5,
-              transition: TX,
-              display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
-            }}
-          >
-            {submitting ? <Spinner size={16} /> : t('creditPacks.continueToPayment')}
-          </button>
-        </div>
       </div>
     </div>
   )

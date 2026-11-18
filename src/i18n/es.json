@@ -193,7 +193,8 @@
   "actions": {
     "goBack": "Atrás",
     "retry": "Intentar de Nuevo",
-    "open": "Reservar"
+    "open": "Reservar",
+    "close": "Cerrar"
   },
   "status": {
     "PENDING": "Pendiente",
@@ -302,7 +303,7 @@
     "purchaseSuccess": "¡Listo! Tus créditos ya están en tu cuenta.",
     "checkoutCancelled": "Cancelaste la compra",
     "checkoutTitle": "Antes de pagar",
-    "checkoutSubtitle": "Necesitamos tu teléfono para asociar los créditos a tu cuenta. Te llevaremos al pago seguro de Stripe.",
+    "checkoutSubtitle": "Tus créditos quedan en tu cuenta. Después te llevamos al pago seguro de Stripe.",
     "continueToPayment": "Ir al pago",
     "loginToUseCredits": "Inicia sesión para usar tus créditos."
   },

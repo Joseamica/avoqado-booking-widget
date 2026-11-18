@@ -13,6 +13,24 @@ vi.mock('../api/booking', () => ({
   getCustomerCredits: vi.fn(), getCustomerPortal: vi.fn(), createPackCheckout: vi.fn(),
   esAndroid: () => false, // D656: «Mi cuenta» lo lee al pintarse
 }))
+// «Entra a tu cuenta» de verdad pide un código o Google; aquí sólo importa que, al entrar, guarde la sesión y avise (como el real).
+vi.mock('./EntrarConCuenta', async () => {
+  const { h: hh } = await import('preact')
+  const ses = await import('../lib/sesionDeCliente')
+  return {
+    EntrarConCuenta: (p: { slug: string; onEntro: (s: any) => void }) => hh('div', null,
+      hh('h2', null, 'Entra a tu cuenta'),
+      hh('button', {
+        type: 'button',
+        onClick: () => {
+          const e = (globalThis as any).__entradaDePrueba
+          ses.guardarSesion(p.slug, { ...e, guardadaEn: Date.now() })
+          p.onEntro(e)
+        },
+      }, 'Simular entrar'),
+    ),
+  }
+})
 const venue: PublicVenueInfo = {
   slug: 'studio-a', name: 'Studio A', type: 'SALON', logo: null, address: null, phone: null,
   timezone: 'America/Mexico_City', canCharge: false,
@@ -772,45 +790,101 @@ describe('BookingFlow deposit return through mounted components', () => {
   })
 })
 
-describe('D656: «Ir al pago» de un paquete (compra de invitada) una sola vez, y sólo para quien sigue en sesión', () => {
-  const PAQUETE = {
-    id: 'pk1', name: 'Mega Pack', price: 900, currency: 'MXN', validityDays: 30,
-    items: [{ id: 'i1', productId: 'service-a', product: { id: 'service-a', name: 'Servicio propio', type: 'APPOINTMENTS_SERVICE', price: 500 }, quantity: 5 }],
-  }
-  const TEL = { tipo: 'PHONE' as const, valor: '+525544422262', metodo: 'WHATSAPP' as const, probadoEn: 1 }
-  const ANA = { id: 'c1', firstName: 'Ana', lastName: null, email: null, phone: '+525544422262' }
-  const BEA = { ...ANA, id: 'c2', firstName: 'Bea', phone: '+525599998888' }
-  const entra = (token: string, customer: typeof ANA) => act(async () => {
-    state.bindCustomerSessionToVenue('studio-a') // lo hace `widget.ts` al montar el elemento
-    guardarSesion('studio-a', { token, customer, contactos: [TEL], guardadaEn: Date.now() })
-    state.entroAqui('studio-a', leerSesion('studio-a')!)
+const PAQUETE = {
+  id: 'pk1', name: 'Mega Pack', price: 900, currency: 'MXN', validityDays: 30,
+  items: [{ id: 'i1', productId: 'service-a', product: { id: 'service-a', name: 'Servicio propio', type: 'APPOINTMENTS_SERVICE', price: 500 }, quantity: 5 }],
+}
+const TEL = { tipo: 'PHONE' as const, valor: '+525544422262', metodo: 'WHATSAPP' as const, probadoEn: 1 }
+const ANA = { id: 'c1', firstName: 'Ana', lastName: null, email: null as string | null, phone: '+525544422262' as string | null }
+const BEA = { ...ANA, id: 'c2', firstName: 'Bea', phone: '+525599998888' }
+const entra = (token: string, customer: typeof ANA) => act(async () => {
+  state.bindCustomerSessionToVenue('studio-a') // lo hace `widget.ts` al montar el elemento
+  guardarSesion('studio-a', { token, customer, contactos: [TEL], guardadaEn: Date.now() })
+  state.entroAqui('studio-a', leerSesion('studio-a')!)
+})
+/** Abre la pestaña de paquetes y devuelve su «Comprar», sin tocarlo. */
+async function abrirPaquetes() {
+  vi.mocked(api.getVenueInfo).mockResolvedValue({ ...venue, canCharge: true })
+  vi.mocked(api.getCreditPacks).mockResolvedValue([PAQUETE] as any)
+  window.history.replaceState({}, '', '/studio-a')
+  render(<BookingFlow props={{ ...props(), flowType: 'unified' }} />); await flush()
+  fireEvent.click(screen.getByRole('tab', { name: 'Comprar paquetes' })); await flush()
+  return screen.getByRole('button', { name: 'Comprar' })
+}
+/** Abre la pestaña de paquetes y toca «Comprar». */
+async function comprar() {
+  fireEvent.click(await abrirPaquetes()); await flush()
+}
+
+describe('Founder 18-nov («A», con WhatsApp, correo o Google): «Comprar» un paquete pide la cuenta, nunca un teléfono escrito', () => {
+  afterEach(() => { cleanup(); borrarSesion('studio-a'); state.clearCustomerSession('studio-a'); delete (globalThis as any).__entradaDePrueba })
+
+  it('sin sesión: «Comprar» enseña «Entra a tu cuenta» y no pide teléfono ni prepara el pago', async () => {
+    await act(async () => { state.bindCustomerSessionToVenue('studio-a') })
+    await comprar()
+    expect(screen.getByRole('dialog')).toBeTruthy()
+    expect(screen.getByRole('heading', { name: 'Entra a tu cuenta' })).toBeTruthy()
+    expect(screen.queryByLabelText(/Teléfono/)).toBeNull()
+    expect(api.createPackCheckout).not.toHaveBeenCalled()
   })
-  async function abrirFormulario() {
-    vi.mocked(api.getVenueInfo).mockResolvedValue({ ...venue, canCharge: true })
-    vi.mocked(api.getCreditPacks).mockResolvedValue([PAQUETE] as any)
-    window.history.replaceState({}, '', '/studio-a')
-    render(<BookingFlow props={{ ...props(), flowType: 'unified' }} />); await flush()
-    fireEvent.click(screen.getByRole('tab', { name: 'Comprar paquetes' })); await flush()
-    fireEvent.click(screen.getByRole('button', { name: 'Comprar' })); await flush()
-    fireEvent.input(screen.getByLabelText(/Teléfono/), { target: { value: '5544422262' } }); await flush()
-    return screen.getByRole('button', { name: 'Ir al pago' })
-  }
+
+  it('sin sesión: entra con Google (sin teléfono) y sigue sola al pago con SU sesión', async () => {
+    await act(async () => { state.bindCustomerSessionToVenue('studio-a') })
+    ;(globalThis as any).__entradaDePrueba = {
+      token: 'tok-G', customer: { ...ANA, phone: null, email: 'ana@gmail.com' },
+      contactos: [{ tipo: 'EMAIL', valor: 'ana@gmail.com', metodo: 'GOOGLE', probadoEn: 1 }],
+    }
+    vi.mocked(api.createPackCheckout).mockResolvedValue({ checkoutUrl: '#pago-de-ana' })
+    await comprar()
+    fireEvent.click(screen.getByRole('button', { name: 'Simular entrar' })); await flush()
+    expect(api.createPackCheckout).toHaveBeenCalledTimes(1)
+    const [, packId, data, token] = vi.mocked(api.createPackCheckout).mock.calls[0]
+    expect(packId).toBe('pk1')
+    expect(token).toBe('tok-G')
+    expect(data.phone).toBeUndefined()
+    expect(window.location.hash).toBe('#pago-de-ana')
+    expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
+  it('sin sesión: cerrar la ventana no prepara nada, y entrar después por otro lado tampoco compra solo', async () => {
+    await act(async () => { state.bindCustomerSessionToVenue('studio-a') })
+    await comprar()
+    fireEvent.click(screen.getByRole('button', { name: 'Cerrar' })); await flush()
+    expect(screen.queryByRole('dialog')).toBeNull()
+    await entra('tok-A', ANA); await flush()
+    expect(api.createPackCheckout).not.toHaveBeenCalled()
+  })
+
+  it('con sesión de Google sin teléfono: «Comprar» va directo al pago, sin ventana', async () => {
+    await entra('tok-G', { ...ANA, phone: null, email: 'ana@gmail.com' })
+    vi.mocked(api.createPackCheckout).mockResolvedValue({ checkoutUrl: '#pago-de-ana' })
+    await comprar()
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(api.createPackCheckout).toHaveBeenCalledTimes(1)
+    expect(vi.mocked(api.createPackCheckout).mock.calls[0][3]).toBe('tok-G')
+    expect(vi.mocked(api.createPackCheckout).mock.calls[0][2].phone).toBeUndefined()
+    expect(window.location.hash).toBe('#pago-de-ana')
+  })
+})
+
+describe('D656: el pago de un paquete se prepara una sola vez, y sólo para quien sigue en sesión', () => {
   afterEach(() => { cleanup(); borrarSesion('studio-a'); state.clearCustomerSession('studio-a') })
 
   it('P3: dos toques antes de que el botón se repinte ⇒ UNA sola petición de pago', async () => {
+    await entra('tok-A', ANA)
     vi.mocked(api.createPackCheckout).mockReturnValue(new Promise(() => {}))
-    const ir = await abrirFormulario()
-    await act(async () => { ir.click(); ir.click() }); await flush()
+    const boton = await abrirPaquetes()
+    await act(async () => { boton.click(); boton.click() }); await flush()
     expect(api.createPackCheckout).toHaveBeenCalledTimes(1)
   })
 
-  it('P3: tras un fallo, el segundo toque sí prepara el pago y la invitada va a pagar', async () => {
+  it('P3: tras un fallo, el segundo toque sí prepara el pago y la clienta va a pagar', async () => {
+    await entra('tok-A', ANA)
     vi.mocked(api.createPackCheckout)
       .mockRejectedValueOnce({ status: 400, data: { message: 'Sin pagos en línea' } })
       .mockResolvedValueOnce({ checkoutUrl: '#pago' })
-    const ir = await abrirFormulario()
-    fireEvent.click(ir); await flush()
-    fireEvent.click(screen.getByRole('button', { name: 'Ir al pago' })); await flush()
+    await comprar()
+    fireEvent.click(screen.getByRole('button', { name: 'Comprar' })); await flush()
     expect(api.createPackCheckout).toHaveBeenCalledTimes(2)
     expect(window.location.hash).toBe('#pago')
   })
@@ -819,7 +893,7 @@ describe('D656: «Ir al pago» de un paquete (compra de invitada) una sola vez, 
     await entra('tok-A', ANA)
     let resolver: (r: { checkoutUrl: string }) => void = () => {}
     vi.mocked(api.createPackCheckout).mockImplementationOnce(() => new Promise(si => { resolver = si }))
-    fireEvent.click(await abrirFormulario()); await flush()
+    await comprar()
     expect(vi.mocked(api.createPackCheckout).mock.calls[0][3]).toBe('tok-A')
     await entra('tok-B', BEA)
     await act(async () => { resolver({ checkoutUrl: '#pago-de-ana' }) }); await flush()
@@ -830,7 +904,7 @@ describe('D656: «Ir al pago» de un paquete (compra de invitada) una sola vez, 
     await entra('tok-A', ANA)
     let resolver: (r: { checkoutUrl: string }) => void = () => {}
     vi.mocked(api.createPackCheckout).mockImplementationOnce(() => new Promise(si => { resolver = si }))
-    fireEvent.click(await abrirFormulario()); await flush()
+    await comprar()
     await entra('tok-A2', ANA)
     await act(async () => { resolver({ checkoutUrl: '#pago-de-ana' }) }); await flush()
     expect(window.location.hash).toBe('#pago-de-ana')
@@ -846,7 +920,7 @@ describe('D656: «Ir al pago» de un paquete (compra de invitada) una sola vez, 
     })
     let resolver: (r: { checkoutUrl: string }) => void = () => {}
     vi.mocked(api.createPackCheckout).mockImplementationOnce(() => new Promise(si => { resolver = si }))
-    fireEvent.click(await abrirFormulario()); await flush()
+    await comprar()
     expect(vi.mocked(api.createPackCheckout).mock.calls[0][3]).toBe('tok-viejo')
     await act(async () => { ficha({ customer: { ...ANA, loyaltyPoints: 0, totalVisits: 0 }, credits: { purchases: [] }, reservations: { upcoming: [], past: [] } }) }); await flush()
     expect(state.customerInfo.value?.id).toBe('c1')
@@ -854,7 +928,7 @@ describe('D656: «Ir al pago» de un paquete (compra de invitada) una sola vez, 
     expect(window.location.hash).toBe('#pago-de-ana')
   })
 
-  it('codex-r1 #1: «Ir al pago» en vuelo y la página abre «Mi cuenta» (evento): su «Comprar» no prepara otro pago', async () => {
+  it('codex-r1 #1: el pago en vuelo y la página abre «Mi cuenta» (evento): su «Comprar» no prepara otro pago', async () => {
     await entra('tok-A', ANA)
     const vacia = { items: [], total: 0, nextCursor: null }
     vi.mocked(api.getCustomerPortal).mockResolvedValue({
@@ -869,8 +943,6 @@ describe('D656: «Ir al pago» de un paquete (compra de invitada) una sola vez, 
     render(<BookingFlow props={widgetProps} />); await flush()
     fireEvent.click(screen.getByRole('tab', { name: 'Comprar paquetes' })); await flush()
     fireEvent.click(screen.getByRole('button', { name: 'Comprar' })); await flush()
-    fireEvent.input(screen.getByLabelText(/Teléfono/), { target: { value: '5544422262' } }); await flush()
-    fireEvent.click(screen.getByRole('button', { name: 'Ir al pago' })); await flush()
     await act(async () => { widgetProps.hostElement!.dispatchEvent(new CustomEvent('_avq_show_account')) }); await flush()
     expect(state.showPortal.value).toBe(true)
     await flush()

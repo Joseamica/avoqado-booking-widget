@@ -193,7 +193,8 @@
   "actions": {
     "goBack": "Back",
     "retry": "Try Again",
-    "open": "Book Now"
+    "open": "Book Now",
+    "close": "Close"
   },
   "status": {
     "PENDING": "Pending",
@@ -302,7 +303,7 @@
     "purchaseSuccess": "Done! Your credits are in your account.",
     "checkoutCancelled": "Purchase cancelled",
     "checkoutTitle": "Before you pay",
-    "checkoutSubtitle": "We need your phone to link the credits to your account. We'll take you to Stripe's secure checkout.",
+    "checkoutSubtitle": "Your credits stay in your account. Then we take you to Stripe’s secure checkout.",
     "continueToPayment": "Continue to payment",
     "loginToUseCredits": "Sign in to use your credits."
   },

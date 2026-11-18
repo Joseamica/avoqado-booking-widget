@@ -11,7 +11,7 @@ import {
   hasServiceStep, hasStaffStep, getStepConfig, resetBooking, showToast,
   creditPacks, customerCredits, selectedCreditBalance, creditPacksLoading, creditPacksLoaded,
   showPortal, portalData, customerToken, customerInfo, setCustomerSession, clearCustomerSession,
-  bookingAccess, comprandoPaquete, epocaDe,
+  bookingAccess, comprandoPaquete, epocaDe, entroAqui,
   flowType, visibleProducts,
   selectedProducts, selectedStaffId, totalDuration, totalPrice, selectedModifiers,
   addSelectedProduct, removeSelectedProduct,
@@ -19,6 +19,7 @@ import {
   branding, DEFAULT_BRANDING,
 } from '../state/booking'
 import { resolveDepositReturn, savePendingReservation, clearPendingReservation, depositCheckoutUrl } from '../lib/depositReturn'
+import type { SesionEmitida } from '../lib/sesionDeCliente'
 import { Button } from './ui/Button'
 import { StepIndicator } from './StepIndicator'
 import { ServiceSelector } from './ServiceSelector'
@@ -182,9 +183,8 @@ export function BookingFlow({ props }: BookingFlowProps) {
   // picker (if layoutConfig) or the form step.
   const [classDetailActive, setClassDetailActive] = useState(false)
   const [buyingPackId, setBuyingPackId] = useState<string | null>(null)
+  // El paquete que espera a que la clienta entre a su cuenta (sin sesión, «Comprar» abre «Entra a tu cuenta»).
   const [checkoutPackId, setCheckoutPackId] = useState<string | null>(null)
-  const [checkoutPhone, setCheckoutPhone] = useState('')
-  const [checkoutEmail, setCheckoutEmail] = useState('')
   const [pendingFormData, setPendingFormData] = useState<GuestFormData | null>(null)
   const [showCreditSelector, setShowCreditSelector] = useState(false)
   const [showNoCreditsBuyPrompt, setShowNoCreditsBuyPrompt] = useState(false)
@@ -1376,29 +1376,30 @@ export function BookingFlow({ props }: BookingFlowProps) {
     } else if (step.value === config.dateStep && hasServiceStep.value) step.value = config.serviceStep
   }
 
-  // Handle buying a credit pack — show checkout form first
+  // Founder 18-nov («A», con WhatsApp, correo o Google): un paquete se compra CON la cuenta, nunca con un teléfono escrito a mano.
+  // Con sesión va directo al pago (el SERVIDOR liga la compra a la sesión, D655); sin sesión, primero «Entra a tu cuenta».
   function handleBuyPack(packId: string) {
-    setCheckoutPackId(packId)
-    setCheckoutPhone('')
-    setCheckoutEmail('')
+    if (customerToken.value) void comprarPaquete(packId)
+    else setCheckoutPackId(packId)
   }
 
-  async function handleCheckoutSubmit() {
+  /** Entró desde «Antes de pagar»: la página adopta ESA sesión (r11, sin releer lo guardado) y sigue sola al pago del paquete. */
+  function handleEntroParaComprar(r: SesionEmitida) {
+    const packId = checkoutPackId
+    entroAqui(props.venue, r)
+    setCheckoutPackId(null)
+    if (packId) void comprarPaquete(packId)
+  }
+
+  async function comprarPaquete(packId: string) {
     // D656: el candado no espera al repintado y es de toda la página (dos toques, otro botón u otro portal = un solo pago preparado).
-    if (!checkoutPackId || !checkoutPhone.trim() || comprandoPaquete.has(props.venue)) return
+    const token = customerToken.value
+    if (!token || comprandoPaquete.has(props.venue)) return
     comprandoPaquete.add(props.venue)
-    setBuyingPackId(checkoutPackId)
+    setBuyingPackId(packId)
     // D656: si al responder ya es otra sesión (salió, entró otra), no se abre ese pago. La época no cambia al renovar ni al completar la ficha.
     const epoca = epocaDe(props.venue)
     try {
-      const phone = checkoutPhone.trim()
-      const email = checkoutEmail.trim() || undefined
-
-      // Stash the contact info so we can re-fetch the balance when Stripe redirects back.
-      try {
-        sessionStorage.setItem('avq:pendingCheckout', JSON.stringify({ phone, email, venue: props.venue }))
-      } catch { /* sessionStorage may be blocked in 3rd-party iframes — non-fatal */ }
-
       // Build success URL with a flag so we know we came back from a successful checkout.
       const url = new URL(window.location.href)
       url.searchParams.set('avq_credits', 'success')
@@ -1406,14 +1407,8 @@ export function BookingFlow({ props }: BookingFlowProps) {
       url.searchParams.set('avq_credits', 'cancel')
       const cancelUrl = url.toString()
 
-      // Fase 0.B: with a session the purchase binds to the logged-in customer
-      // (server metadata.customerId), not to the contact typed in the form.
-      const result = await api.createPackCheckout(props.venue, checkoutPackId, {
-        phone,
-        email,
-        successUrl,
-        cancelUrl,
-      }, customerToken.value)
+      // Fase 0.B / D655: la compra se liga a la clienta de la sesión (metadata.customerId del SERVIDOR), sin teléfono ni correo.
+      const result = await api.createPackCheckout(props.venue, packId, { successUrl, cancelUrl }, token)
       if (result.checkoutUrl && epocaDe(props.venue) === epoca) {
         window.location.href = result.checkoutUrl
       }
@@ -2650,13 +2645,10 @@ export function BookingFlow({ props }: BookingFlowProps) {
       {/* Checkout form overlay — accessible modal */}
       {checkoutPackId && (
         <CheckoutModal
-          phone={checkoutPhone}
-          email={checkoutEmail}
-          onPhoneChange={setCheckoutPhone}
-          onEmailChange={setCheckoutEmail}
+          slug={props.venue}
+          negocio={venueInfo.value?.name}
+          onEntro={handleEntroParaComprar}
           onClose={() => setCheckoutPackId(null)}
-          onSubmit={handleCheckoutSubmit}
-          submitting={!!buyingPackId}
           t={t}
         />
       )}
