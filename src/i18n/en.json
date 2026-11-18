@@ -310,7 +310,8 @@
     "entrasteComo": "Signed in as {{quien}}",
     "usarOtraCuenta": "Use another account",
     "pagoYaNoEsTuyo": "The account or business changed while we prepared your payment. Tap “Buy” again.",
-    "preparandoPago": "Preparing your payment for {{paquete}}…"
+    "preparandoPago": "Preparing your payment for {{paquete}}…",
+    "pagoRecibido": "Done! We received your payment: the credits go to the account you paid with."
   },
   "portal": {
     "title": "My account",

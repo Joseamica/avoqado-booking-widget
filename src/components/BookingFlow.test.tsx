@@ -243,6 +243,7 @@ describe('BookingFlow booking repair', () => {
     state.entroAqui('studio-a', leerSesion('studio-a')!)
     vi.mocked(api.getCustomerPortal).mockReturnValue(new Promise(() => {}))
     vi.mocked(api.getCustomerCredits).mockRejectedValue(Object.assign(new Error('x'), { status: 401, data: { message: 'x' }, enviado: 'tok-ana' }))
+    sessionStorage.setItem('avq:compraDe', JSON.stringify({ venue: 'studio-a', cliente: 'c1' })) // ella compró (codex r5 #5)
     window.history.replaceState({}, '', '/studio-a/appointments?avq_credits=success')
     render(<BookingFlow props={props()} />); await flush()
     await advance(10000); await flush()
@@ -1104,6 +1105,69 @@ describe('Codex r1 (paquete con cuenta): la ventana y el pago no se cruzan con o
     vi.mocked(api.createPackCheckout).mockReturnValue(new Promise(() => {}))
     await comprar()
     expect(state.toastMessage.value?.text).toBe('Preparando tu pago de Mega Pack…')
+  })
+
+  it('r5 #1: abre «Mi cuenta» mientras se valida su código ⇒ esa entrada no cuenta y al volver no hay confirmación vieja', async () => {
+    await act(async () => { state.bindCustomerSessionToVenue('studio-a') })
+    await comprar()
+    const entradaVieja = (globalThis as any).__onEntro
+    await act(async () => { state.showPortal.value = true }); await flush()
+    await act(async () => {
+      guardarSesion('studio-a', { ...ENTRADA_G, guardadaEn: Date.now() } as any)
+      entradaVieja(ENTRADA_G)
+    }); await flush()
+    expect(state.customerToken.value).toBeNull()
+    await act(async () => { state.showPortal.value = false }); await flush()
+    expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
+  it('r5 #2: elegir otro paquete con la ventana abierta la abre de nuevo, en limpio (no conserva el código anterior)', async () => {
+    await act(async () => { state.bindCustomerSessionToVenue('studio-a') })
+    vi.mocked(api.getVenueInfo).mockResolvedValue({ ...venue, canCharge: true })
+    vi.mocked(api.getCreditPacks).mockResolvedValue([PAQUETE, { ...PAQUETE, id: 'pk2', name: 'Mini Pack' }] as any)
+    window.history.replaceState({}, '', '/studio-a')
+    render(<BookingFlow props={{ ...props(), flowType: 'unified' }} />); await flush()
+    fireEvent.click(screen.getByRole('tab', { name: 'Comprar paquetes' })); await flush()
+    fireEvent.click(screen.getAllByRole('button', { name: 'Comprar' })[0]); await flush()
+    const primera = screen.getByRole('heading', { name: 'Entra a tu cuenta' })
+    fireEvent.click(screen.getAllByRole('button', { name: 'Comprar' })[1]); await flush()
+    expect(screen.getByRole('heading', { name: 'Entra a tu cuenta' })).not.toBe(primera) // otra ventana, no la misma con su estado
+  })
+
+  it('r5 #3: el reloj de «Preparando…» no borra el aviso del 401 que llegó después', async () => {
+    await entra('tok-A', ANA)
+    let rechazar: (e: unknown) => void = () => {}
+    vi.mocked(api.createPackCheckout).mockImplementationOnce(() => new Promise((_, no) => { rechazar = no }))
+    await comprar()
+    await advance(3990)
+    await act(async () => { rechazar({ status: 401 }) }); await flush()
+    await advance(20); await flush()
+    expect(state.toastMessage.value?.text).toBe('Tu sesión se cerró. Entra otra vez.')
+  })
+
+  it('r5 #4: el error de un pago de A no se enseña tras cambiar a B', async () => {
+    await entra('tok-A', ANA)
+    let rechazar: (e: unknown) => void = () => {}
+    vi.mocked(api.createPackCheckout).mockImplementationOnce(() => new Promise((_, no) => { rechazar = no }))
+    vi.mocked(api.getVenueInfo).mockResolvedValue({ ...venue, canCharge: true })
+    vi.mocked(api.getCreditPacks).mockResolvedValue([PAQUETE] as any)
+    window.history.replaceState({}, '', '/studio-a')
+    const { rerender } = render(<BookingFlow props={{ ...props(), flowType: 'unified' }} />); await flush()
+    fireEvent.click(screen.getByRole('tab', { name: 'Comprar paquetes' })); await flush()
+    fireEvent.click(screen.getByRole('button', { name: 'Comprar' })); await flush()
+    rerender(<BookingFlow props={{ ...props('studio-b'), flowType: 'unified' }} />); await flush()
+    state.toastMessage.value = null
+    await act(async () => { rechazar({ status: 401 }) }); await flush()
+    expect(state.toastMessage.value).toBeNull()
+  })
+
+  it('r5 #5: vuelve de Stripe y en la pestaña ya es OTRA cuenta ⇒ aviso neutro, sin consultar ni anunciar saldo', async () => {
+    sessionStorage.setItem('avq:compraDe', JSON.stringify({ venue: 'studio-a', cliente: 'c1' })) // pagó Ana
+    await entra('tok-B', BEA) // al volver, la pestaña es de Bea
+    window.history.replaceState({}, '', '/studio-a?avq_credits=success')
+    render(<BookingFlow props={{ ...props(), flowType: 'unified' }} />); await flush()
+    expect(api.getCustomerCredits).not.toHaveBeenCalled()
+    expect(state.toastMessage.value?.text).toBe('¡Listo! Recibimos tu pago: los créditos quedan en la cuenta con la que pagaste.')
   })
 
   it('r2 #6: con un pago de la página en vuelo, otro «Comprar» avisa en vez de tragarse el toque', async () => {

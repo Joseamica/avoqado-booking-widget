@@ -310,7 +310,8 @@
     "entrasteComo": "Entraste como {{quien}}",
     "usarOtraCuenta": "Usar otra cuenta",
     "pagoYaNoEsTuyo": "Cambió la cuenta o el negocio mientras preparábamos tu pago. Vuelve a tocar «Comprar».",
-    "preparandoPago": "Preparando tu pago de {{paquete}}…"
+    "preparandoPago": "Preparando tu pago de {{paquete}}…",
+    "pagoRecibido": "¡Listo! Recibimos tu pago: los créditos quedan en la cuenta con la que pagaste."
   },
   "portal": {
     "title": "Mi cuenta",

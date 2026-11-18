@@ -523,6 +523,8 @@ export function resetBooking(venueData: PublicVenueInfo) {
 }
 
 export function showToast(text: string, type: 'success' | 'error' = 'success') {
-  toastMessage.value = { text, type }
-  setTimeout(() => { toastMessage.value = null }, 4000)
+  const aviso = { text, type }
+  toastMessage.value = aviso
+  // Sólo quita SU aviso: el reloj de uno anterior no borra el que llegó después (codex r5 #3, «Preparando…» borraba el del 401).
+  setTimeout(() => { if (toastMessage.value === aviso) toastMessage.value = null }, 4000)
 }
