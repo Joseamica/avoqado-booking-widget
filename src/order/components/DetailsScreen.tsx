@@ -138,7 +138,8 @@ export function DetailsScreen() {
                 <div key={m} class="avq-o-opt">
                   <label class="avq-o-opt__main">
                     <span class="avq-o-opt__mark">
-                      <input class="avq-o-opt__input" type="radio" name={`${id}-pay`} checked={payment === m} onChange={() => elegir(m)} />
+                      {/* Ronda 3 (Minor 4): con «Pedir» en camino no se cambia (su respuesta podría pedir confirmar el medio de antes). */}
+                      <input class="avq-o-opt__input" type="radio" name={`${id}-pay`} checked={payment === m} disabled={busy} onChange={() => elegir(m)} />
                     </span>
                     <span class="avq-o-opt__text">{t(m === 'CARD_ONLINE' ? 'details.payCard' : nadie ? 'details.payCounter' : 'details.payPickup')}</span>
                   </label>

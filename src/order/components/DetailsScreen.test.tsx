@@ -913,6 +913,18 @@ describe('D661: pagar con tarjeta en línea en «Nadie»', () => {
     }
   })
 
+  it('ronda 3 (Minor 4): mientras «Pedir» va en camino, el medio de pago no se puede cambiar (si volviera PRICE_CHANGED, «Confirmar» llevaría el de antes)', async () => {
+    show(NADIE_CARD, slug => conSesion(slug))
+    fireEvent.input(screen.getByLabelText('Nombre'), { target: { value: 'Ana' } })
+    const radio = (name: string) => screen.getByRole('radio', { name }) as HTMLInputElement
+    expect([radio('Pagar ahora con tarjeta').disabled, radio('Pagar en caja').disabled]).toEqual([false, false])
+    vi.mocked(createOrder).mockReturnValueOnce(new Promise(() => {}))
+    await pastGuard()
+    fireEvent.click(pedir())
+    await flush()
+    expect([radio('Pagar ahora con tarjeta').disabled, radio('Pagar en caja').disabled]).toEqual([true, true])
+  })
+
   it('ronda 2 (Ruling 59): «Mi equipo» de sólo tarjeta pasa a «Nadie» sin tarjeta: tras el primer «Confirmar» queda la caja lista, con el carrito', async () => {
     const s = show({ paymentModes: { payAtPickup: false, cardOnline: true } })
     fill()
