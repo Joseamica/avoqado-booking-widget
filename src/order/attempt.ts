@@ -116,5 +116,5 @@ export function settleAttempt(slug: string, abierta?: { trackingToken: string })
     /* sin almacenamiento no hubo intento guardado */
   }
   const compra = key ? compraEnCurso(slug) : null
-  if (compra?.attempt.key === key) guardarCompra(slug, abierta ? { ...compra, trackingToken: abierta.trackingToken } : null)
+  if (compra && compra.attempt.key === key) guardarCompra(slug, abierta ? { ...compra, trackingToken: abierta.trackingToken } : null)
 }
