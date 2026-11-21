@@ -315,7 +315,7 @@
       "sub": {
         "paid": "Pasa por él con tu nombre o tu folio.",
         "paidEta": "Estará listo como a las {{time}}. Pasa por él con tu nombre o tu folio.",
-        "notPickedUp": "Si quieres que te lo devuelvan, habla con {{negocio}}."
+        "notPickedUp": "Si quieres que te devuelvan tu pago, habla con {{negocio}}."
       },
       "bankRelease": "Si viste un cargo, tu banco lo liberará en unos días."
     },

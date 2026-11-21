@@ -40,9 +40,16 @@ export const lateWindowOpen = (r: Tracking) => {
   // Con dinero el servidor lo revive en ~30 s; si en 24 h no lo hizo, ya no se espera más (ni se recuerda en el menú).
   return Date.now() < Date.parse(r.acceptDeadlineAt) + (r.paid ? CANCELLED_PAID_MS : LATE_MONEY_MS)
 }
-/** D661: con la devolución de un «Nadie» con tarjeta en camino tampoco se para (aunque el pedido ya sea final). */
-const done = (r: Tracking) =>
-  isFinalStatus(r.status) && !MONEY_IN_DOUBT.has(r.cardStatus ?? '') && !lateWindowOpen(r) && !(isNadieCard(r) && r.refund?.status === 'PENDING')
+/** D661: la devolución de un «Nadie» con tarjeta va en camino, o ya se hizo y el pedido todavía no cierra «Devuelto» (ronda 1 M3). */
+const refundOpen = (r: Tracking) =>
+  isNadieCard(r) && (r.refund?.status === 'PENDING' || (r.refund?.status === 'DONE' && !r.refundedAt))
+/**
+ * D661: con esa devolución abierta tampoco se para (aunque el pedido ya sea final), pero sólo 2 h desde que esta vista la vio
+ * (`refundSince`; ronda 1 M8): lo que pase después lo trae la relectura al volver a la vista.
+ */
+const done = (r: Tracking, refundSince: number | null) =>
+  isFinalStatus(r.status) && !MONEY_IN_DOUBT.has(r.cardStatus ?? '') && !lateWindowOpen(r)
+  && !(refundOpen(r) && (refundSince == null || Date.now() < refundSince + LATE_MONEY_MS))
 const FOLIO_STEPS = ['order', 'paid', 'ready', 'completed'] as const
 const FOLIO_PAID: ReadonlySet<OnlineOrderStatus> = new Set(['ACCEPTED', 'READY', 'COMPLETED'])
 const FOLIO_VOID: ReadonlySet<OnlineOrderStatus> = new Set(['CANCELLED_BY_CUSTOMER', 'CANCELLED_BY_STAFF', 'REJECTED', 'PAYMENT_NOT_COMPLETED'])
@@ -74,8 +81,9 @@ const Phone = () => (
  * «Pedir algo más». Fase 2 (tarjeta): el borrador «Confirmando tu pago…» (sin folio), el pago no completado, la línea del dinero según
  * `cardStatus`, y el regreso de Stripe: con `?pago=cancelado` primero se avisa al servidor (`abandon-payment`, nunca `cancel`).
  * D661 (tarjeta en «Nadie»): apartado, «Avisando a…»; cobrado, como el folio pagado; luego «no pudo atender», «No lo recogiste»,
- * «Devolviendo…» o «Devuelto», con el estado y el medio de la devolución. Con la devolución en camino sigue consultando, y al volver a
- * la vista relee aunque el pedido ya sea final. «Mi equipo» y el folio pagado en caja no cambian.
+ * «Devolviendo…» o «Devuelto», con el estado y el medio de la devolución (regresada por el banco, en el titular). Con la devolución en
+ * camino sigue consultando hasta 2 h, y al volver a la vista relee aunque el pedido ya sea final. «Mi equipo» y el folio pagado en caja
+ * no cambian.
  */
 export function TrackingScreen() {
   const store = useContext(OrderStoreContext)!
@@ -126,13 +134,16 @@ export function TrackingScreen() {
     // Un solo temporizador: si ya hay uno agendado, se respeta.
     const later = () => { if (!stopped && !finished && !cancelling && !timer) timer = setTimeout(() => void run(), POLL_MS) }
     let lastValid: Tracking | null = null // la última respuesta buena: con ella se vigila el tope aunque las lecturas fallen
+    /** D661 (ronda 1 M8): desde cuándo esta vista ve la devolución abierta; a las 2 h deja de consultar. */
+    let refundSince: number | null = null
     const apply = (r: Tracking) => {
       avisarSiCambio(store.host, store.slug, token, lastValid, r) // W4: «Mi cuenta» se vuelve a leer
       lastValid = r
       setTracking(r)
       setProblem(null)
-      // D661: una relectura al volver a la vista puede traer una devolución en camino: entonces el sondeo se reanuda.
-      finished = done(r)
+      refundSince = refundOpen(r) ? refundSince ?? Date.now() : null
+      // D661: una relectura al volver a la vista puede traer una devolución en camino: entonces el sondeo se reanuda (si no lleva 2 h).
+      finished = done(r, refundSince)
     }
     const vanish = () => {
       finished = true
@@ -146,7 +157,7 @@ export function TrackingScreen() {
       if (stopped || cancelling || document.visibilityState !== 'visible') return
       if (finished && !relee) return
       // El tope de 24 h se evalúa ANTES de cada lectura, con la última respuesta buena: sin red o con 5xx nunca llegaría otra.
-      if (!relee && lastValid && done(lastValid)) { finished = true; return }
+      if (!relee && lastValid && done(lastValid, refundSince)) { finished = true; return }
       // Una consulta vieja sigue en camino (salió antes de un abandono, o la red va lenta): se intenta en el siguiente tick, nunca se
       // deja el sondeo parado (fix ronda 2).
       if (inflight) return later()
@@ -340,6 +351,8 @@ export function TrackingScreen() {
   const nadieHead = (): [string, string | null] | null => {
     if (!nadieCard || folioPaid) return null
     const negocio = { negocio: tracking.venueName }
+    // Ronda 1 I1: el banco regresó la devolución: el negocio todavía se la debe, aunque el pedido ya haya cerrado «Devuelto».
+    if (tracking.refund?.status === 'REVERSED') return [t('tracking.refund.REVERSED', negocio), null]
     if (tracking.refundedAt) return [t('tracking.nadie.head.refunded'), null]
     if (tracking.refund) return [t('tracking.nadie.head.refunding'), null]
     if (tracking.notPickedUpAt) return [t('tracking.nadie.head.notPickedUp'), t('tracking.nadie.sub.notPickedUp', negocio)]
@@ -381,7 +394,9 @@ export function TrackingScreen() {
     if (nadieCard) {
       const rf = tracking.refund
       const negocio = tracking.venueName
-      // D661: la devolución, según sus filas: en camino, hecha o regresada por el banco, y por dónde le llega el dinero.
+      // D661: la devolución, según sus filas: en camino o hecha, y por dónde le llega el dinero. Regresada por el banco ya lo dice el
+      // titular (ronda 1 I1).
+      if (rf?.status === 'REVERSED') return null
       if (rf) return t(`tracking.refund.${rf.status}`, { negocio, medio: t(`tracking.refund.medio.${rf.medio}`, { negocio }) })
       // Apartada: el titular ya dice que se cobra cuando reciban el pedido («cuando el negocio acepte» es de «Mi equipo»).
       if (!closed && (s === 'AUTHORIZED' || s === 'CONFIRMING')) return null
@@ -508,8 +523,9 @@ export function TrackingScreen() {
               <span class="avq-o-ticket__label">{t('tracking.folioLabel')}</span>
               <span class={isFolio ? `avq-o-ticket__n avq-o-ticket__n--folio${tracking.status === 'EXPIRED' ? ' avq-o-ticket__n--void' : ''}` : 'avq-o-ticket__n'}>{tracking.orderNumber}</span>
               {isFolio && shownName && <span class="avq-o-ticket__who">{shownName}</span>}
+              {/* Ronda 1 M6: el de tarjeta de «Nadie» apartado todavía no llegó a ninguna caja: no se habla del mostrador. */}
               {isFolio ? tracking.status === 'PENDING_ACCEPTANCE' && <span class="avq-o-ticket__say">{t('tracking.folio.say')}</span>
-                : toPickUp && <span class="avq-o-ticket__say">{t('tracking.sayAtCounter')}</span>}
+                : toPickUp && !nadieCard && <span class="avq-o-ticket__say">{t('tracking.sayAtCounter')}</span>}
             </div>
             <div class="avq-o-ticket__tear" aria-hidden="true" />
           </>
