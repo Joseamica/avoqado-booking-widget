@@ -179,6 +179,23 @@ describe('ronda 2 #1 (Ruling 54): la compra con tarjeta en curso se comparte ent
     }
   })
 
+  it('ronda 4 (Ruling 54 extendida): «Cerrar sesión» (en la tienda o en reservas) también suelta el intento pendiente de ESTA pestaña; un 401, no', () => {
+    for (const superficie of ['pedidos', 'reservas'] as const) {
+      for (const cuerpo of [tarjeta(), body()]) {
+        localStorage.clear()
+        otraPestana()
+        beginAttempt('flautas', cuerpo, 'tok-A') // su respuesta se perdió: sigue pendiente
+        soltarLaPagina('flautas', superficie, undefined, () => null)
+        expect(pendingAttempt('flautas'), `${superficie} ${cuerpo.paymentMode}`).toBeNull()
+      }
+    }
+    // Un 401 no es salir: el intento espera a que ella entre otra vez (W3-r3) y se queda.
+    otraPestana()
+    const a = beginAttempt('flautas', body(), 'tok-A')!
+    soltarLaPagina('flautas', 'pedidos', 'tok-A', () => null)
+    expect(pendingAttempt('flautas')).toEqual(a)
+  })
+
   it('otro carrito, o pagar en caja: un intento nuevo (la caja nunca se comparte)', () => {
     const a = beginAttempt('flautas', tarjeta())!
     otraPestana()

@@ -2,7 +2,7 @@
 // recarga; mientras no haya respuesta DEFINITIVA del servidor sólo se reintenta ese mismo cuerpo con esa llave. Si no se puede
 // guardar, no se envía: una respuesta perdida + recarga jamás puede duplicar el pedido.
 import type { CreateOrderBody } from './types'
-import { llaveCompraConTarjeta } from '../lib/sesionDeCliente'
+import { llaveCompraConTarjeta, llaveIntentoDePedido } from '../lib/sesionDeCliente'
 
 /**
  * W3-r3: un reintento es REENVIAR LA MISMA PETICIÓN (la regla de Stripe y Square). Con la llave y el cuerpo se guarda, ANTES de mandar,
@@ -17,7 +17,7 @@ export interface PendingAttempt {
 }
 
 const KEY_RE = /^[A-Za-z0-9_-]{32,64}$/
-const storageKey = (slug: string) => `avq_order_attempt:${slug}`
+const storageKey = llaveIntentoDePedido // «Cerrar sesión» lo borra (`soltarLaPagina`, ronda 4)
 
 /**
  * D661 ronda 2 #1 (Ruling 54, enmendada en la ronda 3): la compra con tarjeta en curso de un negocio se comparte entre las pestañas del

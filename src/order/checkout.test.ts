@@ -1439,5 +1439,32 @@ describe('D661: pagar con tarjeta en línea en «Nadie»', () => {
       expect(sent(2).key).not.toBe(sent(0).key)
       expect(sent(2).token).toBe('tok-B')
     })
+
+    it('Ruling 54 extendida: con la respuesta perdida, «Cerrar sesión» suelta el intento de la pestaña: quien entra después no reenvía lo de la otra', async () => {
+      const { store, body } = nadieCard()
+      api.createOrder.mockRejectedValueOnce(offline())
+      await send(store, body)
+      const c = checkoutOf(store)
+      expect(pendingAttempt(store.slug)).not.toBeNull()
+      expect(c.feedback.value).toMatchObject({ kind: 'error', retryable: true }) // «Reintentar»
+      salioEnLaTienda(store)
+      expect(pendingAttempt(store.slug)).toBeNull()
+      // La pantalla ya no ofrece «Reintentar» lo de Ana ni deja «Pedir» bloqueado por eso.
+      expect(c.pending.value).toBe(false)
+      expect(c.feedback.value).toBeNull()
+      // Bea entra en esa pestaña: «Reintentar» ya no manda el cuerpo ni el token de Ana (ni, con tarjeta, la lleva a su página de pago).
+      guardarSesion(store.slug, sesionB() as any)
+      entroEnLaTienda(store, sesionB() as any, null)
+      expect(await retry(store)).toBeNull()
+      expect(api.createOrder).toHaveBeenCalledTimes(1)
+      // Su «Pedir» es SU compra: otra llave, con su sesión.
+      vi.spyOn(nav, 'assign').mockImplementation(() => {})
+      store.quote.value = quoteOf(170) // la tienda vuelve a cotizar al cambiar de sesión
+      api.createOrder.mockResolvedValueOnce(borrador({ trackingToken: 'B'.repeat(32) }))
+      await send(store, buildOrderBody(store, { customer: { name: 'Bea' }, note: null, paymentMode: 'CARD_ONLINE' }))
+      expect(sent(1).key).not.toBe(sent(0).key)
+      expect(sent(1).token).toBe('tok-B')
+      expect(sent(1).body.customer).toEqual({ name: 'Bea' })
+    })
   })
 })

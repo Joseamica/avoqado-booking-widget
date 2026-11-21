@@ -289,11 +289,16 @@ export function entroEnLaTienda(store: OrderStore, r: SesionEmitida, volverA: 'c
   if (volverA) store.go(volverA)
 }
 
-/** W4: «Cerrar sesión» en «Mi cuenta» de la tienda. Salió ella: el carrito no dice «Tu sesión se cerró». */
+/**
+ * W4: «Cerrar sesión» en «Mi cuenta» de la tienda. Salió ella: el carrito no dice «Tu sesión se cerró». Ronda 4: su intento pendiente se fue
+ * con la sesión (`soltarLaPagina`): la pantalla ya no ofrece «Reintentar» lo suyo ni bloquea «Pedir» por él.
+ */
 export function salioEnLaTienda(store: OrderStore): void {
   const c = checkoutOf(store)
   soltarLaPagina(store.slug, 'pedidos', undefined, leerPedidos(store.slug))
   c.sesionCerrada.value = false
+  c.pending.value = !!pendingAttempt(store.slug)
+  c.feedback.value = null
 }
 
 /** ¿Se puede guardar? Sin sessionStorage no hay intento y sin localStorage no hay sesión: pedir código sería en balde. */
