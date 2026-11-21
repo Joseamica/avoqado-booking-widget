@@ -159,16 +159,22 @@ export function DetailsScreen() {
                 </div>
               ))}
             </div>
-            {bloqueo && <p class="avq-o-help">{t(bloqueo)}</p>}
+            {/* D661: en «Nadie» la tarjeta es de su cuenta; sin sesión, «Pedir» la lleva a entrar y la regresa aquí. Ajuste final (Ruling 113): las
+                condiciones de una compra nueva no se dicen con un pedido pendiente (puede ser de otro modo: se resuelve como se mandó). */}
+            {nadie && card && !c.conSesion.value && !pendiente && <p class="avq-o-help">{t('details.cardNeedsAccount')}</p>}
+          </div>
+        )}
+        {/* Ajuste final (Ruling 114): el pedido pendiente y su salida, también sin selector (un solo medio): con la cuenta desactivada no hay
+            «Reintentar» y «Empezar de nuevo» es la única. */}
+        {bloqueo && (
+          <div class="avq-o-field">
+            <p class="avq-o-help">{t(bloqueo)}</p>
             {empezar && <>
               <button type="button" class="avq-o-btn avq-o-btn--quiet" onClick={() => empezarDeNuevo(store)}>{t('details.startOver')}</button>
               {/* Limpieza final (5): si el pendiente ya llegó, empezar de nuevo hace otro (uno de caja no se comparte, R54; uno con tarjeta sólo
                   se suelta con la cuenta desactivada, Ruling 111). */}
               <p class="avq-o-help">{t('details.startOverRepeats')}</p>
             </>}
-            {/* D661: en «Nadie» la tarjeta es de su cuenta; sin sesión, «Pedir» la lleva a entrar y la regresa aquí. Ajuste final (Ruling 113): las
-                condiciones de una compra nueva no se dicen con un pedido pendiente (puede ser de otro modo: se resuelve como se mandó). */}
-            {nadie && card && !c.conSesion.value && !pendiente && <p class="avq-o-help">{t('details.cardNeedsAccount')}</p>}
           </div>
         )}
         <div class="avq-o-privacy">

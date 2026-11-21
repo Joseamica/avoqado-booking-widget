@@ -1125,6 +1125,23 @@ describe('D661: pagar con tarjeta en línea en «Nadie»', () => {
       }
     })
 
+    it('ajuste final (Ruling 114): con sólo caja (sin selector) y la cuenta desactivada, «Empezar de nuevo» se alcanza y suelta el intento', async () => {
+      const s = show({ requiresAcceptance: false, paymentModes: { payAtPickup: true } }, slug => conSesion(slug))
+      expect(screen.queryByRole('radiogroup')).toBeNull()
+      fireEvent.input(screen.getByLabelText('Nombre'), { target: { value: 'Ana' } })
+      vi.mocked(createOrder).mockRejectedValueOnce(new ApiError('Tu cuenta está desactivada.', 401, 'CUSTOMER_INACTIVE'))
+      await pastGuard()
+      fireEvent.click(pedir())
+      await flush()
+      expect(pendingAttempt(s.slug)).not.toBeNull() // retenido, sin «Reintentar»…
+      expect(screen.queryByRole('button', { name: 'Reintentar' })).toBeNull()
+      expect(screen.getByText('Tu pedido sigue en camino: puedes empezar de nuevo.')).toBeTruthy()
+      expect(screen.getByText('Si tu pedido ya llegó, empezar de nuevo puede repetirlo.')).toBeTruthy()
+      fireEvent.click(screen.getByRole('button', { name: 'Empezar de nuevo' })) // …y aun así lo puede soltar
+      expect(pendingAttempt(s.slug)).toBeNull()
+      expect(screen.queryByText('Tu pedido sigue en camino: puedes empezar de nuevo.')).toBeNull()
+    })
+
     it('tras recargar con un intento pendiente, el radio enseña SU medio (el que «Reintentar» manda), aunque sin él saldría otro', () => {
       show(NADIE_CARD, slug => {
         beginAttempt(slug, {
