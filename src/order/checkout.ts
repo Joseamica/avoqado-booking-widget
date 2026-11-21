@@ -14,8 +14,8 @@ import { ApiError, createOrder, quote, verifyOrderingOtp } from './api'
 import { autorizarIntento, beginAttempt, pendingAttempt, reautorizarIntento, settleAttempt, soltarIntento } from './attempt'
 import { desdeUnica, loadSession, samePhone, saveLastOrder, type OrderingSession } from './session'
 import {
-  abrirPagina, alCambiarLaPagina, clienteDelToken, entrarAqui, epocaDe, epocaDelNegocio, fijarPagina, paginaDe, sesionParaMandar, soltarLaPagina,
-  type SesionEmitida,
+  abrirPagina, alCambiarLaPagina, clienteDelToken, entrarAqui, epocaDe, epocaDelNegocio, fijarPagina, paginaDe, salidaDe, sesionParaMandar,
+  soltarLaPagina, type SesionEmitida,
 } from '../lib/sesionDeCliente'
 import { toQuoteItems } from './cart'
 import { expectedTotalFromQuote } from './money'
@@ -56,6 +56,12 @@ export type SubmitResult =
   | { kind: 'cartInvalid'; issues: QuoteIssue[] }
   | { kind: 'storeUnavailable'; status: StoreStatus; reason: StoreReason }
   | { kind: 'error'; message: string; retryable: boolean }
+  /**
+   * Pasada por familias (Ruling 84): la respuesta llegó cuando la sesión que la mandó ya no está en la tienda (salió, entró otra, o la
+   * página ya es de otra clienta). Lo que toca al intento se hizo igual; la pantalla no la pinta: ni Stripe, ni el seguimiento guardado,
+   * ni la pregunta del precio.
+   */
+  | { kind: 'ajena' }
 
 type T = ReturnType<typeof createOrderT>
 
@@ -374,15 +380,38 @@ const sameItems = (a: CreateOrderBody['items'], b: CreateOrderBody['items']) => 
 // Una petición a la vez por negocio (el intento guardado también es por negocio).
 const inflight = new Map<string, Promise<SubmitResult>>()
 
+/**
+ * Ruling 84: la sesión con que sale un pedido: la marca de «Cerrar sesión» del negocio (cambia al salir en cualquier página o pestaña)
+ * y la sesión de la tienda.
+ */
+interface Generacion { salida: string | null; identidad: string | null }
+const generacionDe = (slug: string): Generacion => ({ salida: salidaDe(slug), identidad: paginaDe(slug, 'pedidos')?.identidad ?? null })
+/**
+ * Ruling 84: ¿la respuesta ya es de otra sesión? Sí si salió (aquí, en reservas o en otra pestaña), si entró alguien en la tienda, o si el
+ * pedido (un reintento) salió con una clienta y la tienda ya tiene a OTRA (las dos fichas legibles). Que la tienda se quede sin sesión (un
+ * 401, también el de esta misma respuesta) no la vuelve de otra: se pinta como siempre (W3-r3).
+ */
+function esAjena(slug: string, al: Generacion, token: string | undefined): boolean {
+  const p = paginaDe(slug, 'pedidos')
+  const suya = token ? clienteDelToken(token) : null
+  const deAhora = p && clienteDelToken(p.token)
+  return salidaDe(slug) !== al.salida || (!!p && p.identidad !== al.identidad) || (!!suya && !!deAhora && suya !== deAhora)
+}
+/** Ruling 84: `doSubmit` deja aquí, al llegar la respuesta, si ya es de otra sesión. */
+interface Envio { ajena?: boolean }
+
 export function submitOrder(store: OrderStore, body: CreateOrderBody): Promise<SubmitResult> {
   const running = inflight.get(store.slug)
   if (running) return running
-  const p = doSubmit(store, body).finally(() => inflight.delete(store.slug))
+  const envio: Envio = {}
+  const p = doSubmit(store, body, envio)
+    .then((r): SubmitResult => (envio.ajena ? { kind: 'ajena' } : r))
+    .finally(() => inflight.delete(store.slug))
   inflight.set(store.slug, p)
   return p
 }
 
-async function doSubmit(store: OrderStore, body: CreateOrderBody): Promise<SubmitResult> {
+async function doSubmit(store: OrderStore, body: CreateOrderBody, envio: Envio): Promise<SubmitResult> {
   const { slug } = store
   const t = createOrderT(store.locale)
   const pending = pendingAttempt(slug)
@@ -412,13 +441,18 @@ async function doSubmit(store: OrderStore, body: CreateOrderBody): Promise<Submi
   // W3-r3: un reintento reenvía EXACTAMENTE lo guardado, nunca la sesión de ahora. codex-w3-r3 #1: un intento de antes de este cambio
   // (sin `token`) sale como en producción: «Nadie» y tarjeta sin sesión; «Mi equipo» al recoger, con la de ahora.
   const token = attempt.token !== undefined ? attempt.token ?? undefined : anon || card ? undefined : vista?.token
+  // Ruling 84: la respuesta es de la sesión que la mandó. Si al llegar ya salió, entró otra, o la tienda ya tiene a otra clienta, lo del
+  // intento se hace igual pero nada se pinta (`submitOrder`). Se mira al llegar, antes de lo que la misma respuesta haga con la sesión.
+  const generacion = generacionDe(slug)
 
   let order: CreatedOrder | CreatedCardOrder
   try {
     // W3: la sesión de la página va también en «Nadie» y con tarjeta (c): así el SERVIDOR aplica lo elegido y liga el folio a ella.
     order = await createOrder(slug, attempt.body, { idempotencyKey: attempt.key, token })
+    envio.ajena = esAjena(slug, generacion, token)
     if (typeof order?.trackingToken !== 'string') throw new Error('respuesta sin pedido')
   } catch (e) {
+    envio.ajena ??= esAjena(slug, generacion, token)
     if (!(e instanceof ApiError) || !isDefinitive(e)) {
       // Desenlace desconocido: el intento queda tal cual.
       // 401 CUSTOMER_INACTIVE: volver a verificar no sirve (el servidor contesta lo mismo). El intento NO se resuelve: queda
@@ -508,15 +542,17 @@ async function doSubmit(store: OrderStore, body: CreateOrderBody): Promise<Submi
   }
   // El borrador de tarjeta todavía no tiene folio (nace con el pedido, al confirmarse el pago).
   const orderNumber = 'orderNumber' in order ? order.orderNumber : ''
+  // Ruling 84: de otra sesión, ni su seguimiento se guarda en este navegador, ni se avisa, ni se abre su página de pago.
+  const mia = !envio.ajena
   // Primero el pedido guardado y luego borrar el intento: si algo muere en medio, el reintento recupera el mismo pedido.
-  saveLastOrder(slug, { trackingToken: order.trackingToken, orderNumber, ...(anon ? { name: attempt.body.customer.name } : {}) })
+  if (mia) saveLastOrder(slug, { trackingToken: order.trackingToken, orderNumber, ...(anon ? { name: attempt.body.customer.name } : {}) })
   // Stripe sólo con un borrador que espera el pago y su liga: una repetición que ya avanzó o venció va al seguimiento (`send`). Ronda 2 #1:
   // mientras esa página siga abierta, la misma compra en otra pestaña la reusa (attempt.ts).
   const pagina = 'checkoutUrl' in order && order.status === 'AWAITING_PAYMENT' && /^https:\/\//.test(order.checkoutUrl) ? order.checkoutUrl : null
   settleAttempt(slug, pagina ? { trackingToken: order.trackingToken } : undefined)
   // Aquí (una vez por respuesta del servidor) y no en `send`: un doble toque comparte esta petición y no repite el evento.
-  if (store.host) emitOrderCreated(store.host, slug, { trackingToken: order.trackingToken, orderNumber })
-  if (pagina) nav.assign(pagina)
+  if (mia && store.host) emitOrderCreated(store.host, slug, { trackingToken: order.trackingToken, orderNumber })
+  if (mia && pagina) nav.assign(pagina)
   return { kind: 'created', order }
 }
 
