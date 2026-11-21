@@ -190,8 +190,7 @@
     "cardNeedsAccount": "Para pagar en línea, entra a tu cuenta.",
     "payLocked": "Tu pedido sigue en camino: reintenta o empieza de nuevo.",
     "startOver": "Empezar de nuevo",
-    "refundCredit": "Si cancelas o no recoges, te queda como saldo a favor en {{negocio}}.",
-    "refundVenue": "Si cancelas o no recoges, {{negocio}} decide cómo devolverte.",
+    "cardNadieNote": "Se cobra a tu tarjeta cuando {{negocio}} abra tu pedido; si nadie lo abre a tiempo, no se te cobra. Si no lo recoges o cambias de opinión, no se te devuelve solo: lo decide {{negocio}}.",
     "premiosTitulo": "¿Tienes premios en {{venue}}?",
     "premiosTexto": "Entra para usarlos en este pedido.",
     "premiosEntrar": "Entrar"

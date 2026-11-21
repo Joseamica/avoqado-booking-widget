@@ -190,8 +190,7 @@
     "cardNeedsAccount": "To pay online, sign in to your account.",
     "payLocked": "Your order is still on its way: retry or start over.",
     "startOver": "Start over",
-    "refundCredit": "If you cancel or don't pick it up, it stays as store credit at {{negocio}}.",
-    "refundVenue": "If you cancel or don't pick it up, {{negocio}} decides how to refund you.",
+    "cardNadieNote": "Your card is charged when {{negocio}} opens your order; if nobody opens it in time, you aren't charged. If you don't pick it up or change your mind, it isn't refunded automatically: {{negocio}} decides.",
     "premiosTitulo": "Do you have rewards at {{venue}}?",
     "premiosTexto": "Sign in to use them on this order.",
     "premiosEntrar": "Sign in"

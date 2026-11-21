@@ -29,8 +29,8 @@ export interface StoreInfo {
    */
   paymentModes: { payAtPickup: boolean; cardOnline?: boolean }
   /**
-   * D661, aditivo: el SERVIDOR puede devolver como saldo a favor. Con él y una sesión que probó su teléfono, «Pagar ahora» avisa que si
-   * cancela o no recoge le queda saldo a favor; si no, que el negocio decide cómo devolverle. Falta en un servidor viejo: no se promete.
+   * D661, aditivo: el SERVIDOR puede devolver como saldo a favor. La tienda ya no lo usa para prometer nada (pasada por familias, Ruling
+   * 87): devolver, y a dónde, lo decide el negocio, y «No lo recogió» se queda con el cobro.
    */
   storeCredit?: boolean
   minOrderAmount: number

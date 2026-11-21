@@ -3,7 +3,7 @@ import { useContext, useId, useState } from 'preact/hooks'
 import { OrderStoreContext } from '../store'
 import { createOrderT } from '../i18n'
 import { API_BASE } from '../api'
-import { buildOrderBody, checkoutOf, empezarDeNuevo, medioFijo, send, telefonoProbado } from '../checkout'
+import { buildOrderBody, checkoutOf, empezarDeNuevo, medioFijo, send } from '../checkout'
 import { formatMXN } from '../money'
 import { phoneE164 } from '../phone'
 import { CountryPhoneInput } from '../../components/ui/CountryPhoneInput'
@@ -23,7 +23,7 @@ const ENTRY_GUARD_MS = 400
  * que falta y el estado del envío arriba de él. Fase 2: con tarjeta en línea, «¿Cómo quieres pagar?» ofrece «Pagar ahora con tarjeta»
  * (primera y elegida) y, si el negocio lo acepta, «Pagar al recoger»; sólo con tarjeta no hay selector. Con tarjeta no se pide el código.
  * D661: en «Nadie» con tarjeta en línea, «Pagar ahora con tarjeta» (elegida sólo con sesión) o «Pagar en caja»; la tarjeta va con su
- * cuenta (sin sesión, a entrar) y el pie dice antes de pagar qué pasa si cancela o no recoge.
+ * cuenta (sin sesión, a entrar) y el pie dice antes de pagar qué pasa con su dinero.
  */
 export function DetailsScreen() {
   const store = useContext(OrderStoreContext)!
@@ -54,8 +54,6 @@ export function DetailsScreen() {
     set({ payment: m })
     if (c.feedback.value?.kind === 'priceChanged') c.feedback.value = null
   }
-  // D661: el saldo a favor se liga al teléfono que la sesión probó al pagar: sin él (o sin saldo en el servidor) no se promete.
-  const conSaldo = nadie && card && info?.storeCredit === true && !!telefonoProbado(store)
 
   const phone = phoneE164(d.dial, d.national)
   const name = d.name.trim()
@@ -183,8 +181,9 @@ export function DetailsScreen() {
           <span>{n === 1 ? t('details.summaryOne') : t('details.summary', { n })}</span>
           <span>{t('details.taxIncluded')}</span>
         </p>
-        {/* D661: con «Pagar ahora», antes de pagar, qué pasa si cancela o no recoge. */}
-        {nadie && <p class="avq-o-confirm__pay">{card ? t(conSaldo ? 'details.refundCredit' : 'details.refundVenue', { negocio: venue }) : t('details.payAtCounter')}</p>}
+        {/* D661: con «Pagar ahora», antes de pagar, qué pasa con su dinero. Pasada por familias (Ruling 87): sólo lo que la promesa garantiza
+            (se cobra al abrirlo; si nadie lo abre a tiempo, no; sin recoger o arrepentida, no se devuelve solo): nunca saldo a favor ni un destino. */}
+        {nadie && <p class="avq-o-confirm__pay">{card ? t('details.cardNadieNote', { negocio: venue }) : t('details.payAtCounter')}</p>}
         <CheckoutStatus />
         {missing && <p class="avq-o-confirm__msg">{missing}</p>}
         {/* Pulido W4 (1h·3 y 1h·4): el aviso trae sus propios botones («Confirmar» / «Pedir sin beneficios»); el del pie no compite. */}

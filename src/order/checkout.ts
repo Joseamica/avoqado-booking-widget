@@ -270,16 +270,6 @@ function sesionDeLaTienda(store: OrderStore): OrderingSession | null {
   return sesionParaMandar(store.slug, 'pedidos', leerPedidos(store.slug))
 }
 
-/**
- * D661: el teléfono que PROBÓ la sesión de la tienda (el mismo con que el SERVIDOR liga el saldo a favor al pagar); `null` sin sesión, o
- * si sólo probó un correo o Google. Sólo lee: a diferencia de `sesionDeLaTienda`, nunca suelta la página (se llama al pintar).
- */
-export function telefonoProbado(store: OrderStore): string | null {
-  const p = paginaDe(store.slug, 'pedidos')
-  const l = p && loadSession(store.slug)
-  return l && l.identidad === p.identidad ? l.phone : null
-}
-
 /** Un 401 del token con que pidió la tienda: el guardián lo suelta (si es de su sesión, también la renovación) y queda sin sesión. */
 const soltar401 = (store: OrderStore, token: string | undefined) => {
   if (token) soltarLaPagina(store.slug, 'pedidos', token, leerPedidos(store.slug))

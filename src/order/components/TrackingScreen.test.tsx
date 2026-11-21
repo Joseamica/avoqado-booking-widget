@@ -8,6 +8,7 @@ vi.mock('../api', async () => {
 })
 import { ApiError, abandonPayment, cancelOrder, getTracking } from '../api'
 import { TrackingScreen } from './TrackingScreen'
+import { createOrderT } from '../i18n'
 import { STORE_CSS } from './theme'
 import { makeStore, withStore } from './testKit'
 import { saveLastOrder } from '../session'
@@ -1676,6 +1677,17 @@ describe('D661: el seguimiento de un pedido pagado con tarjeta en «Nadie»', ()
     expect(document.body.textContent).not.toMatch(/Entregado|¡Gracias|PAGADO|Pasa por él/)
     expect(progress()).toBeNull()
     expect(screen.getByText('W7K3P')).toBeTruthy()
+  })
+
+  it('pasada por familias (Ruling 87): «No lo recogiste» nunca contradice lo que leyó antes de pagar (el cobro se queda; nada de saldo a favor)', async () => {
+    const leyo = createOrderT('es')('details.cardNadieNote', { negocio: 'Flautas' })
+    expect(leyo).toContain('Si no lo recoges o cambias de opinión, no se te devuelve solo: lo decide Flautas.')
+    expect(leyo).not.toMatch(/saldo a favor/)
+    await show(cobrado({ status: 'COMPLETED', notPickedUpAt: '2026-10-18T10:00:00Z' }))
+    expect(heading()).toBe('No lo recogiste')
+    expect(money()).toBe('Tu pago se cobró.')
+    expect(screen.getByText('Si quieres que te devuelvan tu pago, habla con Flautas.')).toBeTruthy()
+    expect(document.body.textContent).not.toMatch(/saldo a favor|No se te cobró|Te devolvieron|Devuelto/)
   })
 
   it('cancelar sólo si canCancel', async () => {

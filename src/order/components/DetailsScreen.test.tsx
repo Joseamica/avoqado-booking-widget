@@ -698,8 +698,8 @@ describe('D661: pagar con tarjeta en línea en «Nadie»', () => {
   const NADIE_CARD = { requiresAcceptance: false, paymentModes: { payAtPickup: true, cardOnline: true } }
   const TEL: ContactoProbado = { tipo: 'PHONE', valor: '+525544422262', metodo: 'WHATSAPP', probadoEn: 1 }
   const CORREO: ContactoProbado = { tipo: 'EMAIL', valor: 'ana@correo.mx', metodo: 'EMAIL_CODE', probadoEn: 1 }
-  const SALDO = 'Si cancelas o no recoges, te queda como saldo a favor en Flautas.'
-  const DECIDE = 'Si cancelas o no recoges, Flautas decide cómo devolverte.'
+  // Pasada por familias (Ruling 87): lo que de verdad pasa con su dinero, igual para todas; nunca saldo a favor ni a dónde se devuelve.
+  const TERMINOS = 'Se cobra a tu tarjeta cuando Flautas abra tu pedido; si nadie lo abre a tiempo, no se te cobra. Si no lo recoges o cambias de opinión, no se te devuelve solo: lo decide Flautas.'
   const pedir = () => screen.getByRole('button', { name: /^Pedir/ }) as HTMLButtonElement
   /** La sesión única de la página, con lo que probó (la abre la tienda, como al cargar con ella guardada). */
   const conSesion = (slug: string, contactos: ContactoProbado[] = [TEL], token = 'tok-A') => {
@@ -765,33 +765,36 @@ describe('D661: pagar con tarjeta en línea en «Nadie»', () => {
     }
   })
 
-  it('aviso de saldo con teléfono y storeCredit; si no, «{{negocio}} decide cómo devolverte»', () => {
-    const casos: [string, Parameters<typeof infoOf>[0], ((slug: string) => void) | null, string][] = [
-      ['saldo a favor y la sesión probó su teléfono', { storeCredit: true }, slug => conSesion(slug), SALDO],
+  it('pasada por familias (Ruling 87): antes de pagar dice lo que de verdad pasa con su dinero; nunca promete saldo a favor ni a dónde se devuelve', () => {
+    // Antes: con teléfono probado y `storeCredit`, «te queda como saldo a favor»; pero «No lo recogió» se queda con el cobro, y el saldo
+    // sólo va al teléfono que verificó al pagar si sigue siendo suyo. La línea es la misma con o sin teléfono, y con cualquier servidor.
+    const casos: [string, Parameters<typeof infoOf>[0], ((slug: string) => void) | null][] = [
+      ['saldo a favor posible y la sesión probó su teléfono', { storeCredit: true }, slug => conSesion(slug)],
       ['la sesión de pedidos de antes (trae su teléfono probado)', { storeCredit: true }, slug => {
         saveSession(slug, { token: 'tok-viejo', phone: TEL.valor, name: 'Ana', savedAt: Date.now() })
         fijarPagina(slug, 'pedidos', loadSession(slug))
-      }, SALDO],
-      ['sólo probó su correo (o Google): no hay teléfono al que ligar el saldo', { storeCredit: true }, slug => conSesion(slug, [CORREO]), DECIDE],
-      ['el servidor no puede abonar saldo a favor', { storeCredit: false }, slug => conSesion(slug), DECIDE],
-      ['un servidor viejo, sin storeCredit', {}, slug => conSesion(slug), DECIDE],
-      ['sin sesión', { storeCredit: true }, null, DECIDE],
+      }],
+      ['sólo probó su correo (o Google)', { storeCredit: true }, slug => conSesion(slug, [CORREO])],
+      ['el servidor no puede abonar saldo a favor', { storeCredit: false }, slug => conSesion(slug)],
+      ['un servidor viejo, sin storeCredit', {}, slug => conSesion(slug)],
+      ['sin sesión', { storeCredit: true }, null],
     ]
-    for (const [caso, over, sesion, texto] of casos) {
+    const linea = () => document.querySelector('.avq-o-confirm__pay')?.textContent ?? null
+    for (const [caso, over, sesion] of casos) {
       show({ ...NADIE_CARD, ...over }, sesion ?? undefined)
       // Sin sesión la caja sale elegida (Ruling 46): el aviso es de «Pagar ahora».
       fireEvent.click(screen.getByRole('radio', { name: 'Pagar ahora con tarjeta' }))
-      expect(screen.getByText(texto), caso).toBeTruthy()
-      // Con «Pagar en caja» no hay nada pagado que devolver: el pie dice cómo se paga.
+      expect(linea(), caso).toBe(TERMINOS)
+      expect(document.body.textContent, caso).not.toMatch(/saldo a favor|te queda|devuelve a tu|devuelve como|te devolvemos|reembols/i) // ni saldo ni destino
+      // Con «Pagar en caja» no hay nada pagado: el pie dice cómo se paga.
       fireEvent.click(screen.getByRole('radio', { name: 'Pagar en caja' }))
-      expect(screen.queryByText(texto), caso).toBeNull()
-      expect(screen.getByText('Pagas en caja: tarjeta o efectivo.'), caso).toBeTruthy()
+      expect(linea(), caso).toBe('Pagas en caja: tarjeta o efectivo.')
       cleanup()
     }
-    // «Mi equipo» con tarjeta no cambia: ni el aviso de saldo ni el del negocio.
+    // «Mi equipo» con tarjeta no cambia: ni esta línea ni otra de saldo.
     show({ paymentModes: { payAtPickup: true, cardOnline: true }, storeCredit: true }, slug => conSesion(slug))
-    expect(screen.queryByText(SALDO)).toBeNull()
-    expect(screen.queryByText(DECIDE)).toBeNull()
+    expect(screen.queryByText(TERMINOS)).toBeNull()
+    expect(document.body.textContent).not.toMatch(/saldo a favor/)
     expect(screen.getByText('Pagas ahora con tarjeta.')).toBeTruthy()
   })
 
@@ -824,9 +827,9 @@ describe('D661: pagar con tarjeta en línea en «Nadie»', () => {
     const s = await enLaTienda({ storeCredit: true })
     fireEvent.input(screen.getByLabelText('Nombre'), { target: { value: 'Ana López' } })
     fireEvent.click(screen.getByRole('radio', { name: 'Pagar ahora con tarjeta' })) // sin sesión la caja sale elegida (Ruling 46)
-    // Sin sesión lo dice antes del toque, y el aviso de saldo no promete saldo (todavía no hay teléfono probado).
+    // Sin sesión lo dice antes del toque, con lo que pasa con su dinero (Ruling 87).
     expect(screen.getByText('Para pagar en línea, entra a tu cuenta.')).toBeTruthy()
-    expect(screen.getByText(DECIDE)).toBeTruthy()
+    expect(screen.getByText(TERMINOS)).toBeTruthy()
     await tocar(pedir())
     expect(s.screen.value).toBe('entrar')
     expect(createOrder).not.toHaveBeenCalled()
@@ -838,7 +841,7 @@ describe('D661: pagar con tarjeta en línea en «Nadie»', () => {
     expect((screen.getByLabelText('Nombre') as HTMLInputElement).value).toBe('Ana López')
     expect((screen.getByRole('radio', { name: 'Pagar ahora con tarjeta' }) as HTMLInputElement).checked).toBe(true)
     expect(screen.queryByText('Para pagar en línea, entra a tu cuenta.')).toBeNull()
-    expect(screen.getByText(SALDO)).toBeTruthy() // entró con su WhatsApp: ahora sí hay teléfono probado
+    expect(screen.getByText(TERMINOS)).toBeTruthy() // Ruling 87: con su teléfono ya probado, la misma línea (nunca promete saldo)
     vi.mocked(createOrder).mockReturnValueOnce(new Promise(() => {}))
     await tocar(pedir())
     expect(createOrder).toHaveBeenCalledTimes(1)
@@ -1077,6 +1080,6 @@ describe('D661: pagar con tarjeta en línea en «Nadie»', () => {
     expect((screen.getByRole('radio', { name: 'Pay at the counter' }) as HTMLInputElement).checked).toBe(true) // sin sesión (Ruling 46)
     fireEvent.click(screen.getByRole('radio', { name: 'Pay now by card' }))
     expect(screen.getByText('To pay online, sign in to your account.')).toBeTruthy()
-    expect(screen.getByText("If you cancel or don't pick it up, Flautas decides how to refund you.")).toBeTruthy()
+    expect(screen.getByText("Your card is charged when Flautas opens your order; if nobody opens it in time, you aren't charged. If you don't pick it up or change your mind, it isn't refunded automatically: Flautas decides.")).toBeTruthy()
   })
 })
