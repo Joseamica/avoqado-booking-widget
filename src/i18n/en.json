@@ -463,6 +463,7 @@
     "teDevolvieron": "You got a refund",
     "noLoRecogiste": "You didn't pick it up",
     "devolucionRegresada": "Your bank returned the refund: {{negocio}} still owes it to you.",
+    "actualizadoA": "Updated at {{hora}}",
     "elNegocio": "the business",
     "llevas": "{{n}} of {{total}} stamps",
     "premio": "Reward available: {{premio}}",

@@ -1601,6 +1601,87 @@ describe('D661 ronda 2 #2 (Ruling 55): «Mi cuenta» nunca manda a pagar en caja
     expect(screen.getByText('Tu pedido está en curso.')).toBeTruthy()
   })
 
+  describe('pasada por familias (Ruling 85): «Mi cuenta» relee sola una devolución a la vista, como el seguimiento', () => {
+    let visible = true
+    beforeEach(() => {
+      visible = true
+      Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => (visible ? 'visible' : 'hidden') })
+    })
+    afterEach(() => { delete (document as any).visibilityState })
+    const conPedido = (p: any) => PORTAL({ pedidos: { items: [p], total: 1, nextCursor: null } })
+    const pasan = async (min: number) => {
+      await act(async () => { vi.advanceTimersByTime(min * 60_000) })
+      await flushAll()
+    }
+    async function abrirConReloj(primero: any, despues: any) {
+      vi.useFakeTimers()
+      vi.setSystemTime(new Date('2026-11-11T17:00:00.000Z')) // 11:00 en CDMX
+      anaAdentro()
+      vi.mocked(api.getCustomerPortal).mockResolvedValueOnce(conPedido(primero)).mockResolvedValue(conPedido(despues))
+      renderPortal('es', { negocio: 'Flautas' })
+      await flushAll()
+    }
+
+    it('sólo la cuenta a la vista: la devolución pasa de hecha a regresada por el banco y se ve en la siguiente relectura (10 min), con su hora', async () => {
+      const REGRESADA = 'Tu banco regresó la devolución: Flautas todavía te la debe.'
+      for (const [caso, hecha, marca] of [
+        ['«Nadie», «Devuelto»', { estado: 'COMPLETED', pagado: true, tarjeta: 'COBRADA', refundedAt: HOY, refund: { status: 'DONE', medio: 'TARJETA' } }, 'Devuelto'],
+        ['«Mi equipo», «Te hicieron una devolución»', { estado: 'COMPLETED', pagado: true, tarjeta: 'COBRADA', refund: { status: 'DONE', medio: 'TARJETA' } }, 'Te hicieron una devolución'],
+      ] as const) {
+        cuentasNuevasParaPruebas()
+        const antes = conTarjeta(hecha)
+        await abrirConReloj(antes, { ...antes, refund: { status: 'REVERSED', medio: 'TARJETA' } })
+        expect(within(fila()).getByText(marca), caso).toBeTruthy()
+        await pasan(9)
+        expect(api.getCustomerPortal, caso).toHaveBeenCalledTimes(1)
+        await pasan(1)
+        expect(api.getCustomerPortal, caso).toHaveBeenCalledTimes(2)
+        expect(within(fila()).getByText(REGRESADA), caso).toBeTruthy()
+        expect(screen.getByText('Actualizado a las 11:10'), caso).toBeTruthy() // la hora de la última lectura buena
+        cleanup()
+        vi.mocked(api.getCustomerPortal).mockReset()
+        vi.useRealTimers()
+      }
+    })
+
+    it('con la pestaña oculta no relee (al volver, sí); a las 24 h deja de releer sola; sin devolución, nunca', async () => {
+      const devuelto = conTarjeta({ estado: 'COMPLETED', pagado: true, tarjeta: 'COBRADA', refundedAt: HOY, refund: { status: 'DONE', medio: 'TARJETA' } })
+      await abrirConReloj(devuelto, devuelto)
+      visible = false
+      await pasan(30)
+      expect(api.getCustomerPortal).toHaveBeenCalledTimes(1)
+      visible = true
+      await act(async () => { document.dispatchEvent(new Event('visibilitychange')) })
+      await flushAll()
+      expect(api.getCustomerPortal).toHaveBeenCalledTimes(2)
+      for (let i = 0; i < 6 * 24; i++) await pasan(10) // hasta pasar las 24 h desde que la vio
+      const tope = vi.mocked(api.getCustomerPortal).mock.calls.length
+      expect(tope).toBeLessThanOrEqual(2 + 6 * 24)
+      await pasan(60)
+      expect(api.getCustomerPortal).toHaveBeenCalledTimes(tope)
+      cleanup()
+      cuentasNuevasParaPruebas()
+      vi.mocked(api.getCustomerPortal).mockReset()
+      const cobrado = conTarjeta({ estado: 'ACCEPTED', pagado: true, tarjeta: 'COBRADA' })
+      await abrirConReloj(cobrado, cobrado)
+      await pasan(60)
+      expect(api.getCustomerPortal).toHaveBeenCalledTimes(1)
+      expect(screen.queryByText(/^Actualizado a las/)).toBeNull()
+    })
+
+    it('en inglés', async () => {
+      vi.useFakeTimers()
+      vi.setSystemTime(new Date('2026-11-11T17:00:00.000Z'))
+      anaAdentro()
+      vi.mocked(api.getCustomerPortal).mockResolvedValue(conPedido(conTarjeta({
+        estado: 'COMPLETED', pagado: true, tarjeta: 'COBRADA', refundedAt: HOY, refund: { status: 'DONE', medio: 'TARJETA' },
+      })))
+      renderPortal('en', { negocio: 'Flautas' })
+      await flushAll()
+      expect(screen.getByText('Updated at 11:00 AM')).toBeTruthy()
+    })
+  })
+
   it('un servidor viejo (sin `pagoEnLinea` ni las marcas) pinta como hoy: «Por pagar», «Paga en caja…» y «PAGADO»', async () => {
     vi.useFakeTimers({ toFake: ['Date'] })
     vi.setSystemTime(new Date('2026-11-11T17:00:00.000Z'))

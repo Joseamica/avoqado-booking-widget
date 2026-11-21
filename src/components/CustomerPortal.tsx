@@ -15,6 +15,7 @@ import {
 import { cuentaDe, leerCuenta } from '../state/miCuenta'
 import { alCambiarLaPagina, epocaDe, paginaDe, soltarLaPagina, type SesionEmitida, type Superficie } from '../lib/sesionDeCliente'
 import { FOLIO_CAMBIO, trackingUrl, type FolioCambioDetail } from '../order/events'
+import { formatTime } from '../order/hours'
 import { precio } from '../lib/precio'
 
 interface CustomerPortalProps {
@@ -89,6 +90,9 @@ effect(() => {
   if (v && cobroPorNegocio.peek()[v.slug] !== v.canCharge) cobroPorNegocio.value = { ...cobroPorNegocio.peek(), [v.slug]: v.canCharge }
 })
 const FINALES = new Set(['COMPLETED', 'REJECTED', 'EXPIRED', 'CANCELLED_BY_CUSTOMER', 'CANCELLED_BY_STAFF', 'PAYMENT_NOT_COMPLETED'])
+/** Ruling 85: una devolución a la vista se relee cada 10 min, hasta 24 h (los del seguimiento, Ruling 56). */
+const DEVOLUCION_RELEE_MS = 10 * 60_000
+const DEVOLUCION_VIGILA_MS = 24 * 60 * 60_000
 type Lista = 'pedidos' | 'tarjetas' | 'descuentos'
 /** «$1,234.50»: siempre con centavos, como la caja y los mockups (es y en escriben igual el dinero de México). */
 const dinero = (n: number) => '$' + new Intl.NumberFormat('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n)
@@ -209,6 +213,20 @@ export function CustomerPortal({
 
   // Una página que no se pudo traer era de la lectura anterior: con datos nuevos, el aviso se va (sus páginas también).
   useEffect(() => { setFallaMas(null) }, [data])
+
+  // Pasada por familias (Ruling 85): con una devolución a la vista (un pedido con tarjeta en línea), «Mi cuenta» se relee sola cada 10 min
+  // con la pestaña a la vista, hasta 24 h desde que esta vista la vio, como el seguimiento (Ruling 56): el banco puede regresarla. Oculta,
+  // espera a que vuelva (la relectura de siempre al volver retoma la cuenta).
+  const conDevolucion = [...(data?.pedidos?.items ?? []), ...(extra.pedidos?.items ?? [])]
+    .some(p => p.pagoEnLinea === true && !!(p.refundedAt || p.refund || p.refundRequestedAt))
+  const vigilaDesde = useRef<number | null>(null)
+  useEffect(() => {
+    if (!conDevolucion) return void (vigilaDesde.current = null)
+    vigilaDesde.current ??= Date.now()
+    if (Date.now() >= vigilaDesde.current + DEVOLUCION_VIGILA_MS) return
+    const id = setTimeout(() => { if (document.visibilityState === 'visible') void releer.current() }, DEVOLUCION_RELEE_MS)
+    return () => clearTimeout(id)
+  }, [cuenta, conDevolucion])
 
   // D657: sin cobro en línea no se ofrecen paquetes (como BookingFlow y PaymentSelector: sólo `false` apaga; sin el dato, servidor
   // viejo, como antes). Sólo el de ESTE negocio (`cobroPorNegocio`, arriba). Se lee al pintar: si la página relee ESTE negocio,
@@ -1014,6 +1032,10 @@ export function CustomerPortal({
               </button>
             )
           })}
+          {/* Ruling 85: el dinero de una devolución todavía puede cambiar; se dice de cuándo es lo que se ve. */}
+          {conDevolucion && cuenta.leidaEn && (
+            <small style={chico}>{t('cuenta.actualizadoA', { hora: formatTime(new Date(cuenta.leidaEn).toISOString(), timezone, intl === 'en-US' ? 'en' : 'es') })}</small>
+          )}
           {verMasBoton('pedidos', t('cuenta.verMasPedidos'), pedidos.length, data.pedidos?.total)}
         </div>
       )}

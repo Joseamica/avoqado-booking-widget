@@ -463,6 +463,7 @@
     "teDevolvieron": "Te hicieron una devolución",
     "noLoRecogiste": "No lo recogiste",
     "devolucionRegresada": "Tu banco regresó la devolución: {{negocio}} todavía te la debe.",
+    "actualizadoA": "Actualizado a las {{hora}}",
     "elNegocio": "el negocio",
     "llevas": "Llevas {{n}} de {{total}} sellos",
     "premio": "Premio disponible: {{premio}}",
