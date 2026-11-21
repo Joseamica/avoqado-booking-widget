@@ -122,7 +122,14 @@ export function OtpScreen() {
     // codex-r8 H3: la sesión de la página cambió mientras se verificaba (salió, entró otra): no se manda nada.
     if (!vigente) return setCode('')
     // Verificado y aun así el pedido pide código (sesión que no se guardó, 401 otra vez): se dice, no se queda callado.
-    if ((await send(store, body)).kind === 'needsOtp') setError({ text: t('otp.notUsable'), offline: false })
+    const r = await send(store, body)
+    if (r.kind === 'needsOtp') setError({ text: t('otp.notUsable'), offline: false })
+    // Limpieza final (4): la sesión cambió mientras iba (salió en otro lado; Ruling 84): su respuesta ya no se pinta aquí. Se dice con calma
+    // dónde verlo, sin afirmar que llegó, y se sale del código.
+    else if (r.kind === 'ajena') {
+      store.notice.value = t('otp.sesionCambio')
+      store.go('menu')
+    }
   }
 
   if (!phone)
