@@ -335,12 +335,16 @@ export function salioEnLaTienda(store: OrderStore): void {
 /**
  * Pasada por familias (Ruling 83): lo que se manda es SIEMPRE el medio que se ve. Con un intento pendiente, el suyo (lo que «Reintentar»
  * manda; mientras, el radio no se mueve); con «El precio cambió» a la vista, el de su cuerpo (lo que «Confirmar» manda; cambiar el radio
- * quita la pregunta, Ruling 58). `null`: el que elija la persona.
+ * quita la pregunta, Ruling 58). Limpieza final (1): con un envío en camino, el que va (su intento guardado o, antes de guardarlo, lo que
+ * se pidió mandar): «Confirmar» quita la pregunta al salir y `pending` se pone al llegar la respuesta. `null`: el que elija la persona.
  */
 export function medioFijo(store: OrderStore): PaymentMode | null {
   const c = checkoutOf(store)
   const f = c.feedback.value
-  return (c.pending.value ? pendingAttempt(store.slug)?.body.paymentMode : null) ?? (f?.kind === 'priceChanged' ? f.body.paymentMode : null)
+  const guardado = () => pendingAttempt(store.slug)?.body.paymentMode
+  return (c.busy.value ? guardado() ?? c.lastBody.value?.paymentMode : null)
+    ?? (c.pending.value ? guardado() : null)
+    ?? (f?.kind === 'priceChanged' ? f.body.paymentMode : null)
 }
 
 /**

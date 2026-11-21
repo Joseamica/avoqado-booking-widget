@@ -1001,6 +1001,29 @@ describe('D661: pagar con tarjeta en línea en «Nadie»', () => {
       }
     })
 
+    it('limpieza final (1): mientras «Confirmar» va en camino, la pantalla enseña el medio que se está mandando, no el de por omisión', async () => {
+      // El camino de la revisión: «Nadie» sin sesión → «Pagar en caja» (por omisión) → «Pedir» sin red → entra → «Reintentar» →
+      // PRICE_CHANGED → «Confirmar». Con sesión, la tarjeta sería la de por omisión; lo que va es la caja.
+      const s = show(NADIE_CARD)
+      fireEvent.input(screen.getByLabelText('Nombre'), { target: { value: 'Ana' } })
+      expect(visible()).toBe('PAY_AT_PICKUP')
+      vi.mocked(createOrder).mockRejectedValueOnce(sinRed())
+      await pastGuard()
+      fireEvent.click(pedir())
+      await flush()
+      await act(async () => { conSesion(s.slug) }) // entra con su cuenta
+      vi.mocked(createOrder).mockRejectedValueOnce(new ApiError('El precio cambió', 409, 'PRICE_CHANGED', { quote: nuevo }))
+      fireEvent.click(screen.getByRole('button', { name: 'Reintentar' }))
+      await flush()
+      expect(visible()).toBe('PAY_AT_PICKUP')
+      vi.mocked(createOrder).mockReturnValueOnce(new Promise(() => {})) // «Confirmar» se queda en camino
+      fireEvent.click(screen.getByRole('button', { name: 'Confirmar' }))
+      await flush()
+      expect(ultimo().paymentMode).toBe('PAY_AT_PICKUP')
+      expect(visible()).toBe('PAY_AT_PICKUP') // lo que va, no la tarjeta de por omisión con sesión
+      expect(document.querySelector('.avq-o-confirm__pay')?.textContent).toBe('Pagas en caja: tarjeta o efectivo.')
+    })
+
     it('tras recargar con un intento pendiente, el radio enseña SU medio (el que «Reintentar» manda), aunque sin él saldría otro', () => {
       show(NADIE_CARD, slug => {
         beginAttempt(slug, {
