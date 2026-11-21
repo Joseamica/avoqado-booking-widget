@@ -1563,6 +1563,24 @@ describe('D661 ronda 2 #2 (Ruling 55): «Mi cuenta» nunca manda a pagar en caja
     }
   })
 
+  it('ronda 3: con su devolución en la lista (también en «Mi equipo», sin las marcas de «Nadie») no dice «Pagado con tarjeta»: dice cómo va', async () => {
+    const casos: [string, Record<string, unknown>, string][] = [
+      ['hecha', { estado: 'COMPLETED', pagado: true, tarjeta: 'COBRADA', refund: { status: 'DONE', medio: 'TARJETA' } }, 'Te devolvieron tu pago'],
+      ['registrada', { estado: 'CANCELLED_BY_STAFF', pagado: true, tarjeta: 'COBRADA', refund: { status: 'RECORDED', medio: 'EFECTIVO' } }, 'Te devolvieron tu pago'],
+      ['en camino', { estado: 'CANCELLED_BY_STAFF', pagado: true, tarjeta: 'COBRADA', refund: { status: 'PENDING', medio: 'TARJETA' } }, 'Devolviendo…'],
+      ['regresada por el banco', { estado: 'COMPLETED', pagado: true, tarjeta: 'COBRADA', refund: { status: 'REVERSED', medio: 'TARJETA' } },
+        'Tu banco regresó la devolución: Flautas todavía te la debe.'],
+    ]
+    for (const [caso, over, texto] of casos) {
+      cuentasNuevasParaPruebas()
+      await abrir(conTarjeta(over))
+      expect(within(fila()).getByText(texto), caso).toBeTruthy()
+      for (const nunca of ['Pagado con tarjeta', 'PAGADO', 'Entregado', 'Cancelado'])
+        expect(within(fila()).queryByText(nunca), `${caso}: ${nunca}`).toBeNull()
+      cleanup()
+    }
+  })
+
   it('«Tu pedido de hoy» con la tarjeta apartada: «en curso» y la tarjeta, nunca «Paga en caja»', async () => {
     vi.useFakeTimers({ toFake: ['Date'] })
     vi.setSystemTime(new Date('2026-11-11T17:00:00.000Z'))

@@ -659,10 +659,13 @@ export function CustomerPortal({
   const estadoDe = (estado: string, pagado: boolean, enLinea = false) =>
     t(`cuenta.estados.${estado !== 'PENDING_ACCEPTANCE' ? estado : pagado ? 'ACCEPTED' : enLinea ? 'OTRO' : estado}`)
       .replace(/^cuenta\.estados\..*$/, t('cuenta.estados.OTRO'))
+  // Ronda 3: una devolución sin las marcas de «Nadie» (la de «Mi equipo») también manda sobre «Pagado con tarjeta» (su cobro sigue
+  // CAPTURED): en camino, «Devolviendo…»; hecha o registrada, «Te devolvieron tu pago». Y manda sobre «No lo recogiste», como el seguimiento.
   const marcaDe = (p: MiPedido) =>
     p.refund?.status === 'REVERSED' ? t('cuenta.devolucionRegresada', { negocio: negocio || t('cuenta.elNegocio') })
     : p.refundedAt ? t('cuenta.devuelto')
-    : p.refundRequestedAt ? t('cuenta.devolviendo')
+    : p.refundRequestedAt || p.refund?.status === 'PENDING' ? t('cuenta.devolviendo')
+    : p.refund ? t('cuenta.teDevolvieron')
     : p.notPickedUpAt ? t('cuenta.noLoRecogiste')
     : null
   const pedidos = [...(data.pedidos?.items ?? []), ...(extra.pedidos?.items ?? [])]

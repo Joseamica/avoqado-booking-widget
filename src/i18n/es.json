@@ -460,6 +460,7 @@
     "tarjetaApartada": "Tarjeta apartada: se cobra cuando lo abran",
     "devuelto": "Devuelto",
     "devolviendo": "Devolviendo…",
+    "teDevolvieron": "Te devolvieron tu pago",
     "noLoRecogiste": "No lo recogiste",
     "devolucionRegresada": "Tu banco regresó la devolución: {{negocio}} todavía te la debe.",
     "elNegocio": "el negocio",
