@@ -129,9 +129,11 @@ export function CustomerPortal({
   const [showEmailLogin, setShowEmailLogin] = useState(false)
   // W4: las páginas siguientes que ya trajo «Ver más», pegadas a la primera página DE LA QUE SALIERON (`base`): si «Mi cuenta» se relee
   // (aquí, en otra apertura o en otro elemento), los datos son otros y esas páginas ya no cuentan (codex-w4-r1 #3, r2 #1).
-  const [mas, setMas] = useState<{ base: CustomerPortalData | null; listas: Partial<Record<Lista, { items: any[]; nextCursor: string | null }>> }>(
-    { base: null, listas: {} },
-  )
+  // Ajuste final (Ruling 112): `leidaEn`, de cuándo son esas páginas si son de una lectura anterior a `base` (la relectura sola las deja a la
+  // vista mientras trae las nuevas); sin él, de la misma lectura que `base`.
+  const [mas, setMas] = useState<{
+    base: CustomerPortalData | null; listas: Partial<Record<Lista, { items: any[]; nextCursor: string | null }>>; leidaEn?: number
+  }>({ base: null, listas: {} })
   const [trayendo, setTrayendo] = useState<Lista | null>(null)
   const [fallaMas, setFallaMas] = useState<Lista | null>(null)
   // W4: «Guardar en mi cuenta».
@@ -280,15 +282,16 @@ export function CustomerPortal({
    */
   async function releerConMas() {
     const tkn = tokenActual()
-    const antes = cuentaDe(venueSlug, sup).peek().data
+    const { data: antes, leidaEn: leidaAntes } = cuentaDe(venueSlug, sup).peek()
     const paginas = mas.base === antes ? mas.listas : {}
+    const deCuando = mas.leidaEn ?? leidaAntes
     if (!tkn) return
     const nueva = await leerCuenta(venueSlug, sup, tkn)
     const listas = (Object.keys(paginas) as Lista[]).filter(l => paginas[l]?.items.length)
     if (!nueva || !listas.length) return
     const epoca = epocaDe(venueSlug, sup)
     const vigente = () => cuentaDe(venueSlug, sup).peek().data === nueva && epocaDe(venueSlug, sup) === epoca
-    setMas({ base: nueva, listas: paginas })
+    setMas({ base: nueva, listas: paginas, leidaEn: deCuando })
     enVuelo.current.mas = true
     try {
       const frescas: typeof paginas = {}
@@ -337,7 +340,10 @@ export function CustomerPortal({
       if (vigentes() !== base || epocaDe(venueSlug, sup) !== epoca) return
       setMas(m => {
         const listas = m.base === base ? m.listas : {}
-        return { base, listas: { ...listas, [lista]: { items: [...(listas[lista]?.items ?? []), ...r.items], nextCursor: r.nextCursor } } }
+        return {
+          base, listas: { ...listas, [lista]: { items: [...(listas[lista]?.items ?? []), ...r.items], nextCursor: r.nextCursor } },
+          leidaEn: m.base === base ? m.leidaEn : undefined,
+        }
       })
     } catch (err: any) {
       if (vigentes() !== base || epocaDe(venueSlug, sup) !== epoca || err?.data?.code === 'CUSTOMER_SESSION_CHANGED') return
@@ -1084,9 +1090,13 @@ export function CustomerPortal({
               </button>
             )
           })}
-          {/* Ruling 85: el dinero de una devolución todavía puede cambiar; se dice de cuándo es lo que se ve. */}
+          {/* Ruling 85: el dinero de una devolución todavía puede cambiar; se dice de cuándo es lo que se ve. Ruling 112: la hora más vieja de lo
+              que se ve (filas de «Ver más» de antes, mientras llegan las nuevas). */}
           {conDevolucion && cuenta.leidaEn && (
-            <small style={chico}>{t('cuenta.actualizadoA', { hora: formatTime(new Date(cuenta.leidaEn).toISOString(), timezone, intl === 'en-US' ? 'en' : 'es') })}</small>
+            <small style={chico}>{t('cuenta.actualizadoA', {
+              hora: formatTime(new Date(Math.min(cuenta.leidaEn, (extra.pedidos?.items.length && mas.leidaEn) || Infinity)).toISOString(), timezone,
+                intl === 'en-US' ? 'en' : 'es'),
+            })}</small>
           )}
           {verMasBoton('pedidos', t('cuenta.verMasPedidos'), pedidos.length, data.pedidos?.total)}
         </div>

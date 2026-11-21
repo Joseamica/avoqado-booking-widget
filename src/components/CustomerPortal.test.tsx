@@ -1691,6 +1691,38 @@ describe('D661 ronda 2 #2 (Ruling 55): «Mi cuenta» nunca manda a pagar en caja
       expect(api.getCustomerPortal).toHaveBeenCalledTimes(3)
     })
 
+    it('ajuste final (Ruling 112): mientras la página de «Ver más» no llega, sus filas conservan la hora de lo que enseñan', async () => {
+      const REGRESADA = 'Tu banco regresó la devolución: Flautas todavía te la debe.'
+      const primera = Array.from({ length: 20 }, (_, i) => conTarjeta({
+        folio: `W${String(i + 1).padStart(4, '0')}`, trackingToken: `tt-${i + 1}`, estado: 'COMPLETED', pagado: true, tarjeta: 'COBRADA',
+      }))
+      const devuelto = conTarjeta({
+        folio: 'W0021', trackingToken: 'tt-21', estado: 'COMPLETED', pagado: true, tarjeta: 'COBRADA', refundedAt: HOY, refund: { status: 'DONE', medio: 'TARJETA' },
+      })
+      vi.useFakeTimers()
+      vi.setSystemTime(new Date('2026-11-11T17:00:00.000Z'))
+      anaAdentro()
+      vi.mocked(api.getCustomerPortal).mockResolvedValue(PORTAL({ pedidos: { items: primera, total: 21, nextCursor: 'cur-p' } }))
+      let llega!: (v: unknown) => void
+      vi.mocked(api.listarMisPedidos)
+        .mockResolvedValueOnce({ items: [devuelto], total: 21, nextCursor: null })
+        .mockImplementationOnce(() => new Promise(r => { llega = r }) as any)
+      renderPortal('es', { negocio: 'Flautas' })
+      await flushAll()
+      fireEvent.click(screen.getByRole('button', { name: 'Ver más pedidos' }))
+      await flushAll()
+      const fila21 = () => screen.getByText(/^W0021 · \$/).closest('button') as HTMLElement
+      await pasan(10) // la primera página llegó; la de «Ver más» todavía no
+      expect(api.getCustomerPortal).toHaveBeenCalledTimes(2)
+      expect(within(fila21()).getByText('Devuelto')).toBeTruthy() // lo que se sabía a las 11:00…
+      expect(screen.getByText('Actualizado a las 11:00')).toBeTruthy() // …con su hora, no la de la primera página
+      expect(screen.queryByText('Actualizado a las 11:10')).toBeNull()
+      await act(async () => { llega({ items: [{ ...devuelto, refund: { status: 'REVERSED', medio: 'TARJETA' } }], total: 21, nextCursor: null }) })
+      await flushAll()
+      expect(within(fila21()).getByText(REGRESADA)).toBeTruthy()
+      expect(screen.getByText('Actualizado a las 11:10')).toBeTruthy() // ya con sus filas nuevas
+    })
+
     it('con la pestaña oculta no relee (al volver, sí); a las 24 h deja de releer sola; sin devolución, nunca', async () => {
       const devuelto = conTarjeta({ estado: 'COMPLETED', pagado: true, tarjeta: 'COBRADA', refundedAt: HOY, refund: { status: 'DONE', medio: 'TARJETA' } })
       await abrirConReloj(devuelto, devuelto)
