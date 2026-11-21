@@ -1114,3 +1114,85 @@ describe('W3: pedir con beneficios', () => {
     expect(store.screen.value).toBe('tracking')
   })
 })
+
+describe('D661: pagar con tarjeta en línea en «Nadie»', () => {
+  const URL_PAGO = 'https://checkout.stripe.com/c/pay/cs_test_nadie'
+  const nadieCardInfo = { ...info, requiresAcceptance: false, paymentModes: { payAtPickup: true, cardOnline: true } } as StoreInfo
+  /** «Nadie» con tarjeta en línea: con la sesión única de la página (salvo `sesion: false`) y el cuerpo de «Pagar ahora». */
+  function nadieCard(opts: { sesion?: boolean } = {}) {
+    const slug = `nc${++n}`
+    if (opts.sesion !== false) guardarSesion(slug, { ...sesion('tok-A'), guardadaEn: Date.now() } as any)
+    const store = createOrderStore(slug, { locale: 'es' }) // abre la página con lo guardado
+    store.cart.value = [line()]
+    store.quote.value = quoteOf(170)
+    store.info.value = nadieCardInfo
+    store.go('details')
+    checkoutOf(store)
+    const body = buildOrderBody(store, { customer: { name: ' Ana ' }, note: null, paymentMode: 'CARD_ONLINE' })
+    return { store, body }
+  }
+
+  it('tarjeta en «Nadie» manda sesión, CARD_ONLINE, sin teléfono', async () => {
+    const { store, body } = nadieCard()
+    expect(body).toEqual({
+      items: [{ productId: 'p-flauta', quantity: 2, modifiers: [{ modifierId: 'm-salsa', quantity: 1 }] }],
+      paymentMode: 'CARD_ONLINE', expectedTotal: '170.00', customer: { name: 'Ana' }, channel: 'LINK',
+    })
+    const assign = vi.spyOn(nav, 'assign').mockImplementation(() => {})
+    api.createOrder.mockResolvedValueOnce({ trackingToken: 'D'.repeat(32), checkoutUrl: URL_PAGO, status: 'AWAITING_PAYMENT', total: '170.00', replay: false })
+    await send(store, body)
+    expect(api.createOrder).toHaveBeenCalledTimes(1)
+    expect(sent().body).toEqual(body)
+    expect(sent().body.customer.phone).toBeUndefined()
+    expect(sent().token).toBe('tok-A')
+    expect(sent().key).toMatch(KEY_RE)
+    expect(api.requestOrderingOtp).not.toHaveBeenCalled() // sin código de «Mi equipo»: la sesión ya probó quién es
+    expect(assign).toHaveBeenCalledWith(URL_PAGO)
+  })
+
+  it('D661: sin sesión, «Pagar ahora» lleva a entrar sin llamar al servidor ni guardar un intento', async () => {
+    const { store, body } = nadieCard({ sesion: false })
+    expect(await submitOrder(store, body)).toEqual({ kind: 'entrarParaPagar' })
+    expect(api.createOrder).not.toHaveBeenCalled()
+    expect(pendingAttempt(store.slug)).toBeNull()
+    await send(store, body)
+    expect(store.screen.value).toBe('entrar')
+    expect(api.createOrder).not.toHaveBeenCalled()
+    expect(checkoutOf(store).feedback.value).toBeNull() // no es un error: es el paso que falta
+    expect(store.cart.value).toEqual([line()])
+  })
+
+  it('D661: 400 CARD_PAYMENT_NOT_ACCEPTED en «Nadie» ⇒ una línea, «Pagar en caja» elegida, /info al día, el carrito intacto y el intento resuelto', async () => {
+    const { store, body } = nadieCard()
+    api.createOrder.mockRejectedValueOnce(new ApiError('Este negocio no acepta pagar con tarjeta en línea.', 400, 'CARD_PAYMENT_NOT_ACCEPTED'))
+    api.getInfo.mockResolvedValueOnce({ ...nadieCardInfo, paymentModes: { payAtPickup: true, cardOnline: false } })
+    await send(store, body)
+    await flush()
+    const c = checkoutOf(store)
+    expect(c.feedback.value).toEqual({ kind: 'error', message: 'Pagar en línea no está disponible ahora. Puedes pagar en caja.', retryable: false })
+    expect(c.draft.value.payment).toBe('PAY_AT_PICKUP')
+    expect(api.getInfo).toHaveBeenCalledTimes(1)
+    expect(store.info.value?.paymentModes.cardOnline).toBe(false)
+    expect(store.screen.value).toBe('details')
+    expect(store.cart.value).toEqual([line()])
+    expect(pendingAttempt(store.slug)).toBeNull()
+  })
+
+  it('D661: 409 CARD_ONLINE_QUEUE_FULL ⇒ ocupado, se puede pagar en caja; nunca «la tienda no está recibiendo pedidos»', async () => {
+    const { store, body } = nadieCard()
+    api.createOrder.mockRejectedValueOnce(new ApiError('Por ahora hay muchos pagos con tarjeta esperando.', 409, 'CARD_ONLINE_QUEUE_FULL'))
+    api.getInfo.mockResolvedValueOnce(nadieCardInfo)
+    const r = await send(store, body)
+    await flush()
+    expect(r.kind).not.toBe('storeUnavailable')
+    const c = checkoutOf(store)
+    expect(c.feedback.value).toEqual({
+      kind: 'error', message: 'Ahora hay muchos pagos en línea. Puedes pagar en caja o intentar en unos minutos.', retryable: false,
+    })
+    expect(c.draft.value.payment).toBe('PAY_AT_PICKUP')
+    expect(store.info.value?.status).toBe('OPEN')
+    expect(store.screen.value).toBe('details')
+    expect(store.cart.value).toEqual([line()])
+    expect(pendingAttempt(store.slug)).toBeNull()
+  })
+})

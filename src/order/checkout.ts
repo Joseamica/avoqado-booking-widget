@@ -6,6 +6,8 @@
 //   teléfono se reenvía tal cual (mismo cuerpo, misma llave) aunque el negocio ya sea «Mi equipo»; sólo un 401 PHONE_VERIFICATION_REQUIRED
 //   (nunca llegó a crearse) lo suelta y pide los datos de «Mi equipo».
 // - Fase 2: pagar con tarjeta no pide el código ni manda token; el pago en Stripe es la prueba. El modo es el del cuerpo que se manda.
+// - D661: en «Nadie» la tarjeta (el cuerpo de tarjeta SIN teléfono) es de la clienta de la sesión: sin sesión se va a entrar, sin mandar
+//   nada ni guardar un intento. Si la tarjeta ya no se acepta o está llena, se dice en una línea y se deja lista «Pagar en caja».
 import { signal, type Signal } from '@preact/signals'
 import { ApiError, createOrder, quote, verifyOrderingOtp } from './api'
 import { autorizarIntento, beginAttempt, pendingAttempt, reautorizarIntento, settleAttempt } from './attempt'
@@ -30,6 +32,10 @@ export type SubmitResult =
   | { kind: 'needsPhone' }
   /** W3-r3: el token con que salió el intento recibió 401: sólo entrar otra vez lo termina (el intento se queda). */
   | { kind: 'needsSesion' }
+  /** D661: «Pagar ahora» en «Nadie» sin sesión: a entrar y de regreso a «Tus datos». No se mandó nada. */
+  | { kind: 'entrarParaPagar' }
+  /** D661: la tarjeta de «Nadie» no se puede ahora (ya no se acepta, o hay muchos pagos en línea): se paga en caja. El intento se soltó. */
+  | { kind: 'tarjetaNoDisponible'; message: string }
   /**
    * `body` = el cuerpo enviado con el total nuevo (sin lo que ya no está): se manda (con OTRA llave) sólo si la persona confirma.
    * `motivo` (W3): `SIN_SESION` = la sesión se cerró (va sin beneficios); un beneficio = ése ya no está (p. ej. el premio se usó).
@@ -139,6 +145,8 @@ export interface Checkout {
   sesionCerrada: Signal<boolean>
   /** W4: la tienda tiene sesión (el guardián): el menú dice «Mi cuenta»; sin ella, «Entrar». */
   conSesion: Signal<boolean>
+  /** D661: se fue a entrar para pagar con tarjeta: al entrar regresa a «Tus datos». La tienda lo lee (y lo apaga) al llegar a «entrar». */
+  paraPagar: boolean
 }
 const checkouts = new WeakMap<OrderStore, Checkout>()
 export function checkoutOf(store: OrderStore): Checkout {
@@ -157,6 +165,7 @@ export function checkoutOf(store: OrderStore): Checkout {
       eleccion: signal({}),
       sesionCerrada: signal(false),
       conSesion: signal(false),
+      paraPagar: false,
     }
     // W1 (alcance A): abrir la tienda abre la página de ese negocio (la primera vez en el documento; recrear la tienda no relee).
     abrirPagina(store.slug, 'pedidos', leerPedidos(store.slug))
@@ -217,6 +226,16 @@ function sesionDeLaTienda(store: OrderStore): OrderingSession | null {
   return sesionParaMandar(store.slug, 'pedidos', leerPedidos(store.slug))
 }
 
+/**
+ * D661: el teléfono que PROBÓ la sesión de la tienda (el mismo con que el SERVIDOR liga el saldo a favor al pagar); `null` sin sesión, o
+ * si sólo probó un correo o Google. Sólo lee: a diferencia de `sesionDeLaTienda`, nunca suelta la página (se llama al pintar).
+ */
+export function telefonoProbado(store: OrderStore): string | null {
+  const p = paginaDe(store.slug, 'pedidos')
+  const l = p && loadSession(store.slug)
+  return l && l.identidad === p.identidad ? l.phone : null
+}
+
 /** Un 401 del token con que pidió la tienda: el guardián lo suelta (si es de su sesión, también la renovación) y queda sin sesión. */
 const soltar401 = (store: OrderStore, token: string | undefined) => {
   if (token) soltarLaPagina(store.slug, 'pedidos', token, leerPedidos(store.slug))
@@ -244,9 +263,9 @@ export async function cotizar(store: OrderStore, items: QuoteItem[]): Promise<Qu
 
 /**
  * (e) Entró otra vez desde la tienda (`EntrarConCuenta`): la página toma esa sesión y se vuelve al carrito, que cotiza con ella.
- * W4: desde «Mi cuenta» (`volverA` null) se queda ahí.
+ * W4: desde «Mi cuenta» (`volverA` null) se queda ahí. D661: si entró para pagar con tarjeta, regresa a «Tus datos» (`'details'`).
  */
-export function entroEnLaTienda(store: OrderStore, r: SesionEmitida, volverA: 'cart' | null = 'cart'): void {
+export function entroEnLaTienda(store: OrderStore, r: SesionEmitida, volverA: 'cart' | 'details' | null = 'cart'): void {
   const c = checkoutOf(store)
   // r11: adopta la sesión con que entró (`EntrarConCuenta` ya la guardó), sin releer lo guardado.
   fijarPagina(store.slug, 'pedidos', desdeUnica({ token: r.token, customer: r.customer, contactos: r.contactos, guardadaEn: Date.now() }))
@@ -302,6 +321,8 @@ async function doSubmit(store: OrderStore, body: CreateOrderBody): Promise<Submi
   const phone = (pending?.body ?? body).customer.phone
   // Sin teléfono (el pedido de «Nadie») no hay nada que verificar ni código; si la página tiene sesión, va con ella (W3: sus beneficios).
   const anon = !card && !phone
+  // D661: la tarjeta de «Nadie» va sin teléfono y SIEMPRE con la sesión (de ella es el apartado y su saldo a favor).
+  const cardNadie = card && !phone
   let attempt = pending
   // codex-w3-r3 #3: en un reintento se lee la sesión de la página para que la pantalla se entere si se perdió («Tu sesión se cerró»,
   // sin premios); lo que se manda es lo guardado. codex-w3-r4 #1: UNA lectura, que también usa un intento viejo sin `token`.
@@ -311,6 +332,8 @@ async function doSubmit(store: OrderStore, body: CreateOrderBody): Promise<Submi
     const session = sesionDeLaTienda(store)
     // El mismo texto que se verificó cuenta siempre (samePhone pide 10 dígitos y no reconoce números más cortos).
     if (!card && phone && (!session?.phone || (session.phone !== phone && !samePhone(session.phone, phone)))) return { kind: 'needsOtp' }
+    // D661: sin sesión el SERVIDOR contestaría 401 (no crea nada): se va a entrar antes, sin mandar ni guardar un intento.
+    if (cardNadie && !session) return { kind: 'entrarParaPagar' }
     // W3-r3: ANTES de mandar se guarda todo lo que sale: llave, cuerpo y token (o sin sesión).
     attempt = beginAttempt(slug, body, session?.token ?? null)
     if (!attempt) return { kind: 'error', message: t('checkout.noStorage'), retryable: false }
@@ -371,6 +394,10 @@ async function doSubmit(store: OrderStore, body: CreateOrderBody): Promise<Submi
       }
     }
     if (e.code === 'CART_INVALID') return { kind: 'cartInvalid', issues: details.issues ?? [] }
+    // D661: la tarjeta de «Nadie» se ofrece sólo mientras una caja avisa (puede irse entre cargar y pagar) y tiene cupo por sucursal.
+    // Ninguna de las dos es «la tienda no recibe pedidos» (nunca `ORDERING_*`): en caja se sigue pagando.
+    if (cardNadie && e.code === 'CARD_PAYMENT_NOT_ACCEPTED') return { kind: 'tarjetaNoDisponible', message: t('checkout.cardNadieUnavailable') }
+    if (cardNadie && e.code === 'CARD_ONLINE_QUEUE_FULL') return { kind: 'tarjetaNoDisponible', message: t('checkout.cardNadieBusy') }
     if (e.status === 409 && e.code?.startsWith('ORDERING_'))
       return {
         kind: 'storeUnavailable',
@@ -432,6 +459,18 @@ export async function send(store: OrderStore, body: CreateOrderBody): Promise<Su
       break
     case 'needsSesion':
       c.feedback.value = { kind: 'sesionParaTerminar' }
+      break
+    case 'entrarParaPagar':
+      // D661: entra y regresa a «Tus datos» con su carrito y lo que escribió; ahí «Pedir» ya paga con su sesión.
+      c.paraPagar = true
+      store.go('entrar')
+      break
+    case 'tarjetaNoDisponible':
+      // D661: una línea (ámbar, CheckoutStatus) y «Pagar en caja» lista; nunca una pantalla de error ni un carrito perdido. /info al día:
+      // si la tarjeta ya no se ofrece, la opción se va.
+      c.draft.value = { ...c.draft.value, payment: 'PAY_AT_PICKUP' }
+      c.feedback.value = { kind: 'error', message: r.message, retryable: false }
+      void store.refreshInfo()
       break
     case 'needsPhone':
       // Ahora la pantalla pide WhatsApp y la casilla: se cambia en el acto y se confirma con el servidor.

@@ -798,3 +798,16 @@ describe('pulido W6: UN solo «atrás» en la tienda, y regresa un paso', () => 
     expect(screen.getByText('Hola, Ana')).toBeTruthy()
   })
 })
+
+describe('D661: la tarjeta en línea de «Nadie» en la portada y en el aviso del pedido', () => {
+  it('el chip de cómo se paga: «En línea o en caja» con la tarjeta; sin ella, «Pagas en caja»', async () => {
+    render(withStore(makeStore(infoOf({ requiresAcceptance: false, paymentModes: { payAtPickup: true, cardOnline: true } }), menuOf(product())), <OrderApp />))
+    await flush()
+    expect(screen.getByText('En línea o en caja')).toBeTruthy()
+    expect(screen.queryByText('Pagas en caja')).toBeNull()
+    cleanup()
+    render(withStore(makeStore(infoOf({ requiresAcceptance: false }), menuOf(product())), <OrderApp />))
+    await flush()
+    expect(screen.getByText('Pagas en caja')).toBeTruthy()
+  })
+})

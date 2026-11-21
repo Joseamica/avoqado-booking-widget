@@ -23,8 +23,16 @@ export interface StoreInfo {
   /** ISO; sólo en una pausa con hora vigente que NO es la del gerente. Aditivo: un servidor viejo no lo manda. */
   pausedUntil?: string | null
   hours: WeeklyHours | null
-  /** `cardOnline` (fase 2) es aditivo: un servidor viejo no lo manda y la tienda sólo ofrece pagar al recoger. */
+  /**
+   * `cardOnline` (fase 2) es aditivo: un servidor viejo no lo manda y la tienda sólo ofrece pagar al recoger. D661: en «Nadie» también
+   * puede venir (la tarjeta con sesión, junto a pagar en caja); el SERVIDOR la ofrece sólo mientras una caja avisa, así que puede irse.
+   */
   paymentModes: { payAtPickup: boolean; cardOnline?: boolean }
+  /**
+   * D661, aditivo: el SERVIDOR puede devolver como saldo a favor. Con él y una sesión que probó su teléfono, «Pagar ahora» avisa que si
+   * cancela o no recoge le queda saldo a favor; si no, que el negocio decide cómo devolverle. Falta en un servidor viejo: no se promete.
+   */
+  storeCredit?: boolean
   minOrderAmount: number
   estimatedPrepMinutes: number
   acceptTimeoutMinutes: number
@@ -138,7 +146,7 @@ export interface CreateOrderBody {
   paymentMode: PaymentMode
   /** El `total` de la última cotización con dos decimales: «206.00». */
   expectedTotal: string
-  /** `phone` falta en «Nadie» (sólo el nombre); con tarjeta en línea o en «Mi equipo» sigue siendo obligatorio. */
+  /** `phone` falta en «Nadie» (sólo el nombre; D661: también con tarjeta, que va con la sesión); en «Mi equipo» sigue siendo obligatorio. */
   customer: { name: string; phone?: string; email?: string }
   note?: string
   whatsappConsent?: boolean

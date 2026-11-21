@@ -1189,10 +1189,13 @@ describe('«Nadie»: avisos del menú', () => {
     expect(screen.queryByText('Paga en caja para que lo preparen')).toBeNull()
   })
 
-  it('el chip dice «Pagas en caja» en lugar del de pagar al recoger o tarjeta', () => {
-    const s = nadie({ paymentModes: { payAtPickup: true, cardOnline: true } })
-    render(withStore(s, <OrderApp />))
+  it('el chip dice «Pagas en caja» (D661: «En línea o en caja» con la tarjeta) en lugar del de pagar al recoger o tarjeta', () => {
+    render(withStore(nadie(), <OrderApp />))
     expect(screen.getByText('Pagas en caja')).toBeTruthy()
+    expect(screen.queryByText('Tarjeta o al recoger')).toBeNull()
+    cleanup()
+    render(withStore(nadie({ paymentModes: { payAtPickup: true, cardOnline: true } }), <OrderApp />))
+    expect(screen.getByText('En línea o en caja')).toBeTruthy()
     expect(screen.queryByText('Tarjeta o al recoger')).toBeNull()
   })
 

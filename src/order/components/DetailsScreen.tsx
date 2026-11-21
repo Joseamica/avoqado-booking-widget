@@ -3,7 +3,7 @@ import { useContext, useId, useState } from 'preact/hooks'
 import { OrderStoreContext } from '../store'
 import { createOrderT } from '../i18n'
 import { API_BASE } from '../api'
-import { buildOrderBody, checkoutOf, send } from '../checkout'
+import { buildOrderBody, checkoutOf, send, telefonoProbado } from '../checkout'
 import { formatMXN } from '../money'
 import { phoneE164 } from '../phone'
 import { CountryPhoneInput } from '../../components/ui/CountryPhoneInput'
@@ -22,6 +22,8 @@ const ENTRY_GUARD_MS = 400
  * con el total, va en un pie pegajoso DENTRO de la tienda (el mismo `.avq-o-cartfoot` del carrito, nunca `position: fixed`), con lo
  * que falta y el estado del envío arriba de él. Fase 2: con tarjeta en línea, «¿Cómo quieres pagar?» ofrece «Pagar ahora con tarjeta»
  * (primera y elegida) y, si el negocio lo acepta, «Pagar al recoger»; sólo con tarjeta no hay selector. Con tarjeta no se pide el código.
+ * D661: en «Nadie» con tarjeta en línea, «Pagar ahora con tarjeta» o «Pagar en caja»; la tarjeta va con su cuenta (sin sesión, a entrar) y
+ * el pie dice antes de pagar qué pasa si cancela o no recoge.
  */
 export function DetailsScreen() {
   const store = useContext(OrderStoreContext)!
@@ -33,12 +35,15 @@ export function DetailsScreen() {
   const set = (patch: Partial<typeof d>) => { c.draft.value = { ...c.draft.value, ...patch } }
   const info = store.info.value
   const q = store.quote.value
-  // «Nadie»: sólo nombre y nota, sin teléfono ni código ni medio de pago que elegir (se paga en caja). Un servidor viejo = «Mi equipo».
+  // «Nadie»: sólo nombre y nota, sin teléfono ni código (se paga en caja). Un servidor viejo = «Mi equipo». D661: con tarjeta en línea
+  // también se elige «Pagar ahora con tarjeta» (con su cuenta) o «Pagar en caja», que en «Nadie» siempre existe.
   const nadie = info?.requiresAcceptance === false
   const modes = info?.paymentModes
-  const choose = !nadie && !!modes?.cardOnline && modes.payAtPickup
-  const payment: PaymentMode = !nadie && modes?.cardOnline && !(choose && d.payment === 'PAY_AT_PICKUP') ? 'CARD_ONLINE' : 'PAY_AT_PICKUP'
+  const choose = !!modes?.cardOnline && (nadie || modes.payAtPickup)
+  const payment: PaymentMode = modes?.cardOnline && !(choose && d.payment === 'PAY_AT_PICKUP') ? 'CARD_ONLINE' : 'PAY_AT_PICKUP'
   const card = payment === 'CARD_ONLINE'
+  // D661: el saldo a favor se liga al teléfono que la sesión probó al pagar: sin él (o sin saldo en el servidor) no se promete.
+  const conSaldo = nadie && card && info?.storeCredit === true && !!telefonoProbado(store)
 
   const phone = phoneE164(d.dial, d.national)
   const name = d.name.trim()
@@ -125,11 +130,13 @@ export function DetailsScreen() {
                     <span class="avq-o-opt__mark">
                       <input class="avq-o-opt__input" type="radio" name={`${id}-pay`} checked={payment === m} onChange={() => set({ payment: m })} />
                     </span>
-                    <span class="avq-o-opt__text">{t(m === 'CARD_ONLINE' ? 'details.payCard' : 'details.payPickup')}</span>
+                    <span class="avq-o-opt__text">{t(m === 'CARD_ONLINE' ? 'details.payCard' : nadie ? 'details.payCounter' : 'details.payPickup')}</span>
                   </label>
                 </div>
               ))}
             </div>
+            {/* D661: en «Nadie» la tarjeta es de su cuenta; sin sesión, «Pedir» la lleva a entrar y la regresa aquí. */}
+            {nadie && card && !c.conSesion.value && <p class="avq-o-help">{t('details.cardNeedsAccount')}</p>}
           </div>
         )}
         <div class="avq-o-privacy">
@@ -159,7 +166,8 @@ export function DetailsScreen() {
           <span>{n === 1 ? t('details.summaryOne') : t('details.summary', { n })}</span>
           <span>{t('details.taxIncluded')}</span>
         </p>
-        {nadie && <p class="avq-o-confirm__pay">{t('details.payAtCounter')}</p>}
+        {/* D661: con «Pagar ahora», antes de pagar, qué pasa si cancela o no recoge. */}
+        {nadie && <p class="avq-o-confirm__pay">{card ? t(conSaldo ? 'details.refundCredit' : 'details.refundVenue', { negocio: venue }) : t('details.payAtCounter')}</p>}
         <CheckoutStatus />
         {missing && <p class="avq-o-confirm__msg">{missing}</p>}
         {/* Pulido W4 (1h·3 y 1h·4): el aviso trae sus propios botones («Confirmar» / «Pedir sin beneficios»); el del pie no compite. */}
