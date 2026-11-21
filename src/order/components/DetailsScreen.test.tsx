@@ -972,7 +972,8 @@ describe('D661: pagar con tarjeta en línea en «Nadie»', () => {
     })
 
     it('con el pedido en camino el radio queda fijo y dice por qué; «Empezar de nuevo» suelta el intento a propósito y entonces se elige otro', async () => {
-      for (const [antes, despues, medioAntes, medioDespues] of AMBOS) {
+      // Ajuste final (Ruling 111): sólo desde caja; uno con tarjeta no se suelta mientras «Reintentar» lo pueda traer (prueba aparte).
+      for (const [antes, despues, medioAntes, medioDespues] of [AMBOS[1]]) {
         const s = show(NADIE_CARD, slug => conSesion(slug))
         fireEvent.input(screen.getByLabelText('Nombre'), { target: { value: 'Ana' } })
         fireEvent.click(radio(antes))
@@ -1025,16 +1026,22 @@ describe('D661: pagar con tarjeta en línea en «Nadie»', () => {
     })
 
     it('limpieza final (3): la línea del radio fijo dice sólo lo que se puede hacer: reintentar, entrar otra vez o sólo empezar de nuevo', async () => {
-      const casos: [string, () => ApiError, string, string | null][] = [
-        ['sin red', sinRed, 'Tu pedido sigue en camino: reintenta o empieza de nuevo.', 'Reintentar'],
-        ['su sesión recibió 401', () => new ApiError('Tu sesión ya no es válida.', 401, 'CUSTOMER_TOKEN_INVALID'),
-          'Tu pedido sigue en camino: entra otra vez o empieza de nuevo.', 'Entrar otra vez'],
-        ['su cuenta está desactivada', () => new ApiError('Tu cuenta está desactivada.', 401, 'CUSTOMER_INACTIVE'),
-          'Tu pedido sigue en camino: puedes empezar de nuevo.', null],
+      const r401 = () => new ApiError('Tu sesión ya no es válida.', 401, 'CUSTOMER_TOKEN_INVALID')
+      const inactiva = () => new ApiError('Tu cuenta está desactivada.', 401, 'CUSTOMER_INACTIVE')
+      // Ajuste final (Ruling 111): con tarjeta, «Empezar de nuevo» sólo cuando no hay cómo traer la compra (cuenta desactivada).
+      const casos: [string, string, () => ApiError, string, string | null, boolean][] = [
+        ['caja sin red', 'Pagar en caja', sinRed, 'Tu pedido sigue en camino: reintenta o empieza de nuevo.', 'Reintentar', true],
+        ['caja, su sesión recibió 401', 'Pagar en caja', r401, 'Tu pedido sigue en camino: entra otra vez o empieza de nuevo.', 'Entrar otra vez', true],
+        ['caja, cuenta desactivada', 'Pagar en caja', inactiva, 'Tu pedido sigue en camino: puedes empezar de nuevo.', null, true],
+        ['tarjeta sin red', 'Pagar ahora con tarjeta', sinRed, 'Tu pedido sigue en camino: reintenta para saber si llegó.', 'Reintentar', false],
+        ['tarjeta, su sesión recibió 401', 'Pagar ahora con tarjeta', r401, 'Tu pedido sigue en camino: entra otra vez para saber si llegó.',
+          'Entrar otra vez', false],
+        ['tarjeta, cuenta desactivada', 'Pagar ahora con tarjeta', inactiva, 'Tu pedido sigue en camino: puedes empezar de nuevo.', null, true],
       ]
-      for (const [caso, falla, linea, boton] of casos) {
+      for (const [caso, medio, falla, linea, boton, empezar] of casos) {
         show(NADIE_CARD, slug => conSesion(slug))
         fireEvent.input(screen.getByLabelText('Nombre'), { target: { value: 'Ana' } })
+        fireEvent.click(radio(medio))
         vi.mocked(createOrder).mockRejectedValueOnce(falla())
         await pastGuard()
         fireEvent.click(pedir())
@@ -1043,12 +1050,13 @@ describe('D661: pagar con tarjeta en línea en «Nadie»', () => {
         // Lo que la línea nombra, está; lo que no está, no lo nombra.
         if (boton) expect(screen.getByRole('button', { name: boton }), caso).toBeTruthy()
         if (boton !== 'Reintentar') expect(screen.queryByRole('button', { name: 'Reintentar' }), caso).toBeNull()
-        expect(screen.getByRole('button', { name: 'Empezar de nuevo' }), caso).toBeTruthy()
+        expect(!!screen.queryByRole('button', { name: 'Empezar de nuevo' }), caso).toBe(empezar)
+        expect(!!screen.queryByText('Si tu pedido ya llegó, empezar de nuevo puede repetirlo.'), caso).toBe(empezar) // el aviso va con el botón
         cleanup()
       }
     })
 
-    it('limpieza final (5): con un pedido de caja pendiente, bajo «Empezar de nuevo» avisa que puede repetirlo; con tarjeta, no', async () => {
+    it('limpieza final (5): con un pedido de caja pendiente, bajo «Empezar de nuevo» avisa que puede repetirlo; con tarjeta, ni botón ni aviso', async () => {
       const AVISO = 'Si tu pedido ya llegó, empezar de nuevo puede repetirlo.'
       for (const [medio, avisa] of [['Pagar en caja', true], ['Pagar ahora con tarjeta', false]] as const) {
         show(NADIE_CARD, slug => conSesion(slug))
@@ -1058,13 +1066,39 @@ describe('D661: pagar con tarjeta en línea en «Nadie»', () => {
         await pastGuard()
         fireEvent.click(pedir())
         await flush()
-        const empezar = screen.getByRole('button', { name: 'Empezar de nuevo' })
         if (avisa) {
+          const empezar = screen.getByRole('button', { name: 'Empezar de nuevo' })
           const aviso = screen.getByText(AVISO)
           expect(empezar.compareDocumentPosition(aviso) & Node.DOCUMENT_POSITION_FOLLOWING, medio).toBeTruthy() // bajo el botón
-        } else expect(screen.queryByText(AVISO), medio).toBeNull() // la misma compra con tarjeta recupera su llave: no se repite
+        } else {
+          // Ajuste final (Ruling 111): la compra con tarjeta se trae con «Reintentar» (su llave), no se suelta.
+          expect(screen.queryByRole('button', { name: 'Empezar de nuevo' }), medio).toBeNull()
+          expect(screen.queryByText(AVISO), medio).toBeNull()
+        }
         cleanup()
       }
+    })
+
+    it('ajuste final (Ruling 111): con tarjeta, perder la respuesta y pagarla en otra pestaña no deja empezar otra compra: «Reintentar» enseña la pagada', async () => {
+      const s = show(NADIE_CARD, slug => conSesion(slug))
+      fireEvent.input(screen.getByLabelText('Nombre'), { target: { value: 'Ana' } })
+      expect(visible()).toBe('CARD_ONLINE')
+      vi.mocked(createOrder).mockRejectedValueOnce(sinRed()) // pestaña 1: el 201 se pierde
+      await pastGuard()
+      fireEvent.click(pedir())
+      await flush()
+      const llave = vi.mocked(createOrder).mock.lastCall![2].idempotencyKey
+      // Pestaña 2: la misma compra recupera esta llave y se paga. De vuelta en la 1, no se puede cambiar a caja ni soltar el intento.
+      expect(screen.queryByRole('button', { name: 'Empezar de nuevo' })).toBeNull()
+      expect([radio('Pagar ahora con tarjeta').disabled, radio('Pagar en caja').disabled]).toEqual([true, true])
+      expect(screen.getByText('Tu pedido sigue en camino: reintenta para saber si llegó.')).toBeTruthy()
+      vi.mocked(createOrder).mockResolvedValueOnce({ trackingToken: 'T'.repeat(32), checkoutUrl: '', status: 'PENDING_ACCEPTANCE', total: '170.00', replay: true } as any)
+      fireEvent.click(screen.getByRole('button', { name: 'Reintentar' }))
+      await flush()
+      expect(vi.mocked(createOrder).mock.lastCall![2].idempotencyKey).toBe(llave) // la misma compra
+      expect(vi.mocked(createOrder).mock.calls.every(c => c[1].paymentMode === 'CARD_ONLINE')).toBe(true) // ningún folio de caja
+      expect(s.screen.value).toBe('tracking') // la pagada, en su seguimiento
+      expect(s.trackingToken.value).toBe('T'.repeat(32))
     })
 
     it('tras recargar con un intento pendiente, el radio enseña SU medio (el que «Reintentar» manda), aunque sin él saldría otro', () => {
@@ -1076,7 +1110,8 @@ describe('D661: pagar con tarjeta en línea en «Nadie»', () => {
       // Sin sesión en la página, «Pagar en caja» saldría elegida (Ruling 46); el pedido en camino es con tarjeta.
       expect(visible()).toBe('CARD_ONLINE')
       expect([radio('Pagar ahora con tarjeta').disabled, radio('Pagar en caja').disabled]).toEqual([true, true])
-      expect(screen.getByText('Tu pedido sigue en camino: reintenta o empieza de nuevo.')).toBeTruthy()
+      expect(screen.getByText('Tu pedido sigue en camino: reintenta para saber si llegó.')).toBeTruthy() // Ruling 111
+      expect(screen.queryByRole('button', { name: 'Empezar de nuevo' })).toBeNull()
     })
 
     it('en inglés', async () => {

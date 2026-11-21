@@ -350,7 +350,8 @@ export function medioFijo(store: OrderStore): PaymentMode | null {
 /**
  * Pasada por familias (Ruling 83): «Empezar de nuevo» suelta A PROPÓSITO el intento pendiente de la pestaña (quizá nunca llegue su
  * respuesta). El medio queda como estaba, ya libre: el siguiente «Pedir» manda lo que se ve, con otra llave (con tarjeta, la copia exacta
- * de la misma compra recupera su llave: `attempt.ts`).
+ * de la misma compra recupera su llave: `attempt.ts`). Ajuste final (Ruling 111): «Tus datos» no lo ofrece para una compra con tarjeta
+ * mientras «Reintentar» o entrar otra vez la puedan traer (pudo pagarse en otra pestaña); sólo con la cuenta desactivada.
  */
 export function empezarDeNuevo(store: OrderStore): void {
   const c = checkoutOf(store)

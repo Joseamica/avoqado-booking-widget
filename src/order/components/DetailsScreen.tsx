@@ -70,10 +70,16 @@ export function DetailsScreen() {
   const f = c.feedback.value
   // Limpieza final (3): con un pedido pendiente, la línea del radio dice sólo lo que puede hacer: entrar otra vez (su sesión se cerró: no hay
   // «Reintentar»), sólo empezar de nuevo (su cuenta está desactivada: tampoco), o reintentar. Mientras va en camino, nada.
+  // Ajuste final (Ruling 111): una compra con tarjeta pendiente se recupera con SU llave antes de empezar otra (pudo pagarse en otra pestaña):
+  // sin «Empezar de nuevo» mientras «Reintentar» o entrar otra vez la puedan traer. Sólo con la cuenta desactivada (no hay cómo traerla).
+  const intento = pendingAttempt(store.slug)
+  const deTarjeta = intento?.body.paymentMode === 'CARD_ONLINE'
+  const sinSalida = f?.kind === 'error' && !f.retryable
   const bloqueo = !pendiente || busy ? null
-    : pendingAttempt(store.slug)?.requiereEntrar || f?.kind === 'sesionParaTerminar' ? 'details.payLockedSesion'
-    : f?.kind === 'error' && !f.retryable ? 'details.payLockedSolo'
-    : 'details.payLocked'
+    : intento?.requiereEntrar || f?.kind === 'sesionParaTerminar' ? (deTarjeta ? 'details.payLockedCardSesion' : 'details.payLockedSesion')
+    : sinSalida ? 'details.payLockedSolo'
+    : deTarjeta ? 'details.payLockedCard' : 'details.payLocked'
+  const empezar = !!bloqueo && (!deTarjeta || sinSalida)
   const open = info?.status === 'OPEN'
   // Con un intento pendiente se manda ESE (el pedido anterior), no lo que hay en pantalla: su «Reintentar» o «Empezar de nuevo».
   const canSend = !missing && !!q?.ok && !busy && open && !pendiente
@@ -153,11 +159,12 @@ export function DetailsScreen() {
                 </div>
               ))}
             </div>
-            {bloqueo && <>
-              <p class="avq-o-help">{t(bloqueo)}</p>
+            {bloqueo && <p class="avq-o-help">{t(bloqueo)}</p>}
+            {empezar && <>
               <button type="button" class="avq-o-btn avq-o-btn--quiet" onClick={() => empezarDeNuevo(store)}>{t('details.startOver')}</button>
-              {/* Limpieza final (5): un pedido de caja no se comparte (R54): si el pendiente ya llegó, empezar de nuevo hace otro. No se cobra nada. */}
-              {pendingAttempt(store.slug)?.body.paymentMode === 'PAY_AT_PICKUP' && <p class="avq-o-help">{t('details.startOverRepeats')}</p>}
+              {/* Limpieza final (5): si el pendiente ya llegó, empezar de nuevo hace otro (uno de caja no se comparte, R54; uno con tarjeta sólo
+                  se suelta con la cuenta desactivada, Ruling 111). */}
+              <p class="avq-o-help">{t('details.startOverRepeats')}</p>
             </>}
             {/* D661: en «Nadie» la tarjeta es de su cuenta; sin sesión, «Pedir» la lleva a entrar y la regresa aquí. */}
             {nadie && card && !c.conSesion.value && <p class="avq-o-help">{t('details.cardNeedsAccount')}</p>}

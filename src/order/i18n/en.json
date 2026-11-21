@@ -191,6 +191,8 @@
     "payLocked": "Your order is still on its way: retry or start over.",
     "payLockedSesion": "Your order is still on its way: sign in again or start over.",
     "payLockedSolo": "Your order is still on its way: you can start over.",
+    "payLockedCard": "Your order is still on its way: retry to find out whether it arrived.",
+    "payLockedCardSesion": "Your order is still on its way: sign in again to find out whether it arrived.",
     "startOver": "Start over",
     "startOverRepeats": "If your order already arrived, starting over may repeat it.",
     "cardNadieNote": "Your card is charged when {{negocio}} opens your order; if nobody opens it in time, you aren't charged. If you don't pick it up or change your mind, it isn't refunded automatically: {{negocio}} decides.",
