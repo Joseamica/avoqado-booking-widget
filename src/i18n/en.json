@@ -460,7 +460,7 @@
     "tarjetaApartada": "Card on hold: charged when they open it",
     "devuelto": "Refunded",
     "devolviendo": "Refunding…",
-    "teDevolvieron": "Your payment was refunded",
+    "teDevolvieron": "You got a refund",
     "noLoRecogiste": "You didn't pick it up",
     "devolucionRegresada": "Your bank returned the refund: {{negocio}} still owes it to you.",
     "elNegocio": "the business",

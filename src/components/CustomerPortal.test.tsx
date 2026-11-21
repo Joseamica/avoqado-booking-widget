@@ -1564,9 +1564,10 @@ describe('D661 ronda 2 #2 (Ruling 55): «Mi cuenta» nunca manda a pagar en caja
   })
 
   it('ronda 3: con su devolución en la lista (también en «Mi equipo», sin las marcas de «Nadie») no dice «Pagado con tarjeta»: dice cómo va', async () => {
+    // Ronda 4 (Ruling 55, texto enmendado): la de «Mi equipo» puede ser parcial y la lista no trae el monto: nunca «Te devolvieron tu pago».
     const casos: [string, Record<string, unknown>, string][] = [
-      ['hecha', { estado: 'COMPLETED', pagado: true, tarjeta: 'COBRADA', refund: { status: 'DONE', medio: 'TARJETA' } }, 'Te devolvieron tu pago'],
-      ['registrada', { estado: 'CANCELLED_BY_STAFF', pagado: true, tarjeta: 'COBRADA', refund: { status: 'RECORDED', medio: 'EFECTIVO' } }, 'Te devolvieron tu pago'],
+      ['hecha', { estado: 'COMPLETED', pagado: true, tarjeta: 'COBRADA', refund: { status: 'DONE', medio: 'TARJETA' } }, 'Te hicieron una devolución'],
+      ['registrada', { estado: 'CANCELLED_BY_STAFF', pagado: true, tarjeta: 'COBRADA', refund: { status: 'RECORDED', medio: 'EFECTIVO' } }, 'Te hicieron una devolución'],
       ['en camino', { estado: 'CANCELLED_BY_STAFF', pagado: true, tarjeta: 'COBRADA', refund: { status: 'PENDING', medio: 'TARJETA' } }, 'Devolviendo…'],
       ['regresada por el banco', { estado: 'COMPLETED', pagado: true, tarjeta: 'COBRADA', refund: { status: 'REVERSED', medio: 'TARJETA' } },
         'Tu banco regresó la devolución: Flautas todavía te la debe.'],
@@ -1622,5 +1623,15 @@ describe('D661 ronda 2 #2 (Ruling 55): «Mi cuenta» nunca manda a pagar en caja
     renderPortal('en', { negocio: 'Flautas' })
     await screen.findByText('Hello, Ana')
     expect(within(fila()).getByText('Card on hold: charged when they open it')).toBeTruthy()
+    // Ronda 4: una devolución hecha (quizá parcial) también es cierta en inglés.
+    cleanup()
+    cuentasNuevasParaPruebas()
+    anaAdentro()
+    vi.mocked(api.getCustomerPortal).mockResolvedValue(PORTAL({
+      pedidos: { items: [conTarjeta({ estado: 'COMPLETED', pagado: true, tarjeta: 'COBRADA', refund: { status: 'DONE', medio: 'TARJETA' } })], total: 1, nextCursor: null },
+    }))
+    renderPortal('en', { negocio: 'Flautas' })
+    await screen.findByText('Hello, Ana')
+    expect(within(fila()).getByText('You got a refund')).toBeTruthy()
   })
 })

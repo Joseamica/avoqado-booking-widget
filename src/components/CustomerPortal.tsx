@@ -660,7 +660,8 @@ export function CustomerPortal({
     t(`cuenta.estados.${estado !== 'PENDING_ACCEPTANCE' ? estado : pagado ? 'ACCEPTED' : enLinea ? 'OTRO' : estado}`)
       .replace(/^cuenta\.estados\..*$/, t('cuenta.estados.OTRO'))
   // Ronda 3: una devolución sin las marcas de «Nadie» (la de «Mi equipo») también manda sobre «Pagado con tarjeta» (su cobro sigue
-  // CAPTURED): en camino, «Devolviendo…»; hecha o registrada, «Te devolvieron tu pago». Y manda sobre «No lo recogiste», como el seguimiento.
+  // CAPTURED): en camino, «Devolviendo…»; hecha o registrada, «Te hicieron una devolución» (ronda 4: puede ser parcial y la lista no trae el
+  // monto; el «Devuelto» de «Nadie», siempre total, sale de `refundedAt`). Y manda sobre «No lo recogiste», como el seguimiento.
   const marcaDe = (p: MiPedido) =>
     p.refund?.status === 'REVERSED' ? t('cuenta.devolucionRegresada', { negocio: negocio || t('cuenta.elNegocio') })
     : p.refundedAt ? t('cuenta.devuelto')
