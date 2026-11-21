@@ -59,6 +59,7 @@
     "closingSoonTitle": "Cerramos a las {{time}}",
     "closingSoonText": "Si no pasas a pagar antes, tu pedido se cancela.",
     "counterNoticeTitle": "Paga en caja para que lo preparen",
+    "cardOrCounterNoticeTitle": "Paga en línea con tarjeta o en caja para que lo preparen",
     "counterNoticeText": "Después de pedir tienes 30 min para pasar a pagar.",
     "noDeviceChip": "No está recibiendo pedidos ahora",
     "noDeviceTitle": "Pide directo en caja",

@@ -1189,6 +1189,18 @@ describe('«Nadie»: avisos del menú', () => {
     expect(screen.queryByText('Paga en caja para que lo preparen')).toBeNull()
   })
 
+  it('ronda 1 M6: con la tarjeta en línea, el aviso dice que se paga en línea o en caja; sin ella, como hoy', () => {
+    show(nadie({ paymentModes: { payAtPickup: true, cardOnline: true } }))
+    expect(screen.getByText('Paga en línea con tarjeta o en caja para que lo preparen')).toBeTruthy()
+    expect(screen.queryByText('Paga en caja para que lo preparen')).toBeNull()
+    cleanup()
+    show(nadie({ paymentModes: { payAtPickup: true, cardOnline: false } }))
+    expect(screen.getByText('Paga en caja para que lo preparen')).toBeTruthy()
+    cleanup()
+    show(makeStore(infoOf({ requiresAcceptance: false, paymentModes: { payAtPickup: true, cardOnline: true } }), menuOf(product()), 'en'))
+    expect(screen.getByText('Pay online by card or at the counter so they prepare it')).toBeTruthy()
+  })
+
   it('el chip dice «Pagas en caja» (D661: «En línea o en caja» con la tarjeta) en lugar del de pagar al recoger o tarjeta', () => {
     render(withStore(nadie(), <OrderApp />))
     expect(screen.getByText('Pagas en caja')).toBeTruthy()

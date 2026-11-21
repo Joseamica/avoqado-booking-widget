@@ -208,9 +208,11 @@ export function MenuScreen() {
     <div ref={menuEl} class={product ? 'avq-o-menu avq-o-menu--sheet' : 'avq-o-menu'}>
       {err && problem(err.network ? t('store.reconnecting') : err.message || t('store.reconnecting'))}
       <StoreStatusBanner />
-      {/* «Nadie»: antes de pedir la clienta ya sabe las dos reglas: se paga en caja y tiene 30 min (FOLIO_TIMEOUT_MINUTES del servidor). */}
+      {/* «Nadie»: antes de pedir la clienta ya sabe las dos reglas: se paga en caja y tiene 30 min (FOLIO_TIMEOUT_MINUTES del servidor).
+          D661 (ronda 1 M6): con la tarjeta en línea, también se puede pagar al pedir. */}
       {info.status === 'OPEN' && info.requiresAcceptance === false && (
-        <Notice tone="neutral" title={t('store.counterNoticeTitle')} text={t('store.counterNoticeText')} />
+        <Notice tone="neutral" title={t(info.paymentModes?.cardOnline ? 'store.cardOrCounterNoticeTitle' : 'store.counterNoticeTitle')}
+          text={t('store.counterNoticeText')} />
       )}
       <ClosingSoonNotice />
       {menu.truncated && <Notice tone="neutral" text={t('menu.truncated')} />}
