@@ -139,10 +139,14 @@ export interface CheckoutDraft {
   note: string; name: string; dial: string; national: string; email: string; accepted: boolean; payment?: PaymentMode
 }
 const borradorVacio = (): CheckoutDraft => ({ note: '', name: '', dial: '52', national: '', email: '', accepted: false })
+/**
+ * `gen` (pasada por familias, familia del Ruling 84): la sesión con que llegó la respuesta que dejó el aviso. Si cambia (salió, entró otra
+ * o la tienda se quedó sin ella), el aviso de esa sesión se va: su «Confirmar» mandaría el cuerpo (nombre, beneficios) de la anterior.
+ */
 export type Feedback =
-  | { kind: 'sesionParaTerminar' }
+  | { kind: 'sesionParaTerminar'; gen?: Generacion }
   /** `premio`: la etiqueta del premio que ya se usó (para decirlo: «Tu café gratis ya se usó en otro pedido»). */
-  | { kind: 'priceChanged'; total: number; body: CreateOrderBody; motivo?: Motivo; premio?: string }
+  | { kind: 'priceChanged'; total: number; body: CreateOrderBody; motivo?: Motivo; premio?: string; gen?: Generacion }
   | { kind: 'error'; message: string; retryable: boolean }
 export interface Checkout {
   busy: Signal<boolean>
@@ -214,6 +218,10 @@ export function checkoutOf(store: OrderStore): Checkout {
       // Ronda 5: «Cerrar sesión» en cualquier superficie del negocio (también reservas, en esta misma página) suelta el intento de la
       // pestaña: el aviso y «Pedir» bloqueado se van con él.
       c!.pending.value = !!pendingAttempt(slug)
+      // Pasada por familias (familia del Ruling 84): un aviso que dejó la respuesta de otra sesión se va con ella.
+      const f = c!.feedback.value
+      const gen = generacionDe(slug)
+      if (f && 'gen' in f && f.gen && (f.gen.salida !== gen.salida || f.gen.identidad !== gen.identidad)) c!.feedback.value = null
       if (misma || !afecta.includes('pedidos')) return
       const p = paginaDe(slug, 'pedidos')
       c!.conSesion.value = !!p
@@ -575,7 +583,7 @@ export async function send(store: OrderStore, body: CreateOrderBody): Promise<Su
       store.go('otp')
       break
     case 'needsSesion':
-      c.feedback.value = { kind: 'sesionParaTerminar' }
+      c.feedback.value = { kind: 'sesionParaTerminar', gen: generacionDe(store.slug) }
       break
     case 'entrarParaPagar':
       // D661: entra y regresa a «Tus datos» con su carrito y lo que escribió; ahí «Pedir» ya paga con su sesión.
@@ -609,7 +617,7 @@ export async function send(store: OrderStore, body: CreateOrderBody): Promise<Su
         if (r.descartados?.length) c.eleccion.value = sinLosDe(c.eleccion.value, r.descartados) ?? {}
         store.quote.value = r.quote
         c.feedback.value = {
-          kind: 'priceChanged', total: r.quote.total, body: r.body,
+          kind: 'priceChanged', total: r.quote.total, body: r.body, gen: generacionDe(store.slug),
           ...(r.motivo ? { motivo: r.motivo } : {}), ...(r.motivo === 'PREMIO' && premio ? { premio } : {}),
         }
       } else {

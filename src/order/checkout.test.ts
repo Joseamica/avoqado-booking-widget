@@ -1241,7 +1241,7 @@ describe('W3: pedir con beneficios', () => {
     expect(api.createOrder).toHaveBeenCalledTimes(1)
     expect(leerSesion(store.slug)).toBeNull()
     expect(pendingAttempt(store.slug)?.key).toBe(sent(0).key)
-    expect(c.feedback.value).toEqual({ kind: 'sesionParaTerminar' })
+    expect(c.feedback.value).toMatchObject({ kind: 'sesionParaTerminar' }) // con la sesión de la que es (`gen`, pasada por familias)
   })
 
   it('un folio de $0 en «Nadie» (cerrado por el SERVIDOR) va directo al seguimiento', async () => {
@@ -1624,6 +1624,28 @@ describe('D661: pagar con tarjeta en línea en «Nadie»', () => {
       nadaDeAna(store, assign)
       expect(r?.kind).toBe('ajena')
       expect(pendingAttempt(store.slug)).toBeNull()
+    })
+
+    it('lo que dejó una respuesta de Ana (la pregunta del precio, «entra para terminar») se va cuando cambia la sesión del negocio en la página', async () => {
+      for (const que of ['priceChanged', 'sesionParaTerminar'] as const) {
+        const { store, body } = nadieCard({ token: jwt('c1', 1) })
+        if (que === 'priceChanged') api.createOrder.mockRejectedValueOnce(fin(409, 'PRICE_CHANGED', { quote: quoteOf(190) }))
+        else api.createOrder.mockRejectedValueOnce(new ApiError('Tu sesión ya no es válida.', 401, 'CUSTOMER_TOKEN_INVALID'))
+        await send(store, body)
+        const c = checkoutOf(store)
+        expect(c.feedback.value?.kind, que).toBe(que)
+        // Ana sale en el widget de reservas de esta misma página: su pregunta ya no es de nadie (su «Confirmar» mandaría su nombre y sus
+        // beneficios con la sesión de quien siga, o el código a su WhatsApp).
+        clearCustomerSession(store.slug)
+        expect(c.feedback.value, que).toBeNull()
+      }
+      // La misma sesión renovada no es otra: la pregunta se queda.
+      const { store, body } = nadieCard({ token: jwt('c1', 1) })
+      api.createOrder.mockRejectedValueOnce(fin(409, 'PRICE_CHANGED', { quote: quoteOf(190) }))
+      await send(store, body)
+      aplicarRenovacion(store.slug, new Headers({ 'x-customer-session': jwt('c1', 9) }), jwt('c1', 1))
+      await cotizar(store, toQuoteItems(store.cart.value)).catch(() => {}) // la tienda lee la renovada: la misma identidad
+      expect(checkoutOf(store).feedback.value?.kind).toBe('priceChanged')
     })
 
     it('sin cambio de sesión (también si el SERVIDOR la renueva mientras va), la respuesta sí es suya: abre su pago y guarda su seguimiento', async () => {
