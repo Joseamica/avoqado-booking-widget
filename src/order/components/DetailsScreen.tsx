@@ -166,8 +166,9 @@ export function DetailsScreen() {
                   se suelta con la cuenta desactivada, Ruling 111). */}
               <p class="avq-o-help">{t('details.startOverRepeats')}</p>
             </>}
-            {/* D661: en «Nadie» la tarjeta es de su cuenta; sin sesión, «Pedir» la lleva a entrar y la regresa aquí. */}
-            {nadie && card && !c.conSesion.value && <p class="avq-o-help">{t('details.cardNeedsAccount')}</p>}
+            {/* D661: en «Nadie» la tarjeta es de su cuenta; sin sesión, «Pedir» la lleva a entrar y la regresa aquí. Ajuste final (Ruling 113): las
+                condiciones de una compra nueva no se dicen con un pedido pendiente (puede ser de otro modo: se resuelve como se mandó). */}
+            {nadie && card && !c.conSesion.value && !pendiente && <p class="avq-o-help">{t('details.cardNeedsAccount')}</p>}
           </div>
         )}
         <div class="avq-o-privacy">
@@ -186,7 +187,7 @@ export function DetailsScreen() {
       <div class="avq-o-foot">
         {info?.contact?.address && <p>{info.contact.address}</p>}
         {info?.contact?.phone && <p>{info.contact.phone}</p>}
-        {!nadie && <>
+        {!nadie && !pendiente && <>
           <p>{card ? t('details.payCardNote') : t('cart.payAtPickup')}</p>
           <p>{t('details.cancelPolicy')}</p>
           <p>{t('details.updates')}</p>
@@ -199,7 +200,7 @@ export function DetailsScreen() {
         </p>
         {/* D661: con «Pagar ahora», antes de pagar, qué pasa con su dinero. Pasada por familias (Ruling 87): sólo lo que la promesa garantiza
             (se cobra al abrirlo; si nadie lo abre a tiempo, no; sin recoger o arrepentida, no se devuelve solo): nunca saldo a favor ni un destino. */}
-        {nadie && <p class="avq-o-confirm__pay">{card ? t('details.cardNadieNote', { negocio: venue }) : t('details.payAtCounter')}</p>}
+        {nadie && !pendiente && <p class="avq-o-confirm__pay">{card ? t('details.cardNadieNote', { negocio: venue }) : t('details.payAtCounter')}</p>}
         <CheckoutStatus />
         {missing && <p class="avq-o-confirm__msg">{missing}</p>}
         {/* Pulido W4 (1h·3 y 1h·4): el aviso trae sus propios botones («Confirmar» / «Pedir sin beneficios»); el del pie no compite. */}

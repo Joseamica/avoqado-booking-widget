@@ -1101,6 +1101,30 @@ describe('D661: pagar con tarjeta en línea en «Nadie»', () => {
       expect(s.trackingToken.value).toBe('T'.repeat(32))
     })
 
+    it('ajuste final (Ruling 113): un intento con tarjeta recargado con la tienda en el otro modo no enseña las condiciones de una compra nueva mientras se resuelve', async () => {
+      const items = [{ productId: 'p1', quantity: 2, modifiers: [] }]
+      const casos = [
+        // «Mi equipo» (con teléfono, sin sesión) que se perdió y la tienda ya está en «Nadie»: el SERVIDOR repite su borrador, que sigue
+        // esperando que lo acepten; «se cobra cuando abra» no es de ese pedido.
+        ['«Mi equipo» → «Nadie»', NADIE_CARD, { items, paymentMode: 'CARD_ONLINE', expectedTotal: '170.00', customer: { name: 'Ana', phone: '+525544422262' } }, null],
+        // Y al revés: uno de «Nadie» (con su sesión) con la tienda ya en «Mi equipo».
+        ['«Nadie» → «Mi equipo»', { requiresAcceptance: true, paymentModes: { payAtPickup: true, cardOnline: true } },
+          { items, paymentMode: 'CARD_ONLINE', expectedTotal: '170.00', customer: { name: 'Ana' } }, 'tok-A'],
+      ] as const
+      const condiciones = /se cobra|Pagas ahora con tarjeta|Pagas en caja|Pagas al recoger|Puedes cancelar mientras|Para pagar en línea/i
+      for (const [caso, info, body, token] of casos) {
+        show(info, slug => { beginAttempt(slug, body as any, token) })
+        expect(visible(), caso).toBe('CARD_ONLINE')
+        expect(screen.queryAllByText(condiciones).map(e => e.textContent), caso).toEqual([])
+        vi.mocked(createOrder).mockReturnValueOnce(new Promise(() => {})) // «Reintentar» se queda resolviendo
+        fireEvent.click(screen.getByRole('button', { name: 'Reintentar' }))
+        await flush()
+        expect(vi.mocked(createOrder).mock.lastCall![1], caso).toEqual(body) // el pedido de antes, tal cual
+        expect(screen.queryAllByText(condiciones).map(e => e.textContent), caso).toEqual([])
+        cleanup()
+      }
+    })
+
     it('tras recargar con un intento pendiente, el radio enseña SU medio (el que «Reintentar» manda), aunque sin él saldría otro', () => {
       show(NADIE_CARD, slug => {
         beginAttempt(slug, {
