@@ -156,6 +156,8 @@ export function DetailsScreen() {
             {bloqueo && <>
               <p class="avq-o-help">{t(bloqueo)}</p>
               <button type="button" class="avq-o-btn avq-o-btn--quiet" onClick={() => empezarDeNuevo(store)}>{t('details.startOver')}</button>
+              {/* Limpieza final (5): un pedido de caja no se comparte (R54): si el pendiente ya llegó, empezar de nuevo hace otro. No se cobra nada. */}
+              {pendingAttempt(store.slug)?.body.paymentMode === 'PAY_AT_PICKUP' && <p class="avq-o-help">{t('details.startOverRepeats')}</p>}
             </>}
             {/* D661: en «Nadie» la tarjeta es de su cuenta; sin sesión, «Pedir» la lleva a entrar y la regresa aquí. */}
             {nadie && card && !c.conSesion.value && <p class="avq-o-help">{t('details.cardNeedsAccount')}</p>}

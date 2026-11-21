@@ -1048,6 +1048,25 @@ describe('D661: pagar con tarjeta en línea en «Nadie»', () => {
       }
     })
 
+    it('limpieza final (5): con un pedido de caja pendiente, bajo «Empezar de nuevo» avisa que puede repetirlo; con tarjeta, no', async () => {
+      const AVISO = 'Si tu pedido ya llegó, empezar de nuevo puede repetirlo.'
+      for (const [medio, avisa] of [['Pagar en caja', true], ['Pagar ahora con tarjeta', false]] as const) {
+        show(NADIE_CARD, slug => conSesion(slug))
+        fireEvent.input(screen.getByLabelText('Nombre'), { target: { value: 'Ana' } })
+        fireEvent.click(radio(medio))
+        vi.mocked(createOrder).mockRejectedValueOnce(sinRed()) // la respuesta se perdió: quizá ya llegó
+        await pastGuard()
+        fireEvent.click(pedir())
+        await flush()
+        const empezar = screen.getByRole('button', { name: 'Empezar de nuevo' })
+        if (avisa) {
+          const aviso = screen.getByText(AVISO)
+          expect(empezar.compareDocumentPosition(aviso) & Node.DOCUMENT_POSITION_FOLLOWING, medio).toBeTruthy() // bajo el botón
+        } else expect(screen.queryByText(AVISO), medio).toBeNull() // la misma compra con tarjeta recupera su llave: no se repite
+        cleanup()
+      }
+    })
+
     it('tras recargar con un intento pendiente, el radio enseña SU medio (el que «Reintentar» manda), aunque sin él saldría otro', () => {
       show(NADIE_CARD, slug => {
         beginAttempt(slug, {
@@ -1068,6 +1087,7 @@ describe('D661: pagar con tarjeta en línea en «Nadie»', () => {
       s.quote.value = { ok: true, lines: [], subtotal: 170, total: 170, minOrderAmount: 0, issues: [] }
       render(withStore(s, <DetailsScreen />))
       expect(screen.getByText('Your order is still on its way: retry or start over.')).toBeTruthy()
+      expect(screen.getByText('If your order already arrived, starting over may repeat it.')).toBeTruthy() // limpieza final (5)
       fireEvent.click(screen.getByRole('button', { name: 'Start over' }))
       expect(pendingAttempt(s.slug)).toBeNull()
     })

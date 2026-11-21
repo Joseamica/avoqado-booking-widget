@@ -192,6 +192,7 @@
     "payLockedSesion": "Tu pedido sigue en camino: entra otra vez o empieza de nuevo.",
     "payLockedSolo": "Tu pedido sigue en camino: puedes empezar de nuevo.",
     "startOver": "Empezar de nuevo",
+    "startOverRepeats": "Si tu pedido ya llegó, empezar de nuevo puede repetirlo.",
     "cardNadieNote": "Se cobra a tu tarjeta cuando {{negocio}} abra tu pedido; si nadie lo abre a tiempo, no se te cobra. Si no lo recoges o cambias de opinión, no se te devuelve solo: lo decide {{negocio}}.",
     "premiosTitulo": "¿Tienes premios en {{venue}}?",
     "premiosTexto": "Entra para usarlos en este pedido.",
