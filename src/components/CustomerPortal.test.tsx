@@ -1,5 +1,5 @@
 import { h } from 'preact'
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/preact'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/preact'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { CustomerPortal } from './CustomerPortal'
 import * as api from '../api/booking'
@@ -1519,5 +1519,90 @@ describe('D657: sin cobro en línea, «Mi cuenta» no ofrece paquetes', () => {
     await act(() => new Promise(ok => setTimeout(ok, 250)))
     expect(screen.queryByRole('button', { name: 'Comprar' })).toBeNull()
     expect(api.getCreditPacks).not.toHaveBeenCalled()
+  })
+})
+
+describe('D661 ronda 2 #2 (Ruling 55): «Mi cuenta» nunca manda a pagar en caja un pedido con tarjeta, y el dinero sólo cuando es cierto', () => {
+  const HOY = '2026-11-11T16:50:00.000Z'
+  /** Un pedido pagado en línea con tarjeta, como lo manda el SERVIDOR nuevo. */
+  const conTarjeta = (over: Record<string, unknown>) => PEDIDO(1, { folio: 'W7K3P', pagoEnLinea: true, ...over })
+  const fila = () => screen.getByText(/^W7K3P · \$/).closest('button') as HTMLElement // la fila de «Mis pedidos» (folio · total)
+  async function abrir(pedido: any, extra: Record<string, unknown> = {}) {
+    anaAdentro()
+    vi.mocked(api.getCustomerPortal).mockResolvedValue(PORTAL({ pedidos: { items: [pedido], total: 1, nextCursor: null } }))
+    renderPortal('es', { negocio: 'Flautas', ...extra })
+    await screen.findByText('Hola, Ana')
+  }
+  afterEach(() => vi.useRealTimers())
+
+  it('cada estado en «Mis pedidos»: sus marcas mandan, luego la tarjeta; nunca «Por pagar», «Paga en caja» ni un «PAGADO» incierto', async () => {
+    const NUNCA = ['Por pagar', 'Paga en caja para que lo preparen.', 'PAGADO']
+    const casos: [string, Record<string, unknown>, string[], string[]][] = [
+      ['apartada', { estado: 'PENDING_ACCEPTANCE', pagado: false, tarjeta: 'APARTADA' }, ['En curso', 'Tarjeta apartada: se cobra cuando lo abran'], []],
+      ['cobrada', { estado: 'ACCEPTED', pagado: true, tarjeta: 'COBRADA' }, ['Preparando', 'Pagado con tarjeta'], []],
+      ['devuelta', { estado: 'COMPLETED', pagado: true, tarjeta: 'COBRADA', refundedAt: HOY, refund: { status: 'DONE', medio: 'TARJETA' } },
+        ['Devuelto'], ['Entregado', 'Pagado con tarjeta']],
+      ['regresada por el banco', { estado: 'COMPLETED', pagado: true, tarjeta: 'COBRADA', refundedAt: HOY, refund: { status: 'REVERSED', medio: 'TARJETA' } },
+        ['Tu banco regresó la devolución: Flautas todavía te la debe.'], ['Devuelto', 'Entregado', 'Pagado con tarjeta']],
+      ['devolviéndose', { estado: 'ACCEPTED', pagado: true, tarjeta: 'COBRADA', refundRequestedAt: HOY }, ['Devolviendo…'], ['Preparando', 'Pagado con tarjeta']],
+      ['no la recogió', { estado: 'COMPLETED', pagado: true, tarjeta: 'COBRADA', notPickedUpAt: HOY }, ['No lo recogiste'], ['Entregado', 'Pagado con tarjeta']],
+      // Liberándose, liberada, en duda o un valor nuevo: su estado sin dinero (el seguimiento dice el resto).
+      ['liberándose', { estado: 'PENDING_ACCEPTANCE', pagado: false, tarjeta: 'LIBERANDO' }, ['En curso'], ['Pagado con tarjeta', 'Tarjeta apartada: se cobra cuando lo abran']],
+      ['liberada', { estado: 'EXPIRED', pagado: false, tarjeta: 'LIBERADA' }, ['Vencido'], ['Pagado con tarjeta']],
+      ['en duda', { estado: 'ACCEPTED', pagado: true, tarjeta: null }, ['Preparando'], ['Pagado con tarjeta']],
+    ]
+    for (const [caso, over, salen, noSalen] of casos) {
+      cuentasNuevasParaPruebas()
+      const onVerPedido = vi.fn()
+      await abrir(conTarjeta(over), { onVerPedido })
+      for (const texto of salen) expect(within(fila()).getByText(texto), `${caso}: ${texto}`).toBeTruthy()
+      for (const texto of [...NUNCA, ...noSalen]) expect(within(fila()).queryByText(texto), `${caso}: ${texto}`).toBeNull()
+      fireEvent.click(fila()) // y la liga a su seguimiento, como siempre
+      expect(onVerPedido, caso).toHaveBeenCalledWith('tt-1')
+      cleanup()
+    }
+  })
+
+  it('«Tu pedido de hoy» con la tarjeta apartada: «en curso» y la tarjeta, nunca «Paga en caja»', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-11-11T17:00:00.000Z'))
+    await abrir(conTarjeta({ estado: 'PENDING_ACCEPTANCE', pagado: false, tarjeta: 'APARTADA', creadoEl: HOY }))
+    expect(screen.getByText('Tu pedido de hoy')).toBeTruthy()
+    expect(screen.getByText('W7K3P · en curso')).toBeTruthy()
+    expect(screen.getAllByText('Tarjeta apartada: se cobra cuando lo abran').length).toBeGreaterThan(0)
+    expect(screen.queryByText('Paga en caja para que lo preparen.')).toBeNull()
+    expect(screen.queryByText(/por pagar/i)).toBeNull()
+    cleanup()
+    cuentasNuevasParaPruebas()
+    // El de este aparato (la línea de su seguimiento) también dice «en curso» si la cuenta dice que es con tarjeta.
+    await abrir(conTarjeta({ estado: 'PENDING_ACCEPTANCE', pagado: false, tarjeta: 'APARTADA', creadoEl: HOY, trackingToken: 'mio' }), {
+      pedidoDeHoy: { folio: 'W7K3P', estado: 'PENDING_ACCEPTANCE', pagado: false, linea: 'Tu pedido está en curso.', trackingToken: 'mio' },
+    })
+    expect(screen.getByText('W7K3P · en curso')).toBeTruthy()
+    expect(screen.getByText('Tu pedido está en curso.')).toBeTruthy()
+  })
+
+  it('un servidor viejo (sin `pagoEnLinea` ni las marcas) pinta como hoy: «Por pagar», «Paga en caja…» y «PAGADO»', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-11-11T17:00:00.000Z'))
+    await abrir(PEDIDO(1, { folio: 'W7K3P', estado: 'PENDING_ACCEPTANCE', pagado: false, creadoEl: HOY }))
+    expect(screen.getByText('W7K3P · por pagar')).toBeTruthy()
+    expect(screen.getByText('Paga en caja para que lo preparen.')).toBeTruthy()
+    expect(within(fila()).getByText('Por pagar')).toBeTruthy()
+    cleanup()
+    cuentasNuevasParaPruebas()
+    await abrir(PEDIDO(1, { folio: 'W7K3P' })) // COMPLETED y pagado
+    expect(within(fila()).getByText('Entregado')).toBeTruthy()
+    expect(within(fila()).getByText('PAGADO')).toBeTruthy()
+  })
+
+  it('en inglés', async () => {
+    anaAdentro()
+    vi.mocked(api.getCustomerPortal).mockResolvedValue(PORTAL({
+      pedidos: { items: [conTarjeta({ estado: 'PENDING_ACCEPTANCE', pagado: false, tarjeta: 'APARTADA' })], total: 1, nextCursor: null },
+    }))
+    renderPortal('en', { negocio: 'Flautas' })
+    await screen.findByText('Hello, Ana')
+    expect(within(fila()).getByText('Card on hold: charged when they open it')).toBeTruthy()
   })
 })

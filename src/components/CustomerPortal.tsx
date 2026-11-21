@@ -2,7 +2,7 @@ import { h } from 'preact'
 import { effect, signal } from '@preact/signals'
 import { useState, useEffect, useLayoutEffect, useRef, useId } from 'preact/hooks'
 import type { TFunction } from '../i18n'
-import type { CreditPackPublic, CustomerPortalData, MiTarjeta } from '../types'
+import type { CreditPackPublic, CustomerPortalData, MiPedido, MiTarjeta } from '../types'
 import { Spinner } from './ui/Spinner'
 import { Button } from './ui/Button'
 import { Input } from './ui/Input'
@@ -653,8 +653,18 @@ export function CustomerPortal({
     new Intl.DateTimeFormat(intl, { day: 'numeric', month: 'short', ...(conAno ? { year: 'numeric' } : {}), timeZone: timezone }).format(new Date(iso))
   /** `yyyy-MM-dd` (ya en la zona del negocio) sin moverlo de día. */
   const dia = (ymd: string) => new Intl.DateTimeFormat(intl, { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }).format(new Date(`${ymd}T12:00:00Z`))
-  const estadoDe = (estado: string, pagado: boolean) =>
-    t(`cuenta.estados.${estado === 'PENDING_ACCEPTANCE' && pagado ? 'ACCEPTED' : estado}`).replace(/^cuenta\.estados\..*$/, t('cuenta.estados.OTRO'))
+  // D661 ronda 2 #2 (Ruling 55): un pedido pagado con tarjeta en línea (`pagoEnLinea`, sólo lo manda un servidor nuevo) nunca dice «por
+  // pagar» ni «paga en caja», y su dinero sólo se dice cuando es cierto: sus marcas primero, luego la tarjeta cobrada o apartada; si no,
+  // su estado sin dinero (su seguimiento dice el resto).
+  const estadoDe = (estado: string, pagado: boolean, enLinea = false) =>
+    t(`cuenta.estados.${estado !== 'PENDING_ACCEPTANCE' ? estado : pagado ? 'ACCEPTED' : enLinea ? 'OTRO' : estado}`)
+      .replace(/^cuenta\.estados\..*$/, t('cuenta.estados.OTRO'))
+  const marcaDe = (p: MiPedido) =>
+    p.refund?.status === 'REVERSED' ? t('cuenta.devolucionRegresada', { negocio: negocio || t('cuenta.elNegocio') })
+    : p.refundedAt ? t('cuenta.devuelto')
+    : p.refundRequestedAt ? t('cuenta.devolviendo')
+    : p.notPickedUpAt ? t('cuenta.noLoRecogiste')
+    : null
   const pedidos = [...(data.pedidos?.items ?? []), ...(extra.pedidos?.items ?? [])]
   const tarjetas: MiTarjeta[] = [...(data.tarjetas?.items ?? []), ...(extra.tarjetas?.items ?? [])]
   const descuentos = [...(data.descuentos?.items ?? []), ...(extra.descuentos?.items ?? [])]
@@ -664,17 +674,23 @@ export function CustomerPortal({
   // caja antes de las 10:42.») sólo si es SU folio y dice lo mismo que la cuenta.
   const suyoDelAparato = pedidoDeHoy && pedidos.find(p => p.trackingToken === pedidoDeHoy.trackingToken)
   const deHoy = suyoDelAparato && suyoDelAparato.estado === pedidoDeHoy!.estado && suyoDelAparato.pagado === pedidoDeHoy!.pagado
-    ? pedidoDeHoy
+    ? { ...pedidoDeHoy!, enLinea: suyoDelAparato.pagoEnLinea === true }
     : (() => {
         const p = suyoDelAparato && !FINALES.has(suyoDelAparato.estado) ? suyoDelAparato
           : pedidos.find(x => !FINALES.has(x.estado) && new Intl.DateTimeFormat('en-CA', { timeZone: timezone }).format(new Date(x.creadoEl)) === hoy)
         if (!p) return null
-        const linea = p.estado === 'READY' ? t('cuenta.lineaListo')
+        const enLinea = p.pagoEnLinea === true
+        const linea = enLinea
+          ? marcaDe(p) ?? (p.estado === 'READY' ? t('cuenta.lineaListo')
+            : p.tarjeta === 'COBRADA' ? t('cuenta.pagadoConTarjeta')
+            : p.tarjeta === 'APARTADA' ? t('cuenta.tarjetaApartada')
+            : null)
+          : p.estado === 'READY' ? t('cuenta.lineaListo')
           : p.pagado ? t('cuenta.lineaPagado')
           : p.estado === 'PENDING_ACCEPTANCE' ? t('cuenta.pagaEnCaja')
           : p.estado === 'AWAITING_PAYMENT' ? t('cuenta.estados.AWAITING_PAYMENT')
           : t('cuenta.lineaPreparando')
-        return { folio: p.folio, estado: p.estado, pagado: p.pagado, linea, trackingToken: p.trackingToken }
+        return { folio: p.folio, estado: p.estado, pagado: p.pagado, linea, trackingToken: p.trackingToken, enLinea }
       })()
   const verPedido = (tt: string) => (onVerPedido ? onVerPedido(tt) : window.location.assign(trackingUrl(venueSlug, tt)))
   const sellos = data.stampCard?.enabled && customer ? data.stampCard : null
@@ -839,8 +855,8 @@ export function CustomerPortal({
         <div style={{ ...bloque, display: 'flex', alignItems: 'center', gap: '12px', background: '#EAF6EE' }}>
           <div style={{ flex: 1, minWidth: 0 }}>
             <p style={{ ...tituloBloque, color: '#0B6B36' }}>{t('cuenta.pedidoDeHoy')}</p>
-            <b style={{ color: '#000', letterSpacing: '0.04em' }}>{`${deHoy.folio} · ${estadoDe(deHoy.estado, deHoy.pagado).toLocaleLowerCase(intl)}`}</b>
-            <small style={{ ...chico, color: '#3A4A3F' }}>{deHoy.linea}</small>
+            <b style={{ color: '#000', letterSpacing: '0.04em' }}>{`${deHoy.folio} · ${estadoDe(deHoy.estado, deHoy.pagado, deHoy.enLinea).toLocaleLowerCase(intl)}`}</b>
+            {deHoy.linea && <small style={{ ...chico, color: '#3A4A3F' }}>{deHoy.linea}</small>}
           </div>
           <button type="button" style={{ ...botonBlanco, marginTop: 0, background: '#FFF', color: '#000' }} onClick={() => verPedido(deHoy.trackingToken)}>{t('cuenta.ver')}</button>
         </div>
@@ -966,23 +982,34 @@ export function CustomerPortal({
       {pedidos.length > 0 && (
         <div style={bloque}>
           <p style={tituloBloque}>{t('cuenta.pedidos')}</p>
-          {pedidos.map(p => (
-            <button
-              key={p.trackingToken}
-              type="button"
-              onClick={() => verPedido(p.trackingToken)}
-              style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', width: '100%', minHeight: '44px', padding: '6px 0', border: 'none', background: 'none', textAlign: 'left', cursor: 'pointer', color: 'var(--avq-fg, #000)' }}
-            >
-              <span style={{ minWidth: 0 }}>
-                <b style={{ fontSize: '14px', letterSpacing: '0.04em' }}>{`${p.folio} · ${dinero(p.total)}`}</b>
-                <small style={chico}>{fecha(p.creadoEl)}</small>
-              </span>
-              <span style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'flex-end', gap: '4px' }}>
-                <span style={pildora(false)}>{estadoDe(p.estado, p.pagado)}</span>
-                {p.pagado && <span style={pildora(true)}>{t('cuenta.pagado')}</span>}
-              </span>
-            </button>
-          ))}
+          {pedidos.map(p => {
+            // Con tarjeta en línea (Ruling 55): una marca se dice sola (su estado la contradiría: «Entregado» de uno que no recogió);
+            // si no, su estado, «Pagado con tarjeta» sólo si se cobró y la tarjeta apartada en su línea. Sin `pagoEnLinea`, como hoy.
+            const enLinea = p.pagoEnLinea === true
+            const marca = enLinea ? marcaDe(p) : null
+            const linea = marca ?? (enLinea && p.tarjeta === 'APARTADA' ? t('cuenta.tarjetaApartada') : null)
+            const pagado = enLinea ? p.tarjeta === 'COBRADA' : p.pagado
+            return (
+              <button
+                key={p.trackingToken}
+                type="button"
+                onClick={() => verPedido(p.trackingToken)}
+                style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', width: '100%', minHeight: '44px', padding: '6px 0', border: 'none', background: 'none', textAlign: 'left', cursor: 'pointer', color: 'var(--avq-fg, #000)' }}
+              >
+                <span style={{ minWidth: 0 }}>
+                  <b style={{ fontSize: '14px', letterSpacing: '0.04em' }}>{`${p.folio} · ${dinero(p.total)}`}</b>
+                  <small style={chico}>{fecha(p.creadoEl)}</small>
+                  {linea && <small style={chico}>{linea}</small>}
+                </span>
+                {!marca && (
+                  <span style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'flex-end', gap: '4px' }}>
+                    <span style={pildora(false)}>{estadoDe(p.estado, p.pagado, enLinea)}</span>
+                    {pagado && <span style={pildora(true)}>{t(enLinea ? 'cuenta.pagadoConTarjeta' : 'cuenta.pagado')}</span>}
+                  </span>
+                )}
+              </button>
+            )
+          })}
           {verMasBoton('pedidos', t('cuenta.verMasPedidos'), pedidos.length, data.pedidos?.total)}
         </div>
       )}
