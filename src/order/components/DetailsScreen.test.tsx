@@ -1024,6 +1024,30 @@ describe('D661: pagar con tarjeta en línea en «Nadie»', () => {
       expect(document.querySelector('.avq-o-confirm__pay')?.textContent).toBe('Pagas en caja: tarjeta o efectivo.')
     })
 
+    it('limpieza final (3): la línea del radio fijo dice sólo lo que se puede hacer: reintentar, entrar otra vez o sólo empezar de nuevo', async () => {
+      const casos: [string, () => ApiError, string, string | null][] = [
+        ['sin red', sinRed, 'Tu pedido sigue en camino: reintenta o empieza de nuevo.', 'Reintentar'],
+        ['su sesión recibió 401', () => new ApiError('Tu sesión ya no es válida.', 401, 'CUSTOMER_TOKEN_INVALID'),
+          'Tu pedido sigue en camino: entra otra vez o empieza de nuevo.', 'Entrar otra vez'],
+        ['su cuenta está desactivada', () => new ApiError('Tu cuenta está desactivada.', 401, 'CUSTOMER_INACTIVE'),
+          'Tu pedido sigue en camino: puedes empezar de nuevo.', null],
+      ]
+      for (const [caso, falla, linea, boton] of casos) {
+        show(NADIE_CARD, slug => conSesion(slug))
+        fireEvent.input(screen.getByLabelText('Nombre'), { target: { value: 'Ana' } })
+        vi.mocked(createOrder).mockRejectedValueOnce(falla())
+        await pastGuard()
+        fireEvent.click(pedir())
+        await flush()
+        expect(screen.getByText(linea), caso).toBeTruthy()
+        // Lo que la línea nombra, está; lo que no está, no lo nombra.
+        if (boton) expect(screen.getByRole('button', { name: boton }), caso).toBeTruthy()
+        if (boton !== 'Reintentar') expect(screen.queryByRole('button', { name: 'Reintentar' }), caso).toBeNull()
+        expect(screen.getByRole('button', { name: 'Empezar de nuevo' }), caso).toBeTruthy()
+        cleanup()
+      }
+    })
+
     it('tras recargar con un intento pendiente, el radio enseña SU medio (el que «Reintentar» manda), aunque sin él saldría otro', () => {
       show(NADIE_CARD, slug => {
         beginAttempt(slug, {

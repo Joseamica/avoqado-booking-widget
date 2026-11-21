@@ -189,6 +189,8 @@
     "payAtCounter": "Pagas en caja: tarjeta o efectivo.",
     "cardNeedsAccount": "Para pagar en línea, entra a tu cuenta.",
     "payLocked": "Tu pedido sigue en camino: reintenta o empieza de nuevo.",
+    "payLockedSesion": "Tu pedido sigue en camino: entra otra vez o empieza de nuevo.",
+    "payLockedSolo": "Tu pedido sigue en camino: puedes empezar de nuevo.",
     "startOver": "Empezar de nuevo",
     "cardNadieNote": "Se cobra a tu tarjeta cuando {{negocio}} abra tu pedido; si nadie lo abre a tiempo, no se te cobra. Si no lo recoges o cambias de opinión, no se te devuelve solo: lo decide {{negocio}}.",
     "premiosTitulo": "¿Tienes premios en {{venue}}?",

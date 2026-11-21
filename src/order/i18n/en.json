@@ -189,6 +189,8 @@
     "payAtCounter": "You pay at the counter: card or cash.",
     "cardNeedsAccount": "To pay online, sign in to your account.",
     "payLocked": "Your order is still on its way: retry or start over.",
+    "payLockedSesion": "Your order is still on its way: sign in again or start over.",
+    "payLockedSolo": "Your order is still on its way: you can start over.",
     "startOver": "Start over",
     "cardNadieNote": "Your card is charged when {{negocio}} opens your order; if nobody opens it in time, you aren't charged. If you don't pick it up or change your mind, it isn't refunded automatically: {{negocio}} decides.",
     "premiosTitulo": "Do you have rewards at {{venue}}?",

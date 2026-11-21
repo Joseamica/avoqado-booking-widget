@@ -4,6 +4,7 @@ import { OrderStoreContext } from '../store'
 import { createOrderT } from '../i18n'
 import { API_BASE } from '../api'
 import { buildOrderBody, checkoutOf, empezarDeNuevo, medioFijo, send } from '../checkout'
+import { pendingAttempt } from '../attempt'
 import { formatMXN } from '../money'
 import { phoneE164 } from '../phone'
 import { CountryPhoneInput } from '../../components/ui/CountryPhoneInput'
@@ -67,6 +68,12 @@ export function DetailsScreen() {
     : null
   const busy = c.busy.value
   const f = c.feedback.value
+  // Limpieza final (3): con un pedido pendiente, la línea del radio dice sólo lo que puede hacer: entrar otra vez (su sesión se cerró: no hay
+  // «Reintentar»), sólo empezar de nuevo (su cuenta está desactivada: tampoco), o reintentar. Mientras va en camino, nada.
+  const bloqueo = !pendiente || busy ? null
+    : pendingAttempt(store.slug)?.requiereEntrar || f?.kind === 'sesionParaTerminar' ? 'details.payLockedSesion'
+    : f?.kind === 'error' && !f.retryable ? 'details.payLockedSolo'
+    : 'details.payLocked'
   const open = info?.status === 'OPEN'
   // Con un intento pendiente se manda ESE (el pedido anterior), no lo que hay en pantalla: su «Reintentar» o «Empezar de nuevo».
   const canSend = !missing && !!q?.ok && !busy && open && !pendiente
@@ -146,9 +153,9 @@ export function DetailsScreen() {
                 </div>
               ))}
             </div>
-            {pendiente && <>
-              <p class="avq-o-help">{t('details.payLocked')}</p>
-              <button type="button" class="avq-o-btn avq-o-btn--quiet" disabled={busy} onClick={() => empezarDeNuevo(store)}>{t('details.startOver')}</button>
+            {bloqueo && <>
+              <p class="avq-o-help">{t(bloqueo)}</p>
+              <button type="button" class="avq-o-btn avq-o-btn--quiet" onClick={() => empezarDeNuevo(store)}>{t('details.startOver')}</button>
             </>}
             {/* D661: en «Nadie» la tarjeta es de su cuenta; sin sesión, «Pedir» la lleva a entrar y la regresa aquí. */}
             {nadie && card && !c.conSesion.value && <p class="avq-o-help">{t('details.cardNeedsAccount')}</p>}
