@@ -209,10 +209,11 @@ export function MenuScreen() {
       {err && problem(err.network ? t('store.reconnecting') : err.message || t('store.reconnecting'))}
       <StoreStatusBanner />
       {/* «Nadie»: antes de pedir la clienta ya sabe las dos reglas: se paga en caja y tiene 30 min (FOLIO_TIMEOUT_MINUTES del servidor).
-          D661 (ronda 1 M6): con la tarjeta en línea, también se puede pagar al pedir. */}
+          D661 (ronda 1 M6): con la tarjeta en línea, también se puede pagar al pedir; W8: y el texto dice cuándo se cobra la tarjeta
+          (los 30 min son sólo de la caja). */}
       {info.status === 'OPEN' && info.requiresAcceptance === false && (
         <Notice tone="neutral" title={t(info.paymentModes?.cardOnline ? 'store.cardOrCounterNoticeTitle' : 'store.counterNoticeTitle')}
-          text={t('store.counterNoticeText')} />
+          text={t(info.paymentModes?.cardOnline ? 'store.cardOrCounterNoticeText' : 'store.counterNoticeText')} />
       )}
       <ClosingSoonNotice />
       {menu.truncated && <Notice tone="neutral" text={t('menu.truncated')} />}

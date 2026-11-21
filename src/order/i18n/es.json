@@ -61,6 +61,7 @@
     "counterNoticeTitle": "Paga en caja para que lo preparen",
     "cardOrCounterNoticeTitle": "Paga en línea con tarjeta o en caja para que lo preparen",
     "counterNoticeText": "Después de pedir tienes 30 min para pasar a pagar.",
+    "cardOrCounterNoticeText": "Con tarjeta, se cobra cuando el negocio abra tu pedido. En caja, tienes 30 min para pasar a pagar.",
     "noDeviceChip": "No está recibiendo pedidos ahora",
     "noDeviceTitle": "Pide directo en caja",
     "noDeviceText": "Puedes ver el menú, pero ahorita no se puede pedir por aquí.",
