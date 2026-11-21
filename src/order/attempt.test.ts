@@ -306,6 +306,85 @@ describe('ronda 2 #1 (Ruling 54): la compra con tarjeta en curso se comparte ent
     }
   })
 
+  describe('pasada por familias (Ruling 82): un registro por compra, acotado', () => {
+    const y = () => tarjeta({ items: [{ productId: 'p-taco', quantity: 1, modifiers: [] }] })
+    it('empezar otra compra Y no borra la de X: la copia exacta de X (mismo cuerpo, misma sesión) recupera la llave de X', () => {
+      for (const comoQuedoX of ['pagina abierta', 'respuesta perdida'] as const) {
+        localStorage.clear()
+        otraPestana()
+        const x = beginAttempt('flautas', tarjeta(), 'tok-A')!
+        if (comoQuedoX === 'pagina abierta') settleAttempt('flautas', { trackingToken: 'D'.repeat(32) })
+        otraPestana()
+        const deY = beginAttempt('flautas', y(), 'tok-A')!
+        expect(deY.key, comoQuedoX).not.toBe(x.key)
+        settleAttempt('flautas', { trackingToken: 'Y'.repeat(32) })
+        otraPestana()
+        expect(beginAttempt('flautas', tarjeta(), 'tok-A')!.key, comoQuedoX).toBe(x.key)
+        otraPestana()
+        expect(beginAttempt('flautas', y(), 'tok-A')!.key, comoQuedoX).toBe(deY.key) // y la de Y sigue siendo de Y
+      }
+    })
+
+    it('soltar una compra (resuelta, sin página o vista en su seguimiento) no suelta las otras', () => {
+      const x = beginAttempt('flautas', tarjeta(), 'tok-A')!
+      settleAttempt('flautas', { trackingToken: 'D'.repeat(32) })
+      otraPestana()
+      const deY = beginAttempt('flautas', y(), 'tok-A')!
+      settleAttempt('flautas') // la respuesta de Y no dejó página abierta: Y ya es nueva
+      otraPestana()
+      expect(beginAttempt('flautas', tarjeta(), 'tok-A')!.key).toBe(x.key)
+      settleAttempt('flautas', { trackingToken: 'D'.repeat(32) })
+      soltarCompraConTarjeta('flautas', 'D'.repeat(32)) // el seguimiento de X la vio resuelta
+      otraPestana()
+      const y2 = beginAttempt('flautas', y(), 'tok-A')!
+      expect(y2.key).not.toBe(deY.key)
+      settleAttempt('flautas', { trackingToken: 'Y'.repeat(32) })
+      otraPestana()
+      expect(beginAttempt('flautas', tarjeta(), 'tok-A')!.key).not.toBe(x.key)
+      otraPestana()
+      expect(beginAttempt('flautas', y(), 'tok-A')!.key).toBe(y2.key)
+    })
+
+    it('a lo más 5 compras: al pasar del tope sale la de actividad más antigua', () => {
+      const de = (i: number) => tarjeta({ expectedTotal: `${i}.00` })
+      const llaves: string[] = []
+      for (let i = 1; i <= 5; i++) {
+        otraPestana()
+        llaves.push(beginAttempt('flautas', de(i), 'tok-A')!.key)
+      }
+      // La 1 sigue con su página abierta en un reintento (el SERVIDOR la renovó): cuenta como reciente.
+      otraPestana()
+      expect(beginAttempt('flautas', de(1), 'tok-A')!.key).toBe(llaves[0])
+      settleAttempt('flautas', { trackingToken: 'D'.repeat(32) })
+      otraPestana()
+      beginAttempt('flautas', de(6), 'tok-A') // la sexta: sale la 2, la de actividad más antigua
+      expect(JSON.parse(localStorage.getItem('avq_card_attempt:flautas')!)).toHaveLength(5)
+      for (const i of [1, 3, 4, 5]) {
+        otraPestana()
+        expect(beginAttempt('flautas', de(i), 'tok-A')!.key, `compra ${i}`).toBe(llaves[i - 1])
+      }
+      otraPestana()
+      expect(beginAttempt('flautas', de(2), 'tok-A')!.key).not.toBe(llaves[1])
+    })
+
+    it('cada compra vence a su hora: X a los 35 min; Y, empezada después, todavía se comparte', () => {
+      vi.useFakeTimers({ toFake: ['Date'] })
+      try {
+        const x = beginAttempt('flautas', tarjeta(), 'tok-A')!
+        vi.setSystemTime(Date.now() + 20 * 60_000)
+        otraPestana()
+        const deY = beginAttempt('flautas', y(), 'tok-A')!
+        vi.setSystemTime(Date.now() + 16 * 60_000) // X lleva 36 min; Y, 16
+        otraPestana()
+        expect(beginAttempt('flautas', tarjeta(), 'tok-A')!.key).not.toBe(x.key)
+        otraPestana()
+        expect(beginAttempt('flautas', y(), 'tok-A')!.key).toBe(deY.key)
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+  })
+
   it('sin localStorage (bloqueado o lleno), cada pestaña su intento, como antes', () => {
     vi.spyOn(globalThis, 'localStorage', 'get').mockImplementation(() => {
       throw new DOMException('bloqueado', 'SecurityError')

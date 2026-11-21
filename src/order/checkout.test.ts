@@ -1442,6 +1442,25 @@ describe('D661: pagar con tarjeta en línea en «Nadie»', () => {
       expect(sent(2).token).toBe('tok-B')
     })
 
+    it('pasada por familias (Ruling 82): otra compra Y en medio no borra la de X: la copia exacta de X recupera su llave (dos borradores en total)', async () => {
+      const { store, body } = nadieCard()
+      const assign = vi.spyOn(nav, 'assign').mockImplementation(() => {})
+      api.createOrder.mockResolvedValueOnce(borrador()) // X: su página de pago queda abierta y su confirmación se pierde
+      await send(store, body)
+      const y = pestanaNueva(store.slug) // Y: otra compra distinta, de la misma clienta, en otra pestaña
+      y.store.cart.value = [line({ lineId: 'l2', productId: 'p-taco', quantity: 1 })]
+      y.store.quote.value = quoteOf(85)
+      api.createOrder.mockResolvedValueOnce(borrador({ trackingToken: 'Y'.repeat(32), checkoutUrl: `${URL_PAGO}_y` }))
+      await send(y.store, buildOrderBody(y.store, { customer: { name: ' Ana ' }, note: null, paymentMode: 'CARD_ONLINE' }))
+      const x2 = pestanaNueva(store.slug) // vuelve a X: el mismo cuerpo y la misma sesión
+      api.createOrder.mockResolvedValueOnce(borrador({ replay: true }))
+      await send(x2.store, x2.body)
+      expect(new Set([sent(0).key, sent(1).key, sent(2).key]).size).toBe(2) // dos borradores en total
+      expect(sent(2).key).toBe(sent(0).key) // el último envío recupera la llave de X
+      expect(sent(2).body).toEqual(sent(0).body)
+      expect(assign).toHaveBeenLastCalledWith(URL_PAGO) // la página de X, no una nueva
+    })
+
     it('Ruling 54 extendida: con la respuesta perdida, «Cerrar sesión» suelta el intento de la pestaña: quien entra después no reenvía lo de la otra', async () => {
       const { store, body } = nadieCard()
       api.createOrder.mockRejectedValueOnce(offline())

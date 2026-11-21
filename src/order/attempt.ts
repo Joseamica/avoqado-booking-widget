@@ -20,46 +20,51 @@ const KEY_RE = /^[A-Za-z0-9_-]{32,64}$/
 const storageKey = llaveIntentoDePedido // «Cerrar sesión» lo borra (`soltarLaPagina`, ronda 4)
 
 /**
- * D661 ronda 2 #1 (Ruling 54, enmendada en la ronda 3): la compra con tarjeta en curso de un negocio se comparte entre las pestañas del
- * navegador (localStorage). Otra pestaña la reusa (su llave) SÓLO si manda exactamente el mismo cuerpo (carrito, medio, nombre, teléfono,
- * correo, nota y premios) con la misma sesión (o ninguna en las dos): la pestaña duplicada recibe el mismo borrador y la misma página de
- * pago, nunca un segundo cobro; otra clienta en el mismo navegador, o un dato corregido, es otra compra. La sesión se compara por su
- * identidad (`identidadDe`: ficha, versión y contactos probados), no por su token, que el SERVIDOR renueva (ronda 4, Minor C). Vive
- * mientras la compra se puede pagar: se suelta con una respuesta que no deja su página de pago abierta, cuando el seguimiento ve el pago
- * resuelto, al «Cerrar sesión» (`soltarLaPagina`), o a los 35 min de la última vez que su página siguió abierta (lo que el SERVIDOR la
- * deja: 30 + 5); vencida, se borra al leerla. Sin localStorage, cada pestaña la suya, como antes.
+ * D661 ronda 2 #1 (Ruling 54, enmendada en la ronda 3): las compras con tarjeta en curso de un negocio se comparten entre las pestañas
+ * del navegador (localStorage). Otra pestaña reusa la llave de una SÓLO si manda exactamente el mismo cuerpo (carrito, medio, nombre,
+ * teléfono, correo, nota y premios) con la misma sesión (o ninguna en las dos): la pestaña duplicada recibe el mismo borrador y la misma
+ * página de pago, nunca un segundo cobro; otra clienta en el mismo navegador, o un dato corregido, es otra compra. La sesión se compara por
+ * su identidad (`identidadDe`: ficha, versión y contactos probados), no por su token, que el SERVIDOR renueva (ronda 4, Minor C).
+ * Pasada por familias (Ruling 82): UN registro por compra, así empezar otra compra Y no borra el de X (su copia exacta sigue recibiendo la
+ * llave de X). Cada uno vive mientras su compra se puede pagar: se suelta con una respuesta que no deja su página de pago abierta, cuando
+ * el seguimiento ve el pago resuelto, al «Cerrar sesión» (`soltarLaPagina`, todos), o a los 35 min de la última vez que su página siguió
+ * abierta (lo que el SERVIDOR la deja: 30 + 5); vencido, se borra al leerlo. Sin localStorage, cada pestaña la suya, como antes.
  */
 interface CompraConTarjeta { attempt: PendingAttempt; huella: string; hasta: number; trackingToken?: string }
 const compraKey = llaveCompraConTarjeta
 const COMPRA_MS = 35 * 60_000
+// ponytail: tope fijo de 5 compras vivas por negocio y navegador, ordenadas por su última actividad; con más en 35 min, la más vieja deja
+// de compartirse (su copia exacta haría otro borrador). Subirlo si alguien de verdad lleva más compras distintas a la vez.
+const COMPRAS_MAX = 5
 const huellaDe = (body: CreateOrderBody, identidad: string | null) => JSON.stringify([identidad, body])
 
-function compraEnCurso(slug: string): CompraConTarjeta | null {
+function comprasEnCurso(slug: string): CompraConTarjeta[] {
   try {
-    const c = JSON.parse(localStorage.getItem(compraKey(slug)) ?? 'null')
-    if (!c) return null
-    // Vencida: sus datos y su sesión no se quedan en el navegador (ronda 3, Minor 2).
-    if (typeof c.hasta === 'number' && Date.now() >= c.hasta) {
-      guardarCompra(slug, null)
-      return null
-    }
-    return typeof c.huella === 'string' && typeof c.hasta === 'number'
-      && typeof c.attempt?.key === 'string' && KEY_RE.test(c.attempt.key) && c.attempt.body ? (c as CompraConTarjeta) : null
+    const crudo = JSON.parse(localStorage.getItem(compraKey(slug)) ?? '[]')
+    const todas: any[] = Array.isArray(crudo) ? crudo : []
+    const vivas = todas.filter(c => typeof c?.huella === 'string' && typeof c.hasta === 'number' && Date.now() < c.hasta
+      && typeof c.attempt?.key === 'string' && KEY_RE.test(c.attempt.key) && c.attempt.body) as CompraConTarjeta[]
+    // Vencidas (o dañadas): sus datos y su sesión no se quedan en el navegador (ronda 3, Minor 2).
+    if (vivas.length !== todas.length || !Array.isArray(crudo)) guardarCompras(slug, vivas)
+    return vivas
   } catch {
-    return null
+    return []
   }
 }
-function guardarCompra(slug: string, c: CompraConTarjeta | null): void {
+/** De la actividad más vieja a la más nueva: al pasar del tope sale la primera. */
+function guardarCompras(slug: string, compras: CompraConTarjeta[]): void {
   try {
-    if (c) localStorage.setItem(compraKey(slug), JSON.stringify(c))
+    if (compras.length) localStorage.setItem(compraKey(slug), JSON.stringify(compras.slice(-COMPRAS_MAX)))
     else localStorage.removeItem(compraKey(slug))
   } catch {
     /* sin almacenamiento compartido: cada pestaña la suya, como antes */
   }
 }
-/** El seguimiento de `trackingToken` vio su pago resuelto (pagado o no completado): otra compra igual ya es nueva. */
+/** El seguimiento de `trackingToken` vio su pago resuelto (pagado o no completado): otra compra igual ya es nueva; las demás siguen. */
 export function soltarCompraConTarjeta(slug: string, trackingToken: string): void {
-  if (compraEnCurso(slug)?.trackingToken === trackingToken) guardarCompra(slug, null)
+  const compras = comprasEnCurso(slug)
+  const quedan = compras.filter(c => c.trackingToken !== trackingToken)
+  if (quedan.length !== compras.length) guardarCompras(slug, quedan)
 }
 
 /** 32 bytes de `crypto.getRandomValues` en base64url sin relleno (43 caracteres). Sin `randomUUID`: falta fuera de HTTPS. */
@@ -79,14 +84,14 @@ export function beginAttempt(
   const pending = pendingAttempt(slug)
   if (pending) return pending
   const conTarjeta = body.paymentMode === 'CARD_ONLINE'
-  const compra = conTarjeta ? compraEnCurso(slug) : null
+  const compras = conTarjeta ? comprasEnCurso(slug) : []
   const huella = huellaDe(body, identidad)
-  const misma = compra && compra.huella === huella ? compra.attempt : null
+  const misma = compras.find(c => c.huella === huella)?.attempt ?? null
   try {
     // Dentro del try: sin `crypto` tampoco hay llave, y sin llave no se envía.
     const attempt: PendingAttempt = misma ?? { key: newAttemptKey(), body, startedAt: Date.now(), token }
     sessionStorage.setItem(storageKey(slug), JSON.stringify(attempt))
-    if (conTarjeta && !misma) guardarCompra(slug, { attempt, huella, hasta: Date.now() + COMPRA_MS })
+    if (conTarjeta && !misma) guardarCompras(slug, [...compras, { attempt, huella, hasta: Date.now() + COMPRA_MS }])
     return attempt
   } catch {
     return null
@@ -134,9 +139,9 @@ export function reautorizarIntento(slug: string, token: string, alEntrarConCuent
 }
 
 /**
- * Sólo ante una respuesta DEFINITIVA del servidor (creado, precio cambiado, carrito inválido, tienda no disponible…). Si era la compra
- * con tarjeta compartida, también la suelta, salvo `abierta`: su borrador espera el pago con su página (sigue compartida, con su
- * seguimiento, hasta resolverse).
+ * Sólo ante una respuesta DEFINITIVA del servidor (creado, precio cambiado, carrito inválido, tienda no disponible…). Si era una compra
+ * con tarjeta compartida, también suelta ESA (las demás siguen), salvo `abierta`: su borrador espera el pago con su página (sigue
+ * compartida, con su seguimiento, hasta resolverse).
  */
 export function settleAttempt(slug: string, abierta?: { trackingToken: string }): void {
   const key = pendingAttempt(slug)?.key
@@ -145,8 +150,10 @@ export function settleAttempt(slug: string, abierta?: { trackingToken: string })
   } catch {
     /* sin almacenamiento no hubo intento guardado */
   }
-  const compra = key ? compraEnCurso(slug) : null
-  // Su página sigue abierta (un reintento puede renovarla en el SERVIDOR): los 35 min vuelven a contar (ronda 3, Minor 3).
-  if (compra && compra.attempt.key === key)
-    guardarCompra(slug, abierta ? { ...compra, trackingToken: abierta.trackingToken, hasta: Date.now() + COMPRA_MS } : null)
+  const compras = key ? comprasEnCurso(slug) : []
+  const suya = compras.find(c => c.attempt.key === key)
+  if (!suya) return
+  const otras = compras.filter(c => c !== suya)
+  // Su página sigue abierta (un reintento puede renovarla en el SERVIDOR): los 35 min vuelven a contar (ronda 3, Minor 3) y pasa al final.
+  guardarCompras(slug, abierta ? [...otras, { ...suya, trackingToken: abierta.trackingToken, hasta: Date.now() + COMPRA_MS }] : otras)
 }
