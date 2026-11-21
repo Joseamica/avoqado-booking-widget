@@ -3,7 +3,7 @@ import { useContext, useId, useState } from 'preact/hooks'
 import { OrderStoreContext } from '../store'
 import { createOrderT } from '../i18n'
 import { API_BASE } from '../api'
-import { buildOrderBody, checkoutOf, send, telefonoProbado } from '../checkout'
+import { buildOrderBody, checkoutOf, empezarDeNuevo, medioFijo, send, telefonoProbado } from '../checkout'
 import { formatMXN } from '../money'
 import { phoneE164 } from '../phone'
 import { CountryPhoneInput } from '../../components/ui/CountryPhoneInput'
@@ -41,10 +41,12 @@ export function DetailsScreen() {
   const modes = info?.paymentModes
   const choose = !!modes?.cardOnline && (nadie || modes.payAtPickup)
   // Sin elegir: en «Mi equipo» la tarjeta (no pide código); en «Nadie» sólo con sesión, porque sin ella «Pedir» llevaría a entrar
-  // (ronda 1, Ruling 46). Las dos opciones siguen a la vista.
-  const payment: PaymentMode = !modes?.cardOnline ? 'PAY_AT_PICKUP'
+  // (ronda 1, Ruling 46). Las dos opciones siguen a la vista. Pasada por familias (Ruling 83): con un pedido en camino o la pregunta del
+  // precio a la vista, el medio que se ve es el que se manda (`medioFijo`); con el pedido en camino, además, el radio no se mueve.
+  const pendiente = c.pending.value
+  const payment: PaymentMode = medioFijo(store) ?? (!modes?.cardOnline ? 'PAY_AT_PICKUP'
     : !choose ? 'CARD_ONLINE'
-    : d.payment ?? (nadie && !c.conSesion.value ? 'PAY_AT_PICKUP' : 'CARD_ONLINE')
+    : d.payment ?? (nadie && !c.conSesion.value ? 'PAY_AT_PICKUP' : 'CARD_ONLINE'))
   const card = payment === 'CARD_ONLINE'
   // Ronda 2 #5 (Ruling 58): «El precio cambió · Confirmar» lleva el cuerpo con el medio de antes: al cambiar de medio la pregunta se va y
   // «Pedir» manda el que se ve, con el total nuevo (ya está en la cotización).
@@ -68,8 +70,8 @@ export function DetailsScreen() {
   const busy = c.busy.value
   const f = c.feedback.value
   const open = info?.status === 'OPEN'
-  // Con un intento pendiente se manda ESE (el pedido anterior), no lo que hay en pantalla: el único camino es su «Reintentar».
-  const canSend = !missing && !!q?.ok && !busy && open && !c.pending.value
+  // Con un intento pendiente se manda ESE (el pedido anterior), no lo que hay en pantalla: su «Reintentar» o «Empezar de nuevo».
+  const canSend = !missing && !!q?.ok && !busy && open && !pendiente
 
   const confirm = (e: Event) => {
     // Al aparecer, «Confirmar pedido» queda donde estaba «Continuar» del carrito: con la sesión verificada y los datos ya completos,
@@ -138,14 +140,18 @@ export function DetailsScreen() {
                 <div key={m} class="avq-o-opt">
                   <label class="avq-o-opt__main">
                     <span class="avq-o-opt__mark">
-                      {/* Ronda 3 (Minor 4): con «Pedir» en camino no se cambia (su respuesta podría pedir confirmar el medio de antes). */}
-                      <input class="avq-o-opt__input" type="radio" name={`${id}-pay`} checked={payment === m} disabled={busy} onChange={() => elegir(m)} />
+                      {/* Ronda 3 (Minor 4) y Ruling 83: con «Pedir» en camino, o un pedido pendiente, no se cambia (se manda el de ese pedido). */}
+                      <input class="avq-o-opt__input" type="radio" name={`${id}-pay`} checked={payment === m} disabled={busy || pendiente} onChange={() => elegir(m)} />
                     </span>
                     <span class="avq-o-opt__text">{t(m === 'CARD_ONLINE' ? 'details.payCard' : nadie ? 'details.payCounter' : 'details.payPickup')}</span>
                   </label>
                 </div>
               ))}
             </div>
+            {pendiente && <>
+              <p class="avq-o-help">{t('details.payLocked')}</p>
+              <button type="button" class="avq-o-btn avq-o-btn--quiet" disabled={busy} onClick={() => empezarDeNuevo(store)}>{t('details.startOver')}</button>
+            </>}
             {/* D661: en «Nadie» la tarjeta es de su cuenta; sin sesión, «Pedir» la lleva a entrar y la regresa aquí. */}
             {nadie && card && !c.conSesion.value && <p class="avq-o-help">{t('details.cardNeedsAccount')}</p>}
           </div>

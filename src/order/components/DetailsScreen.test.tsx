@@ -932,6 +932,97 @@ describe('D661: pagar con tarjeta en línea en «Nadie»', () => {
     }
   })
 
+  describe('pasada por familias (Ruling 83): lo que se manda es SIEMPRE el medio que se ve', () => {
+    const nuevo = { ok: true, lines: [], subtotal: 190, total: 190, minOrderAmount: 0, issues: [] }
+    const sinRed = () => new ApiError('Sin conexión', 0, undefined, undefined, true)
+    const radio = (name: string) => screen.getByRole('radio', { name }) as HTMLInputElement
+    const visible = () => (radio('Pagar ahora con tarjeta').checked ? 'CARD_ONLINE' : 'PAY_AT_PICKUP')
+    const ultimo = () => vi.mocked(createOrder).mock.lastCall![1]
+    const AMBOS = [
+      ['Pagar ahora con tarjeta', 'Pagar en caja', 'CARD_ONLINE', 'PAY_AT_PICKUP'],
+      ['Pagar en caja', 'Pagar ahora con tarjeta', 'PAY_AT_PICKUP', 'CARD_ONLINE'],
+    ] as const
+
+    it('sin red → intenta cambiar el radio → «Reintentar» → PRICE_CHANGED: «Confirmar» manda el medio que se ve (en los dos sentidos)', async () => {
+      for (const [elegido, otro, medio] of AMBOS) {
+        show(NADIE_CARD, slug => conSesion(slug))
+        fireEvent.input(screen.getByLabelText('Nombre'), { target: { value: 'Ana' } })
+        fireEvent.click(radio(elegido))
+        vi.mocked(createOrder).mockRejectedValueOnce(sinRed())
+        await pastGuard()
+        fireEvent.click(pedir())
+        await flush()
+        fireEvent.click(radio(otro)) // mientras el pedido sigue en camino
+        vi.mocked(createOrder).mockRejectedValueOnce(new ApiError('El precio cambió', 409, 'PRICE_CHANGED', { quote: nuevo }))
+        fireEvent.click(screen.getByRole('button', { name: 'Reintentar' }))
+        await flush()
+        expect(ultimo().paymentMode, medio).toBe(medio) // el reintento es el mismo pedido
+        const seVe = visible()
+        vi.mocked(createOrder).mockReturnValueOnce(new Promise(() => {}))
+        fireEvent.click(screen.getByRole('button', { name: 'Confirmar' }))
+        await flush()
+        expect(ultimo().paymentMode, medio).toBe(seVe)
+        expect(seVe, medio).toBe(medio) // el medio nunca cambió en silencio
+        expect(ultimo().expectedTotal, medio).toBe('190.00')
+        cleanup()
+      }
+    })
+
+    it('con el pedido en camino el radio queda fijo y dice por qué; «Empezar de nuevo» suelta el intento a propósito y entonces se elige otro', async () => {
+      for (const [antes, despues, medioAntes, medioDespues] of AMBOS) {
+        const s = show(NADIE_CARD, slug => conSesion(slug))
+        fireEvent.input(screen.getByLabelText('Nombre'), { target: { value: 'Ana' } })
+        fireEvent.click(radio(antes))
+        vi.mocked(createOrder).mockRejectedValueOnce(sinRed())
+        await pastGuard()
+        fireEvent.click(pedir())
+        await flush()
+        expect([radio(antes).disabled, radio(despues).disabled], medioAntes).toEqual([true, true])
+        expect(screen.getByText('Tu pedido sigue en camino: reintenta o empieza de nuevo.')).toBeTruthy()
+        fireEvent.click(screen.getByRole('button', { name: 'Empezar de nuevo' }))
+        expect(pendingAttempt(s.slug), medioAntes).toBeNull()
+        expect(screen.queryByRole('button', { name: 'Reintentar' })).toBeNull()
+        expect(screen.queryByText('Tu pedido sigue en camino: reintenta o empieza de nuevo.')).toBeNull()
+        expect(visible(), medioAntes).toBe(medioAntes) // empezar de nuevo no cambia el medio: lo deja elegir
+        fireEvent.click(radio(despues))
+        vi.mocked(createOrder).mockRejectedValueOnce(new ApiError('El precio cambió', 409, 'PRICE_CHANGED', { quote: nuevo }))
+        fireEvent.click(pedir())
+        await flush()
+        expect(ultimo().paymentMode, medioDespues).toBe(medioDespues)
+        vi.mocked(createOrder).mockReturnValueOnce(new Promise(() => {}))
+        fireEvent.click(screen.getByRole('button', { name: 'Confirmar' }))
+        await flush()
+        expect(ultimo().paymentMode, medioDespues).toBe(visible())
+        expect(ultimo().paymentMode, medioDespues).toBe(medioDespues)
+        cleanup()
+      }
+    })
+
+    it('tras recargar con un intento pendiente, el radio enseña SU medio (el que «Reintentar» manda), aunque sin él saldría otro', () => {
+      show(NADIE_CARD, slug => {
+        beginAttempt(slug, {
+          items: [{ productId: 'p1', quantity: 2, modifiers: [] }], paymentMode: 'CARD_ONLINE', expectedTotal: '170.00', customer: { name: 'Ana' },
+        }, 'tok-A')
+      })
+      // Sin sesión en la página, «Pagar en caja» saldría elegida (Ruling 46); el pedido en camino es con tarjeta.
+      expect(visible()).toBe('CARD_ONLINE')
+      expect([radio('Pagar ahora con tarjeta').disabled, radio('Pagar en caja').disabled]).toEqual([true, true])
+      expect(screen.getByText('Tu pedido sigue en camino: reintenta o empieza de nuevo.')).toBeTruthy()
+    })
+
+    it('en inglés', async () => {
+      const s = makeStore(infoOf({ ...NADIE_CARD }), menuOf(), 'en')
+      beginAttempt(s.slug, {
+        items: [{ productId: 'p1', quantity: 2, modifiers: [] }], paymentMode: 'PAY_AT_PICKUP', expectedTotal: '170.00', customer: { name: 'Ana' },
+      })
+      s.quote.value = { ok: true, lines: [], subtotal: 170, total: 170, minOrderAmount: 0, issues: [] }
+      render(withStore(s, <DetailsScreen />))
+      expect(screen.getByText('Your order is still on its way: retry or start over.')).toBeTruthy()
+      fireEvent.click(screen.getByRole('button', { name: 'Start over' }))
+      expect(pendingAttempt(s.slug)).toBeNull()
+    })
+  })
+
   it('ronda 3 (Minor 4): mientras «Pedir» va en camino, el medio de pago no se puede cambiar (si volviera PRICE_CHANGED, «Confirmar» llevaría el de antes)', async () => {
     show(NADIE_CARD, slug => conSesion(slug))
     fireEvent.input(screen.getByLabelText('Nombre'), { target: { value: 'Ana' } })

@@ -139,17 +139,25 @@ export function reautorizarIntento(slug: string, token: string, alEntrarConCuent
 }
 
 /**
+ * El intento de la pestaña se va SIN resolverse: «Empezar de nuevo» a propósito (pasada por familias, Ruling 83). Su compra con tarjeta
+ * compartida se queda: su copia exacta sigue siendo la misma compra (misma llave).
+ */
+export function soltarIntento(slug: string): void {
+  try {
+    sessionStorage.removeItem(storageKey(slug))
+  } catch {
+    /* sin almacenamiento no hubo intento guardado */
+  }
+}
+
+/**
  * Sólo ante una respuesta DEFINITIVA del servidor (creado, precio cambiado, carrito inválido, tienda no disponible…). Si era una compra
  * con tarjeta compartida, también suelta ESA (las demás siguen), salvo `abierta`: su borrador espera el pago con su página (sigue
  * compartida, con su seguimiento, hasta resolverse).
  */
 export function settleAttempt(slug: string, abierta?: { trackingToken: string }): void {
   const key = pendingAttempt(slug)?.key
-  try {
-    sessionStorage.removeItem(storageKey(slug))
-  } catch {
-    /* sin almacenamiento no hubo intento guardado */
-  }
+  soltarIntento(slug)
   const compras = key ? comprasEnCurso(slug) : []
   const suya = compras.find(c => c.attempt.key === key)
   if (!suya) return

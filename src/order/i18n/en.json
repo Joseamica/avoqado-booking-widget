@@ -188,6 +188,8 @@
     "confirmNadie": "Order",
     "payAtCounter": "You pay at the counter: card or cash.",
     "cardNeedsAccount": "To pay online, sign in to your account.",
+    "payLocked": "Your order is still on its way: retry or start over.",
+    "startOver": "Start over",
     "refundCredit": "If you cancel or don't pick it up, it stays as store credit at {{negocio}}.",
     "refundVenue": "If you cancel or don't pick it up, {{negocio}} decides how to refund you.",
     "premiosTitulo": "Do you have rewards at {{venue}}?",

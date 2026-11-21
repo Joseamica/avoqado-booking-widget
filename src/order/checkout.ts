@@ -11,7 +11,7 @@
 //   nada ni guardar un intento. Si la tarjeta ya no se acepta o está llena, se dice en una línea y se deja lista «Pagar en caja».
 import { signal, type Signal } from '@preact/signals'
 import { ApiError, createOrder, quote, verifyOrderingOtp } from './api'
-import { autorizarIntento, beginAttempt, pendingAttempt, reautorizarIntento, settleAttempt } from './attempt'
+import { autorizarIntento, beginAttempt, pendingAttempt, reautorizarIntento, settleAttempt, soltarIntento } from './attempt'
 import { desdeUnica, loadSession, samePhone, saveLastOrder, type OrderingSession } from './session'
 import {
   abrirPagina, alCambiarLaPagina, clienteDelToken, entrarAqui, epocaDe, epocaDelNegocio, fijarPagina, paginaDe, sesionParaMandar, soltarLaPagina,
@@ -326,6 +326,31 @@ export function salioEnLaTienda(store: OrderStore): void {
   c.feedback.value = null
   vaciarLoSuyo(c)
   c.clienta = null
+}
+
+/**
+ * Pasada por familias (Ruling 83): lo que se manda es SIEMPRE el medio que se ve. Con un intento pendiente, el suyo (lo que «Reintentar»
+ * manda; mientras, el radio no se mueve); con «El precio cambió» a la vista, el de su cuerpo (lo que «Confirmar» manda; cambiar el radio
+ * quita la pregunta, Ruling 58). `null`: el que elija la persona.
+ */
+export function medioFijo(store: OrderStore): PaymentMode | null {
+  const c = checkoutOf(store)
+  const f = c.feedback.value
+  return (c.pending.value ? pendingAttempt(store.slug)?.body.paymentMode : null) ?? (f?.kind === 'priceChanged' ? f.body.paymentMode : null)
+}
+
+/**
+ * Pasada por familias (Ruling 83): «Empezar de nuevo» suelta A PROPÓSITO el intento pendiente de la pestaña (quizá nunca llegue su
+ * respuesta). El medio queda como estaba, ya libre: el siguiente «Pedir» manda lo que se ve, con otra llave (con tarjeta, la copia exacta
+ * de la misma compra recupera su llave: `attempt.ts`).
+ */
+export function empezarDeNuevo(store: OrderStore): void {
+  const c = checkoutOf(store)
+  const a = pendingAttempt(store.slug)
+  if (a) c.draft.value = { ...c.draft.value, payment: a.body.paymentMode }
+  soltarIntento(store.slug)
+  c.pending.value = false
+  c.feedback.value = null
 }
 
 /** ¿Se puede guardar? Sin sessionStorage no hay intento y sin localStorage no hay sesión: pedir código sería en balde. */

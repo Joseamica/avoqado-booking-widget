@@ -188,6 +188,8 @@
     "confirmNadie": "Pedir",
     "payAtCounter": "Pagas en caja: tarjeta o efectivo.",
     "cardNeedsAccount": "Para pagar en línea, entra a tu cuenta.",
+    "payLocked": "Tu pedido sigue en camino: reintenta o empieza de nuevo.",
+    "startOver": "Empezar de nuevo",
     "refundCredit": "Si cancelas o no recoges, te queda como saldo a favor en {{negocio}}.",
     "refundVenue": "Si cancelas o no recoges, {{negocio}} decide cómo devolverte.",
     "premiosTitulo": "¿Tienes premios en {{venue}}?",
