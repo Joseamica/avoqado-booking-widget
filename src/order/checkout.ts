@@ -349,7 +349,7 @@ async function doSubmit(store: OrderStore, body: CreateOrderBody): Promise<Submi
     // D661: sin sesión el SERVIDOR contestaría 401 (no crea nada): se va a entrar antes, sin mandar ni guardar un intento.
     if (cardNadie && !session) return { kind: 'entrarParaPagar' }
     // W3-r3: ANTES de mandar se guarda todo lo que sale: llave, cuerpo y token (o sin sesión).
-    attempt = beginAttempt(slug, body, session?.token ?? null)
+    attempt = beginAttempt(slug, body, session?.token ?? null, session?.identidad ?? null)
     if (!attempt) return { kind: 'error', message: t('checkout.noStorage'), retryable: false }
   }
   // W3-r3: un reintento reenvía EXACTAMENTE lo guardado, nunca la sesión de ahora. codex-w3-r3 #1: un intento de antes de este cambio

@@ -1,9 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { beginAttempt, newAttemptKey, pendingAttempt, settleAttempt, soltarCompraConTarjeta } from './attempt'
-import { soltarLaPagina } from '../lib/sesionDeCliente'
+import { identidadDe, soltarLaPagina } from '../lib/sesionDeCliente'
 import type { CreateOrderBody } from './types'
 
 const KEY_RE = /^[A-Za-z0-9_-]{32,64}$/
+const TEL_ANA = { tipo: 'PHONE' as const, valor: '+525544422262', metodo: 'WHATSAPP' as const, probadoEn: 1 }
 
 const body = (expectedTotal = '206.00'): CreateOrderBody => ({
   items: [{ productId: 'p-flauta', quantity: 2, modifiers: [{ modifierId: 'm-salsa', quantity: 1 }] }],
@@ -132,6 +133,19 @@ describe('ronda 2 #1 (Ruling 54): la compra con tarjeta en curso se comparte ent
     const conSesion = beginAttempt('flautas', tarjeta(), 'tok-A')!
     otraPestana()
     expect(beginAttempt('flautas', tarjeta(), null)!.key).not.toBe(conSesion.key) // sin sesión no toma la de alguien con sesión
+  })
+
+  it('ronda 4 (Minor C): la misma clienta con su sesión renovada por el SERVIDOR (otro token, la misma identidad) reusa la compra; otra clienta, no', () => {
+    const ana = { customer: { id: 'c1', firstName: 'Ana', lastName: null, email: null, phone: null }, contactos: [TEL_ANA] }
+    const a = beginAttempt('flautas', tarjeta(), 'tok-A', identidadDe({ token: 'tok-A', ...ana }))!
+    otraPestana()
+    // Pasado un día, cualquier petición con sesión regresa otra (`x-customer-session`): la misma ficha, versión y contactos.
+    const b = beginAttempt('flautas', tarjeta(), 'tok-A2', identidadDe({ token: 'tok-A2', ...ana }))!
+    expect(b).toEqual(a) // la misma petición: su llave, su cuerpo y el token con que salió
+    // Otra clienta con el mismo cuerpo exacto (sólo la sesión las distingue): su propia compra.
+    otraPestana()
+    const bea = { customer: { id: 'c2', firstName: 'Bea', lastName: null, email: null, phone: null }, contactos: [{ ...TEL_ANA, valor: '+525599998888' }] }
+    expect(beginAttempt('flautas', tarjeta(), 'tok-B', identidadDe({ token: 'tok-B', ...bea }))!.key).not.toBe(a.key)
   })
 
   it('ronda 3: la misma sesión con un dato corregido (correo, teléfono, nombre, nota o premio) es otra compra', () => {

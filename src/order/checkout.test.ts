@@ -17,7 +17,7 @@ import {
 } from './checkout'
 import { createOrderStore, type OrderStore } from './store'
 import { loadLastOrder, loadSession, saveSession } from './session'
-import { borrarSesion, guardarSesion, leerSesion, paginaDe } from '../lib/sesionDeCliente'
+import { aplicarRenovacion, borrarSesion, documentoNuevoParaPruebas, guardarSesion, leerSesion, paginaDe } from '../lib/sesionDeCliente'
 import { setCustomerSession, tokenParaMandar } from '../state/booking'
 import { pendingAttempt } from './attempt'
 import { phoneE164 } from './phone'
@@ -1395,5 +1395,49 @@ describe('D661: pagar con tarjeta en línea en «Nadie»', () => {
     expect(store.screen.value).toBe('details')
     expect(store.cart.value).toEqual([line()])
     expect(pendingAttempt(store.slug)).toBeNull()
+  })
+
+  describe('ronda 4: el mismo navegador compartido', () => {
+    const borrador = (over: Partial<CreatedCardOrder> = {}): CreatedCardOrder => ({
+      trackingToken: 'D'.repeat(32), checkoutUrl: URL_PAGO, status: 'AWAITING_PAYMENT', total: '170.00', replay: false, ...over,
+    })
+    /** Otra pestaña: su sessionStorage y su página empiezan de cero (abre con la sesión guardada); la localStorage es la misma. */
+    function pestanaNueva(slug: string) {
+      sessionStorage.clear()
+      documentoNuevoParaPruebas()
+      const store = createOrderStore(slug, { locale: 'es' })
+      store.cart.value = [line()]
+      store.quote.value = quoteOf(170)
+      store.info.value = nadieCardInfo
+      store.go('details')
+      checkoutOf(store)
+      return { store, body: buildOrderBody(store, { customer: { name: ' Ana ' }, note: null, paymentMode: 'CARD_ONLINE' }) }
+    }
+
+    it('Minor C: el SERVIDOR renovó la sesión entre dos «Pedir» (otro token, la misma clienta): la pestaña duplicada reusa la compra; otra clienta con el mismo cuerpo, no', async () => {
+      const { store, body } = nadieCard()
+      const assign = vi.spyOn(nav, 'assign').mockImplementation(() => {})
+      api.createOrder.mockResolvedValueOnce(borrador())
+      await send(store, body)
+      // Su respuesta traía la sesión renovada (la de Ana tenía más de un día): `api.ts` la guarda.
+      aplicarRenovacion(store.slug, new Headers({ 'x-customer-session': 'tok-A2' }), 'tok-A')
+      expect(leerSesion(store.slug)?.token).toBe('tok-A2')
+      const tab2 = pestanaNueva(store.slug)
+      api.createOrder.mockResolvedValueOnce(borrador({ replay: true }))
+      await send(tab2.store, tab2.body)
+      expect(sent(1).key).toBe(sent(0).key)
+      expect(sent(1).body).toEqual(sent(0).body)
+      expect(sent(1).token).toBe('tok-A') // la misma petición (la renovada es de la misma clienta)
+      expect(assign).toHaveBeenCalledTimes(2)
+      expect(assign).toHaveBeenLastCalledWith(URL_PAGO) // la MISMA página de pago: un solo borrador
+      // Bea entra en el mismo navegador y pide exactamente lo mismo (el mismo carrito y el mismo nombre: sólo la sesión las distingue).
+      guardarSesion(store.slug, sesionB() as any)
+      const deBea = pestanaNueva(store.slug)
+      api.createOrder.mockResolvedValueOnce(borrador({ trackingToken: 'B'.repeat(32) }))
+      await send(deBea.store, deBea.body)
+      expect(sent(2).body).toEqual(sent(0).body)
+      expect(sent(2).key).not.toBe(sent(0).key)
+      expect(sent(2).token).toBe('tok-B')
+    })
   })
 })

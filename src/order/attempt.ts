@@ -22,16 +22,17 @@ const storageKey = (slug: string) => `avq_order_attempt:${slug}`
 /**
  * D661 ronda 2 #1 (Ruling 54, enmendada en la ronda 3): la compra con tarjeta en curso de un negocio se comparte entre las pestañas del
  * navegador (localStorage). Otra pestaña la reusa (su llave) SÓLO si manda exactamente el mismo cuerpo (carrito, medio, nombre, teléfono,
- * correo, nota y premios) con la misma sesión (el mismo token, o ninguno en las dos): la pestaña duplicada recibe el mismo borrador y la
- * misma página de pago, nunca un segundo cobro; otra clienta en el mismo navegador, o un dato corregido, es otra compra. Vive mientras la
- * compra se puede pagar: se suelta con una respuesta que no deja su página de pago abierta, cuando el seguimiento ve el pago resuelto,
- * al «Cerrar sesión» (`soltarLaPagina`), o a los 35 min de la última vez que su página siguió abierta (lo que el SERVIDOR la deja: 30 + 5);
- * vencida, se borra al leerla. Sin localStorage, cada pestaña la suya, como antes.
+ * correo, nota y premios) con la misma sesión (o ninguna en las dos): la pestaña duplicada recibe el mismo borrador y la misma página de
+ * pago, nunca un segundo cobro; otra clienta en el mismo navegador, o un dato corregido, es otra compra. La sesión se compara por su
+ * identidad (`identidadDe`: ficha, versión y contactos probados), no por su token, que el SERVIDOR renueva (ronda 4, Minor C). Vive
+ * mientras la compra se puede pagar: se suelta con una respuesta que no deja su página de pago abierta, cuando el seguimiento ve el pago
+ * resuelto, al «Cerrar sesión» (`soltarLaPagina`), o a los 35 min de la última vez que su página siguió abierta (lo que el SERVIDOR la
+ * deja: 30 + 5); vencida, se borra al leerla. Sin localStorage, cada pestaña la suya, como antes.
  */
 interface CompraConTarjeta { attempt: PendingAttempt; huella: string; hasta: number; trackingToken?: string }
 const compraKey = llaveCompraConTarjeta
 const COMPRA_MS = 35 * 60_000
-const huellaDe = (body: CreateOrderBody) => JSON.stringify(body)
+const huellaDe = (body: CreateOrderBody, identidad: string | null) => JSON.stringify([identidad, body])
 
 function compraEnCurso(slug: string): CompraConTarjeta | null {
   try {
@@ -70,18 +71,22 @@ export function newAttemptKey(): string {
 /**
  * Guarda el intento y lo devuelve; `null` si no se pudo guardar (y entonces NO se envía). Si ya hay uno sin desenlace devuelve
  * ESE (su llave y su cuerpo): nunca hay dos llaves vivas para el mismo negocio. Con tarjeta, la misma compra de otra pestaña (ronda 2 #1).
+ * `identidad`: la de la sesión con que sale (sin ella, su token).
  */
-export function beginAttempt(slug: string, body: CreateOrderBody, token: string | null = null): PendingAttempt | null {
+export function beginAttempt(
+  slug: string, body: CreateOrderBody, token: string | null = null, identidad: string | null = token,
+): PendingAttempt | null {
   const pending = pendingAttempt(slug)
   if (pending) return pending
   const conTarjeta = body.paymentMode === 'CARD_ONLINE'
   const compra = conTarjeta ? compraEnCurso(slug) : null
-  const misma = compra && compra.huella === huellaDe(body) && (compra.attempt.token ?? null) === token ? compra.attempt : null
+  const huella = huellaDe(body, identidad)
+  const misma = compra && compra.huella === huella ? compra.attempt : null
   try {
     // Dentro del try: sin `crypto` tampoco hay llave, y sin llave no se envía.
     const attempt: PendingAttempt = misma ?? { key: newAttemptKey(), body, startedAt: Date.now(), token }
     sessionStorage.setItem(storageKey(slug), JSON.stringify(attempt))
-    if (conTarjeta && !misma) guardarCompra(slug, { attempt, huella: huellaDe(body), hasta: Date.now() + COMPRA_MS })
+    if (conTarjeta && !misma) guardarCompra(slug, { attempt, huella, hasta: Date.now() + COMPRA_MS })
     return attempt
   } catch {
     return null
