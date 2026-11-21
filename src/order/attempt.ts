@@ -2,6 +2,7 @@
 // recarga; mientras no haya respuesta DEFINITIVA del servidor sólo se reintenta ese mismo cuerpo con esa llave. Si no se puede
 // guardar, no se envía: una respuesta perdida + recarga jamás puede duplicar el pedido.
 import type { CreateOrderBody } from './types'
+import { llaveCompraConTarjeta } from '../lib/sesionDeCliente'
 
 /**
  * W3-r3: un reintento es REENVIAR LA MISMA PETICIÓN (la regla de Stripe y Square). Con la llave y el cuerpo se guarda, ANTES de mandar,
@@ -19,21 +20,29 @@ const KEY_RE = /^[A-Za-z0-9_-]{32,64}$/
 const storageKey = (slug: string) => `avq_order_attempt:${slug}`
 
 /**
- * D661 ronda 2 #1 (Ruling 54): la compra con tarjeta en curso de un negocio se comparte entre las pestañas del navegador (localStorage),
- * con la huella de su carrito y su medio. Otra pestaña que pide LO MISMO reusa ese intento (llave, cuerpo y sesión): el servidor devuelve
- * el mismo borrador y la misma página de pago, nunca un segundo cobro. Vive mientras la compra se puede pagar: se suelta con una respuesta
- * que no deja su página de pago abierta, cuando el seguimiento ve el pago resuelto, o a los 35 min (lo que el SERVIDOR deja abierta la
- * página de Stripe: 30 + 5). Sin localStorage, cada pestaña la suya, como antes.
+ * D661 ronda 2 #1 (Ruling 54, enmendada en la ronda 3): la compra con tarjeta en curso de un negocio se comparte entre las pestañas del
+ * navegador (localStorage). Otra pestaña la reusa (su llave) SÓLO si manda exactamente el mismo cuerpo (carrito, medio, nombre, teléfono,
+ * correo, nota y premios) con la misma sesión (el mismo token, o ninguno en las dos): la pestaña duplicada recibe el mismo borrador y la
+ * misma página de pago, nunca un segundo cobro; otra clienta en el mismo navegador, o un dato corregido, es otra compra. Vive mientras la
+ * compra se puede pagar: se suelta con una respuesta que no deja su página de pago abierta, cuando el seguimiento ve el pago resuelto,
+ * al «Cerrar sesión» (`soltarLaPagina`), o a los 35 min de la última vez que su página siguió abierta (lo que el SERVIDOR la deja: 30 + 5);
+ * vencida, se borra al leerla. Sin localStorage, cada pestaña la suya, como antes.
  */
 interface CompraConTarjeta { attempt: PendingAttempt; huella: string; hasta: number; trackingToken?: string }
-const compraKey = (slug: string) => `avq_card_attempt:${slug}`
+const compraKey = llaveCompraConTarjeta
 const COMPRA_MS = 35 * 60_000
-const huellaDe = (body: CreateOrderBody) => JSON.stringify([body.paymentMode, body.items])
+const huellaDe = (body: CreateOrderBody) => JSON.stringify(body)
 
 function compraEnCurso(slug: string): CompraConTarjeta | null {
   try {
     const c = JSON.parse(localStorage.getItem(compraKey(slug)) ?? 'null')
-    return c && typeof c.huella === 'string' && typeof c.hasta === 'number' && Date.now() < c.hasta
+    if (!c) return null
+    // Vencida: sus datos y su sesión no se quedan en el navegador (ronda 3, Minor 2).
+    if (typeof c.hasta === 'number' && Date.now() >= c.hasta) {
+      guardarCompra(slug, null)
+      return null
+    }
+    return typeof c.huella === 'string' && typeof c.hasta === 'number'
       && typeof c.attempt?.key === 'string' && KEY_RE.test(c.attempt.key) && c.attempt.body ? (c as CompraConTarjeta) : null
   } catch {
     return null
@@ -67,7 +76,7 @@ export function beginAttempt(slug: string, body: CreateOrderBody, token: string 
   if (pending) return pending
   const conTarjeta = body.paymentMode === 'CARD_ONLINE'
   const compra = conTarjeta ? compraEnCurso(slug) : null
-  const misma = compra && compra.huella === huellaDe(body) ? compra.attempt : null
+  const misma = compra && compra.huella === huellaDe(body) && (compra.attempt.token ?? null) === token ? compra.attempt : null
   try {
     // Dentro del try: sin `crypto` tampoco hay llave, y sin llave no se envía.
     const attempt: PendingAttempt = misma ?? { key: newAttemptKey(), body, startedAt: Date.now(), token }
@@ -116,5 +125,7 @@ export function settleAttempt(slug: string, abierta?: { trackingToken: string })
     /* sin almacenamiento no hubo intento guardado */
   }
   const compra = key ? compraEnCurso(slug) : null
-  if (compra && compra.attempt.key === key) guardarCompra(slug, abierta ? { ...compra, trackingToken: abierta.trackingToken } : null)
+  // Su página sigue abierta (un reintento puede renovarla en el SERVIDOR): los 35 min vuelven a contar (ronda 3, Minor 3).
+  if (compra && compra.attempt.key === key)
+    guardarCompra(slug, abierta ? { ...compra, trackingToken: abierta.trackingToken, hasta: Date.now() + COMPRA_MS } : null)
 }

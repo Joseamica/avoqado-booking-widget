@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { beginAttempt, newAttemptKey, pendingAttempt, settleAttempt, soltarCompraConTarjeta } from './attempt'
+import { soltarLaPagina } from '../lib/sesionDeCliente'
 import type { CreateOrderBody } from './types'
 
 const KEY_RE = /^[A-Za-z0-9_-]{32,64}$/
@@ -108,13 +109,60 @@ describe('ronda 2 #1 (Ruling 54): la compra con tarjeta en curso se comparte ent
   const otraPestana = () => sessionStorage.clear()
   beforeEach(() => localStorage.clear())
 
-  it('la misma compra (carrito y medio) en otra pestaña reusa el intento de la primera: llave, cuerpo y sesión', () => {
+  it('la pestaña duplicada (misma sesión, mismos datos) reusa el intento de la primera: el servidor devuelve su borrador', () => {
     const a = beginAttempt('flautas', tarjeta(), 'tok-A')!
     otraPestana()
-    // Otro nombre y otra sesión en la segunda: es la misma compra, sale la de la primera (el servidor devuelve su borrador).
-    const b = beginAttempt('flautas', tarjeta({ customer: { name: 'Ana', phone: '+525544422262' } }), 'tok-B')!
+    const b = beginAttempt('flautas', tarjeta(), 'tok-A')!
     expect(b).toEqual(a)
     expect(pendingAttempt('flautas')).toEqual(a) // queda como el intento de ESTA pestaña: sus reintentos llevan lo mismo
+    // «Mi equipo» sin sesión: sin token en las dos, también.
+    localStorage.clear()
+    otraPestana()
+    const c = beginAttempt('flautas', tarjeta())!
+    otraPestana()
+    expect(beginAttempt('flautas', tarjeta())!.key).toBe(c.key)
+  })
+
+  it('ronda 3 (Ruling 54 enmendada): otra sesión con el mismo carrito (otra clienta en el mismo navegador) es otra compra', () => {
+    const a = beginAttempt('flautas', tarjeta(), 'tok-A')!
+    otraPestana()
+    expect(beginAttempt('flautas', tarjeta(), 'tok-B')!.key).not.toBe(a.key)
+    localStorage.clear()
+    otraPestana()
+    const conSesion = beginAttempt('flautas', tarjeta(), 'tok-A')!
+    otraPestana()
+    expect(beginAttempt('flautas', tarjeta(), null)!.key).not.toBe(conSesion.key) // sin sesión no toma la de alguien con sesión
+  })
+
+  it('ronda 3: la misma sesión con un dato corregido (correo, teléfono, nombre, nota o premio) es otra compra', () => {
+    const corregidos: Partial<CreateOrderBody>[] = [
+      { customer: { name: 'Ana López', phone: '+525544422262', email: 'ana@correo.mx' } },
+      { customer: { name: 'Ana López', phone: '+525500000000' } },
+      { customer: { name: 'Ana', phone: '+525544422262' } },
+      { note: 'sin cebolla' },
+      { beneficios: { premioId: 'r1' } },
+    ]
+    for (const c of corregidos) {
+      localStorage.clear()
+      otraPestana()
+      const a = beginAttempt('flautas', tarjeta(), 'tok-A')!
+      otraPestana()
+      expect(beginAttempt('flautas', tarjeta(c), 'tok-A')!.key, JSON.stringify(c)).not.toBe(a.key)
+    }
+  })
+
+  it('ronda 3: «Cerrar sesión» (en la tienda o en reservas) borra la compra compartida, con sus datos y su sesión', () => {
+    for (const superficie of ['pedidos', 'reservas'] as const) {
+      localStorage.clear()
+      otraPestana()
+      const a = beginAttempt('flautas', tarjeta(), 'tok-A')!
+      settleAttempt('flautas', { trackingToken: 'D'.repeat(32) })
+      expect(localStorage.getItem('avq_card_attempt:flautas')).toContain('tok-A')
+      soltarLaPagina('flautas', superficie, undefined, () => null)
+      expect(localStorage.getItem('avq_card_attempt:flautas'), superficie).toBeNull()
+      otraPestana()
+      expect(beginAttempt('flautas', tarjeta(), 'tok-A')!.key).not.toBe(a.key)
+    }
   })
 
   it('otro carrito, o pagar en caja: un intento nuevo (la caja nunca se comparte)', () => {
@@ -151,7 +199,7 @@ describe('ronda 2 #1 (Ruling 54): la compra con tarjeta en curso se comparte ent
     expect(beginAttempt('flautas', tarjeta())!.key).not.toBe(a.key)
   })
 
-  it('a los 35 min (lo que vive su página de pago en el SERVIDOR) deja de compartirse', () => {
+  it('a los 35 min de su última página abierta (lo que el SERVIDOR deja abierta la de Stripe) deja de compartirse', () => {
     vi.useFakeTimers({ toFake: ['Date'] })
     try {
       const a = beginAttempt('flautas', tarjeta())!
@@ -159,10 +207,40 @@ describe('ronda 2 #1 (Ruling 54): la compra con tarjeta en curso se comparte ent
       vi.setSystemTime(Date.now() + 34 * 60_000)
       otraPestana()
       expect(beginAttempt('flautas', tarjeta())!.key).toBe(a.key)
-      settleAttempt('flautas', { trackingToken: 'D'.repeat(32) })
-      vi.setSystemTime(Date.now() + 2 * 60_000)
       otraPestana()
+      vi.setSystemTime(Date.now() + 2 * 60_000)
       expect(beginAttempt('flautas', tarjeta())!.key).not.toBe(a.key)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('ronda 3 (Minor 3): si su página sigue abierta en un reintento (el SERVIDOR la renueva), los 35 min vuelven a contar', () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    try {
+      const a = beginAttempt('flautas', tarjeta())!
+      settleAttempt('flautas', { trackingToken: 'D'.repeat(32) })
+      vi.setSystemTime(Date.now() + 30 * 60_000)
+      otraPestana()
+      expect(beginAttempt('flautas', tarjeta())!.key).toBe(a.key)
+      settleAttempt('flautas', { trackingToken: 'D'.repeat(32) }) // su reintento volvió con la página abierta
+      vi.setSystemTime(Date.now() + 30 * 60_000)
+      otraPestana()
+      expect(beginAttempt('flautas', tarjeta())!.key).toBe(a.key)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('ronda 3 (Minor 2): una compra vencida se borra al leerla (sus datos y su sesión no se quedan en el navegador)', () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    try {
+      beginAttempt('flautas', tarjeta(), 'tok-A')
+      settleAttempt('flautas', { trackingToken: 'D'.repeat(32) })
+      expect(localStorage.getItem('avq_card_attempt:flautas')).toContain('tok-A')
+      vi.setSystemTime(Date.now() + 36 * 60_000)
+      soltarCompraConTarjeta('flautas', 'E'.repeat(32)) // cualquier lectura (aquí, la del seguimiento de otro pedido)
+      expect(localStorage.getItem('avq_card_attempt:flautas')).toBeNull()
     } finally {
       vi.useRealTimers()
     }

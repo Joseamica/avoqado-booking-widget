@@ -12,7 +12,9 @@ const api = vi.hoisted(() => ({
 vi.mock('./api', async () => ({ ...(await vi.importActual<typeof import('./api')>('./api')), ...api }))
 
 import { ApiError } from './api'
-import { buildOrderBody, checkoutOf, entroEnLaTienda, isDefinitive, nav, phoneToVerify, retry, send, storageWorks, submitOrder, verifyPhone } from './checkout'
+import {
+  buildOrderBody, checkoutOf, entroEnLaTienda, isDefinitive, nav, phoneToVerify, retry, salioEnLaTienda, send, storageWorks, submitOrder, verifyPhone,
+} from './checkout'
 import { createOrderStore, type OrderStore } from './store'
 import { loadLastOrder, loadSession, saveSession } from './session'
 import { borrarSesion, guardarSesion, leerSesion, paginaDe } from '../lib/sesionDeCliente'
@@ -721,15 +723,42 @@ describe('fase 2: pagar con tarjeta', () => {
   })
 
   describe('ronda 2 #1 (Ruling 54): dos pestañas no pagan dos veces la misma compra', () => {
-    /** Otra pestaña del mismo navegador: su sessionStorage empieza vacía y la localStorage es la misma. Otro nombre escrito. */
-    function otraPestana(slug: string, items = [line()]) {
+    /**
+     * Otra pestaña del mismo navegador: su sessionStorage empieza vacía y la localStorage es la misma. Por omisión la pestaña duplicada:
+     * los mismos datos que `card()` (ronda 3: sólo la misma compra, de la misma sesión, se comparte).
+     */
+    function otraPestana(slug: string, items = [line()], customer: { name: string; phone: string } = { name: ' Ana López ', phone: PHONE }) {
       sessionStorage.clear()
       const store = createOrderStore(slug, { locale: 'es' })
       store.cart.value = items
       store.quote.value = quoteOf(170)
       store.info.value = info
-      return { store, body: buildOrderBody(store, { customer: { name: 'Ana', phone: PHONE }, note: null, paymentMode: 'CARD_ONLINE' }) }
+      return { store, body: buildOrderBody(store, { customer, note: null, paymentMode: 'CARD_ONLINE' }) }
     }
+
+    it('ronda 3 (Ruling 54 enmendada): otra clienta en el mismo navegador, con el mismo carrito, hace SU compra (nunca la página de la otra)', async () => {
+      const { store, body } = card()
+      api.createOrder.mockResolvedValueOnce(draft())
+      await send(store, body)
+      const deBea = otraPestana(store.slug, [line()], { name: 'Bea Ruiz', phone: '+525599998888' })
+      api.createOrder.mockResolvedValueOnce(draft({ trackingToken: 'B'.repeat(32) }))
+      await send(deBea.store, deBea.body)
+      expect(sent(1).key).not.toBe(sent(0).key)
+      expect(sent(1).body.customer).toEqual({ name: 'Bea Ruiz', phone: '+525599998888' })
+    })
+
+    it('ronda 3: «Cerrar sesión» en la tienda borra la compra compartida; la siguiente es nueva', async () => {
+      const { store, body } = card()
+      api.createOrder.mockResolvedValueOnce(draft())
+      await send(store, body)
+      expect(localStorage.getItem(`avq_card_attempt:${store.slug}`)).not.toBeNull()
+      salioEnLaTienda(store)
+      expect(localStorage.getItem(`avq_card_attempt:${store.slug}`)).toBeNull()
+      const tab2 = otraPestana(store.slug)
+      api.createOrder.mockResolvedValueOnce(draft({ trackingToken: 'E'.repeat(32) }))
+      await send(tab2.store, tab2.body)
+      expect(sent(1).key).not.toBe(sent(0).key)
+    })
 
     it('mismo carrito: la segunda pestaña manda la llave y el cuerpo de la primera y abre la MISMA página de pago (un solo borrador)', async () => {
       const { store, body, assign } = card()

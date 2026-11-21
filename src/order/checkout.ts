@@ -2,10 +2,11 @@
 // - Un intento = una llave. Si hay un intento pendiente se manda ESE cuerpo con ESA llave (beginAttempt lo devuelve).
 // - Sólo una respuesta DEFINITIVA lo borra; red, 5xx, 408, 429, 401 y un 404 sin la marca `final` lo conservan y se reintenta igual.
 // - El teléfono que se verifica es el del cuerpo que se va a mandar (el del intento pendiente, si lo hay).
-// - «Nadie» (tienda híbrida): el pedido va sin teléfono, sin sesión y sin token; no pasa por el código. Un intento pendiente sin
-//   teléfono se reenvía tal cual (mismo cuerpo, misma llave) aunque el negocio ya sea «Mi equipo»; sólo un 401 PHONE_VERIFICATION_REQUIRED
-//   (nunca llegó a crearse) lo suelta y pide los datos de «Mi equipo».
-// - Fase 2: pagar con tarjeta no pide el código ni manda token; el pago en Stripe es la prueba. El modo es el del cuerpo que se manda.
+// - «Nadie» (tienda híbrida): el pedido de caja va sin teléfono y no pasa por el código; con la sesión de la página si la hay (W3: sus
+//   beneficios). Un intento pendiente sin teléfono se reenvía tal cual (mismo cuerpo, misma llave) aunque el negocio ya sea «Mi equipo»;
+//   sólo un 401 PHONE_VERIFICATION_REQUIRED (nunca llegó a crearse) lo suelta y pide los datos de «Mi equipo».
+// - Fase 2: pagar con tarjeta no pide el código; el pago en Stripe es la prueba. Va con la sesión de la página si la hay (W3 c); en
+//   «Nadie» la exige (D661, abajo). El modo es el del cuerpo que se manda.
 // - D661: en «Nadie» la tarjeta (el cuerpo de tarjeta SIN teléfono) es de la clienta de la sesión: sin sesión se va a entrar, sin mandar
 //   nada ni guardar un intento. Si la tarjeta ya no se acepta o está llena, se dice en una línea y se deja lista «Pagar en caja».
 import { signal, type Signal } from '@preact/signals'
