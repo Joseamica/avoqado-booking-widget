@@ -334,6 +334,7 @@
       }
     },
     "cancelPayment": "Cancelar el pago",
+    "checkedAt": "Actualizado a las {{time}}",
     "folio": {
       "head": {
         "pay": "Pasa a pagar en caja",

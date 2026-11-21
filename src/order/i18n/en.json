@@ -334,6 +334,7 @@
       }
     },
     "cancelPayment": "Cancel the payment",
+    "checkedAt": "Updated at {{time}}",
     "folio": {
       "head": {
         "pay": "Go pay at the counter",

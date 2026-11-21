@@ -11,7 +11,8 @@ import { TrackingScreen } from './TrackingScreen'
 import { STORE_CSS } from './theme'
 import { makeStore, withStore } from './testKit'
 import { saveLastOrder } from '../session'
-import type { OnlineOrderStatus, Tracking } from '../types'
+import { beginAttempt, settleAttempt } from '../attempt'
+import type { CreateOrderBody, OnlineOrderStatus, Tracking } from '../types'
 
 let visibility = 'visible'
 beforeEach(() => {
@@ -1507,7 +1508,9 @@ describe('D661: el seguimiento de un pedido pagado con tarjeta en «Nadie»', ()
     expect(getTracking).toHaveBeenCalledTimes(3)
     expect(heading()).toBe('Devuelto')
     await tick(60_000)
-    expect(getTracking).toHaveBeenCalledTimes(3) // hecha: deja de consultar
+    expect(getTracking).toHaveBeenCalledTimes(3) // hecha: deja el sondeo de cada 10 s…
+    await tick(9 * 60_000)
+    expect(getTracking).toHaveBeenCalledTimes(4) // …y, a la vista, relee a los 10 min (ronda 2 #3: el banco puede regresarla)
     // Vuelve a la pestaña: relee aunque el pedido ya sea final (el negocio pudo devolver después; luego se revirtió).
     vi.mocked(getTracking).mockResolvedValue(
       cobrado({ status: 'COMPLETED', notPickedUpAt: '2026-10-18T10:00:00Z', refundedAt: '2026-10-18T11:00:00Z', refund: { status: 'REVERSED', medio: 'TARJETA' } }),
@@ -1517,11 +1520,11 @@ describe('D661: el seguimiento de un pedido pagado con tarjeta en «Nadie»', ()
     visibility = 'visible'
     await act(async () => { document.dispatchEvent(new Event('visibilitychange')) })
     await flush()
-    expect(getTracking).toHaveBeenCalledTimes(4)
+    expect(getTracking).toHaveBeenCalledTimes(5)
     expect(heading()).toBe('Tu banco regresó la devolución: Flautas todavía te la debe.')
     expect(money()).toBeNull()
     await tick(60_000)
-    expect(getTracking).toHaveBeenCalledTimes(4) // la relectura no reanuda un sondeo que ya no hace falta
+    expect(getTracking).toHaveBeenCalledTimes(5) // la relectura no reanuda el sondeo de cada 10 s
     cleanup()
     // Entregado (final) y luego el negocio empieza a devolver: al volver a la vista se entera y vuelve a consultar.
     vi.mocked(getTracking).mockReset()
@@ -1551,7 +1554,7 @@ describe('D661: el seguimiento de un pedido pagado con tarjeta en «Nadie»', ()
     expect(getTracking).toHaveBeenCalledTimes(3)
     expect(heading()).toBe('Devuelto')
     await tick(60_000)
-    expect(getTracking).toHaveBeenCalledTimes(3) // ya cerrado «Devuelto»: deja de consultar
+    expect(getTracking).toHaveBeenCalledTimes(3) // ya cerrado «Devuelto»: deja el sondeo de cada 10 s
   })
 
   it('ronda 1 M8: la devolución en camino deja de consultarse a las 2 h; al volver a la vista relee sin reanudar el sondeo', async () => {
@@ -1584,6 +1587,85 @@ describe('D661: el seguimiento de un pedido pagado con tarjeta en «Nadie»', ()
     await flush()
     expect(getTracking).toHaveBeenCalledTimes(tope + 2)
     expect(heading()).toBe('Devuelto')
+  })
+
+  it('ronda 2 #3 (Ruling 56): «Devuelto» a la vista se relee cada 10 min y dice cuándo se verificó; si el banco la regresa, lo dice', async () => {
+    const NO_LO_RECOGIO = '2026-10-18T10:00:00Z'
+    const devuelto = (status: 'DONE' | 'REVERSED') =>
+      cobrado({ status: 'COMPLETED', notPickedUpAt: NO_LO_RECOGIO, refundedAt: '2026-10-18T11:00:00Z', refund: { status, medio: 'TARJETA' } })
+    await show(devuelto('DONE'))
+    expect(heading()).toBe('Devuelto')
+    // Bajo la línea del dinero, la hora del negocio de la última lectura buena (19:05 UTC = 13:05 en CDMX).
+    expect(screen.getByText('Actualizado a las 13:05')).toBeTruthy()
+    await tick(9 * 60_000)
+    expect(getTracking).toHaveBeenCalledTimes(1)
+    vi.mocked(getTracking).mockResolvedValue(devuelto('REVERSED'))
+    await tick(60_000)
+    expect(getTracking).toHaveBeenCalledTimes(2)
+    expect(heading()).toBe('Tu banco regresó la devolución: Flautas todavía te la debe.')
+    expect(screen.getByText('Actualizado a las 13:15')).toBeTruthy()
+    // Hasta 24 h desde que esta vista vio «Devuelto»; después ya no (al volver a la vista relee, como siempre).
+    await tick(24 * 60 * 60_000)
+    const hasta = vi.mocked(getTracking).mock.calls.length
+    expect(hasta).toBeGreaterThan(140) // cada 10 min durante 24 h
+    await tick(2 * 60 * 60_000)
+    expect(getTracking).toHaveBeenCalledTimes(hasta)
+  })
+
+  it('ronda 2 #3: con la pestaña oculta no relee; al volver a verse relee y sigue cada 10 min', async () => {
+    await show(cobrado({ status: 'COMPLETED', refundedAt: '2026-10-18T11:00:00Z', refund: { status: 'DONE', medio: 'SALDO' } }))
+    visibility = 'hidden'
+    await act(async () => { document.dispatchEvent(new Event('visibilitychange')) })
+    await tick(60 * 60_000)
+    expect(getTracking).toHaveBeenCalledTimes(1)
+    visibility = 'visible'
+    await act(async () => { document.dispatchEvent(new Event('visibilitychange')) })
+    await flush()
+    expect(getTracking).toHaveBeenCalledTimes(2)
+    await tick(10 * 60_000)
+    expect(getTracking).toHaveBeenCalledTimes(3)
+  })
+
+  it('ronda 2 #3: «Actualizado a las HH:MM» sale en todo pedido con tarjeta ya final; en curso o en caja, no', async () => {
+    for (const r of [
+      nc({ status: 'EXPIRED', cardStatus: 'RELEASED' }), // «Nadie»
+      tr({ paymentMode: 'CARD_ONLINE', status: 'CANCELLED_BY_STAFF', cardStatus: 'CAPTURED', canCancel: false }), // «Mi equipo»
+    ]) {
+      vi.mocked(getTracking).mockReset()
+      await show(r)
+      expect(screen.getByText('Actualizado a las 13:05'), r.status).toBeTruthy()
+      cleanup()
+    }
+    for (const r of [nc(), cobrado(), tr({ status: 'COMPLETED', canCancel: false })]) {
+      vi.mocked(getTracking).mockReset()
+      await show(r)
+      expect(screen.queryByText(/^Actualizado a las/), `${r.paymentMode} ${r.status}`).toBeNull()
+      cleanup()
+    }
+  })
+
+  it('ronda 2 #1: al ver resuelto el pago de su borrador, suelta la compra con tarjeta compartida entre pestañas', async () => {
+    const cuerpo: CreateOrderBody = {
+      items: [{ productId: 'p1', quantity: 1, modifiers: [] }], paymentMode: 'CARD_ONLINE', expectedTotal: '170.00', customer: { name: 'Ana' },
+    }
+    const abrir = async (r: Tracking) => {
+      vi.mocked(getTracking).mockResolvedValue(r)
+      const s = makeStore(null, null)
+      const { key } = beginAttempt(s.slug, cuerpo)!
+      settleAttempt(s.slug, { trackingToken: 'T'.repeat(32) }) // su borrador espera el pago, con su página abierta
+      s.trackingToken.value = 'T'.repeat(32)
+      render(withStore(s, <TrackingScreen />))
+      await flush()
+      sessionStorage.clear() // otra pestaña
+      return { slug: s.slug, key }
+    }
+    // Todavía esperando el pago: la misma compra en otra pestaña sigue reusando su llave.
+    const esperando = await abrir(tr({ status: 'AWAITING_PAYMENT', paymentMode: 'CARD_ONLINE', orderNumber: '' }))
+    expect(beginAttempt(esperando.slug, cuerpo)!.key).toBe(esperando.key)
+    cleanup()
+    // Pagado: otra igual ya es una compra nueva.
+    const pagado = await abrir(tr({ status: 'ACCEPTED', paymentMode: 'CARD_ONLINE', cardStatus: 'CAPTURED', paid: true }))
+    expect(beginAttempt(pagado.slug, cuerpo)!.key).not.toBe(pagado.key)
   })
 
   it('COMPLETED con notPickedUpAt: «No lo recogiste»', async () => {

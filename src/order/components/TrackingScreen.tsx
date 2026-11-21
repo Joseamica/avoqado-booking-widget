@@ -7,6 +7,7 @@ import { formatTime } from '../hours'
 import { createOrderT } from '../i18n'
 import { formatMXN } from '../money'
 import { abandonPending, clearAbandon, clearLastOrder, loadLastOrder, markAbandon } from '../session'
+import { soltarCompraConTarjeta } from '../attempt'
 import { OrderStoreContext } from '../store'
 import { isFinalStatus, type OnlineOrderStatus, type Tracking } from '../types'
 import { focusLost } from './focus'
@@ -50,6 +51,12 @@ const refundOpen = (r: Tracking) =>
 const done = (r: Tracking, refundSince: number | null) =>
   isFinalStatus(r.status) && !MONEY_IN_DOUBT.has(r.cardStatus ?? '') && !lateWindowOpen(r)
   && !(refundOpen(r) && (refundSince == null || Date.now() < refundSince + LATE_MONEY_MS))
+/**
+ * Ronda 2 #3 (Ruling 56): un pedido con tarjeta ya devuelto (`refundedAt`) se relee cada 10 min con la pestaña a la vista, hasta 24 h
+ * desde que esta vista lo vio así: el SERVIDOR vuelve a revisar la devolución y el banco puede regresarla.
+ */
+const REFUNDED_POLL_MS = 10 * 60_000
+const REFUNDED_WATCH_MS = 24 * 60 * 60_000
 const FOLIO_STEPS = ['order', 'paid', 'ready', 'completed'] as const
 const FOLIO_PAID: ReadonlySet<OnlineOrderStatus> = new Set(['ACCEPTED', 'READY', 'COMPLETED'])
 const FOLIO_VOID: ReadonlySet<OnlineOrderStatus> = new Set(['CANCELLED_BY_CUSTOMER', 'CANCELLED_BY_STAFF', 'REJECTED', 'PAYMENT_NOT_COMPLETED'])
@@ -91,6 +98,8 @@ export function TrackingScreen() {
   const whereId = useId()
   const token = store.trackingToken.value
   const [tracking, setTracking] = useState<Tracking | null>(null)
+  /** Ronda 2 #3: la hora de la última lectura buena («Actualizado a las HH:MM» bajo el dinero de un pedido con tarjeta ya final). */
+  const [readAt, setReadAt] = useState<number | null>(null)
   /** Llave del aviso de la última consulta fallida: sin red, o el servidor falló (no es lo mismo). */
   const [problem, setProblem] = useState<string | null>(null)
   const [gone, setGone] = useState(false)
@@ -131,17 +140,28 @@ export function TrackingScreen() {
     // Mientras no se confirme el abandono del pago, el sondeo no corre (diría «Confirmando tu pago…» del borrador vivo).
     let cancelling = entry.cancel
     let timer: ReturnType<typeof setTimeout> | null = null
-    // Un solo temporizador: si ya hay uno agendado, se respeta.
-    const later = () => { if (!stopped && !finished && !cancelling && !timer) timer = setTimeout(() => void run(), POLL_MS) }
     let lastValid: Tracking | null = null // la última respuesta buena: con ella se vigila el tope aunque las lecturas fallen
     /** D661 (ronda 1 M8): desde cuándo esta vista ve la devolución abierta; a las 2 h deja de consultar. */
     let refundSince: number | null = null
+    /** Ronda 2 #3: desde cuándo esta vista ve el pedido con tarjeta ya devuelto; mientras, relee cada 10 min. */
+    let refundedSince: number | null = null
+    const vigilaDevuelto = () => refundedSince != null && Date.now() < refundedSince + REFUNDED_WATCH_MS
+    // Un solo temporizador: si ya hay uno agendado, se respeta. Terminado, sólo la relectura lenta de un «Devuelto».
+    const later = () => {
+      if (stopped || cancelling || timer) return
+      if (!finished) timer = setTimeout(() => void run(), POLL_MS)
+      else if (vigilaDevuelto()) timer = setTimeout(() => void run(true), REFUNDED_POLL_MS)
+    }
     const apply = (r: Tracking) => {
       avisarSiCambio(store.host, store.slug, token, lastValid, r) // W4: «Mi cuenta» se vuelve a leer
       lastValid = r
       setTracking(r)
       setProblem(null)
+      setReadAt(Date.now())
+      // Ronda 2 #1: su pago ya se resolvió (pagado o no completado): la misma compra en otra pestaña ya es una nueva.
+      if (r.status !== 'AWAITING_PAYMENT') soltarCompraConTarjeta(store.slug, token)
       refundSince = refundOpen(r) ? refundSince ?? Date.now() : null
+      refundedSince = r.paymentMode === 'CARD_ONLINE' && r.refundedAt ? refundedSince ?? Date.now() : null
       // D661: una relectura al volver a la vista puede traer una devolución en camino: entonces el sondeo se reanuda (si no lleva 2 h).
       finished = done(r, refundSince)
     }
@@ -218,7 +238,7 @@ export function TrackingScreen() {
       setAbandoning(true)
       void abandon()
     }
-    const onVisible = () => void run(!!lastValid && isNadieCard(lastValid))
+    const onVisible = () => void run(!!lastValid && (isNadieCard(lastValid) || vigilaDevuelto()))
     document.addEventListener('visibilitychange', onVisible)
     void (cancelling ? abandon() : run())
     return () => {
@@ -557,6 +577,10 @@ export function TrackingScreen() {
             <p class="avq-o-total__row"><span>{t(totalLabel)}</span><span>{formatMXN(tracking.total, store.locale)}</span></p>
             {/* «Pagaste $69» ya dice que se pagó (1j). */}
             {pay && !paidWithBen && <p class="avq-o-total__tax">{pay}</p>}
+            {/* Ronda 2 #3: el dinero de un pedido con tarjeta ya cerrado todavía puede cambiar (una devolución que el banco regresa). */}
+            {card && isFinalStatus(tracking.status) && readAt != null && (
+              <p class="avq-o-help">{t('tracking.checkedAt', { time: time(new Date(readAt).toISOString()) })}</p>
+            )}
           </div>
           {isFolio && !folioPaid && tracking.status === 'PENDING_ACCEPTANCE' && <p class="avq-o-total__tax">{t('tracking.folio.closePage')}</p>}
         </div>
