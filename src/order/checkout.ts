@@ -14,7 +14,8 @@ import { ApiError, createOrder, quote, verifyOrderingOtp } from './api'
 import { autorizarIntento, beginAttempt, pendingAttempt, reautorizarIntento, settleAttempt } from './attempt'
 import { desdeUnica, loadSession, samePhone, saveLastOrder, type OrderingSession } from './session'
 import {
-  abrirPagina, alCambiarLaPagina, entrarAqui, epocaDe, epocaDelNegocio, fijarPagina, paginaDe, sesionParaMandar, soltarLaPagina, type SesionEmitida,
+  abrirPagina, alCambiarLaPagina, clienteDelToken, entrarAqui, epocaDe, epocaDelNegocio, fijarPagina, paginaDe, sesionParaMandar, soltarLaPagina,
+  type SesionEmitida,
 } from '../lib/sesionDeCliente'
 import { toQuoteItems } from './cart'
 import { expectedTotalFromQuote } from './money'
@@ -162,8 +163,18 @@ export interface Checkout {
   conSesion: Signal<boolean>
   /** D661: se fue a entrar para pagar con tarjeta: al entrar regresa a «Tus datos». La tienda lo lee (y lo apaga) al llegar a «entrar». */
   paraPagar: boolean
+  /**
+   * Limpieza final (Ruling 77): la ficha de la última sesión que tuvo la tienda (aunque ya se haya perdido por un 401). Si llega la de OTRA,
+   * lo de la anterior se vacía; `null` tras su «Cerrar sesión» (lo que se escriba después ya es de quien sigue).
+   */
+  clienta: string | null
 }
 const checkouts = new WeakMap<OrderStore, Checkout>()
+/** Lo que una clienta escribió en «Tus datos» y eligió usar (premio, puntos, cupón) no se queda para la siguiente; el carrito sí. */
+function vaciarLoSuyo(c: Checkout): void {
+  c.draft.value = borradorVacio()
+  c.eleccion.value = {}
+}
 export function checkoutOf(store: OrderStore): Checkout {
   let c = checkouts.get(store)
   if (!c) {
@@ -181,10 +192,13 @@ export function checkoutOf(store: OrderStore): Checkout {
       sesionCerrada: signal(false),
       conSesion: signal(false),
       paraPagar: false,
+      clienta: null,
     }
     // W1 (alcance A): abrir la tienda abre la página de ese negocio (la primera vez en el documento; recrear la tienda no relee).
     abrirPagina(store.slug, 'pedidos', leerPedidos(store.slug))
-    c.conSesion.value = !!paginaDe(store.slug, 'pedidos')
+    const abierta = paginaDe(store.slug, 'pedidos')
+    c.conSesion.value = !!abierta
+    c.clienta = abierta && clienteDelToken(abierta.token)
     // r12, la pantalla no miente: si la tienda pierde su sesión (por donde sea: ya no está guardada, un 401 al cotizar o al pedir), lo
     // cotizado con ella ya no vale (se vuelve a cotizar sin sesión) y se dice con calma. Si entra otra vez, el aviso se va.
     // ponytail: un oyente por tienda creada, sin quitarlo al recrearla (pesa un cierre); si se recrean miles, devolver un «dejar de oír».
@@ -195,10 +209,15 @@ export function checkoutOf(store: OrderStore): Checkout {
       // pestaña: el aviso y «Pedir» bloqueado se van con él.
       c!.pending.value = !!pendingAttempt(slug)
       if (misma || !afecta.includes('pedidos')) return
-      const perdio = !paginaDe(slug, 'pedidos')
-      c!.conSesion.value = !perdio
-      c!.sesionCerrada.value = perdio
-      if (perdio) store.quote.value = null
+      const p = paginaDe(slug, 'pedidos')
+      c!.conSesion.value = !!p
+      c!.sesionCerrada.value = !p
+      if (!p) store.quote.value = null
+      // Limpieza final: llegó la sesión de OTRA clienta sin su «Cerrar sesión» (tras un 401, o tras salir en reservas): lo de la anterior
+      // se vacía. Si vuelve la misma, lo suyo se queda.
+      const ahora = p && clienteDelToken(p.token)
+      if (ahora && c!.clienta && ahora !== c!.clienta) vaciarLoSuyo(c!)
+      if (ahora) c!.clienta = ahora
     })
     // La cotización y la pregunta de «el precio cambió» valen sólo para el carrito que se cotizó: si cambia (también desde
     // la carta), ya no valen y «Continuar» espera la cotización nueva. OrderApp crea esto en su primer pintado.
@@ -288,7 +307,7 @@ export function entroEnLaTienda(store: OrderStore, r: SesionEmitida, volverA: 'c
   const c = checkoutOf(store)
   // r11: adopta la sesión con que entró (`EntrarConCuenta` ya la guardó), sin releer lo guardado.
   fijarPagina(store.slug, 'pedidos', desdeUnica({ token: r.token, customer: r.customer, contactos: r.contactos, guardadaEn: Date.now() }))
-  reautorizarIntento(store.slug, r.token) // un intento que esperaba entrar sale con ésta (misma llave y cuerpo), si es de ella
+  reautorizarIntento(store.slug, r.token, true) // un intento que esperaba entrar sale con ésta (misma llave y cuerpo), si es de ella
   c.pending.value = !!pendingAttempt(store.slug) // ronda 5: si entró otra, el de la anterior se soltó
   c.sesionCerrada.value = false
   c.feedback.value = null
@@ -305,8 +324,8 @@ export function salioEnLaTienda(store: OrderStore): void {
   soltarLaPagina(store.slug, 'pedidos', undefined, leerPedidos(store.slug))
   c.sesionCerrada.value = false
   c.feedback.value = null
-  c.draft.value = borradorVacio()
-  c.eleccion.value = {}
+  vaciarLoSuyo(c)
+  c.clienta = null
 }
 
 /** ¿Se puede guardar? Sin sessionStorage no hay intento y sin localStorage no hay sesión: pedir código sería en balde. */

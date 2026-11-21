@@ -13,12 +13,14 @@ vi.mock('./api', async () => ({ ...(await vi.importActual<typeof import('./api')
 
 import { ApiError } from './api'
 import {
-  buildOrderBody, checkoutOf, entroEnLaTienda, isDefinitive, nav, phoneToVerify, retry, salioEnLaTienda, send, storageWorks, submitOrder, verifyPhone,
+  buildOrderBody, checkoutOf, cotizar, entroEnLaTienda, isDefinitive, nav, phoneToVerify, retry, salioEnLaTienda, send, storageWorks, submitOrder,
+  verifyPhone,
 } from './checkout'
+import { toQuoteItems } from './cart'
 import { createOrderStore, type OrderStore } from './store'
 import { loadLastOrder, loadSession, saveSession } from './session'
 import { aplicarRenovacion, borrarSesion, documentoNuevoParaPruebas, guardarSesion, leerSesion, paginaDe } from '../lib/sesionDeCliente'
-import { setCustomerSession, tokenParaMandar } from '../state/booking'
+import { clearCustomerSession, setCustomerSession, tokenParaMandar } from '../state/booking'
 import { pendingAttempt } from './attempt'
 import { phoneE164 } from './phone'
 import type { CartLine } from './cart'
@@ -1517,6 +1519,68 @@ describe('D661: pagar con tarjeta en línea en «Nadie»', () => {
       await retry(store)
       expect(sent(1)).toMatchObject({ key: sent(0).key, token: otraVez.token })
       expect(sent(1).body).toEqual(sent(0).body)
+    })
+  })
+
+  describe('limpieza final (Ruling 77)', () => {
+    const jwt = (sub: string, n: number) => `h.${btoa(JSON.stringify({ sub, n }))}.s`
+    const vacio = { note: '', name: '', dial: '52', national: '', email: '', accepted: false }
+
+    it('(1) con el código de WhatsApp, el intento que esperaba entrar sale con la MISMA llave aunque el teléfono resuelva a otra ficha: nunca un segundo pedido', async () => {
+      const slug = `l77${++n}`
+      guardarSesion(slug, { ...sesion(jwt('c1', 1)), guardadaEn: Date.now() } as any)
+      const store = createOrderStore(slug, { locale: 'es' })
+      store.cart.value = [line()]
+      store.quote.value = quoteOf(170)
+      store.info.value = info // «Mi equipo», pagar al recoger
+      const body = buildOrderBody(store, { customer: { name: ' Ana López ', phone: PHONE }, note: null })
+      api.createOrder.mockRejectedValueOnce(offline()) // la respuesta se perdió: el pedido quizá ya existe
+      await send(store, body)
+      api.createOrder.mockRejectedValueOnce(new ApiError('Tu sesión ya no es válida.', 401, 'CUSTOMER_TOKEN_INVALID'))
+      expect((await retry(store))?.kind).toBe('needsOtp')
+      // Como OtpScreen: toma el cuerpo antes de verificar y lo manda después. El código del MISMO teléfono resuelve a otra ficha (c3).
+      const cuerpo = pendingAttempt(slug)?.body ?? checkoutOf(store).lastBody.value!
+      api.verifyOrderingOtp.mockResolvedValueOnce({ ...sesion(jwt('c3', 3)), customer: { ...sesion('x').customer, id: 'c3' } })
+      expect(await verifyPhone(store, PHONE, '123456')).toBe(true)
+      api.createOrder.mockRejectedValueOnce(new ApiError('x', 409, 'IDEMPOTENCY_KEY_CONFLICT', undefined, false, true))
+      await send(store, cuerpo)
+      expect(api.createOrder).toHaveBeenCalledTimes(3)
+      expect([sent(1).key, sent(2).key]).toEqual([sent(0).key, sent(0).key]) // la misma llave: el SERVIDOR nunca crea otro
+    })
+
+    it('(2) llega la sesión de OTRA clienta sin el «Cerrar sesión» de la tienda (tras un 401, o tras salir en reservas): lo de Ana se vacía', async () => {
+      const deAna = { note: 'sin cebolla', name: 'Ana López', dial: '52', national: '5544422262', email: 'ana@correo.mx', accepted: true }
+      for (const como of ['401', 'reservas'] as const) {
+        const { store } = nadieCard({ token: jwt('c1', 1) })
+        const c = checkoutOf(store)
+        c.draft.value = deAna
+        c.eleccion.value = { premioId: 'pr1', puntos: 50, cupon: 'ANA10' }
+        if (como === '401') {
+          api.quote.mockRejectedValueOnce(new ApiError('Tu sesión ya no es válida.', 401, 'CUSTOMER_TOKEN_INVALID')).mockResolvedValueOnce(quoteOf(170))
+          await cotizar(store, toQuoteItems(store.cart.value))
+          expect(paginaDe(store.slug, 'pedidos')).toBeNull()
+        } else clearCustomerSession(store.slug) // el «Cerrar sesión» del widget de reservas, en esta misma página
+        expect(c.draft.value, como).toEqual(deAna) // todavía es de Ana: puede volver a entrar a terminar
+        const bea = { ...sesionB(), token: jwt('c2', 2) }
+        guardarSesion(store.slug, bea as any)
+        entroEnLaTienda(store, bea as any, 'details')
+        expect(c.draft.value, como).toEqual(vacio)
+        expect(c.eleccion.value, como).toEqual({})
+      }
+    })
+
+    it('(2) si vuelve a entrar ella (la misma ficha), lo suyo se queda', async () => {
+      const { store } = nadieCard({ token: jwt('c1', 1) })
+      const c = checkoutOf(store)
+      c.draft.value = { ...vacio, name: 'Ana López', note: 'sin cebolla' }
+      c.eleccion.value = { cupon: 'ANA10' }
+      api.quote.mockRejectedValueOnce(new ApiError('Tu sesión ya no es válida.', 401, 'CUSTOMER_TOKEN_INVALID')).mockResolvedValueOnce(quoteOf(170))
+      await cotizar(store, toQuoteItems(store.cart.value))
+      const otraVez = { ...sesion(jwt('c1', 3)), guardadaEn: Date.now() }
+      guardarSesion(store.slug, otraVez as any)
+      entroEnLaTienda(store, otraVez as any, 'details')
+      expect(c.draft.value).toEqual({ ...vacio, name: 'Ana López', note: 'sin cebolla' })
+      expect(c.eleccion.value).toEqual({ cupon: 'ANA10' })
     })
   })
 })

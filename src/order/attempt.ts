@@ -113,17 +113,19 @@ export function autorizarIntento(slug: string, cambio: { token?: string; requier
   }
 }
 /**
- * Al entrar otra vez: si el intento pendiente esperaba una sesión (su token recibió 401), sale con ésta (misma llave y cuerpo), pero sólo
- * si es SU clienta (la ficha de los dos tokens). Ronda 5: si entró OTRA en la pestaña, el intento de la anterior se suelta sin entregárselo:
- * su cuerpo y su llave (y lo que un envío anterior haya creado con ellos) son de la anterior. Sin poder leer alguna de las dos fichas, como
- * antes.
+ * Al entrar otra vez: si el intento pendiente esperaba una sesión (su token recibió 401), sale con ésta (misma llave y cuerpo).
+ * `alEntrarConCuenta` (ronda 5, Ruling 77): si entró OTRA clienta (la ficha de los dos tokens), el intento de la anterior se suelta sin
+ * entregárselo: su cuerpo y su llave (y lo que un envío anterior haya creado con ellos) son de la anterior. Con el código de WhatsApp no:
+ * prueba el teléfono del propio intento, y soltarlo haría otra llave (un segundo pedido si el primero se creó). Sin poder leer alguna de las
+ * dos fichas, como antes.
  */
-export function reautorizarIntento(slug: string, token: string): void {
+export function reautorizarIntento(slug: string, token: string, alEntrarConCuenta = false): void {
   const a = pendingAttempt(slug)
   if (!a?.requiereEntrar) return
   const suya = a.token ? clienteDelToken(a.token) : null
   const entra = clienteDelToken(token)
-  if (!suya || !entra || suya === entra) return autorizarIntento(slug, { token, requiereEntrar: false, porSesion: true })
+  if (!alEntrarConCuenta || !suya || !entra || suya === entra)
+    return autorizarIntento(slug, { token, requiereEntrar: false, porSesion: true })
   try {
     sessionStorage.removeItem(storageKey(slug))
   } catch {

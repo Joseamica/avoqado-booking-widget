@@ -107,14 +107,20 @@ describe('beginAttempt / pendingAttempt / settleAttempt', () => {
       sessionStorage.clear()
       const a = beginAttempt('flautas-coyoacan', body(), salio)!
       autorizarIntento('flautas-coyoacan', { requiereEntrar: true }) // su token recibió 401
-      reautorizarIntento('flautas-coyoacan', entra)
+      reautorizarIntento('flautas-coyoacan', entra, true) // entró con su cuenta
       expect(pendingAttempt('flautas-coyoacan'), `${salio} → ${entra}`)
         .toEqual(sigue ? { ...a, token: entra, requiereEntrar: false, porSesion: true } : null)
     }
+    // Ruling 77: con el código de WhatsApp (que prueba el teléfono del propio intento) se reautoriza aunque resuelva a otra ficha.
+    sessionStorage.clear()
+    const c = beginAttempt('flautas-coyoacan', body(), jwt('c1'))!
+    autorizarIntento('flautas-coyoacan', { requiereEntrar: true })
+    reautorizarIntento('flautas-coyoacan', jwt('c3'))
+    expect(pendingAttempt('flautas-coyoacan')).toEqual({ ...c, token: jwt('c3'), requiereEntrar: false, porSesion: true })
     // Un intento que no espera entrar (respuesta perdida) no se toca al entrar.
     sessionStorage.clear()
     const b = beginAttempt('flautas-coyoacan', body(), jwt('c1'))!
-    reautorizarIntento('flautas-coyoacan', jwt('c2'))
+    reautorizarIntento('flautas-coyoacan', jwt('c2'), true)
     expect(pendingAttempt('flautas-coyoacan')).toEqual(b)
   })
 
