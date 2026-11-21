@@ -15,6 +15,7 @@ import * as bookingApi from '../../api/booking'
 import { API_BASE, ApiError, createOrder, getInfo, quote } from '../api'
 import { loadSession, saveSession } from '../session'
 import { fijarPagina, guardarSesion } from '../../lib/sesionDeCliente'
+import { clearCustomerSession } from '../../state/booking'
 import { autorizarIntento, beginAttempt, pendingAttempt, reautorizarIntento } from '../attempt'
 import { checkoutOf, entroEnLaTienda } from '../checkout'
 import { createOrderStore } from '../store'
@@ -135,6 +136,24 @@ describe('tus datos y aviso de privacidad', () => {
     expect(confirmBtn().disabled).toBe(true)
     expect(screen.getByText('Tu pedido anterior no se confirmó por la conexión. Reintenta para saber si llegó.')).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Reintentar' })).toBeTruthy()
+  })
+
+  it('D661 ronda 5 (2): «Cerrar sesión» en reservas, en esta misma página, también suelta el intento de la tienda: el aviso se va y «Confirmar pedido» vuelve', () => {
+    const s = show({}, slug => {
+      saveSession(slug, { token: 'tok', phone: '+525544422262', name: 'Ana', savedAt: Date.now() })
+      beginAttempt(slug, {
+        items: [{ productId: 'p-viejo', quantity: 1, modifiers: [] }], paymentMode: 'PAY_AT_PICKUP', expectedTotal: '50.00',
+        customer: { name: 'Ana', phone: '+525544422262' },
+      }, 'tok')
+    })
+    fill()
+    accept()
+    expect(confirmBtn().disabled).toBe(true)
+    act(() => clearCustomerSession(s.slug)) // el «Cerrar sesión» del widget de reservas
+    expect(pendingAttempt(s.slug)).toBeNull()
+    expect(screen.queryByText('Tu pedido anterior no se confirmó por la conexión. Reintenta para saber si llegó.')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Reintentar' })).toBeNull()
+    expect(confirmBtn().disabled).toBe(false)
   })
 
   it('con la tienda no abierta «Confirmar pedido» está deshabilitado (igual que «Continuar» del carrito)', () => {

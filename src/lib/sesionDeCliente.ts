@@ -42,15 +42,24 @@ export interface FichaNueva {
 
 const TREINTA_DIAS_S = 30 * 24 * 60 * 60
 
-/** La versión de sesión que firmó el SERVIDOR (`v` del token; S6). `null` si el token no trae una legible. */
-export function versionDelToken(token: string): number | null {
+/** Lo que firmó el SERVIDOR en el token, leído sin verificar (sólo para reconocer la sesión); `null` si no se lee. */
+function cargaDelToken(token: string): any {
   try {
     const p = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')
-    const v = JSON.parse(atob(p + '==='.slice((p.length + 3) % 4))).v
-    return Number.isInteger(v) ? v : null
+    return JSON.parse(atob(p + '==='.slice((p.length + 3) % 4)))
   } catch {
     return null
   }
+}
+/** La versión de sesión que firmó el SERVIDOR (`v` del token; S6). `null` si el token no trae una legible. */
+export function versionDelToken(token: string): number | null {
+  const v = cargaDelToken(token)?.v
+  return Number.isInteger(v) ? v : null
+}
+/** La ficha del token (`sub`: la clienta que resuelve el SERVIDOR, en la sesión única y en los tokens de hoy). `null` si no se lee. */
+export function clienteDelToken(token: string): string | null {
+  const sub = cargaDelToken(token)?.sub
+  return typeof sub === 'string' ? sub : null
 }
 
 /**

@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { beginAttempt, newAttemptKey, pendingAttempt, settleAttempt, soltarCompraConTarjeta } from './attempt'
+import {
+  autorizarIntento, beginAttempt, newAttemptKey, pendingAttempt, reautorizarIntento, settleAttempt, soltarCompraConTarjeta,
+} from './attempt'
 import { identidadDe, soltarLaPagina } from '../lib/sesionDeCliente'
 import type { CreateOrderBody } from './types'
 
@@ -93,6 +95,27 @@ describe('beginAttempt / pendingAttempt / settleAttempt', () => {
     vi.stubGlobal('crypto', undefined)
     expect(beginAttempt('flautas-coyoacan', body())).toBeNull()
     expect(sessionStorage.getItem('avq_order_attempt:flautas-coyoacan')).toBeNull()
+  })
+
+  it('ronda 5 (3): al entrar, el intento que esperaba una sesión sólo se reautoriza para SU clienta; si entra otra, se suelta', () => {
+    const jwt = (sub: string) => `h.${btoa(JSON.stringify({ sub }))}.s` // la ficha (`sub`) legible, como en los del SERVIDOR
+    // [token con que salió, token con que entra, ¿se reautoriza?]; sin poder leer alguna de las dos fichas, como hoy.
+    const casos: [string, string, boolean][] = [
+      [jwt('c1'), jwt('c2'), false], [jwt('c1'), jwt('c1'), true], ['tok-A', jwt('c2'), true], [jwt('c1'), 'tok-B', true],
+    ]
+    for (const [salio, entra, sigue] of casos) {
+      sessionStorage.clear()
+      const a = beginAttempt('flautas-coyoacan', body(), salio)!
+      autorizarIntento('flautas-coyoacan', { requiereEntrar: true }) // su token recibió 401
+      reautorizarIntento('flautas-coyoacan', entra)
+      expect(pendingAttempt('flautas-coyoacan'), `${salio} → ${entra}`)
+        .toEqual(sigue ? { ...a, token: entra, requiereEntrar: false, porSesion: true } : null)
+    }
+    // Un intento que no espera entrar (respuesta perdida) no se toca al entrar.
+    sessionStorage.clear()
+    const b = beginAttempt('flautas-coyoacan', body(), jwt('c1'))!
+    reautorizarIntento('flautas-coyoacan', jwt('c2'))
+    expect(pendingAttempt('flautas-coyoacan')).toEqual(b)
   })
 
   it('si guardar lanza (cuota llena, modo privado), beginAttempt devuelve null', () => {

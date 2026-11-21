@@ -131,6 +131,7 @@ export function buildOrderBody(
 export interface CheckoutDraft {
   note: string; name: string; dial: string; national: string; email: string; accepted: boolean; payment?: PaymentMode
 }
+const borradorVacio = (): CheckoutDraft => ({ note: '', name: '', dial: '52', national: '', email: '', accepted: false })
 export type Feedback =
   | { kind: 'sesionParaTerminar' }
   /** `premio`: la etiqueta del premio que ya se usó (para decirlo: «Tu café gratis ya se usó en otro pedido»). */
@@ -172,7 +173,7 @@ export function checkoutOf(store: OrderStore): Checkout {
       feedback,
       pending: signal(!!pendingAttempt(store.slug)),
       lastBody: signal(null),
-      draft: signal({ note: '', name: '', dial: '52', national: '', email: '', accepted: false }),
+      draft: signal(borradorVacio()),
       otpSentAt: new Map(),
       otpNoSalio: signal(new Set<string>()),
       otpPeticion: new Map(),
@@ -189,7 +190,11 @@ export function checkoutOf(store: OrderStore): Checkout {
     // ponytail: un oyente por tienda creada, sin quitarlo al recrearla (pesa un cierre); si se recrean miles, devolver un «dejar de oír».
     const slug = store.slug
     alCambiarLaPagina((s, afecta, misma) => {
-      if (s !== slug || misma || !afecta.includes('pedidos')) return
+      if (s !== slug) return
+      // Ronda 5: «Cerrar sesión» en cualquier superficie del negocio (también reservas, en esta misma página) suelta el intento de la
+      // pestaña: el aviso y «Pedir» bloqueado se van con él.
+      c!.pending.value = !!pendingAttempt(slug)
+      if (misma || !afecta.includes('pedidos')) return
       const perdio = !paginaDe(slug, 'pedidos')
       c!.conSesion.value = !perdio
       c!.sesionCerrada.value = perdio
@@ -283,7 +288,8 @@ export function entroEnLaTienda(store: OrderStore, r: SesionEmitida, volverA: 'c
   const c = checkoutOf(store)
   // r11: adopta la sesión con que entró (`EntrarConCuenta` ya la guardó), sin releer lo guardado.
   fijarPagina(store.slug, 'pedidos', desdeUnica({ token: r.token, customer: r.customer, contactos: r.contactos, guardadaEn: Date.now() }))
-  reautorizarIntento(store.slug, r.token) // un intento que esperaba entrar sale con ésta (misma llave y cuerpo)
+  reautorizarIntento(store.slug, r.token) // un intento que esperaba entrar sale con ésta (misma llave y cuerpo), si es de ella
+  c.pending.value = !!pendingAttempt(store.slug) // ronda 5: si entró otra, el de la anterior se soltó
   c.sesionCerrada.value = false
   c.feedback.value = null
   if (volverA) store.go(volverA)
@@ -291,14 +297,16 @@ export function entroEnLaTienda(store: OrderStore, r: SesionEmitida, volverA: 'c
 
 /**
  * W4: «Cerrar sesión» en «Mi cuenta» de la tienda. Salió ella: el carrito no dice «Tu sesión se cerró». Ronda 4: su intento pendiente se fue
- * con la sesión (`soltarLaPagina`): la pantalla ya no ofrece «Reintentar» lo suyo ni bloquea «Pedir» por él.
+ * con la sesión (`soltarLaPagina`; el oyente de `checkoutOf` lo ve): la pantalla ya no ofrece «Reintentar» lo suyo ni bloquea «Pedir» por
+ * él. Ronda 5: lo que escribió en «Tus datos» y lo que eligió usar tampoco se quedan para quien sigue (el carrito sí, como siempre).
  */
 export function salioEnLaTienda(store: OrderStore): void {
   const c = checkoutOf(store)
   soltarLaPagina(store.slug, 'pedidos', undefined, leerPedidos(store.slug))
   c.sesionCerrada.value = false
-  c.pending.value = !!pendingAttempt(store.slug)
   c.feedback.value = null
+  c.draft.value = borradorVacio()
+  c.eleccion.value = {}
 }
 
 /** ¿Se puede guardar? Sin sessionStorage no hay intento y sin localStorage no hay sesión: pedir código sería en balde. */

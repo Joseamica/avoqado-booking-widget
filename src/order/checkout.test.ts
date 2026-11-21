@@ -1255,9 +1255,9 @@ describe('D661: pagar con tarjeta en línea en «Nadie»', () => {
   const URL_PAGO = 'https://checkout.stripe.com/c/pay/cs_test_nadie'
   const nadieCardInfo = { ...info, requiresAcceptance: false, paymentModes: { payAtPickup: true, cardOnline: true } } as StoreInfo
   /** «Nadie» con tarjeta en línea: con la sesión única de la página (salvo `sesion: false`) y el cuerpo de «Pagar ahora». */
-  function nadieCard(opts: { sesion?: boolean } = {}) {
+  function nadieCard(opts: { sesion?: boolean; token?: string } = {}) {
     const slug = `nc${++n}`
-    if (opts.sesion !== false) guardarSesion(slug, { ...sesion('tok-A'), guardadaEn: Date.now() } as any)
+    if (opts.sesion !== false) guardarSesion(slug, { ...sesion(opts.token ?? 'tok-A'), guardadaEn: Date.now() } as any)
     const store = createOrderStore(slug, { locale: 'es' }) // abre la página con lo guardado
     store.cart.value = [line()]
     store.quote.value = quoteOf(170)
@@ -1465,6 +1465,58 @@ describe('D661: pagar con tarjeta en línea en «Nadie»', () => {
       expect(sent(1).key).not.toBe(sent(0).key)
       expect(sent(1).token).toBe('tok-B')
       expect(sent(1).body.customer).toEqual({ name: 'Bea' })
+    })
+  })
+
+  describe('ronda 5: lo de Ana no se queda para quien sigue', () => {
+    /** Un token con la ficha legible (`sub`), como los del SERVIDOR. */
+    const jwt = (sub: string, n: number) => `h.${btoa(JSON.stringify({ sub, n }))}.s`
+    const sesionVencida = () => new ApiError('Tu sesión ya no es válida.', 401, 'CUSTOMER_TOKEN_INVALID')
+
+    it('(1) «Cerrar sesión» no deja en «Tus datos» lo que escribió Ana ni lo que eligió usar; el carrito se queda, como siempre', () => {
+      const { store } = nadieCard()
+      const c = checkoutOf(store)
+      c.draft.value = {
+        note: 'sin cebolla', name: 'Ana López', dial: '1', national: '5544422262', email: 'ana@correo.mx', accepted: true, payment: 'CARD_ONLINE',
+      }
+      c.eleccion.value = { premioId: 'pr1', puntos: 50, cupon: 'ANA10' }
+      salioEnLaTienda(store)
+      expect(c.draft.value).toEqual({ note: '', name: '', dial: '52', national: '', email: '', accepted: false })
+      expect(c.eleccion.value).toEqual({})
+      expect(store.cart.value).toEqual([line()])
+    })
+
+    it('(3) el intento que espera entrar (su token recibió 401) es de SU clienta: si entra otra, se suelta y no se le entrega', async () => {
+      const ana = jwt('c1', 1)
+      const { store, body } = nadieCard({ token: ana })
+      api.createOrder.mockRejectedValueOnce(sesionVencida())
+      expect((await send(store, body)).kind).toBe('needsSesion')
+      expect(pendingAttempt(store.slug)).toMatchObject({ requiereEntrar: true, token: ana })
+      // Entra Bea en esa pestaña: ni el cuerpo ni la llave de Ana son suyos.
+      const bea = { ...sesionB(), token: jwt('c2', 2) }
+      guardarSesion(store.slug, bea as any)
+      entroEnLaTienda(store, bea as any, 'details')
+      expect(pendingAttempt(store.slug)).toBeNull()
+      const c = checkoutOf(store)
+      expect(c.pending.value).toBe(false) // ni «Entra otra vez para terminar tu pedido» ni «Pedir» bloqueado
+      expect(c.feedback.value).toBeNull()
+      expect(await retry(store)).toBeNull()
+      expect(api.createOrder).toHaveBeenCalledTimes(1)
+    })
+
+    it('(3) si entra ella otra vez (otro token, la misma ficha), su pedido sale como hoy: su sesión nueva, la misma llave y el mismo cuerpo', async () => {
+      const { store, body } = nadieCard({ token: jwt('c1', 1) })
+      api.createOrder.mockRejectedValueOnce(sesionVencida())
+      await send(store, body)
+      const otraVez = { ...sesion(jwt('c1', 3)), guardadaEn: Date.now() }
+      guardarSesion(store.slug, otraVez as any)
+      entroEnLaTienda(store, otraVez as any, 'details')
+      expect(pendingAttempt(store.slug)).toMatchObject({ token: otraVez.token, requiereEntrar: false, porSesion: true })
+      vi.spyOn(nav, 'assign').mockImplementation(() => {})
+      api.createOrder.mockResolvedValueOnce({ trackingToken: 'D'.repeat(32), checkoutUrl: URL_PAGO, status: 'AWAITING_PAYMENT', total: '170.00', replay: false })
+      await retry(store)
+      expect(sent(1)).toMatchObject({ key: sent(0).key, token: otraVez.token })
+      expect(sent(1).body).toEqual(sent(0).body)
     })
   })
 })

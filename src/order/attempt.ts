@@ -2,7 +2,7 @@
 // recarga; mientras no haya respuesta DEFINITIVA del servidor sólo se reintenta ese mismo cuerpo con esa llave. Si no se puede
 // guardar, no se envía: una respuesta perdida + recarga jamás puede duplicar el pedido.
 import type { CreateOrderBody } from './types'
-import { llaveCompraConTarjeta, llaveIntentoDePedido } from '../lib/sesionDeCliente'
+import { clienteDelToken, llaveCompraConTarjeta, llaveIntentoDePedido } from '../lib/sesionDeCliente'
 
 /**
  * W3-r3: un reintento es REENVIAR LA MISMA PETICIÓN (la regla de Stripe y Square). Con la llave y el cuerpo se guarda, ANTES de mandar,
@@ -112,9 +112,23 @@ export function autorizarIntento(slug: string, cambio: { token?: string; requier
     /* sin almacenamiento no hubo intento guardado */
   }
 }
-/** Al entrar otra vez: si el intento pendiente esperaba una sesión (su token recibió 401), sale con ésta (misma llave y cuerpo). */
+/**
+ * Al entrar otra vez: si el intento pendiente esperaba una sesión (su token recibió 401), sale con ésta (misma llave y cuerpo), pero sólo
+ * si es SU clienta (la ficha de los dos tokens). Ronda 5: si entró OTRA en la pestaña, el intento de la anterior se suelta sin entregárselo:
+ * su cuerpo y su llave (y lo que un envío anterior haya creado con ellos) son de la anterior. Sin poder leer alguna de las dos fichas, como
+ * antes.
+ */
 export function reautorizarIntento(slug: string, token: string): void {
-  if (pendingAttempt(slug)?.requiereEntrar) autorizarIntento(slug, { token, requiereEntrar: false, porSesion: true })
+  const a = pendingAttempt(slug)
+  if (!a?.requiereEntrar) return
+  const suya = a.token ? clienteDelToken(a.token) : null
+  const entra = clienteDelToken(token)
+  if (!suya || !entra || suya === entra) return autorizarIntento(slug, { token, requiereEntrar: false, porSesion: true })
+  try {
+    sessionStorage.removeItem(storageKey(slug))
+  } catch {
+    /* sin almacenamiento no hubo intento */
+  }
 }
 
 /**
