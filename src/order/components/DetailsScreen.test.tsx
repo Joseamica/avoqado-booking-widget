@@ -885,6 +885,49 @@ describe('D661: pagar con tarjeta en línea en «Nadie»', () => {
     expect(screen.getByRole('radio', { name: 'Pagar ahora con tarjeta' })).toBeTruthy() // se puede volver a intentar en unos minutos
   })
 
+  it('ronda 2 #5 (Ruling 58): tras «El precio cambió», cambiar entre caja y tarjeta quita «Confirmar»; «Pedir» manda el medio que se ve, con el total nuevo', async () => {
+    const nuevo = { ok: true, lines: [], subtotal: 190, total: 190, minOrderAmount: 0, issues: [] }
+    for (const [primero, luego, medio] of [
+      ['Pagar en caja', 'Pagar ahora con tarjeta', 'CARD_ONLINE'],
+      ['Pagar ahora con tarjeta', 'Pagar en caja', 'PAY_AT_PICKUP'],
+    ] as const) {
+      show(NADIE_CARD, slug => conSesion(slug))
+      fireEvent.input(screen.getByLabelText('Nombre'), { target: { value: 'Ana' } })
+      fireEvent.click(screen.getByRole('radio', { name: primero }))
+      vi.mocked(createOrder).mockRejectedValueOnce(new ApiError('El precio cambió', 409, 'PRICE_CHANGED', { quote: nuevo }))
+      await pastGuard()
+      fireEvent.click(pedir())
+      await flush()
+      expect(screen.getByRole('alert').textContent, medio).toContain('El precio cambió: el nuevo total es $190.')
+      expect(screen.getByRole('button', { name: 'Confirmar' })).toBeTruthy()
+      fireEvent.click(screen.getByRole('radio', { name: luego }))
+      // La pregunta del precio era del medio anterior: se va con él, así ningún botón manda el cuerpo viejo.
+      expect(screen.queryByRole('button', { name: 'Confirmar' }), medio).toBeNull()
+      vi.mocked(createOrder).mockReturnValueOnce(new Promise(() => {}))
+      fireEvent.click(pedir())
+      await flush()
+      const enviado = vi.mocked(createOrder).mock.lastCall![1]
+      expect(enviado.paymentMode, medio).toBe(medio)
+      expect(enviado.expectedTotal, medio).toBe('190.00')
+      cleanup()
+    }
+  })
+
+  it('ronda 2 (Ruling 59): «Mi equipo» de sólo tarjeta pasa a «Nadie» sin tarjeta: tras el primer «Confirmar» queda la caja lista, con el carrito', async () => {
+    const s = show({ paymentModes: { payAtPickup: false, cardOnline: true } })
+    fill()
+    accept()
+    vi.mocked(createOrder).mockRejectedValueOnce(new ApiError('Este negocio no acepta pagar con tarjeta en línea.', 400, 'CARD_PAYMENT_NOT_ACCEPTED'))
+    vi.mocked(getInfo).mockResolvedValueOnce(infoOf({ requiresAcceptance: false, paymentModes: { payAtPickup: true, cardOnline: false } }))
+    await pastGuard()
+    fireEvent.click(confirmBtn())
+    await flush()
+    expect(s.screen.value).toBe('details')
+    expect(s.cart.value).toHaveLength(1)
+    expect(screen.getByText('Pagas en caja: tarjeta o efectivo.')).toBeTruthy()
+    expect(pedir().disabled).toBe(false) // su nombre sigue escrito: «Pedir» manda el folio de caja
+  })
+
   it('ronda 1 M5: con la tarjeta de «Nadie», TOO_MANY_PENDING_ORDERS y CARD_AMOUNT_OUT_OF_RANGE van en ámbar y dejan «Pagar en caja» elegida', async () => {
     for (const [code, status, text] of [
       ['TOO_MANY_PENDING_ORDERS', 409, 'Ya tienes pagos con tarjeta sin terminar en este negocio. Paga en caja o espera unos minutos.'],

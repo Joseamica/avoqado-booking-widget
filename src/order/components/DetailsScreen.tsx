@@ -46,6 +46,12 @@ export function DetailsScreen() {
     : !choose ? 'CARD_ONLINE'
     : d.payment ?? (nadie && !c.conSesion.value ? 'PAY_AT_PICKUP' : 'CARD_ONLINE')
   const card = payment === 'CARD_ONLINE'
+  // Ronda 2 #5 (Ruling 58): «El precio cambió · Confirmar» lleva el cuerpo con el medio de antes: al cambiar de medio la pregunta se va y
+  // «Pedir» manda el que se ve, con el total nuevo (ya está en la cotización).
+  const elegir = (m: PaymentMode) => {
+    set({ payment: m })
+    if (c.feedback.value?.kind === 'priceChanged') c.feedback.value = null
+  }
   // D661: el saldo a favor se liga al teléfono que la sesión probó al pagar: sin él (o sin saldo en el servidor) no se promete.
   const conSaldo = nadie && card && info?.storeCredit === true && !!telefonoProbado(store)
 
@@ -132,7 +138,7 @@ export function DetailsScreen() {
                 <div key={m} class="avq-o-opt">
                   <label class="avq-o-opt__main">
                     <span class="avq-o-opt__mark">
-                      <input class="avq-o-opt__input" type="radio" name={`${id}-pay`} checked={payment === m} onChange={() => set({ payment: m })} />
+                      <input class="avq-o-opt__input" type="radio" name={`${id}-pay`} checked={payment === m} onChange={() => elegir(m)} />
                     </span>
                     <span class="avq-o-opt__text">{t(m === 'CARD_ONLINE' ? 'details.payCard' : nadie ? 'details.payCounter' : 'details.payPickup')}</span>
                   </label>
