@@ -1538,7 +1538,7 @@ describe('D661 ronda 2 #2 (Ruling 55): «Mi cuenta» nunca manda a pagar en caja
   it('cada estado en «Mis pedidos»: sus marcas mandan, luego la tarjeta; nunca «Por pagar», «Paga en caja» ni un «PAGADO» incierto', async () => {
     const NUNCA = ['Por pagar', 'Paga en caja para que lo preparen.', 'PAGADO']
     const casos: [string, Record<string, unknown>, string[], string[]][] = [
-      ['apartada', { estado: 'PENDING_ACCEPTANCE', pagado: false, tarjeta: 'APARTADA' }, ['En curso', 'Tarjeta apartada: se cobra cuando lo abran'], []],
+      ['apartada', { estado: 'PENDING_ACCEPTANCE', pagado: false, tarjeta: 'APARTADA' }, ['En curso', 'Tarjeta apartada'], []],
       ['cobrada', { estado: 'ACCEPTED', pagado: true, tarjeta: 'COBRADA' }, ['Preparando', 'Pagado con tarjeta'], []],
       ['devuelta', { estado: 'COMPLETED', pagado: true, tarjeta: 'COBRADA', refundedAt: HOY, refund: { status: 'DONE', medio: 'TARJETA' } },
         ['Devuelto'], ['Entregado', 'Pagado con tarjeta']],
@@ -1547,7 +1547,7 @@ describe('D661 ronda 2 #2 (Ruling 55): «Mi cuenta» nunca manda a pagar en caja
       ['devolviéndose', { estado: 'ACCEPTED', pagado: true, tarjeta: 'COBRADA', refundRequestedAt: HOY }, ['Devolviendo…'], ['Preparando', 'Pagado con tarjeta']],
       ['no la recogió', { estado: 'COMPLETED', pagado: true, tarjeta: 'COBRADA', notPickedUpAt: HOY }, ['No lo recogiste'], ['Entregado', 'Pagado con tarjeta']],
       // Liberándose, liberada, en duda o un valor nuevo: su estado sin dinero (el seguimiento dice el resto).
-      ['liberándose', { estado: 'PENDING_ACCEPTANCE', pagado: false, tarjeta: 'LIBERANDO' }, ['En curso'], ['Pagado con tarjeta', 'Tarjeta apartada: se cobra cuando lo abran']],
+      ['liberándose', { estado: 'PENDING_ACCEPTANCE', pagado: false, tarjeta: 'LIBERANDO' }, ['En curso'], ['Pagado con tarjeta', 'Tarjeta apartada']],
       ['liberada', { estado: 'EXPIRED', pagado: false, tarjeta: 'LIBERADA' }, ['Vencido'], ['Pagado con tarjeta']],
       ['en duda', { estado: 'ACCEPTED', pagado: true, tarjeta: null }, ['Preparando'], ['Pagado con tarjeta']],
     ]
@@ -1588,7 +1588,7 @@ describe('D661 ronda 2 #2 (Ruling 55): «Mi cuenta» nunca manda a pagar en caja
     await abrir(conTarjeta({ estado: 'PENDING_ACCEPTANCE', pagado: false, tarjeta: 'APARTADA', creadoEl: HOY }))
     expect(screen.getByText('Tu pedido de hoy')).toBeTruthy()
     expect(screen.getByText('W7K3P · en curso')).toBeTruthy()
-    expect(screen.getAllByText('Tarjeta apartada: se cobra cuando lo abran').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('Tarjeta apartada').length).toBeGreaterThan(0)
     expect(screen.queryByText('Paga en caja para que lo preparen.')).toBeNull()
     expect(screen.queryByText(/por pagar/i)).toBeNull()
     cleanup()
@@ -1599,6 +1599,21 @@ describe('D661 ronda 2 #2 (Ruling 55): «Mi cuenta» nunca manda a pagar en caja
     })
     expect(screen.getByText('W7K3P · en curso')).toBeTruthy()
     expect(screen.getByText('Tu pedido está en curso.')).toBeTruthy()
+  })
+
+  it('pasada por familias (Ruling 86): la tarjeta apartada dice sólo «Tarjeta apartada», nunca cuándo se cobra (la respuesta no lo prueba)', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-11-11T17:00:00.000Z'))
+    // Los tres llegan IGUALES del SERVIDOR (`PENDING_ACCEPTANCE` + `APARTADA`; un cobro en curso, `CONFIRMING`, se publica como apartada):
+    // la cuenta no puede saber si alguien ya lo abrió, si falta que lo acepten o si ya se está cobrando.
+    for (const caso of ['«Mi equipo»: una cajera lo abrió y todavía no lo acepta', '«Nadie»: ninguna caja lo ha abierto', '«Nadie»: una caja lo abrió y Stripe está cobrando']) {
+      cuentasNuevasParaPruebas()
+      await abrir(conTarjeta({ estado: 'PENDING_ACCEPTANCE', pagado: false, tarjeta: 'APARTADA', creadoEl: HOY }))
+      expect(within(fila()).getByText('Tarjeta apartada'), caso).toBeTruthy()
+      expect(screen.getAllByText('Tarjeta apartada'), caso).toHaveLength(2) // la fila y «Tu pedido de hoy»
+      expect(screen.queryByText(/se cobra|cuando lo abran|cuando (el negocio )?acepte/), caso).toBeNull()
+      cleanup()
+    }
   })
 
   describe('pasada por familias (Ruling 85): «Mi cuenta» relee sola una devolución a la vista, como el seguimiento', () => {
@@ -1703,7 +1718,7 @@ describe('D661 ronda 2 #2 (Ruling 55): «Mi cuenta» nunca manda a pagar en caja
     }))
     renderPortal('en', { negocio: 'Flautas' })
     await screen.findByText('Hello, Ana')
-    expect(within(fila()).getByText('Card on hold: charged when they open it')).toBeTruthy()
+    expect(within(fila()).getByText('Card on hold')).toBeTruthy() // Ruling 86: nunca cuándo se cobra
     // Ronda 4: una devolución hecha (quizá parcial) también es cierta en inglés.
     cleanup()
     cuentasNuevasParaPruebas()
