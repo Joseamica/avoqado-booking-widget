@@ -93,6 +93,9 @@ const FINALES = new Set(['COMPLETED', 'REJECTED', 'EXPIRED', 'CANCELLED_BY_CUSTO
 /** Ruling 85: una devolución a la vista se relee cada 10 min, hasta 24 h (los del seguimiento, Ruling 56). */
 const DEVOLUCION_RELEE_MS = 10 * 60_000
 const DEVOLUCION_VIGILA_MS = 24 * 60 * 60_000
+// ponytail: la relectura sola vuelve a traer a lo más 10 páginas de «Ver más» por lista (200 filas); más allá, esa lista regresa a lo que
+// alcance a cubrir. Subirlo si alguien de verdad abre más.
+const RELEER_MAS_PAGINAS = 10
 type Lista = 'pedidos' | 'tarjetas' | 'descuentos'
 /** «$1,234.50»: siempre con centavos, como la caja y los mockups (es y en escriben igual el dinero de México). */
 const dinero = (n: number) => '$' + new Intl.NumberFormat('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n)
@@ -215,18 +218,21 @@ export function CustomerPortal({
   useEffect(() => { setFallaMas(null) }, [data])
 
   // Pasada por familias (Ruling 85): con una devolución a la vista (un pedido con tarjeta en línea), «Mi cuenta» se relee sola cada 10 min
-  // con la pestaña a la vista, hasta 24 h desde que esta vista la vio, como el seguimiento (Ruling 56): el banco puede regresarla. Oculta,
-  // espera a que vuelva (la relectura de siempre al volver retoma la cuenta).
-  const conDevolucion = [...(data?.pedidos?.items ?? []), ...(extra.pedidos?.items ?? [])]
-    .some(p => p.pagoEnLinea === true && !!(p.refundedAt || p.refund || p.refundRequestedAt))
-  const vigilaDesde = useRef<number | null>(null)
+  // con la pestaña a la vista, hasta 24 h desde que esta vista vio cada una, como el seguimiento (Ruling 56): el banco puede regresarla.
+  // Oculta, espera a que vuelva (la relectura de siempre al volver retoma la cuenta). Limpieza final (2): las 24 h son de cada pedido
+  // (su `trackingToken`), así un pintado de paso sin la fila (la relectura sola, mientras trae otra vez «Ver más») no las reinicia.
+  const devoluciones = [...(data?.pedidos?.items ?? []), ...(extra.pedidos?.items ?? [])]
+    .filter(p => p.pagoEnLinea === true && !!(p.refundedAt || p.refund || p.refundRequestedAt))
+    .map(p => p.trackingToken)
+  const conDevolucion = devoluciones.length > 0
+  const vistasDesde = useRef(new Map<string, number>())
   useEffect(() => {
-    if (!conDevolucion) return void (vigilaDesde.current = null)
-    vigilaDesde.current ??= Date.now()
-    if (Date.now() >= vigilaDesde.current + DEVOLUCION_VIGILA_MS) return
-    const id = setTimeout(() => { if (document.visibilityState === 'visible') void releer.current() }, DEVOLUCION_RELEE_MS)
+    const ahora = Date.now()
+    for (const tt of devoluciones) if (!vistasDesde.current.has(tt)) vistasDesde.current.set(tt, ahora)
+    if (!devoluciones.some(tt => ahora < vistasDesde.current.get(tt)! + DEVOLUCION_VIGILA_MS)) return
+    const id = setTimeout(() => { if (document.visibilityState === 'visible') void releerSola.current() }, DEVOLUCION_RELEE_MS)
     return () => clearTimeout(id)
-  }, [cuenta, conDevolucion])
+  }, [cuenta, devoluciones.join()])
 
   // D657: sin cobro en línea no se ofrecen paquetes (como BookingFlow y PaymentSelector: sólo `false` apaga; sin el dato, servidor
   // viejo, como antes). Sólo el de ESTE negocio (`cobroPorNegocio`, arriba). Se lee al pintar: si la página relee ESTE negocio,
@@ -266,6 +272,52 @@ export function CustomerPortal({
     if (tkn) await leerCuenta(venueSlug, sup, tkn)
   }
   releer.current = loadPortal
+
+  /**
+   * Limpieza final (2): la relectura sola (Ruling 85) no encoge «Ver más». Trae la primera página y, si ya había páginas siguientes, las vuelve
+   * a traer desde el cursor nuevo hasta cubrir las filas que había (más las que la primera empujó; a lo más 10 páginas por lista), así nada
+   * se queda viejo bajo «Actualizado a las…». Mientras llegan se ven las de antes; si una lista falla, regresa a su primera página.
+   */
+  async function releerConMas() {
+    const tkn = tokenActual()
+    const antes = cuentaDe(venueSlug, sup).peek().data
+    const paginas = mas.base === antes ? mas.listas : {}
+    if (!tkn) return
+    const nueva = await leerCuenta(venueSlug, sup, tkn)
+    const listas = (Object.keys(paginas) as Lista[]).filter(l => paginas[l]?.items.length)
+    if (!nueva || !listas.length) return
+    const epoca = epocaDe(venueSlug, sup)
+    const vigente = () => cuentaDe(venueSlug, sup).peek().data === nueva && epocaDe(venueSlug, sup) === epoca
+    setMas({ base: nueva, listas: paginas })
+    enVuelo.current.mas = true
+    try {
+      const frescas: typeof paginas = {}
+      for (const lista of listas) {
+        const listar = lista === 'pedidos' ? api.listarMisPedidos : lista === 'tarjetas' ? api.listarMisTarjetas : api.listarMisDescuentos
+        const empujadas = lista === 'pedidos'
+          ? (nueva.pedidos?.items ?? []).filter(p => !antes?.pedidos?.items.some(v => v.trackingToken === p.trackingToken)).length : 0
+        const cubrir = paginas[lista]!.items.length + empujadas
+        let cursor = nueva[lista]?.nextCursor ?? null
+        const items: any[] = []
+        try {
+          for (let i = 0; cursor && items.length < cubrir && i < RELEER_MAS_PAGINAS; i++) {
+            const r = await listar(venueSlug, tkn, cursor, sup)
+            if (!vigente()) return
+            items.push(...r.items)
+            cursor = r.nextCursor
+          }
+          frescas[lista] = { items, nextCursor: cursor }
+        } catch {
+          /* esa lista regresa a su primera página (lo de antes ya no sería de esta lectura) */
+        }
+      }
+      if (vigente()) setMas({ base: nueva, listas: frescas })
+    } finally {
+      enVuelo.current.mas = false
+    }
+  }
+  const releerSola = useRef(releerConMas)
+  releerSola.current = releerConMas
 
   /** W4: «Ver más pedidos / tarjetas / descuentos» trae la página siguiente con la sesión de la superficie. */
   async function verMas(lista: Lista) {
