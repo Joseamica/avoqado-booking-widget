@@ -723,11 +723,17 @@ describe('D661: pagar con tarjeta en línea en «Nadie»', () => {
     expect(within(group).getAllByRole('radio')).toHaveLength(2)
     expect(card.closest('label')!.textContent).toBe('Pagar ahora con tarjeta')
     expect(counter.closest('label')!.textContent).toBe('Pagar en caja')
-    expect([card.checked, counter.checked]).toEqual([true, false])
+    // Ronda 1 (Ruling 46): sin sesión sale elegida «Pagar en caja» (la tarjeta pide entrar a su cuenta); las dos se pueden elegir.
+    expect([card.checked, counter.checked]).toEqual([false, true])
+    expect(screen.getByText('Pagas en caja: tarjeta o efectivo.')).toBeTruthy()
+    expect(screen.queryByText('Para pagar en línea, entra a tu cuenta.')).toBeNull()
     // Sigue siendo «Nadie»: sin WhatsApp ni casilla, y «Pedir».
     expect(screen.queryByLabelText('WhatsApp')).toBeNull()
     expect(screen.queryByRole('checkbox')).toBeNull()
     expect(pedir().textContent).toContain('$170')
+    fireEvent.click(card)
+    expect([card.checked, counter.checked]).toEqual([true, false])
+    expect(screen.getByText('Para pagar en línea, entra a tu cuenta.')).toBeTruthy()
     fireEvent.click(counter)
     expect([card.checked, counter.checked]).toEqual([false, true])
     expect(screen.getByText('Pagas en caja: tarjeta o efectivo.')).toBeTruthy()
@@ -754,6 +760,8 @@ describe('D661: pagar con tarjeta en línea en «Nadie»', () => {
     ]
     for (const [caso, over, sesion, texto] of casos) {
       show({ ...NADIE_CARD, ...over }, sesion ?? undefined)
+      // Sin sesión la caja sale elegida (Ruling 46): el aviso es de «Pagar ahora».
+      fireEvent.click(screen.getByRole('radio', { name: 'Pagar ahora con tarjeta' }))
       expect(screen.getByText(texto), caso).toBeTruthy()
       // Con «Pagar en caja» no hay nada pagado que devolver: el pie dice cómo se paga.
       fireEvent.click(screen.getByRole('radio', { name: 'Pagar en caja' }))
@@ -768,9 +776,35 @@ describe('D661: pagar con tarjeta en línea en «Nadie»', () => {
     expect(screen.getByText('Pagas ahora con tarjeta.')).toBeTruthy()
   })
 
+  it('ronda 1 (Ruling 46): en «Nadie» la tarjeta sale elegida sólo con sesión; sin ella, «Pagar en caja» y «Pedir» da el folio sin entrar', async () => {
+    const elegida = (name: string) => (screen.getByRole('radio', { name }) as HTMLInputElement).checked
+    show(NADIE_CARD, slug => conSesion(slug))
+    expect([elegida('Pagar ahora con tarjeta'), elegida('Pagar en caja')]).toEqual([true, false])
+    cleanup()
+    const s = show(NADIE_CARD)
+    expect([elegida('Pagar ahora con tarjeta'), elegida('Pagar en caja')]).toEqual([false, true])
+    fireEvent.input(screen.getByLabelText('Nombre'), { target: { value: 'Ana' } })
+    vi.mocked(createOrder).mockResolvedValueOnce({ trackingToken: 'T'.repeat(32), orderNumber: 'A7K2' } as any)
+    await pastGuard()
+    fireEvent.click(pedir())
+    await flush()
+    expect(createOrder).toHaveBeenCalledTimes(1)
+    const [, body, opts] = vi.mocked(createOrder).mock.calls[0]
+    expect(body.paymentMode).toBe('PAY_AT_PICKUP')
+    expect(body.customer).toEqual({ name: 'Ana' })
+    expect(opts.token).toBeUndefined()
+    expect(s.screen.value).toBe('tracking') // el folio, sin pasar por entrar
+    expect(s.trackingToken.value).toBe('T'.repeat(32))
+    cleanup()
+    // «Mi equipo» no cambia: la tarjeta sale primero y elegida, sin sesión.
+    show({ paymentModes: { payAtPickup: true, cardOnline: true } })
+    expect([elegida('Pagar ahora con tarjeta'), elegida('Pagar al recoger')]).toEqual([true, false])
+  })
+
   it('«Pagar ahora» sin sesión manda a entrar y regresa a Detalles', async () => {
     const s = await enLaTienda({ storeCredit: true })
     fireEvent.input(screen.getByLabelText('Nombre'), { target: { value: 'Ana López' } })
+    fireEvent.click(screen.getByRole('radio', { name: 'Pagar ahora con tarjeta' })) // sin sesión la caja sale elegida (Ruling 46)
     // Sin sesión lo dice antes del toque, y el aviso de saldo no promete saldo (todavía no hay teléfono probado).
     expect(screen.getByText('Para pagar en línea, entra a tu cuenta.')).toBeTruthy()
     expect(screen.getByText(DECIDE)).toBeTruthy()
@@ -799,6 +833,7 @@ describe('D661: pagar con tarjeta en línea en «Nadie»', () => {
     vi.mocked(quote).mockResolvedValue({ ok: true, lines: [], subtotal: 170, total: 170, minOrderAmount: 0, issues: [] })
     const s = await enLaTienda()
     fireEvent.input(screen.getByLabelText('Nombre'), { target: { value: 'Ana' } })
+    fireEvent.click(screen.getByRole('radio', { name: 'Pagar ahora con tarjeta' })) // sin sesión la caja sale elegida (Ruling 46)
     await tocar(pedir())
     expect(s.screen.value).toBe('entrar')
     // Se arrepiente y regresa con la flecha; luego entra por sus premios.
@@ -850,12 +885,32 @@ describe('D661: pagar con tarjeta en línea en «Nadie»', () => {
     expect(screen.getByRole('radio', { name: 'Pagar ahora con tarjeta' })).toBeTruthy() // se puede volver a intentar en unos minutos
   })
 
+  it('ronda 1 M5: con la tarjeta de «Nadie», TOO_MANY_PENDING_ORDERS y CARD_AMOUNT_OUT_OF_RANGE van en ámbar y dejan «Pagar en caja» elegida', async () => {
+    for (const [code, status, text] of [
+      ['TOO_MANY_PENDING_ORDERS', 409, 'Ya tienes pagos con tarjeta sin terminar en este negocio. Paga en caja o espera unos minutos.'],
+      ['CARD_AMOUNT_OUT_OF_RANGE', 400, 'Este monto no se puede pagar con tarjeta en línea. Paga en caja.'],
+    ] as const) {
+      show(NADIE_CARD, slug => conSesion(slug))
+      fireEvent.input(screen.getByLabelText('Nombre'), { target: { value: 'Ana' } })
+      vi.mocked(createOrder).mockRejectedValueOnce(new ApiError('texto del servidor', status, code))
+      vi.mocked(getInfo).mockResolvedValueOnce(infoOf({ ...NADIE_CARD }))
+      await pastGuard()
+      fireEvent.click(pedir())
+      await flush()
+      const aviso = screen.getByText(text).closest('.avq-o-notice') as HTMLElement
+      expect(aviso.classList.contains('avq-o-notice--warn'), code).toBe(true)
+      expect(document.querySelector('.avq-o-notice--error'), code).toBeNull()
+      expect((screen.getByRole('radio', { name: 'Pagar en caja' }) as HTMLInputElement).checked, code).toBe(true)
+      cleanup()
+    }
+  })
+
   it('en inglés', () => {
     const s = makeStore(infoOf({ ...NADIE_CARD, storeCredit: true }), menuOf(), 'en')
     s.quote.value = { ok: true, lines: [], subtotal: 170, total: 170, minOrderAmount: 0, issues: [] }
     render(withStore(s, <DetailsScreen />))
-    expect(screen.getByRole('radio', { name: 'Pay now by card' })).toBeTruthy()
-    expect(screen.getByRole('radio', { name: 'Pay at the counter' })).toBeTruthy()
+    expect((screen.getByRole('radio', { name: 'Pay at the counter' }) as HTMLInputElement).checked).toBe(true) // sin sesión (Ruling 46)
+    fireEvent.click(screen.getByRole('radio', { name: 'Pay now by card' }))
     expect(screen.getByText('To pay online, sign in to your account.')).toBeTruthy()
     expect(screen.getByText("If you cancel or don't pick it up, Flautas decides how to refund you.")).toBeTruthy()
   })

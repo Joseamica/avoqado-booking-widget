@@ -1158,8 +1158,73 @@ describe('D661: pagar con tarjeta en línea en «Nadie»', () => {
     await send(store, body)
     expect(store.screen.value).toBe('entrar')
     expect(api.createOrder).not.toHaveBeenCalled()
+    expect(api.getInfo).not.toHaveBeenCalled() // /info ya dice «Nadie»: no hay nada que releer
     expect(checkoutOf(store).feedback.value).toBeNull() // no es un error: es el paso que falta
     expect(store.cart.value).toEqual([line()])
+  })
+
+  it('ronda 1 M4 (a): un intento con tarjeta de «Mi equipo» (teléfono, sin sesión) que al reintentar recibe 401 PHONE_VERIFICATION_REQUIRED ⇒ se suelta y lleva a entrar', async () => {
+    // El negocio pasó a «Nadie» con el intento en vuelo: ahora la tarjeta pide su cuenta. «Reintentar» no debe repetirlo para siempre.
+    const { store } = setup({ sessionPhone: null })
+    store.info.value = { ...info, paymentModes: { payAtPickup: true, cardOnline: true } } as StoreInfo
+    const body = buildOrderBody(store, { customer: { name: 'Ana', phone: PHONE }, note: null, paymentMode: 'CARD_ONLINE' })
+    api.createOrder.mockRejectedValueOnce(offline())
+    await send(store, body)
+    expect(pendingAttempt(store.slug)).not.toBeNull()
+    expect(sent(0).token).toBeUndefined()
+    api.getInfo.mockResolvedValue(nadieCardInfo)
+    api.createOrder.mockRejectedValueOnce(new ApiError('Entra a tu cuenta para pagar con tarjeta en línea.', 401, 'PHONE_VERIFICATION_REQUIRED'))
+    const r = await retry(store)
+    await flush()
+    expect(r?.kind).toBe('entrarParaPagar')
+    expect(pendingAttempt(store.slug)).toBeNull() // nunca se creó: el intento se suelta
+    const c = checkoutOf(store)
+    expect(c.pending.value).toBe(false)
+    expect(c.paraPagar).toBe(true) // al entrar regresa a «Tus datos»
+    expect(store.screen.value).toBe('entrar')
+    // La pantalla se pone al día: ya es «Nadie» (sin WhatsApp; la tarjeta va con su cuenta).
+    expect(store.info.value?.requiresAcceptance).toBe(false)
+    expect(api.getInfo).toHaveBeenCalledTimes(1)
+    expect(api.createOrder).toHaveBeenCalledTimes(2)
+  })
+
+  it('ronda 1 M4 (b): la tarjeta de «Nadie» con el negocio ya en «Mi equipo» recibe el 400 sin código «Escribe tu teléfono» ⇒ pide WhatsApp, como needsPhone', async () => {
+    const { store, body } = nadieCard()
+    api.createOrder.mockRejectedValueOnce(new ApiError('Error de validación: Escribe tu teléfono', 400))
+    api.getInfo.mockResolvedValueOnce({ ...nadieCardInfo, requiresAcceptance: true })
+    const r = await send(store, body)
+    await flush()
+    expect(r.kind).toBe('needsPhone')
+    expect(pendingAttempt(store.slug)).toBeNull()
+    expect(store.screen.value).toBe('details')
+    expect(store.info.value?.requiresAcceptance).toBe(true) // aparece el campo de WhatsApp
+    expect(api.getInfo).toHaveBeenCalledTimes(1)
+    expect(checkoutOf(store).feedback.value).toEqual({
+      kind: 'error', message: 'Este negocio cambió cómo recibe pedidos. Escribe tu WhatsApp para pedir.', retryable: false,
+    })
+    expect(store.cart.value).toEqual([line()])
+    // Otro 400 de validación sin código (no el del teléfono) sigue siendo el error de siempre.
+    const otro = nadieCard()
+    api.createOrder.mockRejectedValueOnce(new ApiError('Error de validación: El nombre es muy largo', 400))
+    expect((await submitOrder(otro.store, otro.body)).kind).toBe('error')
+  })
+
+  it.each([
+    ['TOO_MANY_PENDING_ORDERS', 409, 'Ya tienes pagos con tarjeta sin terminar en este negocio. Paga en caja o espera unos minutos.'],
+    ['CARD_AMOUNT_OUT_OF_RANGE', 400, 'Este monto no se puede pagar con tarjeta en línea. Paga en caja.'],
+  ])('ronda 1 M5: %s con la tarjeta de «Nadie» ⇒ su línea y «Pagar en caja» elegida (en «Nadie» la caja siempre recibe)', async (code, status, text) => {
+    const { store, body } = nadieCard()
+    api.createOrder.mockRejectedValueOnce(new ApiError('texto del servidor', status, code))
+    api.getInfo.mockResolvedValueOnce(nadieCardInfo)
+    const r = await send(store, body)
+    await flush()
+    expect(r).toEqual({ kind: 'tarjetaNoDisponible', message: text })
+    const c = checkoutOf(store)
+    expect(c.feedback.value).toEqual({ kind: 'error', message: text, retryable: false })
+    expect(c.draft.value.payment).toBe('PAY_AT_PICKUP')
+    expect(store.screen.value).toBe('details')
+    expect(store.cart.value).toEqual([line()])
+    expect(pendingAttempt(store.slug)).toBeNull()
   })
 
   it('D661: 400 CARD_PAYMENT_NOT_ACCEPTED en «Nadie» ⇒ una línea, «Pagar en caja» elegida, /info al día, el carrito intacto y el intento resuelto', async () => {

@@ -22,8 +22,8 @@ const ENTRY_GUARD_MS = 400
  * con el total, va en un pie pegajoso DENTRO de la tienda (el mismo `.avq-o-cartfoot` del carrito, nunca `position: fixed`), con lo
  * que falta y el estado del envío arriba de él. Fase 2: con tarjeta en línea, «¿Cómo quieres pagar?» ofrece «Pagar ahora con tarjeta»
  * (primera y elegida) y, si el negocio lo acepta, «Pagar al recoger»; sólo con tarjeta no hay selector. Con tarjeta no se pide el código.
- * D661: en «Nadie» con tarjeta en línea, «Pagar ahora con tarjeta» o «Pagar en caja»; la tarjeta va con su cuenta (sin sesión, a entrar) y
- * el pie dice antes de pagar qué pasa si cancela o no recoge.
+ * D661: en «Nadie» con tarjeta en línea, «Pagar ahora con tarjeta» (elegida sólo con sesión) o «Pagar en caja»; la tarjeta va con su
+ * cuenta (sin sesión, a entrar) y el pie dice antes de pagar qué pasa si cancela o no recoge.
  */
 export function DetailsScreen() {
   const store = useContext(OrderStoreContext)!
@@ -40,7 +40,11 @@ export function DetailsScreen() {
   const nadie = info?.requiresAcceptance === false
   const modes = info?.paymentModes
   const choose = !!modes?.cardOnline && (nadie || modes.payAtPickup)
-  const payment: PaymentMode = modes?.cardOnline && !(choose && d.payment === 'PAY_AT_PICKUP') ? 'CARD_ONLINE' : 'PAY_AT_PICKUP'
+  // Sin elegir: en «Mi equipo» la tarjeta (no pide código); en «Nadie» sólo con sesión, porque sin ella «Pedir» llevaría a entrar
+  // (ronda 1, Ruling 46). Las dos opciones siguen a la vista.
+  const payment: PaymentMode = !modes?.cardOnline ? 'PAY_AT_PICKUP'
+    : !choose ? 'CARD_ONLINE'
+    : d.payment ?? (nadie && !c.conSesion.value ? 'PAY_AT_PICKUP' : 'CARD_ONLINE')
   const card = payment === 'CARD_ONLINE'
   // D661: el saldo a favor se liga al teléfono que la sesión probó al pagar: sin él (o sin saldo en el servidor) no se promete.
   const conSaldo = nadie && card && info?.storeCredit === true && !!telefonoProbado(store)

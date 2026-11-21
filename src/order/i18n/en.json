@@ -222,6 +222,8 @@
     "cardProviderUnavailable": "We couldn't open the payment. Try again.",
     "cardNadieUnavailable": "Paying online isn't available right now. You can pay at the counter.",
     "cardNadieBusy": "There are many online payments right now. You can pay at the counter or try again in a few minutes.",
+    "cardNadiePending": "You already have unfinished card payments at this business. Pay at the counter or wait a few minutes.",
+    "cardNadieAmount": "This amount can't be paid by card online. Pay at the counter.",
     "tooManyUnpaid": "There are many orders waiting for payment. Order directly at the counter.",
     "zeroTotal": "Your order has no cost: ask for it directly at the counter.",
     "needsPhone": "This business changed how it takes orders. Enter your WhatsApp to order.",

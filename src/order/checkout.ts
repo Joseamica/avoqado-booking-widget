@@ -362,6 +362,12 @@ async function doSubmit(store: OrderStore, body: CreateOrderBody): Promise<Submi
         settleAttempt(slug)
         return { kind: 'needsPhone' }
       }
+      // Ronda 1 M4: un intento con tarjeta de «Mi equipo» (con teléfono, sin sesión) y el negocio ya en «Nadie», donde la tarjeta pide su
+      // cuenta. Nunca se creó: se suelta (si no, «Reintentar» lo repetiría sin fin) y a entrar, de regreso a «Tus datos».
+      if (e instanceof ApiError && e.status === 401 && e.code === 'PHONE_VERIFICATION_REQUIRED' && card && !token) {
+        settleAttempt(slug)
+        return { kind: 'entrarParaPagar' }
+      }
       if (e instanceof ApiError && e.status === 401 && token) {
         // W3-r3: el token guardado ya no vale (vencido o revocado). El SERVIDOR lo rechazó antes de tocar el pedido; el intento se queda y
         // sólo entrar otra vez lo termina («Mi equipo», con el código): nunca se reintenta con la vieja ni sale sin ella.
@@ -398,6 +404,13 @@ async function doSubmit(store: OrderStore, body: CreateOrderBody): Promise<Submi
     // Ninguna de las dos es «la tienda no recibe pedidos» (nunca `ORDERING_*`): en caja se sigue pagando.
     if (cardNadie && e.code === 'CARD_PAYMENT_NOT_ACCEPTED') return { kind: 'tarjetaNoDisponible', message: t('checkout.cardNadieUnavailable') }
     if (cardNadie && e.code === 'CARD_ONLINE_QUEUE_FULL') return { kind: 'tarjetaNoDisponible', message: t('checkout.cardNadieBusy') }
+    // Ronda 1 M5: el tope por cliente (cuenta páginas de pago sin terminar; en «Nadie» nadie «responde») y el monto fuera de lo que se paga
+    // con tarjeta. En caja sí se puede.
+    if (cardNadie && e.code === 'TOO_MANY_PENDING_ORDERS') return { kind: 'tarjetaNoDisponible', message: t('checkout.cardNadiePending') }
+    if (cardNadie && e.code === 'CARD_AMOUNT_OUT_OF_RANGE') return { kind: 'tarjetaNoDisponible', message: t('checkout.cardNadieAmount') }
+    // Ronda 1 M4: el negocio pasó a «Mi equipo» y la tarjeta de «Nadie» va sin teléfono: lo pide el 400 sin código del esquema (sólo su
+    // texto lo distingue de otro 400 de validación). Como el pedido anónimo: la pantalla pide WhatsApp.
+    if (cardNadie && e.status === 400 && !e.code && e.message.includes('Escribe tu teléfono')) return { kind: 'needsPhone' }
     if (e.status === 409 && e.code?.startsWith('ORDERING_'))
       return {
         kind: 'storeUnavailable',
@@ -463,6 +476,11 @@ export async function send(store: OrderStore, body: CreateOrderBody): Promise<Su
     case 'entrarParaPagar':
       // D661: entra y regresa a «Tus datos» con su carrito y lo que escribió; ahí «Pedir» ya paga con su sesión.
       c.paraPagar = true
+      // Ronda 1 M4: llegó por un intento de «Mi equipo» y el negocio ya está en «Nadie»: la pantalla se pone al día (como needsPhone).
+      if (store.info.value && store.info.value.requiresAcceptance !== false) {
+        store.info.value = { ...store.info.value, requiresAcceptance: false }
+        void store.refreshInfo()
+      }
       store.go('entrar')
       break
     case 'tarjetaNoDisponible':

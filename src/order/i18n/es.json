@@ -222,6 +222,8 @@
     "cardProviderUnavailable": "No pudimos abrir el pago. Intenta de nuevo.",
     "cardNadieUnavailable": "Pagar en línea no está disponible ahora. Puedes pagar en caja.",
     "cardNadieBusy": "Ahora hay muchos pagos en línea. Puedes pagar en caja o intentar en unos minutos.",
+    "cardNadiePending": "Ya tienes pagos con tarjeta sin terminar en este negocio. Paga en caja o espera unos minutos.",
+    "cardNadieAmount": "Este monto no se puede pagar con tarjeta en línea. Paga en caja.",
     "tooManyUnpaid": "Hay muchos pedidos esperando pago. Pide directo en caja.",
     "zeroTotal": "Tu pedido no tiene costo: pídelo directo en caja.",
     "needsPhone": "Este negocio cambió cómo recibe pedidos. Escribe tu WhatsApp para pedir.",

@@ -64,7 +64,8 @@ export function CheckoutStatus() {
     const offline = f.message === t('common.offline')
     // D661: la tarjeta de «Nadie» que no se puede ahora tampoco es un fallo: se paga en caja.
     const warn = offline
-      || ['checkout.priceChangedReview', 'checkout.needsPhone', 'checkout.cardNadieUnavailable', 'checkout.cardNadieBusy'].some(k => f.message === t(k))
+      || ['checkout.priceChangedReview', 'checkout.needsPhone', 'checkout.cardNadieUnavailable', 'checkout.cardNadieBusy',
+        'checkout.cardNadiePending', 'checkout.cardNadieAmount'].some(k => f.message === t(k))
     return (
       <Notice role="alert" tone={warn ? 'warn' : 'error'} icon={offline ? 'cloudOff' : warn ? undefined : 'alert'} text={f.message}
         action={f.retryable ? { label: t('common.retry'), onClick: () => void retry(store) } : undefined} />
