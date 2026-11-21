@@ -239,6 +239,15 @@ export interface Tracking {
   beneficioRegresado?: boolean
   /** S14: lo que sumó con esta cuenta pagada (sello con el avance de SU cartilla, y puntos); `null` = nada (nunca «no sumaste»). */
   lealtad?: { sello?: { ganados: number; meta: number }; puntos?: number } | null
+  /** D661, opcionales (ISO): el cierre del día lo dio por «No lo recogió»; o se cerró como «Devuelto» (el 100 %). Faltan en un borrador. */
+  notPickedUpAt?: string | null
+  refundedAt?: string | null
+  /**
+   * D661: la devolución del cobro con tarjeta, leída de sus filas reales; sin devolución no viene. Sólo dice el estado del DINERO, no si
+   * fue parcial o total (en «Mi equipo» una parcial ya llega `DONE`): «Devuelto» es `refundedAt`. `REVERSED` = el banco la regresó y el
+   * negocio todavía la debe.
+   */
+  refund?: { status: 'PENDING' | 'DONE' | 'REVERSED'; medio: 'TARJETA' | 'SALDO' | 'EFECTIVO' | 'TRANSFERENCIA' }
 }
 
 export interface OrderingCustomer {

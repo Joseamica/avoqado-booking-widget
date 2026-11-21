@@ -90,7 +90,9 @@ export function OrderApp({ accentColor }: { accentColor?: string }) {
   }, [store, token])
   // Un folio de «Nadie» dice cuál es y hasta qué hora; los demás pedidos, lo de siempre.
   const reminder = (r: Tracking): { title?: string; text: string } => {
-    if (r.requiresAcceptance !== false || r.paymentMode === 'CARD_ONLINE') return { text: t('tracking.inProgress') }
+    if (r.requiresAcceptance !== false) return { text: t('tracking.inProgress') }
+    // D661: la tarjeta de «Nadie» nunca se paga en caja: cobrada (y sin devolución), «está pagado»; apartada, lo de siempre.
+    if (r.paymentMode === 'CARD_ONLINE') return { text: r.paid && !r.refund ? t('tracking.folio.reminderPaid', { folio: r.orderNumber }) : t('tracking.inProgress') }
     if (partialOf(r)) return { title: t('tracking.folio.reminderTitle', { folio: r.orderNumber }), text: partialLine(r, t, store.locale) }
     if (isLapsedFolio(r) && !r.paid) return { title: t('tracking.folio.reminderTitle', { folio: r.orderNumber }), text: t('tracking.folio.reminderExpired') }
     if (r.paid || r.status !== 'PENDING_ACCEPTANCE') return { text: t('tracking.folio.reminderPaid', { folio: r.orderNumber }) }

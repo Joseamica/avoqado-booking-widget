@@ -303,6 +303,33 @@
       "notCharged": "No se te cobró nada. Si viste un cargo, tu banco lo liberará en unos días.",
       "releasing": "Estamos liberando tu tarjeta…"
     },
+    "nadie": {
+      "head": {
+        "hold": "Avisando a {{negocio}}… se te cobra cuando reciban tu pedido.",
+        "goneFree": "{{negocio}} no pudo atender tu pedido. No se te cobró.",
+        "gone": "{{negocio}} no pudo atender tu pedido.",
+        "notPickedUp": "No lo recogiste",
+        "refunding": "Devolviendo tu pago…",
+        "refunded": "Devuelto"
+      },
+      "sub": {
+        "paid": "Pasa por él con tu nombre o tu folio.",
+        "paidEta": "Estará listo como a las {{time}}. Pasa por él con tu nombre o tu folio.",
+        "notPickedUp": "Si quieres que te lo devuelvan, habla con {{negocio}}."
+      },
+      "bankRelease": "Si viste un cargo, tu banco lo liberará en unos días."
+    },
+    "refund": {
+      "PENDING": "Tu devolución va en camino {{medio}}.",
+      "DONE": "Te devolvieron tu pago {{medio}}.",
+      "REVERSED": "Tu banco regresó la devolución: {{negocio}} todavía te la debe.",
+      "medio": {
+        "TARJETA": "a tu tarjeta",
+        "SALDO": "como saldo a favor en {{negocio}}",
+        "EFECTIVO": "en efectivo",
+        "TRANSFERENCIA": "por transferencia"
+      }
+    },
     "cancelPayment": "Cancelar el pago",
     "folio": {
       "head": {

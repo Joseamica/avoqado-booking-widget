@@ -303,6 +303,33 @@
       "notCharged": "You were not charged. If you saw a charge, your bank will release it in a few days.",
       "releasing": "We are releasing your card…"
     },
+    "nadie": {
+      "head": {
+        "hold": "Notifying {{negocio}}… you're charged when they receive your order.",
+        "goneFree": "{{negocio}} couldn't take your order. You were not charged.",
+        "gone": "{{negocio}} couldn't take your order.",
+        "notPickedUp": "You didn't pick it up",
+        "refunding": "Refunding your payment…",
+        "refunded": "Refunded"
+      },
+      "sub": {
+        "paid": "Come get it with your name or order number.",
+        "paidEta": "Ready around {{time}}. Come get it with your name or order number.",
+        "notPickedUp": "If you want a refund, talk to {{negocio}}."
+      },
+      "bankRelease": "If you saw a charge, your bank will release it in a few days."
+    },
+    "refund": {
+      "PENDING": "Your refund is on its way {{medio}}.",
+      "DONE": "Your payment was refunded {{medio}}.",
+      "REVERSED": "Your bank returned the refund: {{negocio}} still owes it to you.",
+      "medio": {
+        "TARJETA": "to your card",
+        "SALDO": "as store credit at {{negocio}}",
+        "EFECTIVO": "in cash",
+        "TRANSFERENCIA": "by bank transfer"
+      }
+    },
     "cancelPayment": "Cancel the payment",
     "folio": {
       "head": {
