@@ -666,22 +666,129 @@ describe('fase 2: pagar con tarjeta', () => {
     expect(assign).toHaveBeenCalledWith(URL_PAGO)
   })
 
-  it.each([
-    ['CARD_PAYMENT_NOT_ACCEPTED', 'Este negocio ya no acepta tarjeta en línea. Elige pagar al recoger.'],
-    ['CARD_AMOUNT_OUT_OF_RANGE', 'El total no se puede pagar con tarjeta en línea (mínimo $10, máximo $50,000).'],
-  ])('400 %s ⇒ su texto, sin «Reintentar», y el intento se borra', async (code, text) => {
+  it('400 CARD_AMOUNT_OUT_OF_RANGE ⇒ su texto, sin «Reintentar», y el intento se borra', async () => {
     const { store, body } = card()
     store.info.value = { ...store.info.value!, paymentModes: { payAtPickup: true, cardOnline: true } }
-    api.createOrder.mockRejectedValueOnce(new ApiError('x', 400, code))
-    expect(await submitOrder(store, body)).toEqual({ kind: 'error', message: text, retryable: false })
+    api.createOrder.mockRejectedValueOnce(new ApiError('x', 400, 'CARD_AMOUNT_OUT_OF_RANGE'))
+    expect(await submitOrder(store, body)).toEqual({
+      kind: 'error', message: 'El total no se puede pagar con tarjeta en línea (mínimo $10, máximo $50,000).', retryable: false,
+    })
     expect(pendingAttempt(store.slug)).toBeNull()
+  })
+
+  it('ronda 2 (Ruling 59): 400 CARD_PAYMENT_NOT_ACCEPTED ⇒ su texto sin «Reintentar», el intento se borra, /info se relee y la caja queda elegida', async () => {
+    const { store, body } = card()
+    store.info.value = { ...store.info.value!, paymentModes: { payAtPickup: true, cardOnline: true } }
+    api.createOrder.mockRejectedValueOnce(new ApiError('x', 400, 'CARD_PAYMENT_NOT_ACCEPTED'))
+    api.getInfo.mockResolvedValueOnce({ ...store.info.value!, paymentModes: { payAtPickup: true, cardOnline: false } })
+    await send(store, body)
+    await flush()
+    const c = checkoutOf(store)
+    expect(c.feedback.value).toEqual({ kind: 'error', message: 'Este negocio ya no acepta tarjeta en línea. Elige pagar al recoger.', retryable: false })
+    expect(pendingAttempt(store.slug)).toBeNull()
+    expect(api.getInfo).toHaveBeenCalledTimes(1)
+    expect(store.info.value?.paymentModes.cardOnline).toBe(false)
+    expect(c.draft.value.payment).toBe('PAY_AT_PICKUP')
+    expect(store.screen.value).not.toBe('cart')
+    expect(store.cart.value).toEqual([line()])
   })
 
   it('400 CARD_PAYMENT_NOT_ACCEPTED en una tienda de sólo tarjeta ⇒ no ofrece pagar al recoger, porque no existe', async () => {
     const { store, body } = card()
     store.info.value = { ...store.info.value!, paymentModes: { payAtPickup: false, cardOnline: true } }
     api.createOrder.mockRejectedValueOnce(new ApiError('x', 400, 'CARD_PAYMENT_NOT_ACCEPTED'))
-    expect(await submitOrder(store, body)).toEqual({ kind: 'error', message: 'Este negocio ya no acepta tarjeta en línea.', retryable: false })
+    expect(await submitOrder(store, body)).toEqual({ kind: 'tarjetaNoDisponible', message: 'Este negocio ya no acepta tarjeta en línea.' })
+  })
+
+  it('ronda 2 (Ruling 59): «Mi equipo» de sólo tarjeta pasa a «Nadie» sin tarjeta: el primer «Pedir» relee /info y deja pagar en caja, con el carrito', async () => {
+    const { store, body } = card()
+    store.info.value = { ...store.info.value!, paymentModes: { payAtPickup: false, cardOnline: true } }
+    // El SERVIDOR revisa la tarjeta antes que la sesión: el formulario viejo recibe este rechazo, no el 401 de M4.
+    api.createOrder.mockRejectedValueOnce(new ApiError('Este negocio no acepta pagar con tarjeta en línea.', 400, 'CARD_PAYMENT_NOT_ACCEPTED'))
+    api.getInfo.mockResolvedValueOnce({ ...store.info.value!, requiresAcceptance: false, paymentModes: { payAtPickup: true, cardOnline: false } })
+    await send(store, body)
+    await flush()
+    expect(store.info.value?.requiresAcceptance).toBe(false)
+    expect(store.info.value?.paymentModes.payAtPickup).toBe(true)
+    expect(checkoutOf(store).draft.value.payment).toBe('PAY_AT_PICKUP')
+    expect(store.cart.value).toEqual([line()])
+    expect(pendingAttempt(store.slug)).toBeNull()
+    // Ya en «Nadie»: «Pedir» manda el pedido de caja, sin teléfono ni código.
+    api.createOrder.mockResolvedValueOnce(created())
+    await send(store, buildOrderBody(store, { customer: { name: 'Ana' }, note: null, paymentMode: 'PAY_AT_PICKUP' }))
+    expect(sent(1).body.paymentMode).toBe('PAY_AT_PICKUP')
+    expect(store.screen.value).toBe('tracking')
+  })
+
+  describe('ronda 2 #1 (Ruling 54): dos pestañas no pagan dos veces la misma compra', () => {
+    /** Otra pestaña del mismo navegador: su sessionStorage empieza vacía y la localStorage es la misma. Otro nombre escrito. */
+    function otraPestana(slug: string, items = [line()]) {
+      sessionStorage.clear()
+      const store = createOrderStore(slug, { locale: 'es' })
+      store.cart.value = items
+      store.quote.value = quoteOf(170)
+      store.info.value = info
+      return { store, body: buildOrderBody(store, { customer: { name: 'Ana', phone: PHONE }, note: null, paymentMode: 'CARD_ONLINE' }) }
+    }
+
+    it('mismo carrito: la segunda pestaña manda la llave y el cuerpo de la primera y abre la MISMA página de pago (un solo borrador)', async () => {
+      const { store, body, assign } = card()
+      api.createOrder.mockResolvedValueOnce(draft())
+      await send(store, body)
+      const tab2 = otraPestana(store.slug)
+      api.createOrder.mockResolvedValueOnce(draft({ replay: true }))
+      await send(tab2.store, tab2.body)
+      expect(api.createOrder).toHaveBeenCalledTimes(2)
+      expect(sent(1).key).toBe(sent(0).key)
+      expect(sent(1).body).toEqual(sent(0).body) // la compra de la primera, tal cual
+      expect(sent(1).token).toBe(sent(0).token)
+      expect(assign).toHaveBeenCalledTimes(2)
+      expect(assign).toHaveBeenLastCalledWith(URL_PAGO)
+    })
+
+    it('la respuesta de la primera se perdió (su intento sigue pendiente): la segunda manda ESA llave', async () => {
+      const { store, body } = card()
+      api.createOrder.mockRejectedValueOnce(offline())
+      await send(store, body)
+      const tab2 = otraPestana(store.slug)
+      api.createOrder.mockResolvedValueOnce(draft())
+      await send(tab2.store, tab2.body)
+      expect(sent(1).key).toBe(sent(0).key)
+    })
+
+    it('otro carrito: otra compra, con su llave', async () => {
+      const { store, body } = card()
+      api.createOrder.mockResolvedValueOnce(draft())
+      await send(store, body)
+      const tab2 = otraPestana(store.slug, [line({ quantity: 3 })])
+      api.createOrder.mockResolvedValueOnce(draft({ trackingToken: 'E'.repeat(32) }))
+      await send(tab2.store, tab2.body)
+      expect(sent(1).key).not.toBe(sent(0).key)
+    })
+
+    it('ya resuelta (un rechazo, o el borrador repetido que ya no espera su pago): la siguiente es una compra nueva', async () => {
+      // Un rechazo definitivo: no quedó página de pago.
+      const a = card()
+      api.createOrder.mockRejectedValueOnce(new ApiError('x', 400, 'CARD_AMOUNT_OUT_OF_RANGE'))
+      await send(a.store, a.body)
+      const a2 = otraPestana(a.store.slug)
+      api.createOrder.mockResolvedValueOnce(draft())
+      await send(a2.store, a2.body)
+      expect(sent(1).key).not.toBe(sent(0).key)
+      // La segunda pestaña recupera el borrador de la primera ya pagado (va a su seguimiento): una tercera ya es otra compra.
+      const b = card()
+      api.createOrder.mockResolvedValueOnce(draft())
+      await send(b.store, b.body)
+      const b2 = otraPestana(b.store.slug)
+      api.createOrder.mockResolvedValueOnce(draft({ replay: true, status: 'ACCEPTED', checkoutUrl: '' }))
+      await send(b2.store, b2.body)
+      expect(sent(3).key).toBe(sent(2).key)
+      expect(b2.store.screen.value).toBe('tracking')
+      const b3 = otraPestana(b.store.slug)
+      api.createOrder.mockResolvedValueOnce(draft({ trackingToken: 'F'.repeat(32) }))
+      await send(b3.store, b3.body)
+      expect(sent(4).key).not.toBe(sent(2).key)
+    })
   })
 
   it('un intento pendiente de tarjeta tras recargar se reintenta igual, sin pedir el código', async () => {

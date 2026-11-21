@@ -18,6 +18,40 @@ export interface PendingAttempt {
 const KEY_RE = /^[A-Za-z0-9_-]{32,64}$/
 const storageKey = (slug: string) => `avq_order_attempt:${slug}`
 
+/**
+ * D661 ronda 2 #1 (Ruling 54): la compra con tarjeta en curso de un negocio se comparte entre las pestañas del navegador (localStorage),
+ * con la huella de su carrito y su medio. Otra pestaña que pide LO MISMO reusa ese intento (llave, cuerpo y sesión): el servidor devuelve
+ * el mismo borrador y la misma página de pago, nunca un segundo cobro. Vive mientras la compra se puede pagar: se suelta con una respuesta
+ * que no deja su página de pago abierta, cuando el seguimiento ve el pago resuelto, o a los 35 min (lo que el SERVIDOR deja abierta la
+ * página de Stripe: 30 + 5). Sin localStorage, cada pestaña la suya, como antes.
+ */
+interface CompraConTarjeta { attempt: PendingAttempt; huella: string; hasta: number; trackingToken?: string }
+const compraKey = (slug: string) => `avq_card_attempt:${slug}`
+const COMPRA_MS = 35 * 60_000
+const huellaDe = (body: CreateOrderBody) => JSON.stringify([body.paymentMode, body.items])
+
+function compraEnCurso(slug: string): CompraConTarjeta | null {
+  try {
+    const c = JSON.parse(localStorage.getItem(compraKey(slug)) ?? 'null')
+    return c && typeof c.huella === 'string' && typeof c.hasta === 'number' && Date.now() < c.hasta
+      && typeof c.attempt?.key === 'string' && KEY_RE.test(c.attempt.key) && c.attempt.body ? (c as CompraConTarjeta) : null
+  } catch {
+    return null
+  }
+}
+function guardarCompra(slug: string, c: CompraConTarjeta | null): void {
+  try {
+    if (c) localStorage.setItem(compraKey(slug), JSON.stringify(c))
+    else localStorage.removeItem(compraKey(slug))
+  } catch {
+    /* sin almacenamiento compartido: cada pestaña la suya, como antes */
+  }
+}
+/** El seguimiento de `trackingToken` vio su pago resuelto (pagado o no completado): otra compra igual ya es nueva. */
+export function soltarCompraConTarjeta(slug: string, trackingToken: string): void {
+  if (compraEnCurso(slug)?.trackingToken === trackingToken) guardarCompra(slug, null)
+}
+
 /** 32 bytes de `crypto.getRandomValues` en base64url sin relleno (43 caracteres). Sin `randomUUID`: falta fuera de HTTPS. */
 export function newAttemptKey(): string {
   const bytes = crypto.getRandomValues(new Uint8Array(32))
@@ -26,15 +60,19 @@ export function newAttemptKey(): string {
 
 /**
  * Guarda el intento y lo devuelve; `null` si no se pudo guardar (y entonces NO se envía). Si ya hay uno sin desenlace devuelve
- * ESE (su llave y su cuerpo): nunca hay dos llaves vivas para el mismo negocio.
+ * ESE (su llave y su cuerpo): nunca hay dos llaves vivas para el mismo negocio. Con tarjeta, la misma compra de otra pestaña (ronda 2 #1).
  */
 export function beginAttempt(slug: string, body: CreateOrderBody, token: string | null = null): PendingAttempt | null {
   const pending = pendingAttempt(slug)
   if (pending) return pending
+  const conTarjeta = body.paymentMode === 'CARD_ONLINE'
+  const compra = conTarjeta ? compraEnCurso(slug) : null
+  const misma = compra && compra.huella === huellaDe(body) ? compra.attempt : null
   try {
     // Dentro del try: sin `crypto` tampoco hay llave, y sin llave no se envía.
-    const attempt: PendingAttempt = { key: newAttemptKey(), body, startedAt: Date.now(), token }
+    const attempt: PendingAttempt = misma ?? { key: newAttemptKey(), body, startedAt: Date.now(), token }
     sessionStorage.setItem(storageKey(slug), JSON.stringify(attempt))
+    if (conTarjeta && !misma) guardarCompra(slug, { attempt, huella: huellaDe(body), hasta: Date.now() + COMPRA_MS })
     return attempt
   } catch {
     return null
@@ -65,11 +103,18 @@ export function reautorizarIntento(slug: string, token: string): void {
   if (pendingAttempt(slug)?.requiereEntrar) autorizarIntento(slug, { token, requiereEntrar: false, porSesion: true })
 }
 
-/** Sólo ante una respuesta DEFINITIVA del servidor (creado, precio cambiado, carrito inválido, tienda no disponible…). */
-export function settleAttempt(slug: string): void {
+/**
+ * Sólo ante una respuesta DEFINITIVA del servidor (creado, precio cambiado, carrito inválido, tienda no disponible…). Si era la compra
+ * con tarjeta compartida, también la suelta, salvo `abierta`: su borrador espera el pago con su página (sigue compartida, con su
+ * seguimiento, hasta resolverse).
+ */
+export function settleAttempt(slug: string, abierta?: { trackingToken: string }): void {
+  const key = pendingAttempt(slug)?.key
   try {
     sessionStorage.removeItem(storageKey(slug))
   } catch {
     /* sin almacenamiento no hubo intento guardado */
   }
+  const compra = key ? compraEnCurso(slug) : null
+  if (compra?.attempt.key === key) guardarCompra(slug, abierta ? { ...compra, trackingToken: abierta.trackingToken } : null)
 }

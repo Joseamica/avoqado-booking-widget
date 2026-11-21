@@ -28,13 +28,23 @@ import type {
 export type SubmitResult =
   | { kind: 'created'; order: CreatedOrder | CreatedCardOrder }
   | { kind: 'needsOtp' }
-  /** El servidor exige teléfono verificado a un pedido anónimo (el negocio pasó a «Mi equipo»): el intento ya se soltó. */
+  /**
+   * El negocio pasó a «Mi equipo» y el pedido salió sin teléfono: el anónimo (401 PHONE_VERIFICATION_REQUIRED) o la tarjeta de «Nadie»
+   * (el 400 sin código «Escribe tu teléfono», ronda 1 M4). La pantalla pide WhatsApp; el intento ya se soltó.
+   */
   | { kind: 'needsPhone' }
   /** W3-r3: el token con que salió el intento recibió 401: sólo entrar otra vez lo termina (el intento se queda). */
   | { kind: 'needsSesion' }
-  /** D661: «Pagar ahora» en «Nadie» sin sesión: a entrar y de regreso a «Tus datos». No se mandó nada. */
+  /**
+   * D661: la tarjeta en «Nadie» va con su cuenta: a entrar y de regreso a «Tus datos». Sin sesión no se manda nada; un intento de
+   * «Mi equipo» con tarjeta y sin sesión que recibió 401 (el negocio pasó a «Nadie», ronda 1 M4) ya se soltó.
+   */
   | { kind: 'entrarParaPagar' }
-  /** D661: la tarjeta de «Nadie» no se puede ahora (ya no se acepta, o hay muchos pagos en línea): se paga en caja. El intento se soltó. */
+  /**
+   * D661: la tarjeta no se puede ahora: en «Nadie», ya no se acepta, hay muchos pagos en línea, el tope de pagos sin terminar o el monto
+   * (ronda 1 M5), y se paga en caja; en cualquier modo, CARD_PAYMENT_NOT_ACCEPTED (ronda 2, Ruling 59). Se relee /info y la caja queda
+   * elegida si existe. El intento se soltó.
+   */
   | { kind: 'tarjetaNoDisponible'; message: string }
   /**
    * `body` = el cuerpo enviado con el total nuevo (sin lo que ya no está): se manda (con OTRA llave) sólo si la persona confirma.
@@ -113,7 +123,10 @@ export function buildOrderBody(
 }
 
 /** Estado del envío de UNA tienda (dos `<avoqado-order>` nunca lo comparten). */
-/** `payment`: lo que eligió la persona en «¿Cómo quieres pagar?»; sin elegir, tarjeta si el negocio la acepta. */
+/**
+ * `payment`: lo que eligió la persona en «¿Cómo quieres pagar?». Sin elegir, tarjeta si el negocio la acepta; en «Nadie», sólo con sesión
+ * (ronda 1, Ruling 46: si no, «Pagar en caja»).
+ */
 export interface CheckoutDraft {
   note: string; name: string; dial: string; national: string; email: string; accepted: boolean; payment?: PaymentMode
 }
@@ -401,8 +414,15 @@ async function doSubmit(store: OrderStore, body: CreateOrderBody): Promise<Submi
     }
     if (e.code === 'CART_INVALID') return { kind: 'cartInvalid', issues: details.issues ?? [] }
     // D661: la tarjeta de «Nadie» se ofrece sólo mientras una caja avisa (puede irse entre cargar y pagar) y tiene cupo por sucursal.
-    // Ninguna de las dos es «la tienda no recibe pedidos» (nunca `ORDERING_*`): en caja se sigue pagando.
-    if (cardNadie && e.code === 'CARD_PAYMENT_NOT_ACCEPTED') return { kind: 'tarjetaNoDisponible', message: t('checkout.cardNadieUnavailable') }
+    // Ninguna de las dos es «la tienda no recibe pedidos» (nunca `ORDERING_*`): en caja se sigue pagando. Ronda 2 (Ruling 59): la tarjeta
+    // que ya no se acepta SIEMPRE relee /info, también en «Mi equipo» (el negocio pudo cambiar de modo: el SERVIDOR revisa la tarjeta antes
+    // que la sesión) y deja la caja elegida si existe; «Elige pagar al recoger» sólo si esa opción existe.
+    if (e.code === 'CARD_PAYMENT_NOT_ACCEPTED')
+      return {
+        kind: 'tarjetaNoDisponible',
+        message: t(cardNadie ? 'checkout.cardNadieUnavailable'
+          : store.info.value?.paymentModes?.payAtPickup ? 'checkout.cardNotAccepted' : 'checkout.cardNotAcceptedOnly'),
+      }
     if (cardNadie && e.code === 'CARD_ONLINE_QUEUE_FULL') return { kind: 'tarjetaNoDisponible', message: t('checkout.cardNadieBusy') }
     // Ronda 1 M5: el tope por cliente (cuenta páginas de pago sin terminar; en «Nadie» nadie «responde») y el monto fuera de lo que se paga
     // con tarjeta. En caja sí se puede.
@@ -424,8 +444,6 @@ async function doSubmit(store: OrderStore, body: CreateOrderBody): Promise<Submi
       : e.code === 'PLAN_REQUIRED' ? t('store.disabled')
       : e.code === 'VENUE_NOT_FOUND' ? t('store.notFound')
       : e.code === 'IDEMPOTENCY_KEY_CONFLICT' ? t('checkout.failed')
-      // «Elige pagar al recoger» sólo si esa opción existe: en una tienda de sólo tarjeta no hay a dónde ir.
-      : e.code === 'CARD_PAYMENT_NOT_ACCEPTED' ? t(store.info.value?.paymentModes?.payAtPickup ? 'checkout.cardNotAccepted' : 'checkout.cardNotAcceptedOnly')
       : e.code === 'CARD_AMOUNT_OUT_OF_RANGE' ? t('checkout.cardAmountOutOfRange')
       : errorText(t, e)
     return { kind: 'error', message, retryable: false }
@@ -434,11 +452,13 @@ async function doSubmit(store: OrderStore, body: CreateOrderBody): Promise<Submi
   const orderNumber = 'orderNumber' in order ? order.orderNumber : ''
   // Primero el pedido guardado y luego borrar el intento: si algo muere en medio, el reintento recupera el mismo pedido.
   saveLastOrder(slug, { trackingToken: order.trackingToken, orderNumber, ...(anon ? { name: attempt.body.customer.name } : {}) })
-  settleAttempt(slug)
+  // Stripe sólo con un borrador que espera el pago y su liga: una repetición que ya avanzó o venció va al seguimiento (`send`). Ronda 2 #1:
+  // mientras esa página siga abierta, la misma compra en otra pestaña la reusa (attempt.ts).
+  const pagina = 'checkoutUrl' in order && order.status === 'AWAITING_PAYMENT' && /^https:\/\//.test(order.checkoutUrl) ? order.checkoutUrl : null
+  settleAttempt(slug, pagina ? { trackingToken: order.trackingToken } : undefined)
   // Aquí (una vez por respuesta del servidor) y no en `send`: un doble toque comparte esta petición y no repite el evento.
   if (store.host) emitOrderCreated(store.host, slug, { trackingToken: order.trackingToken, orderNumber })
-  // Stripe sólo con un borrador que espera el pago y su liga: una repetición que ya avanzó o venció va al seguimiento (`send`).
-  if ('checkoutUrl' in order && order.status === 'AWAITING_PAYMENT' && /^https:\/\//.test(order.checkoutUrl)) nav.assign(order.checkoutUrl)
+  if (pagina) nav.assign(pagina)
   return { kind: 'created', order }
 }
 
@@ -484,8 +504,8 @@ export async function send(store: OrderStore, body: CreateOrderBody): Promise<Su
       store.go('entrar')
       break
     case 'tarjetaNoDisponible':
-      // D661: una línea (ámbar, CheckoutStatus) y «Pagar en caja» lista; nunca una pantalla de error ni un carrito perdido. /info al día:
-      // si la tarjeta ya no se ofrece, la opción se va.
+      // D661: una línea (ámbar en «Nadie», CheckoutStatus; la de «Mi equipo», como hoy) y la caja lista si existe; nunca una pantalla de
+      // error ni un carrito perdido. /info al día: si la tarjeta ya no se ofrece, la opción se va (o el formulario pasa al otro modo).
       c.draft.value = { ...c.draft.value, payment: 'PAY_AT_PICKUP' }
       c.feedback.value = { kind: 'error', message: r.message, retryable: false }
       void store.refreshInfo()
