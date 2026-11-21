@@ -313,7 +313,7 @@
     },
     "nadie": {
       "head": {
-        "hold": "Avisando a {{negocio}}… se te cobra cuando reciban tu pedido.",
+        "hold": "Avisando a {{negocio}}… se te cobra cuando abra tu pedido.",
         "goneFree": "{{negocio}} no pudo atender tu pedido. No se te cobró.",
         "gone": "{{negocio}} no pudo atender tu pedido.",
         "notPickedUp": "No lo recogiste",

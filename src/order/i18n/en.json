@@ -313,7 +313,7 @@
     },
     "nadie": {
       "head": {
-        "hold": "Notifying {{negocio}}… you're charged when they receive your order.",
+        "hold": "Notifying {{negocio}}… you're charged when they open your order.",
         "goneFree": "{{negocio}} couldn't take your order. You were not charged.",
         "gone": "{{negocio}} couldn't take your order.",
         "notPickedUp": "You didn't pick it up",

@@ -1400,11 +1400,11 @@ describe('D661: el seguimiento de un pedido pagado con tarjeta en «Nadie»', ()
   const heading = () => document.querySelector('.avq-o-title')?.textContent ?? null
   const cancelBtn = () => screen.queryByRole('button', { name: /Cancelar/ })
 
-  it('seguimiento AUTHORIZED: «Avisando a {{negocio}}… se te cobra cuando reciban tu pedido», sin botón de cancelar', async () => {
+  it('seguimiento AUTHORIZED: «Avisando a {{negocio}}… se te cobra cuando abra tu pedido» (el verbo de antes de pagar), sin botón de cancelar', async () => {
     for (const cardStatus of ['AUTHORIZED', 'CONFIRMING'] as const) {
       vi.mocked(getTracking).mockReset()
       await show(nc({ cardStatus }))
-      expect(heading(), cardStatus).toBe('Avisando a Flautas… se te cobra cuando reciban tu pedido.')
+      expect(heading(), cardStatus).toBe('Avisando a Flautas… se te cobra cuando abra tu pedido.') // limpieza final (6): como antes de pagar
       expect(cancelBtn()).toBeNull()
       // Nada de «Mi equipo» ni del folio de caja: nadie lo acepta y no se paga en caja.
       expect(document.body.textContent).not.toMatch(/acept|Pasa a pagar|Enséñalo en caja|Pagas en caja|Faltan/)
@@ -1727,7 +1727,7 @@ describe('D661: el seguimiento de un pedido pagado con tarjeta en «Nadie»', ()
 
   it('en inglés', async () => {
     await show(nc(), 'en')
-    expect(heading()).toBe("Notifying Flautas… you're charged when they receive your order.")
+    expect(heading()).toBe("Notifying Flautas… you're charged when they open your order.")
     cleanup()
     await show(cobrado({ status: 'COMPLETED', refundedAt: '2026-10-17T21:00:00Z', refund: { status: 'DONE', medio: 'SALDO' } }), 'en')
     expect(heading()).toBe('Refunded')
