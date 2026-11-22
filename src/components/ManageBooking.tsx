@@ -21,6 +21,8 @@ interface ManageBookingProps {
   depositReturn?: boolean
   /** D683: regresó de Stripe sin la marca de pago hecho. Con el depósito PENDING, se le dice que falta pagar (no «confirmando»). */
   paymentUnfinished?: boolean
+  /** D683: la página de pago de Stripe que devolvió la reserva al crearse, guardada en este navegador. */
+  checkoutUrl?: string | null
 }
 
 const statusConfig: Record<string, { bg: string; text: string }> = {
@@ -32,7 +34,7 @@ const statusConfig: Record<string, { bg: string; text: string }> = {
   NO_SHOW: { bg: '#ffedd5', text: '#9a3412' },
 }
 
-export function ManageBooking({ venueSlug, cancelSecret, timezone, locale = 'es', venueInfo, t, onBack, depositReturn = false, paymentUnfinished = false }: ManageBookingProps) {
+export function ManageBooking({ venueSlug, cancelSecret, timezone, locale = 'es', venueInfo, t, onBack, depositReturn = false, paymentUnfinished = false, checkoutUrl = null }: ManageBookingProps) {
   const [reservation, setReservation] = useState<PublicReservationDetail | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -138,12 +140,11 @@ export function ManageBooking({ venueSlug, cancelSecret, timezone, locale = 'es'
   }
 
   const dateLocale = locale === 'en' ? 'en-US' : 'es-MX'
-  // D683: volvió sin pagar. La hora y la liga de pago las da el SERVIDOR (`depositExpiresAt`, `checkoutUrl`); sin ellas no se inventan.
+  // D683: volvió sin pagar. La hora la da el SERVIDOR (`depositExpiresAt`); la liga de pago es la que este navegador guardó al
+  // crear la reserva. «Pagar ahora» sólo con las dos y el plazo vigente: sin hora conocida no se ofrece un pago que pudo vencer.
   const unpaid = paymentUnfinished && reservation?.depositStatus === 'PENDING'
   const holdEnds = unpaid ? Date.parse(reservation?.depositExpiresAt ?? '') : NaN
-  const holdOpen = isNaN(holdEnds) || holdEnds > Date.now()
-  const payUrl = unpaid && holdOpen && typeof reservation?.checkoutUrl === 'string' && reservation.checkoutUrl.startsWith('https://')
-    ? reservation.checkoutUrl : null
+  const payUrl = holdEnds > Date.now() && checkoutUrl?.startsWith('https://') ? checkoutUrl : null
 
   const financialNotice = (
     <div role="status" aria-live="polite" style={{ marginBottom: '16px', padding: '12px 14px', borderRadius: '12px', background: 'var(--avq-muted, #f8f9fb)', fontSize: '13px' }}>

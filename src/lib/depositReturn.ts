@@ -4,7 +4,8 @@ const legacyKey = 'avq:pendingReservation'
 const reservationKey = (venue: string) => `${legacyKey}:${venue}`
 /** Cómo regresó de Stripe: por la liga de pago hecho (`success`) o por la de «atrás» (`cancelled`). */
 type PaymentOutcome = 'success' | 'cancelled'
-type SavedReservation = { venue: string; cancelSecret: string; confirmationCode: string; outcome?: PaymentOutcome }
+/** `checkoutUrl`: la página de pago de Stripe que devolvió la reserva al crearse (D683, «Pagar ahora»). Sólo vive en este navegador. */
+type SavedReservation = { venue: string; cancelSecret: string; confirmationCode: string; outcome?: PaymentOutcome; checkoutUrl?: string }
 
 function readSaved(key: string, venue: string): SavedReservation | null {
   try {
@@ -16,11 +17,12 @@ function readSaved(key: string, venue: string): SavedReservation | null {
 
 export function savePendingReservation(
   venue: string,
-  result: Pick<PublicBookingResult, 'cancelSecret' | 'confirmationCode'> & { outcome?: PaymentOutcome },
+  result: Pick<PublicBookingResult, 'cancelSecret' | 'confirmationCode'> & { outcome?: PaymentOutcome; checkoutUrl?: string | null },
 ) {
   try {
     const outcome = result.outcome === 'success' || result.outcome === 'cancelled' ? { outcome: result.outcome } : {}
-    sessionStorage.setItem(reservationKey(venue), JSON.stringify({ venue, cancelSecret: result.cancelSecret, confirmationCode: result.confirmationCode, ...outcome }))
+    const pay = typeof result.checkoutUrl === 'string' && result.checkoutUrl.startsWith('https://') ? { checkoutUrl: result.checkoutUrl } : {}
+    sessionStorage.setItem(reservationKey(venue), JSON.stringify({ venue, cancelSecret: result.cancelSecret, confirmationCode: result.confirmationCode, ...outcome, ...pay }))
     if (readSaved(legacyKey, venue)) sessionStorage.removeItem(legacyKey)
   } catch { /* blocked storage: the return screen explains it */ }
 }

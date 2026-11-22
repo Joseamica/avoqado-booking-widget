@@ -1318,6 +1318,7 @@ export function BookingFlow({ props }: BookingFlowProps) {
           onBack={() => closeManage(info)}
           depositReturn={Boolean(recovery.saved)}
           paymentUnfinished={recovery.paymentUnfinished && recovery.saved?.cancelSecret === manageSecret.value}
+          checkoutUrl={recovery.saved?.cancelSecret === manageSecret.value ? recovery.saved?.checkoutUrl : null}
         />
         {!props.hideVenueHeader && (
           <div style={{ marginTop: '32px', textAlign: 'center', paddingBottom: '4px' }}>

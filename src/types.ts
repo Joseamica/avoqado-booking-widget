@@ -354,10 +354,8 @@ export interface PublicReservationDetail {
   specialRequests: string | null
   depositAmount: number | null
   depositStatus: string | null
-  /** D683: hasta cuándo se guarda el lugar sin pagar (ISO). Aditivo del SERVIDOR; sin él no se dice hora. */
+  /** D683: hasta cuándo se guarda el lugar sin pagar (ISO). Aditivo del SERVIDOR (#596); sin él no se dice hora ni se ofrece pagar. */
   depositExpiresAt?: string | null
-  /** D683: la página de pago de Stripe que sigue vigente. Aditivo del SERVIDOR; sin él no hay «Pagar ahora». */
-  checkoutUrl?: string | null
   cancellation?: {
     /** Full decision (venue toggle + status + time window). Disable the cancel
      *  control when false — never re-derive this client-side. */

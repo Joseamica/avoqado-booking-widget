@@ -5,6 +5,7 @@ import { BookingFlow } from './BookingFlow'
 import * as api from '../api/booking'
 import * as state from '../state/booking'
 import { borrarSesion, fijarPagina, guardarSesion, leerSesion } from '../lib/sesionDeCliente'
+import { resolveDepositReturn, savePendingReservation } from '../lib/depositReturn'
 import type { PublicVenueInfo, PublicReservationDetail, WidgetProps } from '../types'
 
 vi.mock('../api/booking', () => ({
@@ -1458,16 +1459,14 @@ describe('D684b: /appointments en un negocio sin servicios con cita', () => {
 })
 
 // D683 (Mindform, 22-nov): reservó «Clase Lagree» $325, fue a Stripe y regresó sin pagar. «Tu Reservación» decía «Estamos
-// confirmando el depósito · Pendiente», como si hubiera pagado. Los campos `depositExpiresAt` y `checkoutUrl` los agrega el SERVIDOR
-// (aditivos); sin ellos, el aviso honesto va sin hora y sin «Pagar ahora».
+// confirmando el depósito · Pendiente», como si hubiera pagado. La hora del apartado la da el SERVIDOR (`depositExpiresAt`, #596,
+// aditivo); la liga de pago es la que devolvió la reserva al crearse, guardada en este navegador. Sin las dos no hay «Pagar ahora».
 describe('D683: volvió de Stripe sin pagar', () => {
   const permitido = { allowed: true, minHoursBeforeStart: 2, creditsUsed: 0, creditsRefundable: 0, refundPercent: 0, policyLabel: '' }
-  const sinPagar = {
-    ...detail, status: 'PENDING', depositStatus: 'PENDING', cancellation: permitido,
-    depositExpiresAt: '2026-10-06T18:25:00Z', checkoutUrl: 'https://checkout.stripe.com/c/pay/cs_test_a',
-  }
-  async function volver(url: string, reserva: object = sinPagar) {
-    sessionStorage.setItem('avq:pendingReservation:studio-a', JSON.stringify(saved))
+  const sinPagar = { ...detail, status: 'PENDING', depositStatus: 'PENDING', cancellation: permitido, depositExpiresAt: '2026-10-06T18:25:00Z' }
+  const PAGO = 'https://checkout.stripe.com/c/pay/cs_test_a'
+  async function volver(url: string, reserva: object = sinPagar, guardada: object = { ...saved, checkoutUrl: PAGO }) {
+    sessionStorage.setItem('avq:pendingReservation:studio-a', JSON.stringify(guardada))
     window.history.replaceState({}, '', url)
     vi.mocked(api.getReservation).mockResolvedValue(reserva as PublicReservationDetail)
     const vista = render(<BookingFlow props={props()} />); await flush()
@@ -1480,20 +1479,38 @@ describe('D683: volvió de Stripe sin pagar', () => {
     expect(aviso()).toContain('Tu pago no se completó')
     expect(aviso()).toContain('12:25 p.m.')
     expect(screen.queryByText(/Estamos confirmando/)).toBeNull()
-    expect(screen.getByRole('link', { name: 'Pagar ahora' }).getAttribute('href')).toBe(sinPagar.checkoutUrl)
+    expect(screen.getByRole('link', { name: 'Pagar ahora' }).getAttribute('href')).toBe(PAGO)
     expect(screen.getByRole('button', { name: 'Cancelar Reservación' })).toBeTruthy()
     await advance(40000); expect(api.getReservation).toHaveBeenCalledTimes(1)
   })
 
   it.each([
-    ['sin los campos del SERVIDOR', { ...sinPagar, depositExpiresAt: undefined, checkoutUrl: undefined }],
-    ['con el plazo ya vencido', { ...sinPagar, depositExpiresAt: '2026-10-06T17:59:00Z' }],
-    ['con una liga que no es https', { ...sinPagar, depositExpiresAt: null, checkoutUrl: 'javascript:alert(1)' }],
-  ])('%s: el aviso honesto, sin hora y sin «Pagar ahora»', async (_caso, reserva) => {
-    await volver('/studio-a/classes?avq_payment=cancelled', reserva)
+    ['sin la hora del SERVIDOR', { ...sinPagar, depositExpiresAt: undefined }, { ...saved, checkoutUrl: PAGO }],
+    ['con el plazo ya vencido', { ...sinPagar, depositExpiresAt: '2026-10-06T17:59:00Z' }, { ...saved, checkoutUrl: PAGO }],
+  ])('%s: el aviso honesto, sin hora y sin «Pagar ahora»', async (_caso, reserva, guardada) => {
+    await volver('/studio-a/classes?avq_payment=cancelled', reserva, guardada)
     expect(aviso()).toContain('Tu pago no se completó')
     expect(aviso()).not.toMatch(/\d:\d\d/)
     expect(screen.queryByRole('link', { name: 'Pagar ahora' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Cancelar Reservación' })).toBeTruthy()
+  })
+
+  it.each([
+    ['la liga no está en este navegador', { ...saved }],
+    ['la liga guardada no es https', { ...saved, checkoutUrl: 'javascript:alert(1)' }],
+  ])('%s: dice hasta cuándo guarda el lugar, pero no ofrece pagar', async (_caso, guardada) => {
+    await volver('/studio-a/classes?avq_payment=cancelled', sinPagar, guardada)
+    expect(aviso()).toContain('12:25 p.m.')
+    expect(screen.queryByRole('link', { name: 'Pagar ahora' })).toBeNull()
+  })
+
+  it('la liga de pago que devuelve la reserva al crearse se guarda sólo si es https (y la recuerda al volver)', async () => {
+    savePendingReservation('studio-a', { cancelSecret: 'c1', confirmationCode: 'C1', checkoutUrl: PAGO })
+    expect(JSON.parse(sessionStorage.getItem('avq:pendingReservation:studio-a')!)).toEqual({ venue: 'studio-a', cancelSecret: 'c1', confirmationCode: 'C1', checkoutUrl: PAGO })
+    window.history.replaceState({}, '', '/studio-a/classes?avq_payment=cancelled')
+    expect(resolveDepositReturn('studio-a').saved?.checkoutUrl).toBe(PAGO)
+    savePendingReservation('studio-a', { cancelSecret: 'c2', confirmationCode: 'C2', checkoutUrl: '#provider' })
+    expect(JSON.parse(sessionStorage.getItem('avq:pendingReservation:studio-a')!)).toEqual({ venue: 'studio-a', cancelSecret: 'c2', confirmationCode: 'C2' })
   })
 
   it('recargar después de volver sin pagar sigue diciendo que falta el pago', async () => {
