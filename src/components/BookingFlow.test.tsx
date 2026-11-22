@@ -705,7 +705,8 @@ describe('BookingFlow deposit return through mounted components', () => {
     render(<BookingFlow props={p} />); await flush()
     expect(api.getReservation).toHaveBeenCalledWith('studio-a', 'stored-a', expect.any(AbortSignal))
     expect(screen.getByText('OWN-A')).toBeTruthy(); expect(screen.getByText('Pago recibido')).toBeTruthy()
-    expect(sessionStorage.getItem('avq:pendingReservation:studio-a')).toBe(JSON.stringify(saved))
+    // D683: la referencia pasa a su llave del negocio y recuerda cómo regresó de Stripe (para que recargar diga lo mismo).
+    expect(JSON.parse(sessionStorage.getItem('avq:pendingReservation:studio-a')!)).toEqual({ ...saved, outcome: flag })
     expect(window.location.search).toBe('?publicCampaign=fall'); expect(confirmed).not.toHaveBeenCalled()
   })
   it('persists the saved reference across reload and clears only on an explicit back click', async () => {
@@ -1362,5 +1363,163 @@ describe('diseño 18-nov: «Clases» se esconde si no hay clases agendadas en 30
     vi.mocked(api.getClassSessionsRange).mockRejectedValue(new Error('sin red'))
     await portada()
     expect(screen.getByRole('button', { name: /Clases/ })).toBeTruthy()
+  })
+})
+
+// D684a (Mindform, 22-nov): volvió de Stripe sin pagar a «Tu Reservación» y tocar «Citas · Clases · Comprar paquetes» no hacía
+// nada. Cada pestaña es un enlace que recarga la página, y la página nueva volvía a abrir «Tu Reservación» con la reserva
+// guardada en el navegador. La cabecera ahora avisa (`leaveManageBooking`) antes de seguir el enlace.
+describe('D684a: elegir otra pestaña desde «Tu Reservación»', () => {
+  const salir = (host: HTMLElement) => act(async () => { host.dispatchEvent(new CustomEvent('_avq_leave_manage')) })
+
+  it('volvió de Stripe sin pagar y eligió otra pestaña: la página nueva enseña la pestaña, no «Tu Reservación» otra vez', async () => {
+    sessionStorage.setItem('avq:pendingReservation:studio-a', JSON.stringify(saved))
+    window.history.replaceState({}, '', '/studio-a/appointments?avq_payment=cancelled&payment=cancelled&reservationId=r1')
+    const p = props()
+    const antes = render(<BookingFlow props={p} />); await flush()
+    expect(screen.getByText('OWN-A')).toBeTruthy()
+    await salir(p.hostElement!); await flush()
+    expect(screen.queryByText('OWN-A')).toBeNull()
+    expect(sessionStorage.getItem('avq:pendingReservation:studio-a')).toBeNull()
+    // El enlace de la pestaña carga la página de nuevo.
+    antes.unmount(); resetSignals()
+    window.history.replaceState({}, '', '/studio-a/appointments')
+    render(<BookingFlow props={props()} />); await flush()
+    expect(screen.queryByText('OWN-A')).toBeNull()
+    expect(screen.getByRole('button', { name: '8 de octubre de 2026' })).toBeTruthy()
+    expect(api.getReservation).toHaveBeenCalledTimes(1)
+  })
+
+  it('llegó por la liga del correo (?manage=): sale de «Tu Reservación» y la liga se quita de la dirección', async () => {
+    window.history.replaceState({}, '', '/studio-a/appointments?manage=url-secret&campaign=fall')
+    const p = props()
+    render(<BookingFlow props={p} />); await flush()
+    expect(screen.getByText('OWN-A')).toBeTruthy()
+    await salir(p.hostElement!); await flush()
+    expect(screen.queryByText('OWN-A')).toBeNull()
+    expect(window.location.search).toBe('?campaign=fall')
+  })
+
+  it('fuera de «Tu Reservación» el aviso de la cabecera no toca lo que lleva escrito', async () => {
+    const p = props()
+    await openAppointmentForm(p)
+    fireEvent.input(screen.getByLabelText(/Nombre/), { target: { value: 'Ana Escribiendo' } })
+    await salir(p.hostElement!); await flush()
+    expect((screen.getByLabelText(/Nombre/) as HTMLInputElement).value).toBe('Ana Escribiendo')
+  })
+})
+
+// D684b (Mindform, 22-nov): sólo da clases, y /appointments abría un calendario vacío con «Todavía no se han añadido servicios».
+describe('D684b: /appointments en un negocio sin servicios con cita', () => {
+  const soloClases = { ...venue, products: [{ ...venue.products[0], id: 'clase-1', name: 'Clase Lagree', type: 'CLASS' }] }
+  async function abrir(info: PublicVenueInfo) {
+    vi.mocked(api.getVenueInfo).mockResolvedValue(info)
+    vi.mocked(api.getClassSessionsRange).mockResolvedValue({ dateFrom: '2026-10-06', dateTo: '2026-11-05', slots: [] })
+    const host = document.createElement('div')
+    const avisos: Record<string, unknown>[] = []
+    host.addEventListener('avoqado:venue-loaded', e => avisos.push((e as CustomEvent).detail.venue))
+    render(<BookingFlow props={{ ...props(), hostElement: host }} />); await flush()
+    return avisos
+  }
+
+  it('dice que no agenda citas en línea, ofrece «Ver clases» y le avisa a la página que no hay citas', async () => {
+    const avisos = await abrir(soloClases as PublicVenueInfo)
+    expect(screen.getByText('Este negocio no agenda citas en línea')).toBeTruthy()
+    expect(screen.queryByText('Todavía no se han añadido servicios')).toBeNull()
+    expect(avisos[0]).toMatchObject({ hasClasses: true, hasAppointments: false })
+    fireEvent.click(screen.getByRole('button', { name: 'Ver clases' })); await flush()
+    expect(window.location.pathname).toBe('/studio-a/classes')
+    expect(state.flowType.value).toBe('classes')
+    expect(screen.queryByText('Este negocio no agenda citas en línea')).toBeNull()
+  })
+
+  it('«Comprar paquetes» de la cabecera sigue abriendo la lista encima del aviso', async () => {
+    vi.mocked(api.getCreditPacks).mockResolvedValue([PAQUETE] as any)
+    const host = document.createElement('div')
+    vi.mocked(api.getVenueInfo).mockResolvedValue({ ...soloClases, canCharge: true } as PublicVenueInfo)
+    vi.mocked(api.getClassSessionsRange).mockResolvedValue({ dateFrom: '2026-10-06', dateTo: '2026-11-05', slots: [] })
+    render(<BookingFlow props={{ ...props(), hostElement: host }} />); await flush()
+    await act(async () => { host.dispatchEvent(new CustomEvent('_avq_show_credit_packs')) }); await flush()
+    expect(screen.getByText('Este negocio no agenda citas en línea')).toBeTruthy()
+    expect(screen.getByText('Mega Pack')).toBeTruthy()
+  })
+
+  it('sin clases tampoco: sólo el aviso, sin botón que lleve a nada', async () => {
+    await abrir({ ...venue, products: [] })
+    expect(screen.getByText('Este negocio no agenda citas en línea')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Ver clases' })).toBeNull()
+  })
+
+  it('con servicios con cita, todo sigue igual y la página sabe que hay citas', async () => {
+    const avisos = await abrir(venue)
+    expect(screen.queryByText('Este negocio no agenda citas en línea')).toBeNull()
+    expect(avisos[0]).toMatchObject({ hasClasses: false, hasAppointments: true })
+  })
+})
+
+// D683 (Mindform, 22-nov): reservó «Clase Lagree» $325, fue a Stripe y regresó sin pagar. «Tu Reservación» decía «Estamos
+// confirmando el depósito · Pendiente», como si hubiera pagado. Los campos `depositExpiresAt` y `checkoutUrl` los agrega el SERVIDOR
+// (aditivos); sin ellos, el aviso honesto va sin hora y sin «Pagar ahora».
+describe('D683: volvió de Stripe sin pagar', () => {
+  const permitido = { allowed: true, minHoursBeforeStart: 2, creditsUsed: 0, creditsRefundable: 0, refundPercent: 0, policyLabel: '' }
+  const sinPagar = {
+    ...detail, status: 'PENDING', depositStatus: 'PENDING', cancellation: permitido,
+    depositExpiresAt: '2026-10-06T18:25:00Z', checkoutUrl: 'https://checkout.stripe.com/c/pay/cs_test_a',
+  }
+  async function volver(url: string, reserva: object = sinPagar) {
+    sessionStorage.setItem('avq:pendingReservation:studio-a', JSON.stringify(saved))
+    window.history.replaceState({}, '', url)
+    vi.mocked(api.getReservation).mockResolvedValue(reserva as PublicReservationDetail)
+    const vista = render(<BookingFlow props={props()} />); await flush()
+    return vista
+  }
+  const aviso = () => screen.getByRole('status').textContent ?? ''
+
+  it('dice que el pago no se completó y hasta cuándo guarda el lugar; ofrece pagar y cancelar; no se queda consultando', async () => {
+    await volver('/studio-a/classes?avq_payment=cancelled&payment=cancelled&reservationId=r1')
+    expect(aviso()).toContain('Tu pago no se completó')
+    expect(aviso()).toContain('12:25 p.m.')
+    expect(screen.queryByText(/Estamos confirmando/)).toBeNull()
+    expect(screen.getByRole('link', { name: 'Pagar ahora' }).getAttribute('href')).toBe(sinPagar.checkoutUrl)
+    expect(screen.getByRole('button', { name: 'Cancelar Reservación' })).toBeTruthy()
+    await advance(40000); expect(api.getReservation).toHaveBeenCalledTimes(1)
+  })
+
+  it.each([
+    ['sin los campos del SERVIDOR', { ...sinPagar, depositExpiresAt: undefined, checkoutUrl: undefined }],
+    ['con el plazo ya vencido', { ...sinPagar, depositExpiresAt: '2026-10-06T17:59:00Z' }],
+    ['con una liga que no es https', { ...sinPagar, depositExpiresAt: null, checkoutUrl: 'javascript:alert(1)' }],
+  ])('%s: el aviso honesto, sin hora y sin «Pagar ahora»', async (_caso, reserva) => {
+    await volver('/studio-a/classes?avq_payment=cancelled', reserva)
+    expect(aviso()).toContain('Tu pago no se completó')
+    expect(aviso()).not.toMatch(/\d:\d\d/)
+    expect(screen.queryByRole('link', { name: 'Pagar ahora' })).toBeNull()
+  })
+
+  it('recargar después de volver sin pagar sigue diciendo que falta el pago', async () => {
+    const antes = await volver('/studio-a/classes?avq_payment=cancelled')
+    antes.unmount(); resetSignals()
+    render(<BookingFlow props={props()} />); await flush()
+    expect(aviso()).toContain('Tu pago no se completó')
+  })
+
+  it('regresó con «atrás» del navegador (sin pasar por Stripe de vuelta): también falta el pago', async () => {
+    await volver('/studio-a/classes')
+    expect(aviso()).toContain('Tu pago no se completó')
+  })
+
+  it('volvió pagado y recarga mientras llega el aviso del banco: sigue «Estamos confirmando», sin «Pagar ahora»', async () => {
+    const antes = await volver('/studio-a/classes?avq_payment=success')
+    expect(aviso()).toContain('Estamos confirmando el depósito')
+    antes.unmount(); resetSignals()
+    render(<BookingFlow props={props()} />); await flush()
+    expect(aviso()).toContain('Estamos confirmando el depósito')
+    expect(screen.queryByRole('link', { name: 'Pagar ahora' })).toBeNull()
+  })
+
+  it('si el lugar ya se liberó, dice lo que pasó y no ofrece pagar', async () => {
+    await volver('/studio-a/classes?avq_payment=cancelled', { ...sinPagar, status: 'CANCELLED', depositStatus: 'EXPIRED' })
+    expect(aviso()).toContain('El plazo del depósito expiró')
+    expect(screen.queryByRole('link', { name: 'Pagar ahora' })).toBeNull()
   })
 })

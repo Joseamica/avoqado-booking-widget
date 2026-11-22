@@ -123,6 +123,52 @@ describe('una sola cabecera (diseño 18-nov): «Comprar paquetes» dentro de la 
   })
 })
 
+// D684 (Mindform, 22-nov): volvió de Stripe sin pagar a «Tu Reservación» y las pestañas de arriba no hacían nada. Cada pestaña
+// es un enlace que recarga la página, y el widget volvía a abrir «Tu Reservación» con la reserva guardada en el navegador.
+describe('D684: la cabecera desde «Tu Reservación», y «Citas» sólo si el negocio agenda citas', () => {
+  function tocar(sel: string, extra: MouseEventInit = {}) {
+    // jsdom no navega: se frena al final (en window, después de los oyentes de la página) para no ensuciar la salida.
+    const frenar = (e: Event) => e.preventDefault()
+    window.addEventListener('click', frenar)
+    document.querySelector<HTMLAnchorElement>(sel)!.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, ...extra }))
+    window.removeEventListener('click', frenar)
+  }
+
+  it('tocar una pestaña (arriba o en el menú) o el nombre del negocio cierra «Tu Reservación» antes de cambiar de página', async () => {
+    window.history.replaceState({}, '', '/mindform/classes')
+    new Function(scriptDeLaPagina())()
+    await esperar()
+    const salir = vi.fn()
+    ;(widget() as unknown as { leaveManageBooking: () => void }).leaveManageBooking = salir
+    for (const sel of ['#topnav a[data-route="classes"]', '#topnav a[data-route="packs"]', '#drawer a[data-route="appointments"]', '#nav-brand']) tocar(sel)
+    expect(salir).toHaveBeenCalledTimes(4)
+  })
+
+  it('abrirla en otra pestaña del navegador (⌘ o ctrl) no cierra la que está viendo', async () => {
+    new Function(scriptDeLaPagina())()
+    await esperar()
+    const salir = vi.fn()
+    ;(widget() as unknown as { leaveManageBooking: () => void }).leaveManageBooking = salir
+    tocar('#topnav a[data-route="classes"]', { metaKey: true })
+    tocar('#topnav a[data-route="classes"]', { ctrlKey: true })
+    expect(salir).not.toHaveBeenCalled()
+  })
+
+  it('sin servicios con cita, «Citas» se esconde de la cabecera y del menú; con servicios (o sin el dato) se ve', async () => {
+    new Function(scriptDeLaPagina())()
+    await esperar()
+    const citas = () => Array.from(document.querySelectorAll('a[data-route="appointments"]'))
+    expect(citas()).toHaveLength(2)
+    const avisar = (venue: Record<string, unknown>) => widget().dispatchEvent(new CustomEvent('avoqado:venue-loaded', { detail: { venue } }))
+    avisar({ name: 'Mindform', hasClasses: true, hasAppointments: false })
+    citas().forEach(x => expect(x.hasAttribute('hidden')).toBe(true))
+    avisar({ name: 'Mindform', hasClasses: true, hasAppointments: true })
+    citas().forEach(x => expect(x.hasAttribute('hidden')).toBe(false))
+    avisar({ name: 'Widget viejo', hasClasses: true })
+    citas().forEach(x => expect(x.hasAttribute('hidden')).toBe(false))
+  })
+})
+
 describe('diseño 18-nov: sin clases agendadas, la cabecera no ofrece «Clases»', () => {
   it('el aviso del widget esconde «Clases» de la cabecera y del menú', async () => {
     new Function(scriptDeLaPagina())()

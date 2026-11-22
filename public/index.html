@@ -533,7 +533,7 @@
       <span id="nav-venue-name">Reservas</span>
     </a>
     <nav class="topnav-links" id="nav-links" aria-label="Secciones del sitio">
-      <a href="" data-route="appointments">Citas</a>
+      <a href="" data-route="appointments" data-requires="appointments" hidden>Citas</a>
       <a href="" data-route="classes" data-requires="classes" hidden>Clases</a>
       <a href="" data-route="packs" data-requires="packs" hidden>Comprar paquetes</a>
     </nav>
@@ -561,7 +561,7 @@
 
       <!-- Default drawer (landing, classes, packs) — site navigation. -->
       <div class="drawer-default">
-        <a class="drawer-link" href="" data-route="appointments">Citas</a>
+        <a class="drawer-link" href="" data-route="appointments" data-requires="appointments" hidden>Citas</a>
         <a class="drawer-link" href="" data-route="classes" data-requires="classes" hidden>Clases</a>
         <a class="drawer-link" href="" data-route="packs" data-requires="packs" hidden>Comprar paquetes</a>
         <button class="drawer-link is-cta" id="drawer-account" type="button">Mi cuenta</button>
@@ -1372,6 +1372,15 @@
           else el.setAttribute('hidden', '')
         })
       })
+      // D684a: cada pestaña (y el nombre del negocio) es un enlace que recarga la página; si el widget enseña «Tu Reservación»,
+      // primero se cierra, o la página nueva la volvía a abrir y las pestañas parecían muertas. Va antes que el oyente de abajo
+      // para que «Comprar paquetes» abra la lista con «Tu Reservación» ya cerrada. ⌘/ctrl-clic (otra pestaña) no la cierra aquí.
+      document.addEventListener('click', function (e) {
+        var a = e.target && e.target.closest ? e.target.closest('a[data-route], #nav-brand') : null
+        if (!a || e.button > 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return
+        if (typeof el.leaveManageBooking === 'function') el.leaveManageBooking()
+        else el.dispatchEvent(new CustomEvent('_avq_leave_manage', { bubbles: false }))
+      })
       // Diseño 18-nov: con una sola cabecera, «Comprar paquetes» (arriba y en el menú) dentro de la reserva abre la lista de
       // paquetes AHÍ MISMO, como hacía el botón «Comprar créditos»: ir a la portada perdía lo que llevaba elegido.
       document.addEventListener('click', function (e) {
@@ -1434,6 +1443,12 @@
         var hasClasses = info.hasClasses === true
         document.querySelectorAll('[data-requires="classes"]').forEach(function (el) {
           if (hasClasses) el.removeAttribute('hidden')
+          else el.setAttribute('hidden', '')
+        })
+        // D684b: «Citas» sólo si el negocio tiene servicios con cita. Sin el dato (widget viejo) se queda visible, como antes.
+        var hasAppointments = info.hasAppointments !== false
+        document.querySelectorAll('[data-requires="appointments"]').forEach(function (el) {
+          if (hasAppointments) el.removeAttribute('hidden')
           else el.setAttribute('hidden', '')
         })
 

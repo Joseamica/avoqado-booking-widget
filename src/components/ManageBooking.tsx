@@ -19,6 +19,8 @@ interface ManageBookingProps {
   t: TFunction
   onBack: () => void
   depositReturn?: boolean
+  /** D683: regresó de Stripe sin la marca de pago hecho. Con el depósito PENDING, se le dice que falta pagar (no «confirmando»). */
+  paymentUnfinished?: boolean
 }
 
 const statusConfig: Record<string, { bg: string; text: string }> = {
@@ -30,7 +32,7 @@ const statusConfig: Record<string, { bg: string; text: string }> = {
   NO_SHOW: { bg: '#ffedd5', text: '#9a3412' },
 }
 
-export function ManageBooking({ venueSlug, cancelSecret, timezone, locale = 'es', venueInfo, t, onBack, depositReturn = false }: ManageBookingProps) {
+export function ManageBooking({ venueSlug, cancelSecret, timezone, locale = 'es', venueInfo, t, onBack, depositReturn = false, paymentUnfinished = false }: ManageBookingProps) {
   const [reservation, setReservation] = useState<PublicReservationDetail | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -84,7 +86,8 @@ export function ManageBooking({ venueSlug, cancelSecret, timezone, locale = 'es'
         if (!current()) return
         setReservation(fresh)
         setLoading(false)
-        if (fresh.depositStatus === 'PENDING' && attempts < 12) {
+        // Sin pagar no hay aviso del banco que esperar: una sola lectura («Consultar de nuevo» sigue a la mano).
+        if (fresh.depositStatus === 'PENDING' && attempts < 12 && !paymentUnfinished) {
           next = setTimeout(read, 2500)
         } else {
           setQuerying(false)
@@ -134,9 +137,20 @@ export function ManageBooking({ venueSlug, cancelSecret, timezone, locale = 'es'
     }
   }
 
+  const dateLocale = locale === 'en' ? 'en-US' : 'es-MX'
+  // D683: volvió sin pagar. La hora y la liga de pago las da el SERVIDOR (`depositExpiresAt`, `checkoutUrl`); sin ellas no se inventan.
+  const unpaid = paymentUnfinished && reservation?.depositStatus === 'PENDING'
+  const holdEnds = unpaid ? Date.parse(reservation?.depositExpiresAt ?? '') : NaN
+  const holdOpen = isNaN(holdEnds) || holdEnds > Date.now()
+  const payUrl = unpaid && holdOpen && typeof reservation?.checkoutUrl === 'string' && reservation.checkoutUrl.startsWith('https://')
+    ? reservation.checkoutUrl : null
+
   const financialNotice = (
     <div role="status" aria-live="polite" style={{ marginBottom: '16px', padding: '12px 14px', borderRadius: '12px', background: 'var(--avq-muted, #f8f9fb)', fontSize: '13px' }}>
-      {t(depositNotice(reservation?.depositStatus ?? null, querying, depositReturn))}
+      {unpaid ? t('deposit.notFinished') : t(depositNotice(reservation?.depositStatus ?? null, querying, depositReturn))}
+      {holdEnds > Date.now() && ` ${t('deposit.heldUntil', {
+        time: new Date(holdEnds).toLocaleTimeString(dateLocale, { hour: '2-digit', minute: '2-digit', timeZone: timezone }),
+      })}`}
     </div>
   )
 
@@ -167,7 +181,6 @@ export function ManageBooking({ venueSlug, cancelSecret, timezone, locale = 'es'
   const isCancelled = reservation.status === 'CANCELLED'
   const startDate = new Date(reservation.startsAt)
   const endDate = new Date(reservation.endsAt)
-  const dateLocale = locale === 'en' ? 'en-US' : 'es-MX'
   const dateStr = startDate.toLocaleDateString(dateLocale, {
     weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', timeZone: timezone,
   })
@@ -346,6 +359,16 @@ export function ManageBooking({ venueSlug, cancelSecret, timezone, locale = 'es'
       <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
         {!isCancelled && reservation.status !== 'COMPLETED' && reservation.status !== 'NO_SHOW' && !showCancel && !showReschedule && (
           <>
+            {/* D683: retoma el mismo pago de Stripe (una liga, no un botón: es ir a otra página). */}
+            {payUrl && (
+              <a href={payUrl} style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'center', height: '46px',
+                borderRadius: 'var(--avq-btn-radius, 12px)', background: 'var(--avq-accent, #6366f1)', color: '#ffffff',
+                fontSize: '14px', fontWeight: '600', textDecoration: 'none',
+              }}>
+                {t('deposit.payNow')}
+              </a>
+            )}
             {/* Reschedule — primary outline. Disabled when out of window. */}
             {reservation.reschedule && (
               <Button

@@ -25,7 +25,9 @@
     "tabClasses": "Clases",
     "noClasses": "No hay clases disponibles",
     "classCapacity": "{{count}} lugares",
-    "classCapacity_one": "{{count}} lugar"
+    "classCapacity_one": "{{count}} lugar",
+    "noAppointments": "Este negocio no agenda citas en línea",
+    "seeClasses": "Ver clases"
   },
   "summary": {
     "title": "Resumen de la cita",
@@ -160,7 +162,10 @@
     "returnUnverified": "Volviste del pago; aún no pudimos consultar su resultado",
     "unknown": "Aún no pudimos confirmar el estado del depósito",
     "missingReference": "No pudimos recuperar esta reserva en este navegador. Consulta tu confirmación o contacta al negocio",
-    "close": "Cerrar aviso"
+    "close": "Cerrar aviso",
+    "notFinished": "Tu pago no se completó. Tu reservación aún no está confirmada.",
+    "heldUntil": "Te guardamos el lugar hasta las {{time}}; después se libera.",
+    "payNow": "Pagar ahora"
   },
   "seats": {
     "title": "Elige tu lugar",

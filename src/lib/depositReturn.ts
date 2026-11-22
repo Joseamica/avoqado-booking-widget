@@ -2,7 +2,9 @@ import type { PublicBookingResult, PublicReservationDetail } from '../types'
 
 const legacyKey = 'avq:pendingReservation'
 const reservationKey = (venue: string) => `${legacyKey}:${venue}`
-type SavedReservation = { venue: string; cancelSecret: string; confirmationCode: string }
+/** Cómo regresó de Stripe: por la liga de pago hecho (`success`) o por la de «atrás» (`cancelled`). */
+type PaymentOutcome = 'success' | 'cancelled'
+type SavedReservation = { venue: string; cancelSecret: string; confirmationCode: string; outcome?: PaymentOutcome }
 
 function readSaved(key: string, venue: string): SavedReservation | null {
   try {
@@ -12,9 +14,13 @@ function readSaved(key: string, venue: string): SavedReservation | null {
   } catch { return null }
 }
 
-export function savePendingReservation(venue: string, result: Pick<PublicBookingResult, 'cancelSecret' | 'confirmationCode'>) {
+export function savePendingReservation(
+  venue: string,
+  result: Pick<PublicBookingResult, 'cancelSecret' | 'confirmationCode'> & { outcome?: PaymentOutcome },
+) {
   try {
-    sessionStorage.setItem(reservationKey(venue), JSON.stringify({ venue, cancelSecret: result.cancelSecret, confirmationCode: result.confirmationCode }))
+    const outcome = result.outcome === 'success' || result.outcome === 'cancelled' ? { outcome: result.outcome } : {}
+    sessionStorage.setItem(reservationKey(venue), JSON.stringify({ venue, cancelSecret: result.cancelSecret, confirmationCode: result.confirmationCode, ...outcome }))
     if (readSaved(legacyKey, venue)) sessionStorage.removeItem(legacyKey)
   } catch { /* blocked storage: the return screen explains it */ }
 }
@@ -33,13 +39,16 @@ export function resolveDepositReturn(venue: string) {
   // Ownership is checked before either return flag can consume anything.
   const saved = readSaved(reservationKey(venue), venue) ?? readSaved(legacyKey, venue)
   if (saved) {
+    // D683: se recuerda cómo regresó, para que recargar no cambie lo que se le dice.
+    if (flag === 'success' || flag === 'cancelled') saved.outcome = flag
     savePendingReservation(venue, saved)
     if (returned) {
       url.searchParams.delete('avq_payment')
       window.history.replaceState(window.history.state, '', url.toString())
     }
   }
-  return { saved, returned }
+  // Sin la marca de pago hecho (volvió por «atrás» de Stripe o con el del navegador), el pago no se terminó.
+  return { saved, returned, paymentUnfinished: Boolean(saved) && saved?.outcome !== 'success' }
 }
 
 export function depositCheckoutUrl(flag: 'success' | 'cancelled') {
