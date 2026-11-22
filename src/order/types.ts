@@ -23,8 +23,16 @@ export interface StoreInfo {
   /** ISO; sólo en una pausa con hora vigente que NO es la del gerente. Aditivo: un servidor viejo no lo manda. */
   pausedUntil?: string | null
   hours: WeeklyHours | null
-  /** `cardOnline` (fase 2) es aditivo: un servidor viejo no lo manda y la tienda sólo ofrece pagar al recoger. */
+  /**
+   * `cardOnline` (fase 2) es aditivo: un servidor viejo no lo manda y la tienda sólo ofrece pagar al recoger. D661: en «Nadie» también
+   * puede venir (la tarjeta con sesión, junto a pagar en caja); el SERVIDOR la ofrece sólo mientras una caja avisa, así que puede irse.
+   */
   paymentModes: { payAtPickup: boolean; cardOnline?: boolean }
+  /**
+   * D661, aditivo: el SERVIDOR puede devolver como saldo a favor. La tienda ya no lo usa para prometer nada (pasada por familias, Ruling
+   * 87): devolver, y a dónde, lo decide el negocio, y «No lo recogió» se queda con el cobro.
+   */
+  storeCredit?: boolean
   minOrderAmount: number
   estimatedPrepMinutes: number
   acceptTimeoutMinutes: number
@@ -138,7 +146,7 @@ export interface CreateOrderBody {
   paymentMode: PaymentMode
   /** El `total` de la última cotización con dos decimales: «206.00». */
   expectedTotal: string
-  /** `phone` falta en «Nadie» (sólo el nombre); con tarjeta en línea o en «Mi equipo» sigue siendo obligatorio. */
+  /** `phone` falta en «Nadie» (sólo el nombre; D661: también con tarjeta, que va con la sesión); en «Mi equipo» sigue siendo obligatorio. */
   customer: { name: string; phone?: string; email?: string }
   note?: string
   whatsappConsent?: boolean
@@ -231,6 +239,15 @@ export interface Tracking {
   beneficioRegresado?: boolean
   /** S14: lo que sumó con esta cuenta pagada (sello con el avance de SU cartilla, y puntos); `null` = nada (nunca «no sumaste»). */
   lealtad?: { sello?: { ganados: number; meta: number }; puntos?: number } | null
+  /** D661, opcionales (ISO): el cierre del día lo dio por «No lo recogió»; o se cerró como «Devuelto» (el 100 %). Faltan en un borrador. */
+  notPickedUpAt?: string | null
+  refundedAt?: string | null
+  /**
+   * D661: la devolución del cobro con tarjeta, leída de sus filas reales; sin devolución no viene. Sólo dice el estado del DINERO, no si
+   * fue parcial o total (en «Mi equipo» una parcial ya llega `DONE`): «Devuelto» es `refundedAt`. `REVERSED` = el banco la regresó y el
+   * negocio todavía la debe.
+   */
+  refund?: { status: 'PENDING' | 'DONE' | 'REVERSED'; medio: 'TARJETA' | 'SALDO' | 'EFECTIVO' | 'TRANSFERENCIA' }
 }
 
 export interface OrderingCustomer {

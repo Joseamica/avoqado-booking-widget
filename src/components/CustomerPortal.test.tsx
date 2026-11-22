@@ -1,5 +1,5 @@
 import { h } from 'preact'
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/preact'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/preact'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { CustomerPortal } from './CustomerPortal'
 import * as api from '../api/booking'
@@ -1519,5 +1519,279 @@ describe('D657: sin cobro en línea, «Mi cuenta» no ofrece paquetes', () => {
     await act(() => new Promise(ok => setTimeout(ok, 250)))
     expect(screen.queryByRole('button', { name: 'Comprar' })).toBeNull()
     expect(api.getCreditPacks).not.toHaveBeenCalled()
+  })
+})
+
+describe('D661 ronda 2 #2 (Ruling 55): «Mi cuenta» nunca manda a pagar en caja un pedido con tarjeta, y el dinero sólo cuando es cierto', () => {
+  const HOY = '2026-11-11T16:50:00.000Z'
+  /** Un pedido pagado en línea con tarjeta, como lo manda el SERVIDOR nuevo. */
+  const conTarjeta = (over: Record<string, unknown>) => PEDIDO(1, { folio: 'W7K3P', pagoEnLinea: true, ...over })
+  const fila = () => screen.getByText(/^W7K3P · \$/).closest('button') as HTMLElement // la fila de «Mis pedidos» (folio · total)
+  async function abrir(pedido: any, extra: Record<string, unknown> = {}) {
+    anaAdentro()
+    vi.mocked(api.getCustomerPortal).mockResolvedValue(PORTAL({ pedidos: { items: [pedido], total: 1, nextCursor: null } }))
+    renderPortal('es', { negocio: 'Flautas', ...extra })
+    await screen.findByText('Hola, Ana')
+  }
+  afterEach(() => vi.useRealTimers())
+
+  it('cada estado en «Mis pedidos»: sus marcas mandan, luego la tarjeta; nunca «Por pagar», «Paga en caja» ni un «PAGADO» incierto', async () => {
+    const NUNCA = ['Por pagar', 'Paga en caja para que lo preparen.', 'PAGADO']
+    const casos: [string, Record<string, unknown>, string[], string[]][] = [
+      ['apartada', { estado: 'PENDING_ACCEPTANCE', pagado: false, tarjeta: 'APARTADA' }, ['En curso', 'Tarjeta apartada'], []],
+      ['cobrada', { estado: 'ACCEPTED', pagado: true, tarjeta: 'COBRADA' }, ['Preparando', 'Pagado con tarjeta'], []],
+      ['devuelta', { estado: 'COMPLETED', pagado: true, tarjeta: 'COBRADA', refundedAt: HOY, refund: { status: 'DONE', medio: 'TARJETA' } },
+        ['Devuelto'], ['Entregado', 'Pagado con tarjeta']],
+      ['regresada por el banco', { estado: 'COMPLETED', pagado: true, tarjeta: 'COBRADA', refundedAt: HOY, refund: { status: 'REVERSED', medio: 'TARJETA' } },
+        ['Tu banco regresó la devolución: Flautas todavía te la debe.'], ['Devuelto', 'Entregado', 'Pagado con tarjeta']],
+      ['devolviéndose', { estado: 'ACCEPTED', pagado: true, tarjeta: 'COBRADA', refundRequestedAt: HOY }, ['Devolviendo…'], ['Preparando', 'Pagado con tarjeta']],
+      ['no la recogió', { estado: 'COMPLETED', pagado: true, tarjeta: 'COBRADA', notPickedUpAt: HOY }, ['No lo recogiste'], ['Entregado', 'Pagado con tarjeta']],
+      // Liberándose, liberada, en duda o un valor nuevo: su estado sin dinero (el seguimiento dice el resto).
+      ['liberándose', { estado: 'PENDING_ACCEPTANCE', pagado: false, tarjeta: 'LIBERANDO' }, ['En curso'], ['Pagado con tarjeta', 'Tarjeta apartada']],
+      ['liberada', { estado: 'EXPIRED', pagado: false, tarjeta: 'LIBERADA' }, ['Vencido'], ['Pagado con tarjeta']],
+      ['en duda', { estado: 'ACCEPTED', pagado: true, tarjeta: null }, ['Preparando'], ['Pagado con tarjeta']],
+    ]
+    for (const [caso, over, salen, noSalen] of casos) {
+      cuentasNuevasParaPruebas()
+      const onVerPedido = vi.fn()
+      await abrir(conTarjeta(over), { onVerPedido })
+      for (const texto of salen) expect(within(fila()).getByText(texto), `${caso}: ${texto}`).toBeTruthy()
+      for (const texto of [...NUNCA, ...noSalen]) expect(within(fila()).queryByText(texto), `${caso}: ${texto}`).toBeNull()
+      fireEvent.click(fila()) // y la liga a su seguimiento, como siempre
+      expect(onVerPedido, caso).toHaveBeenCalledWith('tt-1')
+      cleanup()
+    }
+  })
+
+  it('ronda 3: con su devolución en la lista (también en «Mi equipo», sin las marcas de «Nadie») no dice «Pagado con tarjeta»: dice cómo va', async () => {
+    // Ronda 4 (Ruling 55, texto enmendado): la de «Mi equipo» puede ser parcial y la lista no trae el monto: nunca «Te devolvieron tu pago».
+    const casos: [string, Record<string, unknown>, string][] = [
+      ['hecha', { estado: 'COMPLETED', pagado: true, tarjeta: 'COBRADA', refund: { status: 'DONE', medio: 'TARJETA' } }, 'Te hicieron una devolución'],
+      ['registrada', { estado: 'CANCELLED_BY_STAFF', pagado: true, tarjeta: 'COBRADA', refund: { status: 'RECORDED', medio: 'EFECTIVO' } }, 'Te hicieron una devolución'],
+      ['en camino', { estado: 'CANCELLED_BY_STAFF', pagado: true, tarjeta: 'COBRADA', refund: { status: 'PENDING', medio: 'TARJETA' } }, 'Devolviendo…'],
+      ['regresada por el banco', { estado: 'COMPLETED', pagado: true, tarjeta: 'COBRADA', refund: { status: 'REVERSED', medio: 'TARJETA' } },
+        'Tu banco regresó la devolución: Flautas todavía te la debe.'],
+    ]
+    for (const [caso, over, texto] of casos) {
+      cuentasNuevasParaPruebas()
+      await abrir(conTarjeta(over))
+      expect(within(fila()).getByText(texto), caso).toBeTruthy()
+      for (const nunca of ['Pagado con tarjeta', 'PAGADO', 'Entregado', 'Cancelado'])
+        expect(within(fila()).queryByText(nunca), `${caso}: ${nunca}`).toBeNull()
+      cleanup()
+    }
+  })
+
+  it('«Tu pedido de hoy» con la tarjeta apartada: «en curso» y la tarjeta, nunca «Paga en caja»', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-11-11T17:00:00.000Z'))
+    await abrir(conTarjeta({ estado: 'PENDING_ACCEPTANCE', pagado: false, tarjeta: 'APARTADA', creadoEl: HOY }))
+    expect(screen.getByText('Tu pedido de hoy')).toBeTruthy()
+    expect(screen.getByText('W7K3P · en curso')).toBeTruthy()
+    expect(screen.getAllByText('Tarjeta apartada').length).toBeGreaterThan(0)
+    expect(screen.queryByText('Paga en caja para que lo preparen.')).toBeNull()
+    expect(screen.queryByText(/por pagar/i)).toBeNull()
+    cleanup()
+    cuentasNuevasParaPruebas()
+    // El de este aparato (la línea de su seguimiento) también dice «en curso» si la cuenta dice que es con tarjeta.
+    await abrir(conTarjeta({ estado: 'PENDING_ACCEPTANCE', pagado: false, tarjeta: 'APARTADA', creadoEl: HOY, trackingToken: 'mio' }), {
+      pedidoDeHoy: { folio: 'W7K3P', estado: 'PENDING_ACCEPTANCE', pagado: false, linea: 'Tu pedido está en curso.', trackingToken: 'mio' },
+    })
+    expect(screen.getByText('W7K3P · en curso')).toBeTruthy()
+    expect(screen.getByText('Tu pedido está en curso.')).toBeTruthy()
+  })
+
+  it('pasada por familias (Ruling 86): la tarjeta apartada dice sólo «Tarjeta apartada», nunca cuándo se cobra (la respuesta no lo prueba)', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-11-11T17:00:00.000Z'))
+    // Los tres llegan IGUALES del SERVIDOR (`PENDING_ACCEPTANCE` + `APARTADA`; un cobro en curso, `CONFIRMING`, se publica como apartada):
+    // la cuenta no puede saber si alguien ya lo abrió, si falta que lo acepten o si ya se está cobrando.
+    for (const caso of ['«Mi equipo»: una cajera lo abrió y todavía no lo acepta', '«Nadie»: ninguna caja lo ha abierto', '«Nadie»: una caja lo abrió y Stripe está cobrando']) {
+      cuentasNuevasParaPruebas()
+      await abrir(conTarjeta({ estado: 'PENDING_ACCEPTANCE', pagado: false, tarjeta: 'APARTADA', creadoEl: HOY }))
+      expect(within(fila()).getByText('Tarjeta apartada'), caso).toBeTruthy()
+      expect(screen.getAllByText('Tarjeta apartada'), caso).toHaveLength(2) // la fila y «Tu pedido de hoy»
+      expect(screen.queryByText(/se cobra|cuando lo abran|cuando (el negocio )?acepte/), caso).toBeNull()
+      cleanup()
+    }
+  })
+
+  describe('pasada por familias (Ruling 85): «Mi cuenta» relee sola una devolución a la vista, como el seguimiento', () => {
+    let visible = true
+    beforeEach(() => {
+      visible = true
+      Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => (visible ? 'visible' : 'hidden') })
+    })
+    afterEach(() => { delete (document as any).visibilityState })
+    const conPedido = (p: any) => PORTAL({ pedidos: { items: [p], total: 1, nextCursor: null } })
+    const pasan = async (min: number) => {
+      await act(async () => { vi.advanceTimersByTime(min * 60_000) })
+      await flushAll()
+    }
+    async function abrirConReloj(primero: any, despues: any) {
+      vi.useFakeTimers()
+      vi.setSystemTime(new Date('2026-11-11T17:00:00.000Z')) // 11:00 en CDMX
+      anaAdentro()
+      vi.mocked(api.getCustomerPortal).mockResolvedValueOnce(conPedido(primero)).mockResolvedValue(conPedido(despues))
+      renderPortal('es', { negocio: 'Flautas' })
+      await flushAll()
+    }
+
+    it('sólo la cuenta a la vista: la devolución pasa de hecha a regresada por el banco y se ve en la siguiente relectura (10 min), con su hora', async () => {
+      const REGRESADA = 'Tu banco regresó la devolución: Flautas todavía te la debe.'
+      for (const [caso, hecha, marca] of [
+        ['«Nadie», «Devuelto»', { estado: 'COMPLETED', pagado: true, tarjeta: 'COBRADA', refundedAt: HOY, refund: { status: 'DONE', medio: 'TARJETA' } }, 'Devuelto'],
+        ['«Mi equipo», «Te hicieron una devolución»', { estado: 'COMPLETED', pagado: true, tarjeta: 'COBRADA', refund: { status: 'DONE', medio: 'TARJETA' } }, 'Te hicieron una devolución'],
+      ] as const) {
+        cuentasNuevasParaPruebas()
+        const antes = conTarjeta(hecha)
+        await abrirConReloj(antes, { ...antes, refund: { status: 'REVERSED', medio: 'TARJETA' } })
+        expect(within(fila()).getByText(marca), caso).toBeTruthy()
+        await pasan(9)
+        expect(api.getCustomerPortal, caso).toHaveBeenCalledTimes(1)
+        await pasan(1)
+        expect(api.getCustomerPortal, caso).toHaveBeenCalledTimes(2)
+        expect(within(fila()).getByText(REGRESADA), caso).toBeTruthy()
+        expect(screen.getByText('Actualizado a las 11:10'), caso).toBeTruthy() // la hora de la última lectura buena
+        cleanup()
+        vi.mocked(api.getCustomerPortal).mockReset()
+        vi.useRealTimers()
+      }
+    })
+
+    it('limpieza final (2): la relectura sola no encoge «Ver más»: trae otra vez esas filas, y una devolución de ahí también se relee', async () => {
+      const REGRESADA = 'Tu banco regresó la devolución: Flautas todavía te la debe.'
+      const primera = Array.from({ length: 20 }, (_, i) => conTarjeta({
+        folio: `W${String(i + 1).padStart(4, '0')}`, trackingToken: `tt-${i + 1}`, estado: 'COMPLETED', pagado: true, tarjeta: 'COBRADA',
+      }))
+      const devuelto = conTarjeta({
+        folio: 'W0021', trackingToken: 'tt-21', estado: 'COMPLETED', pagado: true, tarjeta: 'COBRADA', refundedAt: HOY, refund: { status: 'DONE', medio: 'TARJETA' },
+      })
+      vi.useFakeTimers()
+      vi.setSystemTime(new Date('2026-11-11T17:00:00.000Z'))
+      anaAdentro()
+      vi.mocked(api.getCustomerPortal).mockResolvedValue(PORTAL({ pedidos: { items: primera, total: 21, nextCursor: 'cur-p' } }))
+      vi.mocked(api.listarMisPedidos)
+        .mockResolvedValueOnce({ items: [devuelto], total: 21, nextCursor: null })
+        .mockResolvedValue({ items: [{ ...devuelto, refund: { status: 'REVERSED', medio: 'TARJETA' } }], total: 21, nextCursor: null })
+      renderPortal('es', { negocio: 'Flautas' })
+      await flushAll()
+      fireEvent.click(screen.getByRole('button', { name: 'Ver más pedidos' }))
+      await flushAll()
+      const fila21 = () => screen.getByText(/^W0021 · \$/).closest('button') as HTMLElement
+      expect(within(fila21()).getByText('Devuelto')).toBeTruthy()
+      await pasan(10)
+      expect(api.getCustomerPortal).toHaveBeenCalledTimes(2)
+      expect(screen.getAllByRole('button', { name: /^W00\d\d · \$/ })).toHaveLength(21) // no se encogió
+      expect(api.listarMisPedidos).toHaveBeenCalledTimes(2) // la página de «Ver más», otra vez, desde el cursor de la lectura nueva
+      expect(vi.mocked(api.listarMisPedidos).mock.lastCall).toEqual(['testarudo', 'tok-A', 'cur-p', 'reservas'])
+      expect(within(fila21()).getByText(REGRESADA)).toBeTruthy() // y su devolución se releyó
+      expect(screen.getByText('Actualizado a las 11:10')).toBeTruthy()
+      await pasan(10) // y sigue vigilando (la fila de «Ver más» no se cayó)
+      expect(api.getCustomerPortal).toHaveBeenCalledTimes(3)
+    })
+
+    it('ajuste final (Ruling 112): mientras la página de «Ver más» no llega, sus filas conservan la hora de lo que enseñan', async () => {
+      const REGRESADA = 'Tu banco regresó la devolución: Flautas todavía te la debe.'
+      const primera = Array.from({ length: 20 }, (_, i) => conTarjeta({
+        folio: `W${String(i + 1).padStart(4, '0')}`, trackingToken: `tt-${i + 1}`, estado: 'COMPLETED', pagado: true, tarjeta: 'COBRADA',
+      }))
+      const devuelto = conTarjeta({
+        folio: 'W0021', trackingToken: 'tt-21', estado: 'COMPLETED', pagado: true, tarjeta: 'COBRADA', refundedAt: HOY, refund: { status: 'DONE', medio: 'TARJETA' },
+      })
+      vi.useFakeTimers()
+      vi.setSystemTime(new Date('2026-11-11T17:00:00.000Z'))
+      anaAdentro()
+      vi.mocked(api.getCustomerPortal).mockResolvedValue(PORTAL({ pedidos: { items: primera, total: 21, nextCursor: 'cur-p' } }))
+      let llega!: (v: unknown) => void
+      vi.mocked(api.listarMisPedidos)
+        .mockResolvedValueOnce({ items: [devuelto], total: 21, nextCursor: null })
+        .mockImplementationOnce(() => new Promise(r => { llega = r }) as any)
+      renderPortal('es', { negocio: 'Flautas' })
+      await flushAll()
+      fireEvent.click(screen.getByRole('button', { name: 'Ver más pedidos' }))
+      await flushAll()
+      const fila21 = () => screen.getByText(/^W0021 · \$/).closest('button') as HTMLElement
+      await pasan(10) // la primera página llegó; la de «Ver más» todavía no
+      expect(api.getCustomerPortal).toHaveBeenCalledTimes(2)
+      expect(within(fila21()).getByText('Devuelto')).toBeTruthy() // lo que se sabía a las 11:00…
+      expect(screen.getByText('Actualizado a las 11:00')).toBeTruthy() // …con su hora, no la de la primera página
+      expect(screen.queryByText('Actualizado a las 11:10')).toBeNull()
+      await act(async () => { llega({ items: [{ ...devuelto, refund: { status: 'REVERSED', medio: 'TARJETA' } }], total: 21, nextCursor: null }) })
+      await flushAll()
+      expect(within(fila21()).getByText(REGRESADA)).toBeTruthy()
+      expect(screen.getByText('Actualizado a las 11:10')).toBeTruthy() // ya con sus filas nuevas
+    })
+
+    it('con la pestaña oculta no relee (al volver, sí); a las 24 h deja de releer sola; sin devolución, nunca', async () => {
+      const devuelto = conTarjeta({ estado: 'COMPLETED', pagado: true, tarjeta: 'COBRADA', refundedAt: HOY, refund: { status: 'DONE', medio: 'TARJETA' } })
+      await abrirConReloj(devuelto, devuelto)
+      visible = false
+      await pasan(30)
+      expect(api.getCustomerPortal).toHaveBeenCalledTimes(1)
+      visible = true
+      await act(async () => { document.dispatchEvent(new Event('visibilitychange')) })
+      await flushAll()
+      expect(api.getCustomerPortal).toHaveBeenCalledTimes(2)
+      for (let i = 0; i < 6 * 24; i++) await pasan(10) // hasta pasar las 24 h desde que la vio
+      const tope = vi.mocked(api.getCustomerPortal).mock.calls.length
+      expect(tope).toBeLessThanOrEqual(2 + 6 * 24)
+      await pasan(60)
+      expect(api.getCustomerPortal).toHaveBeenCalledTimes(tope)
+      cleanup()
+      cuentasNuevasParaPruebas()
+      vi.mocked(api.getCustomerPortal).mockReset()
+      const cobrado = conTarjeta({ estado: 'ACCEPTED', pagado: true, tarjeta: 'COBRADA' })
+      await abrirConReloj(cobrado, cobrado)
+      await pasan(60)
+      expect(api.getCustomerPortal).toHaveBeenCalledTimes(1)
+      expect(screen.queryByText(/^Actualizado a las/)).toBeNull()
+    })
+
+    it('en inglés', async () => {
+      vi.useFakeTimers()
+      vi.setSystemTime(new Date('2026-11-11T17:00:00.000Z'))
+      anaAdentro()
+      vi.mocked(api.getCustomerPortal).mockResolvedValue(conPedido(conTarjeta({
+        estado: 'COMPLETED', pagado: true, tarjeta: 'COBRADA', refundedAt: HOY, refund: { status: 'DONE', medio: 'TARJETA' },
+      })))
+      renderPortal('en', { negocio: 'Flautas' })
+      await flushAll()
+      expect(screen.getByText('Updated at 11:00 AM')).toBeTruthy()
+    })
+  })
+
+  it('un servidor viejo (sin `pagoEnLinea` ni las marcas) pinta como hoy: «Por pagar», «Paga en caja…» y «PAGADO»', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-11-11T17:00:00.000Z'))
+    await abrir(PEDIDO(1, { folio: 'W7K3P', estado: 'PENDING_ACCEPTANCE', pagado: false, creadoEl: HOY }))
+    expect(screen.getByText('W7K3P · por pagar')).toBeTruthy()
+    expect(screen.getByText('Paga en caja para que lo preparen.')).toBeTruthy()
+    expect(within(fila()).getByText('Por pagar')).toBeTruthy()
+    cleanup()
+    cuentasNuevasParaPruebas()
+    await abrir(PEDIDO(1, { folio: 'W7K3P' })) // COMPLETED y pagado
+    expect(within(fila()).getByText('Entregado')).toBeTruthy()
+    expect(within(fila()).getByText('PAGADO')).toBeTruthy()
+  })
+
+  it('en inglés', async () => {
+    anaAdentro()
+    vi.mocked(api.getCustomerPortal).mockResolvedValue(PORTAL({
+      pedidos: { items: [conTarjeta({ estado: 'PENDING_ACCEPTANCE', pagado: false, tarjeta: 'APARTADA' })], total: 1, nextCursor: null },
+    }))
+    renderPortal('en', { negocio: 'Flautas' })
+    await screen.findByText('Hello, Ana')
+    expect(within(fila()).getByText('Card on hold')).toBeTruthy() // Ruling 86: nunca cuándo se cobra
+    // Ronda 4: una devolución hecha (quizá parcial) también es cierta en inglés.
+    cleanup()
+    cuentasNuevasParaPruebas()
+    anaAdentro()
+    vi.mocked(api.getCustomerPortal).mockResolvedValue(PORTAL({
+      pedidos: { items: [conTarjeta({ estado: 'COMPLETED', pagado: true, tarjeta: 'COBRADA', refund: { status: 'DONE', medio: 'TARJETA' } })], total: 1, nextCursor: null },
+    }))
+    renderPortal('en', { negocio: 'Flautas' })
+    await screen.findByText('Hello, Ana')
+    expect(within(fila()).getByText('You got a refund')).toBeTruthy()
   })
 })

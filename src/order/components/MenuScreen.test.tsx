@@ -1189,10 +1189,38 @@ describe('«Nadie»: avisos del menú', () => {
     expect(screen.queryByText('Paga en caja para que lo preparen')).toBeNull()
   })
 
-  it('el chip dice «Pagas en caja» en lugar del de pagar al recoger o tarjeta', () => {
-    const s = nadie({ paymentModes: { payAtPickup: true, cardOnline: true } })
-    render(withStore(s, <OrderApp />))
+  it('ronda 1 M6: con la tarjeta en línea, el aviso dice que se paga en línea o en caja; sin ella, como hoy', () => {
+    show(nadie({ paymentModes: { payAtPickup: true, cardOnline: true } }))
+    expect(screen.getByText('Paga en línea con tarjeta o en caja para que lo preparen')).toBeTruthy()
+    expect(screen.queryByText('Paga en caja para que lo preparen')).toBeNull()
+    cleanup()
+    show(nadie({ paymentModes: { payAtPickup: true, cardOnline: false } }))
+    expect(screen.getByText('Paga en caja para que lo preparen')).toBeTruthy()
+    cleanup()
+    show(makeStore(infoOf({ requiresAcceptance: false, paymentModes: { payAtPickup: true, cardOnline: true } }), menuOf(product()), 'en'))
+    expect(screen.getByText('Pay online by card or at the counter so they prepare it')).toBeTruthy()
+  })
+
+  it('W8: con la tarjeta en línea, el texto dice cuándo se cobra la tarjeta y deja los 30 min para la caja; sin ella, como hoy', () => {
+    show(nadie({ paymentModes: { payAtPickup: true, cardOnline: true } }))
+    expect(screen.getByText('Con tarjeta, se cobra cuando el negocio abra tu pedido. En caja, tienes 30 min para pasar a pagar.')).toBeTruthy()
+    expect(screen.queryByText('Después de pedir tienes 30 min para pasar a pagar.')).toBeNull()
+    cleanup()
+    show(nadie({ paymentModes: { payAtPickup: true, cardOnline: false } }))
+    expect(screen.getByText('Después de pedir tienes 30 min para pasar a pagar.')).toBeTruthy()
+    cleanup()
+    show(makeStore(infoOf({ requiresAcceptance: false, paymentModes: { payAtPickup: true, cardOnline: true } }), menuOf(product()), 'en'))
+    expect(screen.getByText("By card, you're charged when the business opens your order. At the counter, you have 30 min to come and pay.")).toBeTruthy()
+    expect(screen.queryByText('After ordering you have 30 min to come and pay.')).toBeNull()
+  })
+
+  it('el chip dice «Pagas en caja» (D661: «En línea o en caja» con la tarjeta) en lugar del de pagar al recoger o tarjeta', () => {
+    render(withStore(nadie(), <OrderApp />))
     expect(screen.getByText('Pagas en caja')).toBeTruthy()
+    expect(screen.queryByText('Tarjeta o al recoger')).toBeNull()
+    cleanup()
+    render(withStore(nadie({ paymentModes: { payAtPickup: true, cardOnline: true } }), <OrderApp />))
+    expect(screen.getByText('En línea o en caja')).toBeTruthy()
     expect(screen.queryByText('Tarjeta o al recoger')).toBeNull()
   })
 

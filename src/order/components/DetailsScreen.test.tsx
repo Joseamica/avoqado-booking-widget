@@ -4,11 +4,18 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('../api', async () => {
   const actual = await vi.importActual<typeof import('../api')>('../api')
-  return { ...actual, createOrder: vi.fn(), requestOrderingOtp: vi.fn(), verifyOrderingOtp: vi.fn(), getInfo: vi.fn(), getMenu: vi.fn() }
+  return { ...actual, createOrder: vi.fn(), requestOrderingOtp: vi.fn(), verifyOrderingOtp: vi.fn(), getInfo: vi.fn(), getMenu: vi.fn(), quote: vi.fn() }
 })
-import { API_BASE, createOrder } from '../api'
+// D661: entrar a la cuenta desde la tienda («Pagar ahora» sin sesión) pide y verifica el código con la API de reservas.
+vi.mock('../../api/booking', async () => {
+  const actual = await vi.importActual<typeof import('../../api/booking')>('../../api/booking')
+  return { ...actual, requestOtp: vi.fn(), verifyOtp: vi.fn() }
+})
+import * as bookingApi from '../../api/booking'
+import { API_BASE, ApiError, createOrder, getInfo, quote } from '../api'
 import { loadSession, saveSession } from '../session'
 import { fijarPagina, guardarSesion } from '../../lib/sesionDeCliente'
+import { clearCustomerSession } from '../../state/booking'
 import { autorizarIntento, beginAttempt, pendingAttempt, reautorizarIntento } from '../attempt'
 import { checkoutOf, entroEnLaTienda } from '../checkout'
 import { createOrderStore } from '../store'
@@ -16,6 +23,7 @@ import { DetailsScreen } from './DetailsScreen'
 import { OrderApp } from './OrderApp'
 import { infoOf, makeStore, menuOf, withStore } from './testKit'
 import type { CartLine } from '../cart'
+import type { ContactoProbado } from '../../lib/sesionDeCliente'
 
 beforeEach(() => {
   sessionStorage.clear()
@@ -128,6 +136,24 @@ describe('tus datos y aviso de privacidad', () => {
     expect(confirmBtn().disabled).toBe(true)
     expect(screen.getByText('Tu pedido anterior no se confirmó por la conexión. Reintenta para saber si llegó.')).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Reintentar' })).toBeTruthy()
+  })
+
+  it('D661 ronda 5 (2): «Cerrar sesión» en reservas, en esta misma página, también suelta el intento de la tienda: el aviso se va y «Confirmar pedido» vuelve', () => {
+    const s = show({}, slug => {
+      saveSession(slug, { token: 'tok', phone: '+525544422262', name: 'Ana', savedAt: Date.now() })
+      beginAttempt(slug, {
+        items: [{ productId: 'p-viejo', quantity: 1, modifiers: [] }], paymentMode: 'PAY_AT_PICKUP', expectedTotal: '50.00',
+        customer: { name: 'Ana', phone: '+525544422262' },
+      }, 'tok')
+    })
+    fill()
+    accept()
+    expect(confirmBtn().disabled).toBe(true)
+    act(() => clearCustomerSession(s.slug)) // el «Cerrar sesión» del widget de reservas
+    expect(pendingAttempt(s.slug)).toBeNull()
+    expect(screen.queryByText('Tu pedido anterior no se confirmó por la conexión. Reintenta para saber si llegó.')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Reintentar' })).toBeNull()
+    expect(confirmBtn().disabled).toBe(false)
   })
 
   it('con la tienda no abierta «Confirmar pedido» está deshabilitado (igual que «Continuar» del carrito)', () => {
@@ -432,7 +458,7 @@ describe('«Nadie»: Tus datos (tienda híbrida, etapa 1)', () => {
   const pedir = () => screen.getByRole('button', { name: /^Pedir/ }) as HTMLButtonElement
 
   it('sólo pide nombre y nota, con «Al pedir aceptas el aviso de privacidad de <negocio>» y sin casilla, WhatsApp ni correo', () => {
-    nadie({ paymentModes: { payAtPickup: true, cardOnline: true } })
+    nadie()
     expect(screen.getByText('Con tu nombre te encuentran en caja y te entregan tu pedido.')).toBeTruthy()
     expect(screen.getByLabelText('Nombre')).toBeTruthy()
     expect(screen.getByLabelText('Nota para el negocio (opcional)')).toBeTruthy()
@@ -441,7 +467,7 @@ describe('«Nadie»: Tus datos (tienda híbrida, etapa 1)', () => {
     expect(screen.queryByLabelText('WhatsApp')).toBeNull()
     expect(screen.queryByLabelText('Correo (opcional)')).toBeNull()
     expect(screen.queryByRole('checkbox')).toBeNull()
-    // Sin medio de pago que elegir, aunque el negocio acepte tarjeta en línea.
+    // Sin tarjeta en línea no hay medio de pago que elegir (con ella, D661: «Pagar ahora con tarjeta» o «Pagar en caja», abajo).
     expect(screen.queryByRole('radiogroup')).toBeNull()
     expect(screen.getByText('Pagas en caja: tarjeta o efectivo.')).toBeTruthy()
     expect(pedir().textContent).toContain('$170')
@@ -665,5 +691,538 @@ describe('W3 (e): entrar otra vez dentro de la tienda', () => {
     expect(screen.getByText('Entra a tu cuenta')).toBeTruthy()
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Volver a tu pedido' })) })
     expect(s.screen.value).toBe('cart')
+  })
+})
+
+describe('D661: pagar con tarjeta en línea en «Nadie»', () => {
+  const NADIE_CARD = { requiresAcceptance: false, paymentModes: { payAtPickup: true, cardOnline: true } }
+  const TEL: ContactoProbado = { tipo: 'PHONE', valor: '+525544422262', metodo: 'WHATSAPP', probadoEn: 1 }
+  const CORREO: ContactoProbado = { tipo: 'EMAIL', valor: 'ana@correo.mx', metodo: 'EMAIL_CODE', probadoEn: 1 }
+  // Pasada por familias (Ruling 87): lo que de verdad pasa con su dinero, igual para todas; nunca saldo a favor ni a dónde se devuelve.
+  const TERMINOS = 'Se cobra a tu tarjeta cuando Flautas abra tu pedido; si nadie lo abre a tiempo, no se te cobra. Si no lo recoges o cambias de opinión, no se te devuelve solo: lo decide Flautas.'
+  const pedir = () => screen.getByRole('button', { name: /^Pedir/ }) as HTMLButtonElement
+  /** La sesión única de la página, con lo que probó (la abre la tienda, como al cargar con ella guardada). */
+  const conSesion = (slug: string, contactos: ContactoProbado[] = [TEL], token = 'tok-A') => {
+    guardarSesion(slug, { token, customer: { id: 'c1', firstName: 'Ana', lastName: null, email: null, phone: TEL.valor }, contactos, guardadaEn: Date.now() })
+    fijarPagina(slug, 'pedidos', loadSession(slug))
+  }
+  /** Un toque de verdad dentro de la tienda: pasada la guarda de doble toque (400 ms tras cambiar la vista). */
+  const tocar = async (el: HTMLElement) => {
+    await act(() => { vi.advanceTimersByTime(500) })
+    await act(async () => { fireEvent.click(el) })
+    await flush()
+  }
+  /** Entra con su WhatsApp en la pantalla de entrar de la tienda (la API de reservas, simulada). */
+  async function entrarConWhatsApp(token = 'tok-nueva') {
+    vi.mocked(bookingApi.requestOtp).mockResolvedValueOnce({ ok: true })
+    vi.mocked(bookingApi.verifyOtp).mockResolvedValueOnce({
+      token, customer: { id: 'c9', firstName: 'Ana', lastName: null, email: null, phone: TEL.valor }, contactos: [TEL], otraFicha: null,
+    } as any)
+    await tocar(screen.getByRole('button', { name: 'Seguir con WhatsApp' }))
+    fireEvent.input(screen.getByPlaceholderText('Tu número de teléfono'), { target: { value: '5544422262' } })
+    await tocar(screen.getByRole('button', { name: 'Enviar código' }))
+    await act(async () => { fireEvent.input(screen.getAllByRole('textbox')[0], { target: { value: '123456' } }) })
+    await flush()
+  }
+  /** «Tus datos» de «Nadie» con tarjeta, dentro de la tienda completa (para ir a entrar y volver). */
+  async function enLaTienda(over: Parameters<typeof infoOf>[0] = {}) {
+    const s = makeStore(infoOf({ ...NADIE_CARD, ...over }), menuOf())
+    s.cart.value = [line()]
+    s.quote.value = { ok: true, lines: [], subtotal: 170, total: 170, minOrderAmount: 0, issues: [] }
+    s.go('details')
+    render(withStore(s, <OrderApp />))
+    await flush()
+    return s
+  }
+
+  it('«Nadie» con cardOnline: «Pagar ahora» y «Pagar en caja»; sin cardOnline, sólo caja', () => {
+    show(NADIE_CARD)
+    const group = screen.getByRole('radiogroup', { name: '¿Cómo quieres pagar?' })
+    const [card, counter] = within(group).getAllByRole('radio') as HTMLInputElement[]
+    expect(within(group).getAllByRole('radio')).toHaveLength(2)
+    expect(card.closest('label')!.textContent).toBe('Pagar ahora con tarjeta')
+    expect(counter.closest('label')!.textContent).toBe('Pagar en caja')
+    // Ronda 1 (Ruling 46): sin sesión sale elegida «Pagar en caja» (la tarjeta pide entrar a su cuenta); las dos se pueden elegir.
+    expect([card.checked, counter.checked]).toEqual([false, true])
+    expect(screen.getByText('Pagas en caja: tarjeta o efectivo.')).toBeTruthy()
+    expect(screen.queryByText('Para pagar en línea, entra a tu cuenta.')).toBeNull()
+    // Sigue siendo «Nadie»: sin WhatsApp ni casilla, y «Pedir».
+    expect(screen.queryByLabelText('WhatsApp')).toBeNull()
+    expect(screen.queryByRole('checkbox')).toBeNull()
+    expect(pedir().textContent).toContain('$170')
+    fireEvent.click(card)
+    expect([card.checked, counter.checked]).toEqual([true, false])
+    expect(screen.getByText('Para pagar en línea, entra a tu cuenta.')).toBeTruthy()
+    fireEvent.click(counter)
+    expect([card.checked, counter.checked]).toEqual([false, true])
+    expect(screen.getByText('Pagas en caja: tarjeta o efectivo.')).toBeTruthy()
+    cleanup()
+    for (const paymentModes of [{ payAtPickup: true, cardOnline: false }, { payAtPickup: true }]) {
+      show({ requiresAcceptance: false, paymentModes })
+      expect(screen.queryByRole('radiogroup')).toBeNull()
+      expect(screen.getByText('Pagas en caja: tarjeta o efectivo.')).toBeTruthy()
+      cleanup()
+    }
+  })
+
+  it('pasada por familias (Ruling 87): antes de pagar dice lo que de verdad pasa con su dinero; nunca promete saldo a favor ni a dónde se devuelve', () => {
+    // Antes: con teléfono probado y `storeCredit`, «te queda como saldo a favor»; pero «No lo recogió» se queda con el cobro, y el saldo
+    // sólo va al teléfono que verificó al pagar si sigue siendo suyo. La línea es la misma con o sin teléfono, y con cualquier servidor.
+    const casos: [string, Parameters<typeof infoOf>[0], ((slug: string) => void) | null][] = [
+      ['saldo a favor posible y la sesión probó su teléfono', { storeCredit: true }, slug => conSesion(slug)],
+      ['la sesión de pedidos de antes (trae su teléfono probado)', { storeCredit: true }, slug => {
+        saveSession(slug, { token: 'tok-viejo', phone: TEL.valor, name: 'Ana', savedAt: Date.now() })
+        fijarPagina(slug, 'pedidos', loadSession(slug))
+      }],
+      ['sólo probó su correo (o Google)', { storeCredit: true }, slug => conSesion(slug, [CORREO])],
+      ['el servidor no puede abonar saldo a favor', { storeCredit: false }, slug => conSesion(slug)],
+      ['un servidor viejo, sin storeCredit', {}, slug => conSesion(slug)],
+      ['sin sesión', { storeCredit: true }, null],
+    ]
+    const linea = () => document.querySelector('.avq-o-confirm__pay')?.textContent ?? null
+    for (const [caso, over, sesion] of casos) {
+      show({ ...NADIE_CARD, ...over }, sesion ?? undefined)
+      // Sin sesión la caja sale elegida (Ruling 46): el aviso es de «Pagar ahora».
+      fireEvent.click(screen.getByRole('radio', { name: 'Pagar ahora con tarjeta' }))
+      expect(linea(), caso).toBe(TERMINOS)
+      expect(document.body.textContent, caso).not.toMatch(/saldo a favor|te queda|devuelve a tu|devuelve como|te devolvemos|reembols/i) // ni saldo ni destino
+      // Con «Pagar en caja» no hay nada pagado: el pie dice cómo se paga.
+      fireEvent.click(screen.getByRole('radio', { name: 'Pagar en caja' }))
+      expect(linea(), caso).toBe('Pagas en caja: tarjeta o efectivo.')
+      cleanup()
+    }
+    // «Mi equipo» con tarjeta no cambia: ni esta línea ni otra de saldo.
+    show({ paymentModes: { payAtPickup: true, cardOnline: true }, storeCredit: true }, slug => conSesion(slug))
+    expect(screen.queryByText(TERMINOS)).toBeNull()
+    expect(document.body.textContent).not.toMatch(/saldo a favor/)
+    expect(screen.getByText('Pagas ahora con tarjeta.')).toBeTruthy()
+  })
+
+  it('ronda 1 (Ruling 46): en «Nadie» la tarjeta sale elegida sólo con sesión; sin ella, «Pagar en caja» y «Pedir» da el folio sin entrar', async () => {
+    const elegida = (name: string) => (screen.getByRole('radio', { name }) as HTMLInputElement).checked
+    show(NADIE_CARD, slug => conSesion(slug))
+    expect([elegida('Pagar ahora con tarjeta'), elegida('Pagar en caja')]).toEqual([true, false])
+    cleanup()
+    const s = show(NADIE_CARD)
+    expect([elegida('Pagar ahora con tarjeta'), elegida('Pagar en caja')]).toEqual([false, true])
+    fireEvent.input(screen.getByLabelText('Nombre'), { target: { value: 'Ana' } })
+    vi.mocked(createOrder).mockResolvedValueOnce({ trackingToken: 'T'.repeat(32), orderNumber: 'A7K2' } as any)
+    await pastGuard()
+    fireEvent.click(pedir())
+    await flush()
+    expect(createOrder).toHaveBeenCalledTimes(1)
+    const [, body, opts] = vi.mocked(createOrder).mock.calls[0]
+    expect(body.paymentMode).toBe('PAY_AT_PICKUP')
+    expect(body.customer).toEqual({ name: 'Ana' })
+    expect(opts.token).toBeUndefined()
+    expect(s.screen.value).toBe('tracking') // el folio, sin pasar por entrar
+    expect(s.trackingToken.value).toBe('T'.repeat(32))
+    cleanup()
+    // «Mi equipo» no cambia: la tarjeta sale primero y elegida, sin sesión.
+    show({ paymentModes: { payAtPickup: true, cardOnline: true } })
+    expect([elegida('Pagar ahora con tarjeta'), elegida('Pagar al recoger')]).toEqual([true, false])
+  })
+
+  it('«Pagar ahora» sin sesión manda a entrar y regresa a Detalles', async () => {
+    const s = await enLaTienda({ storeCredit: true })
+    fireEvent.input(screen.getByLabelText('Nombre'), { target: { value: 'Ana López' } })
+    fireEvent.click(screen.getByRole('radio', { name: 'Pagar ahora con tarjeta' })) // sin sesión la caja sale elegida (Ruling 46)
+    // Sin sesión lo dice antes del toque, con lo que pasa con su dinero (Ruling 87).
+    expect(screen.getByText('Para pagar en línea, entra a tu cuenta.')).toBeTruthy()
+    expect(screen.getByText(TERMINOS)).toBeTruthy()
+    await tocar(pedir())
+    expect(s.screen.value).toBe('entrar')
+    expect(createOrder).not.toHaveBeenCalled()
+    expect(pendingAttempt(s.slug)).toBeNull() // no se guardó un intento sin sesión
+    await entrarConWhatsApp('tok-nueva')
+    // De regreso en «Tus datos» (no en el carrito), con su carrito, su nombre y la tarjeta elegida.
+    expect(s.screen.value).toBe('details')
+    expect(s.cart.value).toEqual([line()])
+    expect((screen.getByLabelText('Nombre') as HTMLInputElement).value).toBe('Ana López')
+    expect((screen.getByRole('radio', { name: 'Pagar ahora con tarjeta' }) as HTMLInputElement).checked).toBe(true)
+    expect(screen.queryByText('Para pagar en línea, entra a tu cuenta.')).toBeNull()
+    expect(screen.getByText(TERMINOS)).toBeTruthy() // Ruling 87: con su teléfono ya probado, la misma línea (nunca promete saldo)
+    vi.mocked(createOrder).mockReturnValueOnce(new Promise(() => {}))
+    await tocar(pedir())
+    expect(createOrder).toHaveBeenCalledTimes(1)
+    const [, body, opts] = vi.mocked(createOrder).mock.calls[0]
+    expect(body.paymentMode).toBe('CARD_ONLINE')
+    expect(body.customer).toEqual({ name: 'Ana López' })
+    expect(opts.token).toBe('tok-nueva')
+  })
+
+  it('D661: sólo «Pagar ahora» regresa a «Tus datos»; entrar por «¿Tienes premios?» sigue regresando al carrito', async () => {
+    vi.mocked(quote).mockResolvedValue({ ok: true, lines: [], subtotal: 170, total: 170, minOrderAmount: 0, issues: [] })
+    const s = await enLaTienda()
+    fireEvent.input(screen.getByLabelText('Nombre'), { target: { value: 'Ana' } })
+    fireEvent.click(screen.getByRole('radio', { name: 'Pagar ahora con tarjeta' })) // sin sesión la caja sale elegida (Ruling 46)
+    await tocar(pedir())
+    expect(s.screen.value).toBe('entrar')
+    // Se arrepiente y regresa con la flecha; luego entra por sus premios.
+    await tocar(screen.getByRole('button', { name: 'Volver a tu pedido' }))
+    expect(s.screen.value).toBe('details')
+    await tocar(screen.getByRole('button', { name: 'Entrar' }))
+    expect(s.screen.value).toBe('entrar')
+    await entrarConWhatsApp()
+    expect(s.screen.value).toBe('cart') // donde se eligen los premios
+  })
+
+  it('D661: si la tarjeta ya no se acepta al pagar, lo dice en una línea ámbar y deja «Pagar en caja» lista, sin perder el carrito', async () => {
+    const s = show(NADIE_CARD, slug => conSesion(slug))
+    fireEvent.input(screen.getByLabelText('Nombre'), { target: { value: 'Ana' } })
+    vi.mocked(createOrder).mockRejectedValueOnce(new ApiError('Este negocio no acepta pagar con tarjeta en línea.', 400, 'CARD_PAYMENT_NOT_ACCEPTED'))
+    // La caja dejó de avisar: /info ya no ofrece la tarjeta.
+    vi.mocked(getInfo).mockResolvedValueOnce(infoOf({ requiresAcceptance: false, paymentModes: { payAtPickup: true, cardOnline: false } }))
+    await pastGuard()
+    fireEvent.click(pedir())
+    await flush()
+    const aviso = screen.getByText('Pagar en línea no está disponible ahora. Puedes pagar en caja.').closest('.avq-o-notice') as HTMLElement
+    expect(aviso.classList.contains('avq-o-notice--warn')).toBe(true)
+    expect(document.querySelector('.avq-o-notice--error')).toBeNull()
+    expect(within(aviso).queryByRole('button')).toBeNull() // nada que reintentar: se paga en caja
+    expect(s.screen.value).toBe('details')
+    expect(s.cart.value).toEqual([line()])
+    expect(screen.queryByRole('radiogroup')).toBeNull()
+    expect(screen.getByText('Pagas en caja: tarjeta o efectivo.')).toBeTruthy()
+    expect(pedir().disabled).toBe(false)
+    vi.mocked(createOrder).mockReturnValueOnce(new Promise(() => {}))
+    fireEvent.click(pedir())
+    await flush()
+    expect(vi.mocked(createOrder).mock.calls[1][1].paymentMode).toBe('PAY_AT_PICKUP')
+  })
+
+  it('D661: «Pagar ahora» con sesión y la tarjeta ocupada (CARD_ONLINE_QUEUE_FULL): ámbar, «Pagar en caja» elegida y la tienda sigue abierta', async () => {
+    const s = show(NADIE_CARD, slug => conSesion(slug))
+    fireEvent.input(screen.getByLabelText('Nombre'), { target: { value: 'Ana' } })
+    vi.mocked(createOrder).mockRejectedValueOnce(new ApiError('Por ahora hay muchos pagos con tarjeta esperando.', 409, 'CARD_ONLINE_QUEUE_FULL'))
+    vi.mocked(getInfo).mockResolvedValueOnce(infoOf({ ...NADIE_CARD }))
+    await pastGuard()
+    fireEvent.click(pedir())
+    await flush()
+    const aviso = screen.getByText('Ahora hay muchos pagos en línea. Puedes pagar en caja o intentar en unos minutos.').closest('.avq-o-notice') as HTMLElement
+    expect(aviso.classList.contains('avq-o-notice--warn')).toBe(true)
+    expect(s.screen.value).toBe('details')
+    expect(s.info.value?.status).toBe('OPEN') // nunca «la tienda no está recibiendo pedidos»
+    expect((screen.getByRole('radio', { name: 'Pagar en caja' }) as HTMLInputElement).checked).toBe(true)
+    expect(screen.getByRole('radio', { name: 'Pagar ahora con tarjeta' })).toBeTruthy() // se puede volver a intentar en unos minutos
+  })
+
+  it('ronda 2 #5 (Ruling 58): tras «El precio cambió», cambiar entre caja y tarjeta quita «Confirmar»; «Pedir» manda el medio que se ve, con el total nuevo', async () => {
+    const nuevo = { ok: true, lines: [], subtotal: 190, total: 190, minOrderAmount: 0, issues: [] }
+    for (const [primero, luego, medio] of [
+      ['Pagar en caja', 'Pagar ahora con tarjeta', 'CARD_ONLINE'],
+      ['Pagar ahora con tarjeta', 'Pagar en caja', 'PAY_AT_PICKUP'],
+    ] as const) {
+      show(NADIE_CARD, slug => conSesion(slug))
+      fireEvent.input(screen.getByLabelText('Nombre'), { target: { value: 'Ana' } })
+      fireEvent.click(screen.getByRole('radio', { name: primero }))
+      vi.mocked(createOrder).mockRejectedValueOnce(new ApiError('El precio cambió', 409, 'PRICE_CHANGED', { quote: nuevo }))
+      await pastGuard()
+      fireEvent.click(pedir())
+      await flush()
+      expect(screen.getByRole('alert').textContent, medio).toContain('El precio cambió: el nuevo total es $190.')
+      expect(screen.getByRole('button', { name: 'Confirmar' })).toBeTruthy()
+      fireEvent.click(screen.getByRole('radio', { name: luego }))
+      // La pregunta del precio era del medio anterior: se va con él, así ningún botón manda el cuerpo viejo.
+      expect(screen.queryByRole('button', { name: 'Confirmar' }), medio).toBeNull()
+      vi.mocked(createOrder).mockReturnValueOnce(new Promise(() => {}))
+      fireEvent.click(pedir())
+      await flush()
+      const enviado = vi.mocked(createOrder).mock.lastCall![1]
+      expect(enviado.paymentMode, medio).toBe(medio)
+      expect(enviado.expectedTotal, medio).toBe('190.00')
+      cleanup()
+    }
+  })
+
+  describe('pasada por familias (Ruling 83): lo que se manda es SIEMPRE el medio que se ve', () => {
+    const nuevo = { ok: true, lines: [], subtotal: 190, total: 190, minOrderAmount: 0, issues: [] }
+    const sinRed = () => new ApiError('Sin conexión', 0, undefined, undefined, true)
+    const radio = (name: string) => screen.getByRole('radio', { name }) as HTMLInputElement
+    const visible = () => (radio('Pagar ahora con tarjeta').checked ? 'CARD_ONLINE' : 'PAY_AT_PICKUP')
+    const ultimo = () => vi.mocked(createOrder).mock.lastCall![1]
+    const AMBOS = [
+      ['Pagar ahora con tarjeta', 'Pagar en caja', 'CARD_ONLINE', 'PAY_AT_PICKUP'],
+      ['Pagar en caja', 'Pagar ahora con tarjeta', 'PAY_AT_PICKUP', 'CARD_ONLINE'],
+    ] as const
+
+    it('sin red → intenta cambiar el radio → «Reintentar» → PRICE_CHANGED: «Confirmar» manda el medio que se ve (en los dos sentidos)', async () => {
+      for (const [elegido, otro, medio] of AMBOS) {
+        show(NADIE_CARD, slug => conSesion(slug))
+        fireEvent.input(screen.getByLabelText('Nombre'), { target: { value: 'Ana' } })
+        fireEvent.click(radio(elegido))
+        vi.mocked(createOrder).mockRejectedValueOnce(sinRed())
+        await pastGuard()
+        fireEvent.click(pedir())
+        await flush()
+        fireEvent.click(radio(otro)) // mientras el pedido sigue en camino
+        vi.mocked(createOrder).mockRejectedValueOnce(new ApiError('El precio cambió', 409, 'PRICE_CHANGED', { quote: nuevo }))
+        fireEvent.click(screen.getByRole('button', { name: 'Reintentar' }))
+        await flush()
+        expect(ultimo().paymentMode, medio).toBe(medio) // el reintento es el mismo pedido
+        const seVe = visible()
+        vi.mocked(createOrder).mockReturnValueOnce(new Promise(() => {}))
+        fireEvent.click(screen.getByRole('button', { name: 'Confirmar' }))
+        await flush()
+        expect(ultimo().paymentMode, medio).toBe(seVe)
+        expect(seVe, medio).toBe(medio) // el medio nunca cambió en silencio
+        expect(ultimo().expectedTotal, medio).toBe('190.00')
+        cleanup()
+      }
+    })
+
+    it('con el pedido en camino el radio queda fijo y dice por qué; «Empezar de nuevo» suelta el intento a propósito y entonces se elige otro', async () => {
+      // Ajuste final (Ruling 111): sólo desde caja; uno con tarjeta no se suelta mientras «Reintentar» lo pueda traer (prueba aparte).
+      for (const [antes, despues, medioAntes, medioDespues] of [AMBOS[1]]) {
+        const s = show(NADIE_CARD, slug => conSesion(slug))
+        fireEvent.input(screen.getByLabelText('Nombre'), { target: { value: 'Ana' } })
+        fireEvent.click(radio(antes))
+        vi.mocked(createOrder).mockRejectedValueOnce(sinRed())
+        await pastGuard()
+        fireEvent.click(pedir())
+        await flush()
+        expect([radio(antes).disabled, radio(despues).disabled], medioAntes).toEqual([true, true])
+        expect(screen.getByText('Tu pedido sigue en camino: reintenta o empieza de nuevo.')).toBeTruthy()
+        fireEvent.click(screen.getByRole('button', { name: 'Empezar de nuevo' }))
+        expect(pendingAttempt(s.slug), medioAntes).toBeNull()
+        expect(screen.queryByRole('button', { name: 'Reintentar' })).toBeNull()
+        expect(screen.queryByText('Tu pedido sigue en camino: reintenta o empieza de nuevo.')).toBeNull()
+        expect(visible(), medioAntes).toBe(medioAntes) // empezar de nuevo no cambia el medio: lo deja elegir
+        fireEvent.click(radio(despues))
+        vi.mocked(createOrder).mockRejectedValueOnce(new ApiError('El precio cambió', 409, 'PRICE_CHANGED', { quote: nuevo }))
+        fireEvent.click(pedir())
+        await flush()
+        expect(ultimo().paymentMode, medioDespues).toBe(medioDespues)
+        vi.mocked(createOrder).mockReturnValueOnce(new Promise(() => {}))
+        fireEvent.click(screen.getByRole('button', { name: 'Confirmar' }))
+        await flush()
+        expect(ultimo().paymentMode, medioDespues).toBe(visible())
+        expect(ultimo().paymentMode, medioDespues).toBe(medioDespues)
+        cleanup()
+      }
+    })
+
+    it('limpieza final (1): mientras «Confirmar» va en camino, la pantalla enseña el medio que se está mandando, no el de por omisión', async () => {
+      // El camino de la revisión: «Nadie» sin sesión → «Pagar en caja» (por omisión) → «Pedir» sin red → entra → «Reintentar» →
+      // PRICE_CHANGED → «Confirmar». Con sesión, la tarjeta sería la de por omisión; lo que va es la caja.
+      const s = show(NADIE_CARD)
+      fireEvent.input(screen.getByLabelText('Nombre'), { target: { value: 'Ana' } })
+      expect(visible()).toBe('PAY_AT_PICKUP')
+      vi.mocked(createOrder).mockRejectedValueOnce(sinRed())
+      await pastGuard()
+      fireEvent.click(pedir())
+      await flush()
+      await act(async () => { conSesion(s.slug) }) // entra con su cuenta
+      vi.mocked(createOrder).mockRejectedValueOnce(new ApiError('El precio cambió', 409, 'PRICE_CHANGED', { quote: nuevo }))
+      fireEvent.click(screen.getByRole('button', { name: 'Reintentar' }))
+      await flush()
+      expect(visible()).toBe('PAY_AT_PICKUP')
+      vi.mocked(createOrder).mockReturnValueOnce(new Promise(() => {})) // «Confirmar» se queda en camino
+      fireEvent.click(screen.getByRole('button', { name: 'Confirmar' }))
+      await flush()
+      expect(ultimo().paymentMode).toBe('PAY_AT_PICKUP')
+      expect(visible()).toBe('PAY_AT_PICKUP') // lo que va, no la tarjeta de por omisión con sesión
+      expect(document.querySelector('.avq-o-confirm__pay')?.textContent).toBe('Pagas en caja: tarjeta o efectivo.')
+    })
+
+    it('limpieza final (3): la línea del radio fijo dice sólo lo que se puede hacer: reintentar, entrar otra vez o sólo empezar de nuevo', async () => {
+      const r401 = () => new ApiError('Tu sesión ya no es válida.', 401, 'CUSTOMER_TOKEN_INVALID')
+      const inactiva = () => new ApiError('Tu cuenta está desactivada.', 401, 'CUSTOMER_INACTIVE')
+      // Ajuste final (Ruling 111): con tarjeta, «Empezar de nuevo» sólo cuando no hay cómo traer la compra (cuenta desactivada).
+      const casos: [string, string, () => ApiError, string, string | null, boolean][] = [
+        ['caja sin red', 'Pagar en caja', sinRed, 'Tu pedido sigue en camino: reintenta o empieza de nuevo.', 'Reintentar', true],
+        ['caja, su sesión recibió 401', 'Pagar en caja', r401, 'Tu pedido sigue en camino: entra otra vez o empieza de nuevo.', 'Entrar otra vez', true],
+        ['caja, cuenta desactivada', 'Pagar en caja', inactiva, 'Tu pedido sigue en camino: puedes empezar de nuevo.', null, true],
+        ['tarjeta sin red', 'Pagar ahora con tarjeta', sinRed, 'Tu pedido sigue en camino: reintenta para saber si llegó.', 'Reintentar', false],
+        ['tarjeta, su sesión recibió 401', 'Pagar ahora con tarjeta', r401, 'Tu pedido sigue en camino: entra otra vez para saber si llegó.',
+          'Entrar otra vez', false],
+        ['tarjeta, cuenta desactivada', 'Pagar ahora con tarjeta', inactiva, 'Tu pedido sigue en camino: puedes empezar de nuevo.', null, true],
+      ]
+      for (const [caso, medio, falla, linea, boton, empezar] of casos) {
+        show(NADIE_CARD, slug => conSesion(slug))
+        fireEvent.input(screen.getByLabelText('Nombre'), { target: { value: 'Ana' } })
+        fireEvent.click(radio(medio))
+        vi.mocked(createOrder).mockRejectedValueOnce(falla())
+        await pastGuard()
+        fireEvent.click(pedir())
+        await flush()
+        expect(screen.getByText(linea), caso).toBeTruthy()
+        // Lo que la línea nombra, está; lo que no está, no lo nombra.
+        if (boton) expect(screen.getByRole('button', { name: boton }), caso).toBeTruthy()
+        if (boton !== 'Reintentar') expect(screen.queryByRole('button', { name: 'Reintentar' }), caso).toBeNull()
+        expect(!!screen.queryByRole('button', { name: 'Empezar de nuevo' }), caso).toBe(empezar)
+        expect(!!screen.queryByText('Si tu pedido ya llegó, empezar de nuevo puede repetirlo.'), caso).toBe(empezar) // el aviso va con el botón
+        cleanup()
+      }
+    })
+
+    it('limpieza final (5): con un pedido de caja pendiente, bajo «Empezar de nuevo» avisa que puede repetirlo; con tarjeta, ni botón ni aviso', async () => {
+      const AVISO = 'Si tu pedido ya llegó, empezar de nuevo puede repetirlo.'
+      for (const [medio, avisa] of [['Pagar en caja', true], ['Pagar ahora con tarjeta', false]] as const) {
+        show(NADIE_CARD, slug => conSesion(slug))
+        fireEvent.input(screen.getByLabelText('Nombre'), { target: { value: 'Ana' } })
+        fireEvent.click(radio(medio))
+        vi.mocked(createOrder).mockRejectedValueOnce(sinRed()) // la respuesta se perdió: quizá ya llegó
+        await pastGuard()
+        fireEvent.click(pedir())
+        await flush()
+        if (avisa) {
+          const empezar = screen.getByRole('button', { name: 'Empezar de nuevo' })
+          const aviso = screen.getByText(AVISO)
+          expect(empezar.compareDocumentPosition(aviso) & Node.DOCUMENT_POSITION_FOLLOWING, medio).toBeTruthy() // bajo el botón
+        } else {
+          // Ajuste final (Ruling 111): la compra con tarjeta se trae con «Reintentar» (su llave), no se suelta.
+          expect(screen.queryByRole('button', { name: 'Empezar de nuevo' }), medio).toBeNull()
+          expect(screen.queryByText(AVISO), medio).toBeNull()
+        }
+        cleanup()
+      }
+    })
+
+    it('ajuste final (Ruling 111): con tarjeta, perder la respuesta y pagarla en otra pestaña no deja empezar otra compra: «Reintentar» enseña la pagada', async () => {
+      const s = show(NADIE_CARD, slug => conSesion(slug))
+      fireEvent.input(screen.getByLabelText('Nombre'), { target: { value: 'Ana' } })
+      expect(visible()).toBe('CARD_ONLINE')
+      vi.mocked(createOrder).mockRejectedValueOnce(sinRed()) // pestaña 1: el 201 se pierde
+      await pastGuard()
+      fireEvent.click(pedir())
+      await flush()
+      const llave = vi.mocked(createOrder).mock.lastCall![2].idempotencyKey
+      // Pestaña 2: la misma compra recupera esta llave y se paga. De vuelta en la 1, no se puede cambiar a caja ni soltar el intento.
+      expect(screen.queryByRole('button', { name: 'Empezar de nuevo' })).toBeNull()
+      expect([radio('Pagar ahora con tarjeta').disabled, radio('Pagar en caja').disabled]).toEqual([true, true])
+      expect(screen.getByText('Tu pedido sigue en camino: reintenta para saber si llegó.')).toBeTruthy()
+      vi.mocked(createOrder).mockResolvedValueOnce({ trackingToken: 'T'.repeat(32), checkoutUrl: '', status: 'PENDING_ACCEPTANCE', total: '170.00', replay: true } as any)
+      fireEvent.click(screen.getByRole('button', { name: 'Reintentar' }))
+      await flush()
+      expect(vi.mocked(createOrder).mock.lastCall![2].idempotencyKey).toBe(llave) // la misma compra
+      expect(vi.mocked(createOrder).mock.calls.every(c => c[1].paymentMode === 'CARD_ONLINE')).toBe(true) // ningún folio de caja
+      expect(s.screen.value).toBe('tracking') // la pagada, en su seguimiento
+      expect(s.trackingToken.value).toBe('T'.repeat(32))
+    })
+
+    it('ajuste final (Ruling 113): un intento con tarjeta recargado con la tienda en el otro modo no enseña las condiciones de una compra nueva mientras se resuelve', async () => {
+      const items = [{ productId: 'p1', quantity: 2, modifiers: [] }]
+      const casos = [
+        // «Mi equipo» (con teléfono, sin sesión) que se perdió y la tienda ya está en «Nadie»: el SERVIDOR repite su borrador, que sigue
+        // esperando que lo acepten; «se cobra cuando abra» no es de ese pedido.
+        ['«Mi equipo» → «Nadie»', NADIE_CARD, { items, paymentMode: 'CARD_ONLINE', expectedTotal: '170.00', customer: { name: 'Ana', phone: '+525544422262' } }, null],
+        // Y al revés: uno de «Nadie» (con su sesión) con la tienda ya en «Mi equipo».
+        ['«Nadie» → «Mi equipo»', { requiresAcceptance: true, paymentModes: { payAtPickup: true, cardOnline: true } },
+          { items, paymentMode: 'CARD_ONLINE', expectedTotal: '170.00', customer: { name: 'Ana' } }, 'tok-A'],
+      ] as const
+      const condiciones = /se cobra|Pagas ahora con tarjeta|Pagas en caja|Pagas al recoger|Puedes cancelar mientras|Para pagar en línea/i
+      for (const [caso, info, body, token] of casos) {
+        show(info, slug => { beginAttempt(slug, body as any, token) })
+        expect(visible(), caso).toBe('CARD_ONLINE')
+        expect(screen.queryAllByText(condiciones).map(e => e.textContent), caso).toEqual([])
+        vi.mocked(createOrder).mockReturnValueOnce(new Promise(() => {})) // «Reintentar» se queda resolviendo
+        fireEvent.click(screen.getByRole('button', { name: 'Reintentar' }))
+        await flush()
+        expect(vi.mocked(createOrder).mock.lastCall![1], caso).toEqual(body) // el pedido de antes, tal cual
+        expect(screen.queryAllByText(condiciones).map(e => e.textContent), caso).toEqual([])
+        cleanup()
+      }
+    })
+
+    it('ajuste final (Ruling 114): con sólo caja (sin selector) y la cuenta desactivada, «Empezar de nuevo» se alcanza y suelta el intento', async () => {
+      const s = show({ requiresAcceptance: false, paymentModes: { payAtPickup: true } }, slug => conSesion(slug))
+      expect(screen.queryByRole('radiogroup')).toBeNull()
+      fireEvent.input(screen.getByLabelText('Nombre'), { target: { value: 'Ana' } })
+      vi.mocked(createOrder).mockRejectedValueOnce(new ApiError('Tu cuenta está desactivada.', 401, 'CUSTOMER_INACTIVE'))
+      await pastGuard()
+      fireEvent.click(pedir())
+      await flush()
+      expect(pendingAttempt(s.slug)).not.toBeNull() // retenido, sin «Reintentar»…
+      expect(screen.queryByRole('button', { name: 'Reintentar' })).toBeNull()
+      expect(screen.getByText('Tu pedido sigue en camino: puedes empezar de nuevo.')).toBeTruthy()
+      expect(screen.getByText('Si tu pedido ya llegó, empezar de nuevo puede repetirlo.')).toBeTruthy()
+      fireEvent.click(screen.getByRole('button', { name: 'Empezar de nuevo' })) // …y aun así lo puede soltar
+      expect(pendingAttempt(s.slug)).toBeNull()
+      expect(screen.queryByText('Tu pedido sigue en camino: puedes empezar de nuevo.')).toBeNull()
+    })
+
+    it('tras recargar con un intento pendiente, el radio enseña SU medio (el que «Reintentar» manda), aunque sin él saldría otro', () => {
+      show(NADIE_CARD, slug => {
+        beginAttempt(slug, {
+          items: [{ productId: 'p1', quantity: 2, modifiers: [] }], paymentMode: 'CARD_ONLINE', expectedTotal: '170.00', customer: { name: 'Ana' },
+        }, 'tok-A')
+      })
+      // Sin sesión en la página, «Pagar en caja» saldría elegida (Ruling 46); el pedido en camino es con tarjeta.
+      expect(visible()).toBe('CARD_ONLINE')
+      expect([radio('Pagar ahora con tarjeta').disabled, radio('Pagar en caja').disabled]).toEqual([true, true])
+      expect(screen.getByText('Tu pedido sigue en camino: reintenta para saber si llegó.')).toBeTruthy() // Ruling 111
+      expect(screen.queryByRole('button', { name: 'Empezar de nuevo' })).toBeNull()
+    })
+
+    it('en inglés', async () => {
+      const s = makeStore(infoOf({ ...NADIE_CARD }), menuOf(), 'en')
+      beginAttempt(s.slug, {
+        items: [{ productId: 'p1', quantity: 2, modifiers: [] }], paymentMode: 'PAY_AT_PICKUP', expectedTotal: '170.00', customer: { name: 'Ana' },
+      })
+      s.quote.value = { ok: true, lines: [], subtotal: 170, total: 170, minOrderAmount: 0, issues: [] }
+      render(withStore(s, <DetailsScreen />))
+      expect(screen.getByText('Your order is still on its way: retry or start over.')).toBeTruthy()
+      expect(screen.getByText('If your order already arrived, starting over may repeat it.')).toBeTruthy() // limpieza final (5)
+      fireEvent.click(screen.getByRole('button', { name: 'Start over' }))
+      expect(pendingAttempt(s.slug)).toBeNull()
+    })
+  })
+
+  it('ronda 3 (Minor 4): mientras «Pedir» va en camino, el medio de pago no se puede cambiar (si volviera PRICE_CHANGED, «Confirmar» llevaría el de antes)', async () => {
+    show(NADIE_CARD, slug => conSesion(slug))
+    fireEvent.input(screen.getByLabelText('Nombre'), { target: { value: 'Ana' } })
+    const radio = (name: string) => screen.getByRole('radio', { name }) as HTMLInputElement
+    expect([radio('Pagar ahora con tarjeta').disabled, radio('Pagar en caja').disabled]).toEqual([false, false])
+    vi.mocked(createOrder).mockReturnValueOnce(new Promise(() => {}))
+    await pastGuard()
+    fireEvent.click(pedir())
+    await flush()
+    expect([radio('Pagar ahora con tarjeta').disabled, radio('Pagar en caja').disabled]).toEqual([true, true])
+  })
+
+  it('ronda 2 (Ruling 59): «Mi equipo» de sólo tarjeta pasa a «Nadie» sin tarjeta: tras el primer «Confirmar» queda la caja lista, con el carrito', async () => {
+    const s = show({ paymentModes: { payAtPickup: false, cardOnline: true } })
+    fill()
+    accept()
+    vi.mocked(createOrder).mockRejectedValueOnce(new ApiError('Este negocio no acepta pagar con tarjeta en línea.', 400, 'CARD_PAYMENT_NOT_ACCEPTED'))
+    vi.mocked(getInfo).mockResolvedValueOnce(infoOf({ requiresAcceptance: false, paymentModes: { payAtPickup: true, cardOnline: false } }))
+    await pastGuard()
+    fireEvent.click(confirmBtn())
+    await flush()
+    expect(s.screen.value).toBe('details')
+    expect(s.cart.value).toHaveLength(1)
+    expect(screen.getByText('Pagas en caja: tarjeta o efectivo.')).toBeTruthy()
+    expect(pedir().disabled).toBe(false) // su nombre sigue escrito: «Pedir» manda el folio de caja
+  })
+
+  it('ronda 1 M5: con la tarjeta de «Nadie», TOO_MANY_PENDING_ORDERS y CARD_AMOUNT_OUT_OF_RANGE van en ámbar y dejan «Pagar en caja» elegida', async () => {
+    for (const [code, status, text] of [
+      ['TOO_MANY_PENDING_ORDERS', 409, 'Ya tienes pagos con tarjeta sin terminar en este negocio. Paga en caja o espera unos minutos.'],
+      ['CARD_AMOUNT_OUT_OF_RANGE', 400, 'Este monto no se puede pagar con tarjeta en línea. Paga en caja.'],
+    ] as const) {
+      show(NADIE_CARD, slug => conSesion(slug))
+      fireEvent.input(screen.getByLabelText('Nombre'), { target: { value: 'Ana' } })
+      vi.mocked(createOrder).mockRejectedValueOnce(new ApiError('texto del servidor', status, code))
+      vi.mocked(getInfo).mockResolvedValueOnce(infoOf({ ...NADIE_CARD }))
+      await pastGuard()
+      fireEvent.click(pedir())
+      await flush()
+      const aviso = screen.getByText(text).closest('.avq-o-notice') as HTMLElement
+      expect(aviso.classList.contains('avq-o-notice--warn'), code).toBe(true)
+      expect(document.querySelector('.avq-o-notice--error'), code).toBeNull()
+      expect((screen.getByRole('radio', { name: 'Pagar en caja' }) as HTMLInputElement).checked, code).toBe(true)
+      cleanup()
+    }
+  })
+
+  it('en inglés', () => {
+    const s = makeStore(infoOf({ ...NADIE_CARD, storeCredit: true }), menuOf(), 'en')
+    s.quote.value = { ok: true, lines: [], subtotal: 170, total: 170, minOrderAmount: 0, issues: [] }
+    render(withStore(s, <DetailsScreen />))
+    expect((screen.getByRole('radio', { name: 'Pay at the counter' }) as HTMLInputElement).checked).toBe(true) // sin sesión (Ruling 46)
+    fireEvent.click(screen.getByRole('radio', { name: 'Pay now by card' }))
+    expect(screen.getByText('To pay online, sign in to your account.')).toBeTruthy()
+    expect(screen.getByText("Your card is charged when Flautas opens your order; if nobody opens it in time, you aren't charged. If you don't pick it up or change your mind, it isn't refunded automatically: Flautas decides.")).toBeTruthy()
   })
 })

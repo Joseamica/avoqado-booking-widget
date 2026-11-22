@@ -509,7 +509,19 @@ export interface PaginaDeMiCuenta<T> { items: T[]; total: number; nextCursor: st
 export type EstadoDeTarjeta = 'ACTIVA' | 'BLOQUEADA' | 'DESACTIVADA' | 'VENCIDA'
 /** `venceEl`: `yyyy-MM-dd` en la zona del negocio. `codigo`: sólo ACTIVA y con contacto probado. */
 export interface MiTarjeta { id: string; last4: string; saldo: number; venceEl: string | null; codigo: string | null; estado: EstadoDeTarjeta; disponible: boolean }
-/** `estado`: el de `OnlineOrder` (`PENDING_ACCEPTANCE`, `COMPLETED`…); `creadoEl` ISO. */
-export interface MiPedido { folio: string; estado: string; pagado: boolean; total: number; trackingToken: string; creadoEl: string }
+/**
+ * `estado`: el de `OnlineOrder` (`PENDING_ACCEPTANCE`, `COMPLETED`…); `creadoEl` ISO. D661 ronda 2 #2 (Ruling 55), opcionales (un
+ * servidor viejo no los manda): `pagoEnLinea` = se pagó con tarjeta en línea; `tarjeta` = cómo va ese dinero; las marcas (ISO) y
+ * `refund` = las mismas del seguimiento.
+ */
+export interface MiPedido {
+  folio: string; estado: string; pagado: boolean; total: number; trackingToken: string; creadoEl: string
+  pagoEnLinea?: boolean
+  tarjeta?: 'APARTADA' | 'COBRADA' | 'LIBERANDO' | 'LIBERADA' | null
+  notPickedUpAt?: string | null
+  refundRequestedAt?: string | null
+  refundedAt?: string | null
+  refund?: { status: 'PENDING' | 'DONE' | 'REVERSED'; medio: 'TARJETA' | 'SALDO' | 'EFECTIVO' | 'TRANSFERENCIA' } | null
+}
 /** `vigenteHasta` ISO o `null` (sin vencimiento). */
 export interface MiDescuento { nombre: string; tipo: string; valor: number; vigenteHasta: string | null }

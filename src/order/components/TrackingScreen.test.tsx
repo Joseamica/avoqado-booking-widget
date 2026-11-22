@@ -8,10 +8,12 @@ vi.mock('../api', async () => {
 })
 import { ApiError, abandonPayment, cancelOrder, getTracking } from '../api'
 import { TrackingScreen } from './TrackingScreen'
+import { createOrderT } from '../i18n'
 import { STORE_CSS } from './theme'
 import { makeStore, withStore } from './testKit'
 import { saveLastOrder } from '../session'
-import type { OnlineOrderStatus, Tracking } from '../types'
+import { beginAttempt, settleAttempt } from '../attempt'
+import type { CreateOrderBody, OnlineOrderStatus, Tracking } from '../types'
 
 let visibility = 'visible'
 beforeEach(() => {
@@ -1383,5 +1385,352 @@ describe('W5: el seguimiento dice lo que ganó y lo que regresó (S14)', () => {
     cleanup()
     await showW(folio({ beneficios: [{ nombre: 'Café gratis', monto: 65 }], beneficiosTotal: 1 }), 'en')
     expect(fila('Total to pay')).toBe('Total to pay$69')
+  })
+})
+
+describe('D661: el seguimiento de un pedido pagado con tarjeta en «Nadie»', () => {
+  beforeEach(() => { vi.setSystemTime(new Date('2026-10-17T19:05:00Z')) }) // 13:05 en CDMX, el día del pedido
+  /** Un pedido de «Nadie» con tarjeta: por omisión, apartado y sin abrir. */
+  const nc = (over: Partial<Tracking> = {}) =>
+    tr({ paymentMode: 'CARD_ONLINE', requiresAcceptance: false, cardStatus: 'AUTHORIZED', canCancel: false, orderNumber: 'W7K3P', ...over })
+  /** Cobrado: una caja lo abrió. */
+  const cobrado = (over: Partial<Tracking> = {}) =>
+    nc({ status: 'ACCEPTED', cardStatus: 'CAPTURED', paid: true, customerName: 'Ana', paidAt: '2026-10-17T19:03:00Z', ...over })
+  const money = () => document.querySelector('.avq-o-total__tax')?.textContent ?? null
+  const heading = () => document.querySelector('.avq-o-title')?.textContent ?? null
+  const cancelBtn = () => screen.queryByRole('button', { name: /Cancelar/ })
+
+  it('seguimiento AUTHORIZED: «Avisando a {{negocio}}… se te cobra cuando abra tu pedido» (el verbo de antes de pagar), sin botón de cancelar', async () => {
+    for (const cardStatus of ['AUTHORIZED', 'CONFIRMING'] as const) {
+      vi.mocked(getTracking).mockReset()
+      await show(nc({ cardStatus }))
+      expect(heading(), cardStatus).toBe('Avisando a Flautas… se te cobra cuando abra tu pedido.') // limpieza final (6): como antes de pagar
+      expect(cancelBtn()).toBeNull()
+      // Nada de «Mi equipo» ni del folio de caja: nadie lo acepta y no se paga en caja.
+      expect(document.body.textContent).not.toMatch(/acept|Pasa a pagar|Enséñalo en caja|Pagas en caja|Faltan/)
+      // Ronda 1 M6: ninguna caja lo ha recibido todavía, así que el ticket no habla del mostrador.
+      expect(screen.queryByText('Dilo en el mostrador al recoger.'), cardStatus).toBeNull()
+      expect(money()).toBeNull()
+      expect(progress()!.querySelector('[aria-current="step"]')!.textContent).toBe('Pedido')
+      expect(screen.getByText('W7K3P')).toBeTruthy()
+      await tick(10_000)
+      expect(getTracking, cardStatus).toHaveBeenCalledTimes(2) // en curso: sigue consultando
+      cleanup()
+    }
+  })
+
+  it('CAPTURED + ACCEPTED: «Pagado», folio y «pasa por él»', async () => {
+    await show(cobrado())
+    expect(heading()).toBe('¡Pagado! Lo están preparando')
+    expect(screen.getByText('Pasa por él con tu nombre o tu folio.')).toBeTruthy()
+    expect(screen.getByText(/PAGADO/)).toBeTruthy()
+    expect(screen.getByText('W7K3P')).toBeTruthy()
+    expect(screen.getByText('Ana · pagado hoy a las 13:03')).toBeTruthy()
+    expect(progress()!.querySelector('[aria-current="step"]')!.textContent).toBe('Pagado')
+    expect(cancelBtn()).toBeNull()
+    cleanup()
+    await show(cobrado({ estimatedReadyAt: '2026-10-17T19:30:00Z' }))
+    expect(screen.getByText('Estará listo como a las 13:30. Pasa por él con tu nombre o tu folio.')).toBeTruthy()
+    cleanup()
+    await show(cobrado({ status: 'READY' }))
+    expect(heading()).toBe('¡Listo para recoger!')
+    expect(screen.getByText('Pasa por él con tu nombre o tu folio.')).toBeTruthy()
+    expect(document.title).toBe('¡Listo! · Flautas')
+    cleanup()
+    await show(cobrado({ status: 'COMPLETED' }))
+    expect(heading()).toBe('Entregado')
+    expect(screen.getByText('¡Gracias, Ana!')).toBeTruthy()
+  })
+
+  it('EXPIRED o REJECTED: «no pudo atender tu pedido. No se te cobró»', async () => {
+    const LIBRE = 'Flautas no pudo atender tu pedido. No se te cobró.'
+    for (const over of [
+      { status: 'EXPIRED', cardStatus: 'RELEASED' },
+      { status: 'REJECTED', rejectReason: 'PAYMENT_FAILED', cardStatus: 'RELEASED' },
+      { status: 'REJECTED', rejectReason: 'PAYMENT_FAILED', cardStatus: null }, // la captura falló: sin cargo
+    ] as Partial<Tracking>[]) {
+      vi.mocked(getTracking).mockReset()
+      await show(nc(over))
+      expect(heading(), JSON.stringify(over)).toBe(LIBRE)
+      expect(money()).toBe('Si viste un cargo, tu banco lo liberará en unos días.')
+      expect(document.body.textContent).not.toMatch(/no contestó a tiempo|No se pudo cobrar tu tarjeta/)
+      expect(cancelBtn()).toBeNull()
+      await tick(60_000)
+      expect(getTracking).toHaveBeenCalledTimes(1) // final y sin dinero en duda
+      cleanup()
+    }
+    // Con el apartado todavía liberándose no se promete «No se te cobró» (la regla de siempre: el dinero en duda no se afirma).
+    vi.mocked(getTracking).mockReset()
+    await show(nc({ status: 'EXPIRED', cardStatus: 'RELEASING' }))
+    expect(heading()).toBe('Flautas no pudo atender tu pedido.')
+    expect(money()).toBe('Estamos liberando tu tarjeta…')
+    await tick(10_000)
+    expect(getTracking).toHaveBeenCalledTimes(2)
+  })
+
+  it('devuelto: dice si está pendiente, hecha o revertida y su medio real (tarjeta, saldo, efectivo, transferencia), según refund del servidor', async () => {
+    const DEVUELTO = '2026-10-17T21:00:00Z'
+    const REVERTIDA = 'Tu banco regresó la devolución: Flautas todavía te la debe.'
+    const casos: [Partial<Tracking>, string, string | null][] = [
+      [{ refund: { status: 'PENDING', medio: 'TARJETA' } }, 'Devolviendo tu pago…', 'Tu devolución va en camino a tu tarjeta.'],
+      [{ status: 'COMPLETED', refundedAt: DEVUELTO, refund: { status: 'DONE', medio: 'TARJETA' } }, 'Devuelto', 'Te devolvieron tu pago a tu tarjeta.'],
+      [{ status: 'COMPLETED', refundedAt: DEVUELTO, refund: { status: 'DONE', medio: 'SALDO' } }, 'Devuelto', 'Te devolvieron tu pago como saldo a favor en Flautas.'],
+      [{ status: 'COMPLETED', refundedAt: DEVUELTO, refund: { status: 'DONE', medio: 'EFECTIVO' } }, 'Devuelto', 'Te devolvieron tu pago en efectivo.'],
+      [{ status: 'COMPLETED', refundedAt: DEVUELTO, refund: { status: 'DONE', medio: 'TRANSFERENCIA' } }, 'Devuelto', 'Te devolvieron tu pago por transferencia.'],
+      // Ronda 1 I1: el banco regresó la devolución: el titular nunca dice «Devuelto» (con o sin refundedAt), y la línea no lo repite.
+      [{ status: 'COMPLETED', refundedAt: DEVUELTO, refund: { status: 'REVERSED', medio: 'TARJETA' } }, REVERTIDA, null],
+      [{ refund: { status: 'REVERSED', medio: 'TARJETA' } }, REVERTIDA, null],
+      // «Devuelto» es refundedAt: una devolución hecha sin el pedido cerrado todavía no lo dice.
+      [{ refund: { status: 'DONE', medio: 'TARJETA' } }, 'Devolviendo tu pago…', 'Te devolvieron tu pago a tu tarjeta.'],
+      // «No lo recogió» y luego se lo devolvieron: manda la devolución.
+      [{ status: 'COMPLETED', notPickedUpAt: '2026-10-18T10:00:00Z', refund: { status: 'PENDING', medio: 'TARJETA' } }, 'Devolviendo tu pago…', 'Tu devolución va en camino a tu tarjeta.'],
+    ]
+    for (const [over, head, line] of casos) {
+      vi.mocked(getTracking).mockReset()
+      await show(cobrado(over))
+      expect(heading(), JSON.stringify(over)).toBe(head)
+      expect(money(), JSON.stringify(over)).toBe(line)
+      // Ya no es para recoger: sin el sello de pagado, sin avance y sin «pasa por él».
+      expect(document.body.textContent).not.toMatch(/PAGADO|Pasa por él|¡Pagado!/)
+      expect(progress()).toBeNull()
+      cleanup()
+    }
+  })
+
+  it('con una devolución pendiente el seguimiento sigue consultando, y al volver a la vista relee aunque el pedido esté en estado final', async () => {
+    // Final (no lo recogió) con la devolución en camino: sigue consultando hasta que se hace.
+    await show(cobrado({ status: 'COMPLETED', notPickedUpAt: '2026-10-18T10:00:00Z', refund: { status: 'PENDING', medio: 'TARJETA' } }))
+    await tick(10_000)
+    expect(getTracking).toHaveBeenCalledTimes(2)
+    vi.mocked(getTracking).mockResolvedValue(
+      cobrado({ status: 'COMPLETED', notPickedUpAt: '2026-10-18T10:00:00Z', refundedAt: '2026-10-18T11:00:00Z', refund: { status: 'DONE', medio: 'TARJETA' } }),
+    )
+    await tick(10_000)
+    expect(getTracking).toHaveBeenCalledTimes(3)
+    expect(heading()).toBe('Devuelto')
+    await tick(60_000)
+    expect(getTracking).toHaveBeenCalledTimes(3) // hecha: deja el sondeo de cada 10 s…
+    await tick(9 * 60_000)
+    expect(getTracking).toHaveBeenCalledTimes(4) // …y, a la vista, relee a los 10 min (ronda 2 #3: el banco puede regresarla)
+    // Vuelve a la pestaña: relee aunque el pedido ya sea final (el negocio pudo devolver después; luego se revirtió).
+    vi.mocked(getTracking).mockResolvedValue(
+      cobrado({ status: 'COMPLETED', notPickedUpAt: '2026-10-18T10:00:00Z', refundedAt: '2026-10-18T11:00:00Z', refund: { status: 'REVERSED', medio: 'TARJETA' } }),
+    )
+    visibility = 'hidden'
+    await act(async () => { document.dispatchEvent(new Event('visibilitychange')) })
+    visibility = 'visible'
+    await act(async () => { document.dispatchEvent(new Event('visibilitychange')) })
+    await flush()
+    expect(getTracking).toHaveBeenCalledTimes(5)
+    expect(heading()).toBe('Tu banco regresó la devolución: Flautas todavía te la debe.')
+    expect(money()).toBeNull()
+    await tick(60_000)
+    expect(getTracking).toHaveBeenCalledTimes(5) // la relectura no reanuda el sondeo de cada 10 s
+    cleanup()
+    // Entregado (final) y luego el negocio empieza a devolver: al volver a la vista se entera y vuelve a consultar.
+    vi.mocked(getTracking).mockReset()
+    await show(cobrado({ status: 'COMPLETED' }))
+    await tick(60_000)
+    expect(getTracking).toHaveBeenCalledTimes(1)
+    vi.mocked(getTracking).mockResolvedValue(cobrado({ status: 'COMPLETED', refund: { status: 'PENDING', medio: 'TARJETA' } }))
+    await act(async () => { document.dispatchEvent(new Event('visibilitychange')) })
+    await flush()
+    expect(getTracking).toHaveBeenCalledTimes(2)
+    expect(heading()).toBe('Devolviendo tu pago…')
+    await tick(10_000)
+    expect(getTracking).toHaveBeenCalledTimes(3) // pendiente: el sondeo se reanuda
+  })
+
+  it('ronda 1 M3: una devolución hecha con el pedido aún sin cerrar «Devuelto» sigue consultando hasta que llega refundedAt', async () => {
+    // El cobro con tarjeta cierra «Devuelto» en otro paso (o en el barrido): mientras tanto no se deja de consultar.
+    const NO_LO_RECOGIO = '2026-10-18T10:00:00Z'
+    await show(cobrado({ status: 'COMPLETED', notPickedUpAt: NO_LO_RECOGIO, refund: { status: 'DONE', medio: 'TARJETA' } }))
+    expect(heading()).toBe('Devolviendo tu pago…')
+    await tick(10_000)
+    expect(getTracking).toHaveBeenCalledTimes(2)
+    vi.mocked(getTracking).mockResolvedValue(
+      cobrado({ status: 'COMPLETED', notPickedUpAt: NO_LO_RECOGIO, refundedAt: '2026-10-18T11:00:00Z', refund: { status: 'DONE', medio: 'TARJETA' } }),
+    )
+    await tick(10_000)
+    expect(getTracking).toHaveBeenCalledTimes(3)
+    expect(heading()).toBe('Devuelto')
+    await tick(60_000)
+    expect(getTracking).toHaveBeenCalledTimes(3) // ya cerrado «Devuelto»: deja el sondeo de cada 10 s
+  })
+
+  it('ronda 1 M8: la devolución en camino deja de consultarse a las 2 h; al volver a la vista relee sin reanudar el sondeo', async () => {
+    const NO_LO_RECOGIO = '2026-10-18T10:00:00Z'
+    await show(cobrado({ status: 'COMPLETED', notPickedUpAt: NO_LO_RECOGIO, refund: { status: 'PENDING', medio: 'TARJETA' } }))
+    await tick(2 * 60 * 60_000 - 20_000)
+    const antes = vi.mocked(getTracking).mock.calls.length
+    expect(antes).toBeGreaterThan(700) // casi 2 h, cada 10 s
+    await tick(10_000)
+    expect(getTracking).toHaveBeenCalledTimes(antes + 1) // todavía dentro de las 2 h
+    await tick(10 * 60_000)
+    const tope = vi.mocked(getTracking).mock.calls.length
+    expect(tope).toBeLessThanOrEqual(antes + 2) // pasadas las 2 h ya no consulta
+    await tick(60 * 60_000)
+    expect(getTracking).toHaveBeenCalledTimes(tope)
+    // Al volver a la pestaña relee una vez (lo que pase después lo trae esa lectura) y no reanuda el sondeo de cada 10 s.
+    visibility = 'hidden'
+    await act(async () => { document.dispatchEvent(new Event('visibilitychange')) })
+    visibility = 'visible'
+    await act(async () => { document.dispatchEvent(new Event('visibilitychange')) })
+    await flush()
+    expect(getTracking).toHaveBeenCalledTimes(tope + 1)
+    await tick(60_000)
+    expect(getTracking).toHaveBeenCalledTimes(tope + 1)
+    // La relectura trae la devolución ya hecha y cerrada: «Devuelto».
+    vi.mocked(getTracking).mockResolvedValue(
+      cobrado({ status: 'COMPLETED', notPickedUpAt: NO_LO_RECOGIO, refundedAt: '2026-10-18T14:00:00Z', refund: { status: 'DONE', medio: 'TARJETA' } }),
+    )
+    await act(async () => { document.dispatchEvent(new Event('visibilitychange')) })
+    await flush()
+    expect(getTracking).toHaveBeenCalledTimes(tope + 2)
+    expect(heading()).toBe('Devuelto')
+  })
+
+  it('ronda 2 #3 (Ruling 56): «Devuelto» a la vista se relee cada 10 min y dice cuándo se verificó; si el banco la regresa, lo dice', async () => {
+    const NO_LO_RECOGIO = '2026-10-18T10:00:00Z'
+    const devuelto = (status: 'DONE' | 'REVERSED') =>
+      cobrado({ status: 'COMPLETED', notPickedUpAt: NO_LO_RECOGIO, refundedAt: '2026-10-18T11:00:00Z', refund: { status, medio: 'TARJETA' } })
+    await show(devuelto('DONE'))
+    expect(heading()).toBe('Devuelto')
+    // Bajo la línea del dinero, la hora del negocio de la última lectura buena (19:05 UTC = 13:05 en CDMX).
+    expect(screen.getByText('Actualizado a las 13:05')).toBeTruthy()
+    await tick(9 * 60_000)
+    expect(getTracking).toHaveBeenCalledTimes(1)
+    vi.mocked(getTracking).mockResolvedValue(devuelto('REVERSED'))
+    await tick(60_000)
+    expect(getTracking).toHaveBeenCalledTimes(2)
+    expect(heading()).toBe('Tu banco regresó la devolución: Flautas todavía te la debe.')
+    expect(screen.getByText('Actualizado a las 13:15')).toBeTruthy()
+    // Hasta 24 h desde que esta vista vio «Devuelto»; después ya no (al volver a la vista relee, como siempre).
+    await tick(24 * 60 * 60_000)
+    const hasta = vi.mocked(getTracking).mock.calls.length
+    expect(hasta).toBeGreaterThan(140) // cada 10 min durante 24 h
+    await tick(2 * 60 * 60_000)
+    expect(getTracking).toHaveBeenCalledTimes(hasta)
+  })
+
+  it('ronda 2 #3: con la pestaña oculta no relee; al volver a verse relee y sigue cada 10 min', async () => {
+    await show(cobrado({ status: 'COMPLETED', refundedAt: '2026-10-18T11:00:00Z', refund: { status: 'DONE', medio: 'SALDO' } }))
+    visibility = 'hidden'
+    await act(async () => { document.dispatchEvent(new Event('visibilitychange')) })
+    await tick(60 * 60_000)
+    expect(getTracking).toHaveBeenCalledTimes(1)
+    visibility = 'visible'
+    await act(async () => { document.dispatchEvent(new Event('visibilitychange')) })
+    await flush()
+    expect(getTracking).toHaveBeenCalledTimes(2)
+    await tick(10 * 60_000)
+    expect(getTracking).toHaveBeenCalledTimes(3)
+  })
+
+  it('ronda 2 #3: «Actualizado a las HH:MM» sale en todo pedido con tarjeta ya final; en curso o en caja, no', async () => {
+    for (const r of [
+      nc({ status: 'EXPIRED', cardStatus: 'RELEASED' }), // «Nadie»
+      tr({ paymentMode: 'CARD_ONLINE', status: 'CANCELLED_BY_STAFF', cardStatus: 'CAPTURED', canCancel: false }), // «Mi equipo»
+    ]) {
+      vi.mocked(getTracking).mockReset()
+      await show(r)
+      expect(screen.getByText('Actualizado a las 13:05'), r.status).toBeTruthy()
+      cleanup()
+    }
+    for (const r of [nc(), cobrado(), tr({ status: 'COMPLETED', canCancel: false })]) {
+      vi.mocked(getTracking).mockReset()
+      await show(r)
+      expect(screen.queryByText(/^Actualizado a las/), `${r.paymentMode} ${r.status}`).toBeNull()
+      cleanup()
+    }
+  })
+
+  it('ronda 2 #1: al ver resuelto el pago de su borrador, suelta la compra con tarjeta compartida entre pestañas', async () => {
+    const cuerpo: CreateOrderBody = {
+      items: [{ productId: 'p1', quantity: 1, modifiers: [] }], paymentMode: 'CARD_ONLINE', expectedTotal: '170.00', customer: { name: 'Ana' },
+    }
+    const abrir = async (r: Tracking) => {
+      vi.mocked(getTracking).mockResolvedValue(r)
+      const s = makeStore(null, null)
+      const { key } = beginAttempt(s.slug, cuerpo)!
+      settleAttempt(s.slug, { trackingToken: 'T'.repeat(32) }) // su borrador espera el pago, con su página abierta
+      s.trackingToken.value = 'T'.repeat(32)
+      render(withStore(s, <TrackingScreen />))
+      await flush()
+      sessionStorage.clear() // otra pestaña
+      return { slug: s.slug, key }
+    }
+    // Todavía esperando el pago: la misma compra en otra pestaña sigue reusando su llave.
+    const esperando = await abrir(tr({ status: 'AWAITING_PAYMENT', paymentMode: 'CARD_ONLINE', orderNumber: '' }))
+    expect(beginAttempt(esperando.slug, cuerpo)!.key).toBe(esperando.key)
+    cleanup()
+    // Pagado: otra igual ya es una compra nueva.
+    const pagado = await abrir(tr({ status: 'ACCEPTED', paymentMode: 'CARD_ONLINE', cardStatus: 'CAPTURED', paid: true }))
+    expect(beginAttempt(pagado.slug, cuerpo)!.key).not.toBe(pagado.key)
+  })
+
+  it('COMPLETED con notPickedUpAt: «No lo recogiste»', async () => {
+    await show(cobrado({ status: 'COMPLETED', notPickedUpAt: '2026-10-18T10:00:00Z' }))
+    expect(heading()).toBe('No lo recogiste')
+    expect(screen.getByText('Si quieres que te devuelvan tu pago, habla con Flautas.')).toBeTruthy() // ronda 1 M7
+    expect(money()).toBe('Tu pago se cobró.')
+    expect(document.body.textContent).not.toMatch(/Entregado|¡Gracias|PAGADO|Pasa por él/)
+    expect(progress()).toBeNull()
+    expect(screen.getByText('W7K3P')).toBeTruthy()
+  })
+
+  it('pasada por familias (Ruling 87): «No lo recogiste» nunca contradice lo que leyó antes de pagar (el cobro se queda; nada de saldo a favor)', async () => {
+    const leyo = createOrderT('es')('details.cardNadieNote', { negocio: 'Flautas' })
+    expect(leyo).toContain('Si no lo recoges o cambias de opinión, no se te devuelve solo: lo decide Flautas.')
+    expect(leyo).not.toMatch(/saldo a favor/)
+    await show(cobrado({ status: 'COMPLETED', notPickedUpAt: '2026-10-18T10:00:00Z' }))
+    expect(heading()).toBe('No lo recogiste')
+    expect(money()).toBe('Tu pago se cobró.')
+    expect(screen.getByText('Si quieres que te devuelvan tu pago, habla con Flautas.')).toBeTruthy()
+    expect(document.body.textContent).not.toMatch(/saldo a favor|No se te cobró|Te devolvieron|Devuelto/)
+  })
+
+  it('cancelar sólo si canCancel', async () => {
+    await show(nc({ canCancel: false }))
+    expect(cancelBtn()).toBeNull()
+    cleanup()
+    // El botón lo decide el SERVIDOR: si lo ofreciera, se pinta (y cancelar es el camino de siempre).
+    await show(nc({ canCancel: true }))
+    expect(screen.getByRole('button', { name: 'Cancelar pedido' })).toBeTruthy()
+    cleanup()
+    await show(cobrado({ canCancel: false }))
+    expect(cancelBtn()).toBeNull()
+  })
+
+  it('«Mi equipo» conserva su prueba de devolución pendiente (TrackingScreen.test.tsx:504)', async () => {
+    const REFUND_DUE = 'Tu tarjeta se cobró; el negocio te la devolverá.'
+    const miEquipo = (over: Partial<Tracking> = {}) => tr({ paymentMode: 'CARD_ONLINE', canCancel: false, ...over })
+    // La misma de la línea 504: cancelado por el negocio con la tarjeta cobrada. Aunque el servidor ya mande `refund`
+    // (en «Mi equipo» una devolución parcial también llega como DONE), nada cambia y nunca dice «Devuelto».
+    for (const refund of [undefined, { status: 'PENDING', medio: 'TARJETA' }, { status: 'DONE', medio: 'TARJETA' }] as Tracking['refund'][]) {
+      for (const requiresAcceptance of [undefined, true]) {
+        vi.mocked(getTracking).mockReset()
+        await show(miEquipo({ status: 'CANCELLED_BY_STAFF', cardStatus: 'CAPTURED', requiresAcceptance, ...(refund ? { refund } : {}) }))
+        expect(money(), JSON.stringify(refund)).toBe(REFUND_DUE)
+        expect(heading()).toBe('El negocio canceló tu pedido.')
+        expect(document.body.textContent).not.toMatch(/Devuelto|Devolviendo|Te devolvieron/)
+        await tick(60_000)
+        expect(getTracking).toHaveBeenCalledTimes(1) // «Mi equipo» final: deja de consultar como hoy
+        cleanup()
+      }
+    }
+    // Entregado con una devolución parcial: «Entregado» y «Tu pago se cobró.», como hoy.
+    await show(miEquipo({ status: 'COMPLETED', cardStatus: 'CAPTURED', paid: true, refund: { status: 'DONE', medio: 'TARJETA' } }))
+    expect(heading()).toBe('Entregado')
+    expect(money()).toBe('Tu pago se cobró.')
+  })
+
+  it('en inglés', async () => {
+    await show(nc(), 'en')
+    expect(heading()).toBe("Notifying Flautas… you're charged when they open your order.")
+    cleanup()
+    await show(cobrado({ status: 'COMPLETED', refundedAt: '2026-10-17T21:00:00Z', refund: { status: 'DONE', medio: 'SALDO' } }), 'en')
+    expect(heading()).toBe('Refunded')
+    expect(money()).toBe('Your payment was refunded as store credit at Flautas.')
   })
 })

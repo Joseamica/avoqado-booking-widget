@@ -42,15 +42,24 @@ export interface FichaNueva {
 
 const TREINTA_DIAS_S = 30 * 24 * 60 * 60
 
-/** La versión de sesión que firmó el SERVIDOR (`v` del token; S6). `null` si el token no trae una legible. */
-export function versionDelToken(token: string): number | null {
+/** Lo que firmó el SERVIDOR en el token, leído sin verificar (sólo para reconocer la sesión); `null` si no se lee. */
+function cargaDelToken(token: string): any {
   try {
     const p = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')
-    const v = JSON.parse(atob(p + '==='.slice((p.length + 3) % 4))).v
-    return Number.isInteger(v) ? v : null
+    return JSON.parse(atob(p + '==='.slice((p.length + 3) % 4)))
   } catch {
     return null
   }
+}
+/** La versión de sesión que firmó el SERVIDOR (`v` del token; S6). `null` si el token no trae una legible. */
+export function versionDelToken(token: string): number | null {
+  const v = cargaDelToken(token)?.v
+  return Number.isInteger(v) ? v : null
+}
+/** La ficha del token (`sub`: la clienta que resuelve el SERVIDOR, en la sesión única y en los tokens de hoy). `null` si no se lee. */
+export function clienteDelToken(token: string): string | null {
+  const sub = cargaDelToken(token)?.sub
+  return typeof sub === 'string' ? sub : null
 }
 
 /**
@@ -163,6 +172,14 @@ export function salidaDe(slug: string): string | null {
   }
   return cerroEnMemoria.get(slug) ?? null
 }
+
+/**
+ * D661 (ronda 3): la compra con tarjeta que la tienda comparte entre pestañas (`order/attempt.ts`) lleva los datos y la sesión de quien la
+ * empezó: «Cerrar sesión» la borra (`soltarLaPagina`). Ronda 4 (Ruling 54 extendida): también el intento pendiente de la pestaña (su
+ * cuerpo y su token): quien entre después no lo reenvía con «Reintentar».
+ */
+export const llaveCompraConTarjeta = (slug: string) => `avq_card_attempt:${slug}`
+export const llaveIntentoDePedido = (slug: string) => `avq_order_attempt:${slug}`
 
 /** Los dos tokens de hoy de ese negocio (pedidos y reservas). */
 function quitarTokensDeHoy(slug: string): void {
@@ -336,10 +353,11 @@ export function renovarLaPagina(slug: string, s: Superficie, enviado: string, le
 }
 
 /**
- * Sin `tokenQueFallo`: «Cerrar sesión». Con él: un 401. La superficie queda sin sesión (si era suya), y lo guardado se borra SÓLO si
- * sigue siendo esa misma sesión: el token que falló, o la sesión de la superficie con su renovación (misma identidad; codex-r5 E5,
- * r6 #2). Una sesión más nueva que guardó otra superficie u otra pestaña nunca se borra, y una respuesta tardía de una sesión anterior
- * no saca a la de ahora.
+ * Sin `tokenQueFallo`: «Cerrar sesión» (también borra la compra con tarjeta compartida y el intento pendiente de la pestaña, D661). Con
+ * él: un 401 (el intento se queda: espera a que ella entre otra vez). La superficie queda sin sesión (si era suya), y lo guardado se borra
+ * SÓLO si sigue siendo esa misma sesión: el token que falló, o la sesión de la superficie con su renovación (misma identidad; codex-r5 E5,
+ * r6 #2). Una sesión más nueva que guardó otra superficie u otra pestaña nunca se borra, y una respuesta tardía de una sesión anterior no
+ * saca a la de ahora.
  */
 export function soltarLaPagina(slug: string, s: Superficie, tokenQueFallo: string | undefined, leer: () => Lectura | null): void {
   const p = paginaDe(slug, s)
@@ -347,7 +365,19 @@ export function soltarLaPagina(slug: string, s: Superficie, tokenQueFallo: strin
   const l = leer()
   const laMismaGuardada = !!p && !!l && l.identidad === p.identidad
   if ((!!tokenQueFallo && l?.token === tokenQueFallo) || (deLaPagina && laMismaGuardada)) borrarSesion(slug)
-  if (tokenQueFallo === undefined) registrarSalida(slug)
+  if (tokenQueFallo === undefined) {
+    registrarSalida(slug)
+    try {
+      localStorage.removeItem(llaveCompraConTarjeta(slug))
+    } catch {
+      /* sin almacenamiento no hubo compra compartida */
+    }
+    try {
+      sessionStorage.removeItem(llaveIntentoDePedido(slug))
+    } catch {
+      /* sin almacenamiento no hubo intento */
+    }
+  }
   if (deLaPagina) fijarPagina(slug, s, null)
 }
 

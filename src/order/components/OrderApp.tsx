@@ -90,7 +90,9 @@ export function OrderApp({ accentColor }: { accentColor?: string }) {
   }, [store, token])
   // Un folio de «Nadie» dice cuál es y hasta qué hora; los demás pedidos, lo de siempre.
   const reminder = (r: Tracking): { title?: string; text: string } => {
-    if (r.requiresAcceptance !== false || r.paymentMode === 'CARD_ONLINE') return { text: t('tracking.inProgress') }
+    if (r.requiresAcceptance !== false) return { text: t('tracking.inProgress') }
+    // D661: la tarjeta de «Nadie» nunca se paga en caja: cobrada (y sin devolución), «está pagado»; apartada, lo de siempre.
+    if (r.paymentMode === 'CARD_ONLINE') return { text: r.paid && !r.refund ? t('tracking.folio.reminderPaid', { folio: r.orderNumber }) : t('tracking.inProgress') }
     if (partialOf(r)) return { title: t('tracking.folio.reminderTitle', { folio: r.orderNumber }), text: partialLine(r, t, store.locale) }
     if (isLapsedFolio(r) && !r.paid) return { title: t('tracking.folio.reminderTitle', { folio: r.orderNumber }), text: t('tracking.folio.reminderExpired') }
     if (r.paid || r.status !== 'PENDING_ACCEPTANCE') return { text: t('tracking.folio.reminderPaid', { folio: r.orderNumber }) }
@@ -118,7 +120,9 @@ export function OrderApp({ accentColor }: { accentColor?: string }) {
     if (info?.status !== 'OPEN') return null
     const until = closesAt(info.hours, new Date(), info.venue.timezone ?? 'America/Mexico_City')
     const { payAtPickup, cardOnline } = info.paymentModes ?? {}
-    const payChip = info.requiresAcceptance === false ? 'store.payAtCounterChip' : cardOnline ? (payAtPickup ? 'store.cardOrPickupChip' : 'store.cardChip') : payAtPickup ? 'store.payAtPickupChip' : null
+    // D661: «Nadie» con tarjeta en línea: se paga en línea (con su cuenta) o en caja.
+    const payChip = info.requiresAcceptance === false ? (cardOnline ? 'store.cardOrCounterChip' : 'store.payAtCounterChip')
+      : cardOnline ? (payAtPickup ? 'store.cardOrPickupChip' : 'store.cardChip') : payAtPickup ? 'store.payAtPickupChip' : null
     return (
       <div class="avq-o-chips">
         <span class="avq-o-chip avq-o-chip--ok">
@@ -140,10 +144,18 @@ export function OrderApp({ accentColor }: { accentColor?: string }) {
   const [pasoAtras, setPasoAtras] = useState<(() => void) | null>(null)
   const prestarAtras = (f: (() => void) | null) => setPasoAtras(() => f)
   const vinoDe = useRef<Screen>('cart')
+  // D661: entró para pagar con tarjeta («Pagar ahora» en «Nadie» sin sesión): al entrar regresa a «Tus datos», no al carrito. Se decide
+  // al llegar a «entrar» (y se apaga): si se sale con la flecha, la siguiente entrada (sus premios) regresa al carrito como siempre.
+  const paraPagar = useRef(false)
   useLayoutEffect(() => {
     const prev = from.current
     from.current = screen
-    if (screen === 'entrar' && prev !== 'entrar') vinoDe.current = prev
+    if (screen === 'entrar' && prev !== 'entrar') {
+      vinoDe.current = prev
+      const c = checkoutOf(store)
+      paraPagar.current = c.paraPagar
+      c.paraPagar = false
+    }
     const el = root.current
     if (!el || prev === screen || !ARRIVALS.has(screen)) return
     if (el.getBoundingClientRect().top < 0) el.scrollIntoView({ block: 'start' })
@@ -229,7 +241,7 @@ export function OrderApp({ accentColor }: { accentColor?: string }) {
         <div class="avq-o-entrar">
           <button type="button" class="avq-o-back" aria-label={t(pasoAtras ? 'entrar.atras' : 'entrar.back')}
             onClick={() => (pasoAtras ? pasoAtras() : store.go(vinoDe.current))}><Back /></button>
-          <EntrarConCuenta slug={store.slug} negocio={name} t={createT(store.locale)} onEntro={r => entroEnLaTienda(store, r)} alCambiarAtras={prestarAtras} />
+          <EntrarConCuenta slug={store.slug} negocio={name} t={createT(store.locale)} onEntro={r => entroEnLaTienda(store, r, paraPagar.current ? 'details' : 'cart')} alCambiarAtras={prestarAtras} />
         </div>
       )}
       {/* W4: «Mi cuenta» es la misma de reservas, con la sesión de la TIENDA; su folio de este aparato va arriba con la línea exacta. */}

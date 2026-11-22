@@ -798,3 +798,41 @@ describe('pulido W6: UN solo «atrás» en la tienda, y regresa un paso', () => 
     expect(screen.getByText('Hola, Ana')).toBeTruthy()
   })
 })
+
+describe('D661: la tarjeta en línea de «Nadie» en la portada y en el aviso del pedido', () => {
+  const T32 = 'T'.repeat(32)
+  const pedido = {
+    orderNumber: 'W7K3P', status: 'PENDING_ACCEPTANCE', paymentMode: 'CARD_ONLINE', cardStatus: 'AUTHORIZED', requiresAcceptance: false,
+    venueName: 'Flautas', venueSlug: 'a', items: [], total: 134, paid: false, estimatedReadyAt: null, acceptDeadlineAt: '2026-10-17T19:42:00Z',
+    rejectReason: null, createdAt: '2026-10-17T19:32:00Z', canCancel: false, venueTimezone: 'America/Mexico_City',
+  } as Tracking
+
+  it('el chip de cómo se paga: «En línea o en caja» con la tarjeta; sin ella, «Pagas en caja»', async () => {
+    render(withStore(makeStore(infoOf({ requiresAcceptance: false, paymentModes: { payAtPickup: true, cardOnline: true } }), menuOf(product())), <OrderApp />))
+    await flush()
+    expect(screen.getByText('En línea o en caja')).toBeTruthy()
+    expect(screen.queryByText('Pagas en caja')).toBeNull()
+    cleanup()
+    render(withStore(makeStore(infoOf({ requiresAcceptance: false }), menuOf(product())), <OrderApp />))
+    await flush()
+    expect(screen.getByText('Pagas en caja')).toBeTruthy()
+  })
+
+  it('el aviso del pedido: apartado, «Tienes un pedido en curso» (nunca «Paga en caja»); cobrado, «Tu pedido W7K3P está pagado»', async () => {
+    vi.mocked(getTracking).mockResolvedValue(pedido)
+    const s = makeStore(infoOf({ requiresAcceptance: false, paymentModes: { payAtPickup: true, cardOnline: true } }), menuOf(product()))
+    localStorage.setItem(`avq_order_last:${s.slug}`, JSON.stringify({ trackingToken: T32, orderNumber: 'W7K3P' }))
+    render(withStore(s, <OrderApp />))
+    await flush()
+    expect(screen.getByText('Tienes un pedido en curso')).toBeTruthy()
+    expect(screen.queryByText(/Paga en caja antes/)).toBeNull()
+    vi.mocked(getTracking).mockResolvedValue({ ...pedido, status: 'ACCEPTED', cardStatus: 'CAPTURED', paid: true })
+    await act(async () => { await vi.advanceTimersByTimeAsync(30_000) })
+    expect(screen.getByText('Tu pedido W7K3P está pagado')).toBeTruthy()
+    // Pagado pero devolviéndose: ya no se le dice «está pagado».
+    vi.mocked(getTracking).mockResolvedValue({ ...pedido, status: 'ACCEPTED', cardStatus: 'CAPTURED', paid: true, refund: { status: 'PENDING', medio: 'TARJETA' } })
+    await act(async () => { await vi.advanceTimersByTimeAsync(30_000) })
+    expect(screen.queryByText('Tu pedido W7K3P está pagado')).toBeNull()
+    expect(screen.getByText('Tienes un pedido en curso')).toBeTruthy()
+  })
+})

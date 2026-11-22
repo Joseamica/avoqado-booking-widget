@@ -14,6 +14,8 @@ export interface Cuenta {
   leyendo: boolean
   /** La última lectura falló (sin datos: el aviso y «Reintentar»; con ellos: «te enseñamos lo último que supimos»). */
   falla: 'sinRed' | 'generico' | null
+  /** Pasada por familias (Ruling 85): cuándo (ms, reloj del aparato) llegó la última lectura buena: «Actualizado a las HH:MM». */
+  leidaEn?: number
 }
 const VACIA: Cuenta = { data: null, leyendo: false, falla: null }
 
@@ -56,7 +58,7 @@ export async function leerCuenta(slug: string, s: Superficie, token: string): Pr
     const leida = await api.getCustomerPortal(slug, token, s)
     if (!vigente()) return null
     const data = { ...leida } // siempre otro objeto: las páginas de «Ver más» se pegan a ESTA lectura
-    c.value = { data, leyendo: false, falla: null }
+    c.value = { data, leyendo: false, falla: null, leidaEn: Date.now() }
     if (s === 'reservas' && activeVenueSlug.value === slug) {
       portalData.value = data
       // Fase 0.B: the portal carries "¿puedo reservar aquí?" — keep it fresh.

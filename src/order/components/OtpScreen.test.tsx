@@ -9,7 +9,7 @@ vi.mock('../api', async () => {
 import { ApiError, createOrder, requestOrderingOtp, verifyOrderingOtp } from '../api'
 import { checkoutOf } from '../checkout'
 import { loadSession } from '../session'
-import { fijarPagina, guardarSesion, leerSesion, paginaDe, soltarLaPagina } from '../../lib/sesionDeCliente'
+import { fijarPagina, guardarSesion, leerSesion, paginaDe, registrarSalida, soltarLaPagina } from '../../lib/sesionDeCliente'
 import { OtpScreen } from './OtpScreen'
 import { infoOf, makeStore, menuOf, withStore } from './testKit'
 import type { CreateOrderBody } from '../types'
@@ -161,6 +161,27 @@ describe('código de WhatsApp', () => {
     await flush()
     expect(screen.getByText('Código incorrecto.')).toBeTruthy()
     expect(createOrder).not.toHaveBeenCalled()
+  })
+
+  it('limpieza final (4): si la sesión cambia mientras va el pedido (salió en otro lado), deja esta pantalla con un aviso neutro y cierto', async () => {
+    const s = show()
+    vi.mocked(verifyOrderingOtp).mockResolvedValue(sesion as any)
+    let responder!: (v: unknown) => void
+    vi.mocked(createOrder).mockImplementationOnce(() => new Promise(r => { responder = r }) as any)
+    await flush()
+    fireEvent.input(screen.getAllByRole('textbox')[0], { target: { value: '123456' } })
+    await flush()
+    expect(createOrder).toHaveBeenCalledTimes(1)
+    await act(async () => { registrarSalida(s.slug) }) // «Cerrar sesión» en otra pestaña o en el portal de al lado
+    await act(async () => {
+      responder({
+        orderId: 'o1', onlineOrderId: 'oo1', trackingToken: 'T'.repeat(32), status: 'PENDING_ACCEPTANCE', orderNumber: '7',
+        total: '170.00', acceptDeadlineAt: '', replay: false,
+      })
+    })
+    await flush()
+    expect(s.screen.value).toBe('menu') // ni se queda en el código ni enseña el pedido (la respuesta ya no es de esta sesión)
+    expect(s.notice.value).toBe('Tu sesión cambió mientras se mandaba tu pedido. Si llegó, lo ves en «Mi cuenta» al entrar.')
   })
 
   it('si tras verificar bien el pedido vuelve a pedir código, lo dice claro (no se queda callado en esta pantalla)', async () => {

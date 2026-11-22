@@ -3,7 +3,8 @@ import { useContext, useId, useState } from 'preact/hooks'
 import { OrderStoreContext } from '../store'
 import { createOrderT } from '../i18n'
 import { API_BASE } from '../api'
-import { buildOrderBody, checkoutOf, send } from '../checkout'
+import { buildOrderBody, checkoutOf, empezarDeNuevo, medioFijo, send } from '../checkout'
+import { pendingAttempt } from '../attempt'
 import { formatMXN } from '../money'
 import { phoneE164 } from '../phone'
 import { CountryPhoneInput } from '../../components/ui/CountryPhoneInput'
@@ -22,6 +23,8 @@ const ENTRY_GUARD_MS = 400
  * con el total, va en un pie pegajoso DENTRO de la tienda (el mismo `.avq-o-cartfoot` del carrito, nunca `position: fixed`), con lo
  * que falta y el estado del envío arriba de él. Fase 2: con tarjeta en línea, «¿Cómo quieres pagar?» ofrece «Pagar ahora con tarjeta»
  * (primera y elegida) y, si el negocio lo acepta, «Pagar al recoger»; sólo con tarjeta no hay selector. Con tarjeta no se pide el código.
+ * D661: en «Nadie» con tarjeta en línea, «Pagar ahora con tarjeta» (elegida sólo con sesión) o «Pagar en caja»; la tarjeta va con su
+ * cuenta (sin sesión, a entrar) y el pie dice antes de pagar qué pasa con su dinero.
  */
 export function DetailsScreen() {
   const store = useContext(OrderStoreContext)!
@@ -33,12 +36,25 @@ export function DetailsScreen() {
   const set = (patch: Partial<typeof d>) => { c.draft.value = { ...c.draft.value, ...patch } }
   const info = store.info.value
   const q = store.quote.value
-  // «Nadie»: sólo nombre y nota, sin teléfono ni código ni medio de pago que elegir (se paga en caja). Un servidor viejo = «Mi equipo».
+  // «Nadie»: sólo nombre y nota, sin teléfono ni código (se paga en caja). Un servidor viejo = «Mi equipo». D661: con tarjeta en línea
+  // también se elige «Pagar ahora con tarjeta» (con su cuenta) o «Pagar en caja», que en «Nadie» siempre existe.
   const nadie = info?.requiresAcceptance === false
   const modes = info?.paymentModes
-  const choose = !nadie && !!modes?.cardOnline && modes.payAtPickup
-  const payment: PaymentMode = !nadie && modes?.cardOnline && !(choose && d.payment === 'PAY_AT_PICKUP') ? 'CARD_ONLINE' : 'PAY_AT_PICKUP'
+  const choose = !!modes?.cardOnline && (nadie || modes.payAtPickup)
+  // Sin elegir: en «Mi equipo» la tarjeta (no pide código); en «Nadie» sólo con sesión, porque sin ella «Pedir» llevaría a entrar
+  // (ronda 1, Ruling 46). Las dos opciones siguen a la vista. Pasada por familias (Ruling 83): con un pedido en camino o la pregunta del
+  // precio a la vista, el medio que se ve es el que se manda (`medioFijo`); con el pedido en camino, además, el radio no se mueve.
+  const pendiente = c.pending.value
+  const payment: PaymentMode = medioFijo(store) ?? (!modes?.cardOnline ? 'PAY_AT_PICKUP'
+    : !choose ? 'CARD_ONLINE'
+    : d.payment ?? (nadie && !c.conSesion.value ? 'PAY_AT_PICKUP' : 'CARD_ONLINE'))
   const card = payment === 'CARD_ONLINE'
+  // Ronda 2 #5 (Ruling 58): «El precio cambió · Confirmar» lleva el cuerpo con el medio de antes: al cambiar de medio la pregunta se va y
+  // «Pedir» manda el que se ve, con el total nuevo (ya está en la cotización).
+  const elegir = (m: PaymentMode) => {
+    set({ payment: m })
+    if (c.feedback.value?.kind === 'priceChanged') c.feedback.value = null
+  }
 
   const phone = phoneE164(d.dial, d.national)
   const name = d.name.trim()
@@ -52,9 +68,21 @@ export function DetailsScreen() {
     : null
   const busy = c.busy.value
   const f = c.feedback.value
+  // Limpieza final (3): con un pedido pendiente, la línea del radio dice sólo lo que puede hacer: entrar otra vez (su sesión se cerró: no hay
+  // «Reintentar»), sólo empezar de nuevo (su cuenta está desactivada: tampoco), o reintentar. Mientras va en camino, nada.
+  // Ajuste final (Ruling 111): una compra con tarjeta pendiente se recupera con SU llave antes de empezar otra (pudo pagarse en otra pestaña):
+  // sin «Empezar de nuevo» mientras «Reintentar» o entrar otra vez la puedan traer. Sólo con la cuenta desactivada (no hay cómo traerla).
+  const intento = pendingAttempt(store.slug)
+  const deTarjeta = intento?.body.paymentMode === 'CARD_ONLINE'
+  const sinSalida = f?.kind === 'error' && !f.retryable
+  const bloqueo = !pendiente || busy ? null
+    : intento?.requiereEntrar || f?.kind === 'sesionParaTerminar' ? (deTarjeta ? 'details.payLockedCardSesion' : 'details.payLockedSesion')
+    : sinSalida ? 'details.payLockedSolo'
+    : deTarjeta ? 'details.payLockedCard' : 'details.payLocked'
+  const empezar = !!bloqueo && (!deTarjeta || sinSalida)
   const open = info?.status === 'OPEN'
-  // Con un intento pendiente se manda ESE (el pedido anterior), no lo que hay en pantalla: el único camino es su «Reintentar».
-  const canSend = !missing && !!q?.ok && !busy && open && !c.pending.value
+  // Con un intento pendiente se manda ESE (el pedido anterior), no lo que hay en pantalla: su «Reintentar» o «Empezar de nuevo».
+  const canSend = !missing && !!q?.ok && !busy && open && !pendiente
 
   const confirm = (e: Event) => {
     // Al aparecer, «Confirmar pedido» queda donde estaba «Continuar» del carrito: con la sesión verificada y los datos ya completos,
@@ -123,13 +151,30 @@ export function DetailsScreen() {
                 <div key={m} class="avq-o-opt">
                   <label class="avq-o-opt__main">
                     <span class="avq-o-opt__mark">
-                      <input class="avq-o-opt__input" type="radio" name={`${id}-pay`} checked={payment === m} onChange={() => set({ payment: m })} />
+                      {/* Ronda 3 (Minor 4) y Ruling 83: con «Pedir» en camino, o un pedido pendiente, no se cambia (se manda el de ese pedido). */}
+                      <input class="avq-o-opt__input" type="radio" name={`${id}-pay`} checked={payment === m} disabled={busy || pendiente} onChange={() => elegir(m)} />
                     </span>
-                    <span class="avq-o-opt__text">{t(m === 'CARD_ONLINE' ? 'details.payCard' : 'details.payPickup')}</span>
+                    <span class="avq-o-opt__text">{t(m === 'CARD_ONLINE' ? 'details.payCard' : nadie ? 'details.payCounter' : 'details.payPickup')}</span>
                   </label>
                 </div>
               ))}
             </div>
+            {/* D661: en «Nadie» la tarjeta es de su cuenta; sin sesión, «Pedir» la lleva a entrar y la regresa aquí. Ajuste final (Ruling 113): las
+                condiciones de una compra nueva no se dicen con un pedido pendiente (puede ser de otro modo: se resuelve como se mandó). */}
+            {nadie && card && !c.conSesion.value && !pendiente && <p class="avq-o-help">{t('details.cardNeedsAccount')}</p>}
+          </div>
+        )}
+        {/* Ajuste final (Ruling 114): el pedido pendiente y su salida, también sin selector (un solo medio): con la cuenta desactivada no hay
+            «Reintentar» y «Empezar de nuevo» es la única. */}
+        {bloqueo && (
+          <div class="avq-o-field">
+            <p class="avq-o-help">{t(bloqueo)}</p>
+            {empezar && <>
+              <button type="button" class="avq-o-btn avq-o-btn--quiet" onClick={() => empezarDeNuevo(store)}>{t('details.startOver')}</button>
+              {/* Limpieza final (5): si el pendiente ya llegó, empezar de nuevo hace otro (uno de caja no se comparte, R54; uno con tarjeta sólo
+                  se suelta con la cuenta desactivada, Ruling 111). */}
+              <p class="avq-o-help">{t('details.startOverRepeats')}</p>
+            </>}
           </div>
         )}
         <div class="avq-o-privacy">
@@ -148,7 +193,7 @@ export function DetailsScreen() {
       <div class="avq-o-foot">
         {info?.contact?.address && <p>{info.contact.address}</p>}
         {info?.contact?.phone && <p>{info.contact.phone}</p>}
-        {!nadie && <>
+        {!nadie && !pendiente && <>
           <p>{card ? t('details.payCardNote') : t('cart.payAtPickup')}</p>
           <p>{t('details.cancelPolicy')}</p>
           <p>{t('details.updates')}</p>
@@ -159,7 +204,9 @@ export function DetailsScreen() {
           <span>{n === 1 ? t('details.summaryOne') : t('details.summary', { n })}</span>
           <span>{t('details.taxIncluded')}</span>
         </p>
-        {nadie && <p class="avq-o-confirm__pay">{t('details.payAtCounter')}</p>}
+        {/* D661: con «Pagar ahora», antes de pagar, qué pasa con su dinero. Pasada por familias (Ruling 87): sólo lo que la promesa garantiza
+            (se cobra al abrirlo; si nadie lo abre a tiempo, no; sin recoger o arrepentida, no se devuelve solo): nunca saldo a favor ni un destino. */}
+        {nadie && !pendiente && <p class="avq-o-confirm__pay">{card ? t('details.cardNadieNote', { negocio: venue }) : t('details.payAtCounter')}</p>}
         <CheckoutStatus />
         {missing && <p class="avq-o-confirm__msg">{missing}</p>}
         {/* Pulido W4 (1h·3 y 1h·4): el aviso trae sus propios botones («Confirmar» / «Pedir sin beneficios»); el del pie no compite. */}

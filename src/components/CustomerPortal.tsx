@@ -2,7 +2,7 @@ import { h } from 'preact'
 import { effect, signal } from '@preact/signals'
 import { useState, useEffect, useLayoutEffect, useRef, useId } from 'preact/hooks'
 import type { TFunction } from '../i18n'
-import type { CreditPackPublic, CustomerPortalData, MiTarjeta } from '../types'
+import type { CreditPackPublic, CustomerPortalData, MiPedido, MiTarjeta } from '../types'
 import { Spinner } from './ui/Spinner'
 import { Button } from './ui/Button'
 import { Input } from './ui/Input'
@@ -15,6 +15,7 @@ import {
 import { cuentaDe, leerCuenta } from '../state/miCuenta'
 import { alCambiarLaPagina, epocaDe, paginaDe, soltarLaPagina, type SesionEmitida, type Superficie } from '../lib/sesionDeCliente'
 import { FOLIO_CAMBIO, trackingUrl, type FolioCambioDetail } from '../order/events'
+import { formatTime } from '../order/hours'
 import { precio } from '../lib/precio'
 
 interface CustomerPortalProps {
@@ -89,6 +90,12 @@ effect(() => {
   if (v && cobroPorNegocio.peek()[v.slug] !== v.canCharge) cobroPorNegocio.value = { ...cobroPorNegocio.peek(), [v.slug]: v.canCharge }
 })
 const FINALES = new Set(['COMPLETED', 'REJECTED', 'EXPIRED', 'CANCELLED_BY_CUSTOMER', 'CANCELLED_BY_STAFF', 'PAYMENT_NOT_COMPLETED'])
+/** Ruling 85: una devolución a la vista se relee cada 10 min, hasta 24 h (los del seguimiento, Ruling 56). */
+const DEVOLUCION_RELEE_MS = 10 * 60_000
+const DEVOLUCION_VIGILA_MS = 24 * 60 * 60_000
+// ponytail: la relectura sola vuelve a traer a lo más 10 páginas de «Ver más» por lista (200 filas); más allá, esa lista regresa a lo que
+// alcance a cubrir. Subirlo si alguien de verdad abre más.
+const RELEER_MAS_PAGINAS = 10
 type Lista = 'pedidos' | 'tarjetas' | 'descuentos'
 /** «$1,234.50»: siempre con centavos, como la caja y los mockups (es y en escriben igual el dinero de México). */
 const dinero = (n: number) => '$' + new Intl.NumberFormat('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n)
@@ -122,9 +129,11 @@ export function CustomerPortal({
   const [showEmailLogin, setShowEmailLogin] = useState(false)
   // W4: las páginas siguientes que ya trajo «Ver más», pegadas a la primera página DE LA QUE SALIERON (`base`): si «Mi cuenta» se relee
   // (aquí, en otra apertura o en otro elemento), los datos son otros y esas páginas ya no cuentan (codex-w4-r1 #3, r2 #1).
-  const [mas, setMas] = useState<{ base: CustomerPortalData | null; listas: Partial<Record<Lista, { items: any[]; nextCursor: string | null }>> }>(
-    { base: null, listas: {} },
-  )
+  // Ajuste final (Ruling 112): `leidaEn`, de cuándo son esas páginas si son de una lectura anterior a `base` (la relectura sola las deja a la
+  // vista mientras trae las nuevas); sin él, de la misma lectura que `base`.
+  const [mas, setMas] = useState<{
+    base: CustomerPortalData | null; listas: Partial<Record<Lista, { items: any[]; nextCursor: string | null }>>; leidaEn?: number
+  }>({ base: null, listas: {} })
   const [trayendo, setTrayendo] = useState<Lista | null>(null)
   const [fallaMas, setFallaMas] = useState<Lista | null>(null)
   // W4: «Guardar en mi cuenta».
@@ -210,6 +219,23 @@ export function CustomerPortal({
   // Una página que no se pudo traer era de la lectura anterior: con datos nuevos, el aviso se va (sus páginas también).
   useEffect(() => { setFallaMas(null) }, [data])
 
+  // Pasada por familias (Ruling 85): con una devolución a la vista (un pedido con tarjeta en línea), «Mi cuenta» se relee sola cada 10 min
+  // con la pestaña a la vista, hasta 24 h desde que esta vista vio cada una, como el seguimiento (Ruling 56): el banco puede regresarla.
+  // Oculta, espera a que vuelva (la relectura de siempre al volver retoma la cuenta). Limpieza final (2): las 24 h son de cada pedido
+  // (su `trackingToken`), así un pintado de paso sin la fila (la relectura sola, mientras trae otra vez «Ver más») no las reinicia.
+  const devoluciones = [...(data?.pedidos?.items ?? []), ...(extra.pedidos?.items ?? [])]
+    .filter(p => p.pagoEnLinea === true && !!(p.refundedAt || p.refund || p.refundRequestedAt))
+    .map(p => p.trackingToken)
+  const conDevolucion = devoluciones.length > 0
+  const vistasDesde = useRef(new Map<string, number>())
+  useEffect(() => {
+    const ahora = Date.now()
+    for (const tt of devoluciones) if (!vistasDesde.current.has(tt)) vistasDesde.current.set(tt, ahora)
+    if (!devoluciones.some(tt => ahora < vistasDesde.current.get(tt)! + DEVOLUCION_VIGILA_MS)) return
+    const id = setTimeout(() => { if (document.visibilityState === 'visible') void releerSola.current() }, DEVOLUCION_RELEE_MS)
+    return () => clearTimeout(id)
+  }, [cuenta, devoluciones.join()])
+
   // D657: sin cobro en línea no se ofrecen paquetes (como BookingFlow y PaymentSelector: sólo `false` apaga; sin el dato, servidor
   // viejo, como antes). Sólo el de ESTE negocio (`cobroPorNegocio`, arriba). Se lee al pintar: si la página relee ESTE negocio,
   // «Comprar» se va o se trae la lista.
@@ -249,6 +275,53 @@ export function CustomerPortal({
   }
   releer.current = loadPortal
 
+  /**
+   * Limpieza final (2): la relectura sola (Ruling 85) no encoge «Ver más». Trae la primera página y, si ya había páginas siguientes, las vuelve
+   * a traer desde el cursor nuevo hasta cubrir las filas que había (más las que la primera empujó; a lo más 10 páginas por lista), así nada
+   * se queda viejo bajo «Actualizado a las…». Mientras llegan se ven las de antes; si una lista falla, regresa a su primera página.
+   */
+  async function releerConMas() {
+    const tkn = tokenActual()
+    const { data: antes, leidaEn: leidaAntes } = cuentaDe(venueSlug, sup).peek()
+    const paginas = mas.base === antes ? mas.listas : {}
+    const deCuando = mas.leidaEn ?? leidaAntes
+    if (!tkn) return
+    const nueva = await leerCuenta(venueSlug, sup, tkn)
+    const listas = (Object.keys(paginas) as Lista[]).filter(l => paginas[l]?.items.length)
+    if (!nueva || !listas.length) return
+    const epoca = epocaDe(venueSlug, sup)
+    const vigente = () => cuentaDe(venueSlug, sup).peek().data === nueva && epocaDe(venueSlug, sup) === epoca
+    setMas({ base: nueva, listas: paginas, leidaEn: deCuando })
+    enVuelo.current.mas = true
+    try {
+      const frescas: typeof paginas = {}
+      for (const lista of listas) {
+        const listar = lista === 'pedidos' ? api.listarMisPedidos : lista === 'tarjetas' ? api.listarMisTarjetas : api.listarMisDescuentos
+        const empujadas = lista === 'pedidos'
+          ? (nueva.pedidos?.items ?? []).filter(p => !antes?.pedidos?.items.some(v => v.trackingToken === p.trackingToken)).length : 0
+        const cubrir = paginas[lista]!.items.length + empujadas
+        let cursor = nueva[lista]?.nextCursor ?? null
+        const items: any[] = []
+        try {
+          for (let i = 0; cursor && items.length < cubrir && i < RELEER_MAS_PAGINAS; i++) {
+            const r = await listar(venueSlug, tkn, cursor, sup)
+            if (!vigente()) return
+            items.push(...r.items)
+            cursor = r.nextCursor
+          }
+          frescas[lista] = { items, nextCursor: cursor }
+        } catch {
+          /* esa lista regresa a su primera página (lo de antes ya no sería de esta lectura) */
+        }
+      }
+      if (vigente()) setMas({ base: nueva, listas: frescas })
+    } finally {
+      enVuelo.current.mas = false
+    }
+  }
+  const releerSola = useRef(releerConMas)
+  releerSola.current = releerConMas
+
   /** W4: «Ver más pedidos / tarjetas / descuentos» trae la página siguiente con la sesión de la superficie. */
   async function verMas(lista: Lista) {
     const tkn = tokenActual()
@@ -267,7 +340,10 @@ export function CustomerPortal({
       if (vigentes() !== base || epocaDe(venueSlug, sup) !== epoca) return
       setMas(m => {
         const listas = m.base === base ? m.listas : {}
-        return { base, listas: { ...listas, [lista]: { items: [...(listas[lista]?.items ?? []), ...r.items], nextCursor: r.nextCursor } } }
+        return {
+          base, listas: { ...listas, [lista]: { items: [...(listas[lista]?.items ?? []), ...r.items], nextCursor: r.nextCursor } },
+          leidaEn: m.base === base ? m.leidaEn : undefined,
+        }
       })
     } catch (err: any) {
       if (vigentes() !== base || epocaDe(venueSlug, sup) !== epoca || err?.data?.code === 'CUSTOMER_SESSION_CHANGED') return
@@ -653,8 +729,22 @@ export function CustomerPortal({
     new Intl.DateTimeFormat(intl, { day: 'numeric', month: 'short', ...(conAno ? { year: 'numeric' } : {}), timeZone: timezone }).format(new Date(iso))
   /** `yyyy-MM-dd` (ya en la zona del negocio) sin moverlo de día. */
   const dia = (ymd: string) => new Intl.DateTimeFormat(intl, { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }).format(new Date(`${ymd}T12:00:00Z`))
-  const estadoDe = (estado: string, pagado: boolean) =>
-    t(`cuenta.estados.${estado === 'PENDING_ACCEPTANCE' && pagado ? 'ACCEPTED' : estado}`).replace(/^cuenta\.estados\..*$/, t('cuenta.estados.OTRO'))
+  // D661 ronda 2 #2 (Ruling 55): un pedido pagado con tarjeta en línea (`pagoEnLinea`, sólo lo manda un servidor nuevo) nunca dice «por
+  // pagar» ni «paga en caja», y su dinero sólo se dice cuando es cierto: sus marcas primero, luego la tarjeta cobrada o apartada; si no,
+  // su estado sin dinero (su seguimiento dice el resto).
+  const estadoDe = (estado: string, pagado: boolean, enLinea = false) =>
+    t(`cuenta.estados.${estado !== 'PENDING_ACCEPTANCE' ? estado : pagado ? 'ACCEPTED' : enLinea ? 'OTRO' : estado}`)
+      .replace(/^cuenta\.estados\..*$/, t('cuenta.estados.OTRO'))
+  // Ronda 3: una devolución sin las marcas de «Nadie» (la de «Mi equipo») también manda sobre «Pagado con tarjeta» (su cobro sigue
+  // CAPTURED): en camino, «Devolviendo…»; hecha o registrada, «Te hicieron una devolución» (ronda 4: puede ser parcial y la lista no trae el
+  // monto; el «Devuelto» de «Nadie», siempre total, sale de `refundedAt`). Y manda sobre «No lo recogiste», como el seguimiento.
+  const marcaDe = (p: MiPedido) =>
+    p.refund?.status === 'REVERSED' ? t('cuenta.devolucionRegresada', { negocio: negocio || t('cuenta.elNegocio') })
+    : p.refundedAt ? t('cuenta.devuelto')
+    : p.refundRequestedAt || p.refund?.status === 'PENDING' ? t('cuenta.devolviendo')
+    : p.refund ? t('cuenta.teDevolvieron')
+    : p.notPickedUpAt ? t('cuenta.noLoRecogiste')
+    : null
   const pedidos = [...(data.pedidos?.items ?? []), ...(extra.pedidos?.items ?? [])]
   const tarjetas: MiTarjeta[] = [...(data.tarjetas?.items ?? []), ...(extra.tarjetas?.items ?? [])]
   const descuentos = [...(data.descuentos?.items ?? []), ...(extra.descuentos?.items ?? [])]
@@ -664,17 +754,23 @@ export function CustomerPortal({
   // caja antes de las 10:42.») sólo si es SU folio y dice lo mismo que la cuenta.
   const suyoDelAparato = pedidoDeHoy && pedidos.find(p => p.trackingToken === pedidoDeHoy.trackingToken)
   const deHoy = suyoDelAparato && suyoDelAparato.estado === pedidoDeHoy!.estado && suyoDelAparato.pagado === pedidoDeHoy!.pagado
-    ? pedidoDeHoy
+    ? { ...pedidoDeHoy!, enLinea: suyoDelAparato.pagoEnLinea === true }
     : (() => {
         const p = suyoDelAparato && !FINALES.has(suyoDelAparato.estado) ? suyoDelAparato
           : pedidos.find(x => !FINALES.has(x.estado) && new Intl.DateTimeFormat('en-CA', { timeZone: timezone }).format(new Date(x.creadoEl)) === hoy)
         if (!p) return null
-        const linea = p.estado === 'READY' ? t('cuenta.lineaListo')
+        const enLinea = p.pagoEnLinea === true
+        const linea = enLinea
+          ? marcaDe(p) ?? (p.estado === 'READY' ? t('cuenta.lineaListo')
+            : p.tarjeta === 'COBRADA' ? t('cuenta.pagadoConTarjeta')
+            : p.tarjeta === 'APARTADA' ? t('cuenta.tarjetaApartada')
+            : null)
+          : p.estado === 'READY' ? t('cuenta.lineaListo')
           : p.pagado ? t('cuenta.lineaPagado')
           : p.estado === 'PENDING_ACCEPTANCE' ? t('cuenta.pagaEnCaja')
           : p.estado === 'AWAITING_PAYMENT' ? t('cuenta.estados.AWAITING_PAYMENT')
           : t('cuenta.lineaPreparando')
-        return { folio: p.folio, estado: p.estado, pagado: p.pagado, linea, trackingToken: p.trackingToken }
+        return { folio: p.folio, estado: p.estado, pagado: p.pagado, linea, trackingToken: p.trackingToken, enLinea }
       })()
   const verPedido = (tt: string) => (onVerPedido ? onVerPedido(tt) : window.location.assign(trackingUrl(venueSlug, tt)))
   const sellos = data.stampCard?.enabled && customer ? data.stampCard : null
@@ -839,8 +935,8 @@ export function CustomerPortal({
         <div style={{ ...bloque, display: 'flex', alignItems: 'center', gap: '12px', background: '#EAF6EE' }}>
           <div style={{ flex: 1, minWidth: 0 }}>
             <p style={{ ...tituloBloque, color: '#0B6B36' }}>{t('cuenta.pedidoDeHoy')}</p>
-            <b style={{ color: '#000', letterSpacing: '0.04em' }}>{`${deHoy.folio} · ${estadoDe(deHoy.estado, deHoy.pagado).toLocaleLowerCase(intl)}`}</b>
-            <small style={{ ...chico, color: '#3A4A3F' }}>{deHoy.linea}</small>
+            <b style={{ color: '#000', letterSpacing: '0.04em' }}>{`${deHoy.folio} · ${estadoDe(deHoy.estado, deHoy.pagado, deHoy.enLinea).toLocaleLowerCase(intl)}`}</b>
+            {deHoy.linea && <small style={{ ...chico, color: '#3A4A3F' }}>{deHoy.linea}</small>}
           </div>
           <button type="button" style={{ ...botonBlanco, marginTop: 0, background: '#FFF', color: '#000' }} onClick={() => verPedido(deHoy.trackingToken)}>{t('cuenta.ver')}</button>
         </div>
@@ -966,23 +1062,42 @@ export function CustomerPortal({
       {pedidos.length > 0 && (
         <div style={bloque}>
           <p style={tituloBloque}>{t('cuenta.pedidos')}</p>
-          {pedidos.map(p => (
-            <button
-              key={p.trackingToken}
-              type="button"
-              onClick={() => verPedido(p.trackingToken)}
-              style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', width: '100%', minHeight: '44px', padding: '6px 0', border: 'none', background: 'none', textAlign: 'left', cursor: 'pointer', color: 'var(--avq-fg, #000)' }}
-            >
-              <span style={{ minWidth: 0 }}>
-                <b style={{ fontSize: '14px', letterSpacing: '0.04em' }}>{`${p.folio} · ${dinero(p.total)}`}</b>
-                <small style={chico}>{fecha(p.creadoEl)}</small>
-              </span>
-              <span style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'flex-end', gap: '4px' }}>
-                <span style={pildora(false)}>{estadoDe(p.estado, p.pagado)}</span>
-                {p.pagado && <span style={pildora(true)}>{t('cuenta.pagado')}</span>}
-              </span>
-            </button>
-          ))}
+          {pedidos.map(p => {
+            // Con tarjeta en línea (Ruling 55): una marca se dice sola (su estado la contradiría: «Entregado» de uno que no recogió);
+            // si no, su estado, «Pagado con tarjeta» sólo si se cobró y la tarjeta apartada en su línea. Sin `pagoEnLinea`, como hoy.
+            const enLinea = p.pagoEnLinea === true
+            const marca = enLinea ? marcaDe(p) : null
+            const linea = marca ?? (enLinea && p.tarjeta === 'APARTADA' ? t('cuenta.tarjetaApartada') : null)
+            const pagado = enLinea ? p.tarjeta === 'COBRADA' : p.pagado
+            return (
+              <button
+                key={p.trackingToken}
+                type="button"
+                onClick={() => verPedido(p.trackingToken)}
+                style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', width: '100%', minHeight: '44px', padding: '6px 0', border: 'none', background: 'none', textAlign: 'left', cursor: 'pointer', color: 'var(--avq-fg, #000)' }}
+              >
+                <span style={{ minWidth: 0 }}>
+                  <b style={{ fontSize: '14px', letterSpacing: '0.04em' }}>{`${p.folio} · ${dinero(p.total)}`}</b>
+                  <small style={chico}>{fecha(p.creadoEl)}</small>
+                  {linea && <small style={chico}>{linea}</small>}
+                </span>
+                {!marca && (
+                  <span style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'flex-end', gap: '4px' }}>
+                    <span style={pildora(false)}>{estadoDe(p.estado, p.pagado, enLinea)}</span>
+                    {pagado && <span style={pildora(true)}>{t(enLinea ? 'cuenta.pagadoConTarjeta' : 'cuenta.pagado')}</span>}
+                  </span>
+                )}
+              </button>
+            )
+          })}
+          {/* Ruling 85: el dinero de una devolución todavía puede cambiar; se dice de cuándo es lo que se ve. Ruling 112: la hora más vieja de lo
+              que se ve (filas de «Ver más» de antes, mientras llegan las nuevas). */}
+          {conDevolucion && cuenta.leidaEn && (
+            <small style={chico}>{t('cuenta.actualizadoA', {
+              hora: formatTime(new Date(Math.min(cuenta.leidaEn, (extra.pedidos?.items.length && mas.leidaEn) || Infinity)).toISOString(), timezone,
+                intl === 'en-US' ? 'en' : 'es'),
+            })}</small>
+          )}
           {verMasBoton('pedidos', t('cuenta.verMasPedidos'), pedidos.length, data.pedidos?.total)}
         </div>
       )}

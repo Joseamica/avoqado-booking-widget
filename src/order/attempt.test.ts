@@ -1,8 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { beginAttempt, newAttemptKey, pendingAttempt, settleAttempt } from './attempt'
+import {
+  autorizarIntento, beginAttempt, newAttemptKey, pendingAttempt, reautorizarIntento, settleAttempt, soltarCompraConTarjeta,
+} from './attempt'
+import { identidadDe, soltarLaPagina } from '../lib/sesionDeCliente'
 import type { CreateOrderBody } from './types'
 
 const KEY_RE = /^[A-Za-z0-9_-]{32,64}$/
+const TEL_ANA = { tipo: 'PHONE' as const, valor: '+525544422262', metodo: 'WHATSAPP' as const, probadoEn: 1 }
 
 const body = (expectedTotal = '206.00'): CreateOrderBody => ({
   items: [{ productId: 'p-flauta', quantity: 2, modifiers: [{ modifierId: 'm-salsa', quantity: 1 }] }],
@@ -93,11 +97,303 @@ describe('beginAttempt / pendingAttempt / settleAttempt', () => {
     expect(sessionStorage.getItem('avq_order_attempt:flautas-coyoacan')).toBeNull()
   })
 
+  it('ronda 5 (3): al entrar, el intento que esperaba una sesión sólo se reautoriza para SU clienta; si entra otra, se suelta', () => {
+    const jwt = (sub: string) => `h.${btoa(JSON.stringify({ sub }))}.s` // la ficha (`sub`) legible, como en los del SERVIDOR
+    // [token con que salió, token con que entra, ¿se reautoriza?]; sin poder leer alguna de las dos fichas, como hoy.
+    const casos: [string, string, boolean][] = [
+      [jwt('c1'), jwt('c2'), false], [jwt('c1'), jwt('c1'), true], ['tok-A', jwt('c2'), true], [jwt('c1'), 'tok-B', true],
+    ]
+    for (const [salio, entra, sigue] of casos) {
+      sessionStorage.clear()
+      const a = beginAttempt('flautas-coyoacan', body(), salio)!
+      autorizarIntento('flautas-coyoacan', { requiereEntrar: true }) // su token recibió 401
+      reautorizarIntento('flautas-coyoacan', entra, true) // entró con su cuenta
+      expect(pendingAttempt('flautas-coyoacan'), `${salio} → ${entra}`)
+        .toEqual(sigue ? { ...a, token: entra, requiereEntrar: false, porSesion: true } : null)
+    }
+    // Ruling 77: con el código de WhatsApp (que prueba el teléfono del propio intento) se reautoriza aunque resuelva a otra ficha.
+    sessionStorage.clear()
+    const c = beginAttempt('flautas-coyoacan', body(), jwt('c1'))!
+    autorizarIntento('flautas-coyoacan', { requiereEntrar: true })
+    reautorizarIntento('flautas-coyoacan', jwt('c3'))
+    expect(pendingAttempt('flautas-coyoacan')).toEqual({ ...c, token: jwt('c3'), requiereEntrar: false, porSesion: true })
+    // Un intento que no espera entrar (respuesta perdida) no se toca al entrar.
+    sessionStorage.clear()
+    const b = beginAttempt('flautas-coyoacan', body(), jwt('c1'))!
+    reautorizarIntento('flautas-coyoacan', jwt('c2'), true)
+    expect(pendingAttempt('flautas-coyoacan')).toEqual(b)
+  })
+
   it('si guardar lanza (cuota llena, modo privado), beginAttempt devuelve null', () => {
     vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
       throw new DOMException('lleno', 'QuotaExceededError')
     })
     expect(beginAttempt('flautas-coyoacan', body())).toBeNull()
     expect(pendingAttempt('flautas-coyoacan')).toBeNull()
+  })
+})
+
+describe('ronda 2 #1 (Ruling 54): la compra con tarjeta en curso se comparte entre las pestañas del navegador', () => {
+  const tarjeta = (over: Partial<CreateOrderBody> = {}): CreateOrderBody => ({ ...body(), paymentMode: 'CARD_ONLINE', ...over })
+  /** Otra pestaña del mismo navegador: su sessionStorage empieza vacía; la localStorage es la misma. */
+  const otraPestana = () => sessionStorage.clear()
+  beforeEach(() => localStorage.clear())
+
+  it('la pestaña duplicada (misma sesión, mismos datos) reusa el intento de la primera: el servidor devuelve su borrador', () => {
+    const a = beginAttempt('flautas', tarjeta(), 'tok-A')!
+    otraPestana()
+    const b = beginAttempt('flautas', tarjeta(), 'tok-A')!
+    expect(b).toEqual(a)
+    expect(pendingAttempt('flautas')).toEqual(a) // queda como el intento de ESTA pestaña: sus reintentos llevan lo mismo
+    // «Mi equipo» sin sesión: sin token en las dos, también.
+    localStorage.clear()
+    otraPestana()
+    const c = beginAttempt('flautas', tarjeta())!
+    otraPestana()
+    expect(beginAttempt('flautas', tarjeta())!.key).toBe(c.key)
+  })
+
+  it('ronda 3 (Ruling 54 enmendada): otra sesión con el mismo carrito (otra clienta en el mismo navegador) es otra compra', () => {
+    const a = beginAttempt('flautas', tarjeta(), 'tok-A')!
+    otraPestana()
+    expect(beginAttempt('flautas', tarjeta(), 'tok-B')!.key).not.toBe(a.key)
+    localStorage.clear()
+    otraPestana()
+    const conSesion = beginAttempt('flautas', tarjeta(), 'tok-A')!
+    otraPestana()
+    expect(beginAttempt('flautas', tarjeta(), null)!.key).not.toBe(conSesion.key) // sin sesión no toma la de alguien con sesión
+  })
+
+  it('ronda 4 (Minor C): la misma clienta con su sesión renovada por el SERVIDOR (otro token, la misma identidad) reusa la compra; otra clienta, no', () => {
+    const ana = { customer: { id: 'c1', firstName: 'Ana', lastName: null, email: null, phone: null }, contactos: [TEL_ANA] }
+    const a = beginAttempt('flautas', tarjeta(), 'tok-A', identidadDe({ token: 'tok-A', ...ana }))!
+    otraPestana()
+    // Pasado un día, cualquier petición con sesión regresa otra (`x-customer-session`): la misma ficha, versión y contactos.
+    const b = beginAttempt('flautas', tarjeta(), 'tok-A2', identidadDe({ token: 'tok-A2', ...ana }))!
+    expect(b).toEqual(a) // la misma petición: su llave, su cuerpo y el token con que salió
+    // Otra clienta con el mismo cuerpo exacto (sólo la sesión las distingue): su propia compra.
+    otraPestana()
+    const bea = { customer: { id: 'c2', firstName: 'Bea', lastName: null, email: null, phone: null }, contactos: [{ ...TEL_ANA, valor: '+525599998888' }] }
+    expect(beginAttempt('flautas', tarjeta(), 'tok-B', identidadDe({ token: 'tok-B', ...bea }))!.key).not.toBe(a.key)
+  })
+
+  it('ronda 3: la misma sesión con un dato corregido (correo, teléfono, nombre, nota o premio) es otra compra', () => {
+    const corregidos: Partial<CreateOrderBody>[] = [
+      { customer: { name: 'Ana López', phone: '+525544422262', email: 'ana@correo.mx' } },
+      { customer: { name: 'Ana López', phone: '+525500000000' } },
+      { customer: { name: 'Ana', phone: '+525544422262' } },
+      { note: 'sin cebolla' },
+      { beneficios: { premioId: 'r1' } },
+    ]
+    for (const c of corregidos) {
+      localStorage.clear()
+      otraPestana()
+      const a = beginAttempt('flautas', tarjeta(), 'tok-A')!
+      otraPestana()
+      expect(beginAttempt('flautas', tarjeta(c), 'tok-A')!.key, JSON.stringify(c)).not.toBe(a.key)
+    }
+  })
+
+  it('ronda 3: «Cerrar sesión» (en la tienda o en reservas) borra la compra compartida, con sus datos y su sesión', () => {
+    for (const superficie of ['pedidos', 'reservas'] as const) {
+      localStorage.clear()
+      otraPestana()
+      const a = beginAttempt('flautas', tarjeta(), 'tok-A')!
+      settleAttempt('flautas', { trackingToken: 'D'.repeat(32) })
+      expect(localStorage.getItem('avq_card_attempt:flautas')).toContain('tok-A')
+      soltarLaPagina('flautas', superficie, undefined, () => null)
+      expect(localStorage.getItem('avq_card_attempt:flautas'), superficie).toBeNull()
+      otraPestana()
+      expect(beginAttempt('flautas', tarjeta(), 'tok-A')!.key).not.toBe(a.key)
+    }
+  })
+
+  it('ronda 4 (Ruling 54 extendida): «Cerrar sesión» (en la tienda o en reservas) también suelta el intento pendiente de ESTA pestaña; un 401, no', () => {
+    for (const superficie of ['pedidos', 'reservas'] as const) {
+      for (const cuerpo of [tarjeta(), body()]) {
+        localStorage.clear()
+        otraPestana()
+        beginAttempt('flautas', cuerpo, 'tok-A') // su respuesta se perdió: sigue pendiente
+        soltarLaPagina('flautas', superficie, undefined, () => null)
+        expect(pendingAttempt('flautas'), `${superficie} ${cuerpo.paymentMode}`).toBeNull()
+      }
+    }
+    // Un 401 no es salir: el intento espera a que ella entre otra vez (W3-r3) y se queda.
+    otraPestana()
+    const a = beginAttempt('flautas', body(), 'tok-A')!
+    soltarLaPagina('flautas', 'pedidos', 'tok-A', () => null)
+    expect(pendingAttempt('flautas')).toEqual(a)
+  })
+
+  it('otro carrito, o pagar en caja: un intento nuevo (la caja nunca se comparte)', () => {
+    const a = beginAttempt('flautas', tarjeta())!
+    otraPestana()
+    expect(beginAttempt('flautas', tarjeta({ items: [{ productId: 'p-flauta', quantity: 3, modifiers: [] }] }))!.key).not.toBe(a.key)
+    // En caja, el mismo carrito tampoco se comparte: cada pestaña el suyo, como hoy.
+    otraPestana()
+    const caja = beginAttempt('flautas', body())!
+    otraPestana()
+    expect(beginAttempt('flautas', body())!.key).not.toBe(caja.key)
+  })
+
+  it('con su página de pago abierta sigue compartida; resuelta (o sin página) ya no: la siguiente es nueva', () => {
+    const a = beginAttempt('flautas', tarjeta())!
+    settleAttempt('flautas', { trackingToken: 'D'.repeat(32) }) // borrador esperando su pago, con su página
+    expect(pendingAttempt('flautas')).toBeNull()
+    otraPestana()
+    expect(beginAttempt('flautas', tarjeta())!.key).toBe(a.key)
+    settleAttempt('flautas') // la respuesta ya no dejó página abierta (pagado, vencido o un rechazo)
+    otraPestana()
+    expect(beginAttempt('flautas', tarjeta())!.key).not.toBe(a.key)
+  })
+
+  it('el seguimiento la vio resuelta: soltarCompraConTarjeta la suelta (sólo la de ESE seguimiento)', () => {
+    const a = beginAttempt('flautas', tarjeta())!
+    settleAttempt('flautas', { trackingToken: 'D'.repeat(32) })
+    soltarCompraConTarjeta('flautas', 'E'.repeat(32)) // otro pedido: no la toca
+    otraPestana()
+    expect(beginAttempt('flautas', tarjeta())!.key).toBe(a.key)
+    settleAttempt('flautas', { trackingToken: 'D'.repeat(32) })
+    soltarCompraConTarjeta('flautas', 'D'.repeat(32))
+    otraPestana()
+    expect(beginAttempt('flautas', tarjeta())!.key).not.toBe(a.key)
+  })
+
+  it('a los 35 min de su última página abierta (lo que el SERVIDOR deja abierta la de Stripe) deja de compartirse', () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    try {
+      const a = beginAttempt('flautas', tarjeta())!
+      settleAttempt('flautas', { trackingToken: 'D'.repeat(32) })
+      vi.setSystemTime(Date.now() + 34 * 60_000)
+      otraPestana()
+      expect(beginAttempt('flautas', tarjeta())!.key).toBe(a.key)
+      otraPestana()
+      vi.setSystemTime(Date.now() + 2 * 60_000)
+      expect(beginAttempt('flautas', tarjeta())!.key).not.toBe(a.key)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('ronda 3 (Minor 3): si su página sigue abierta en un reintento (el SERVIDOR la renueva), los 35 min vuelven a contar', () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    try {
+      const a = beginAttempt('flautas', tarjeta())!
+      settleAttempt('flautas', { trackingToken: 'D'.repeat(32) })
+      vi.setSystemTime(Date.now() + 30 * 60_000)
+      otraPestana()
+      expect(beginAttempt('flautas', tarjeta())!.key).toBe(a.key)
+      settleAttempt('flautas', { trackingToken: 'D'.repeat(32) }) // su reintento volvió con la página abierta
+      vi.setSystemTime(Date.now() + 30 * 60_000)
+      otraPestana()
+      expect(beginAttempt('flautas', tarjeta())!.key).toBe(a.key)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('ronda 3 (Minor 2): una compra vencida se borra al leerla (sus datos y su sesión no se quedan en el navegador)', () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    try {
+      beginAttempt('flautas', tarjeta(), 'tok-A')
+      settleAttempt('flautas', { trackingToken: 'D'.repeat(32) })
+      expect(localStorage.getItem('avq_card_attempt:flautas')).toContain('tok-A')
+      vi.setSystemTime(Date.now() + 36 * 60_000)
+      soltarCompraConTarjeta('flautas', 'E'.repeat(32)) // cualquier lectura (aquí, la del seguimiento de otro pedido)
+      expect(localStorage.getItem('avq_card_attempt:flautas')).toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  describe('pasada por familias (Ruling 82): un registro por compra, acotado', () => {
+    const y = () => tarjeta({ items: [{ productId: 'p-taco', quantity: 1, modifiers: [] }] })
+    it('empezar otra compra Y no borra la de X: la copia exacta de X (mismo cuerpo, misma sesión) recupera la llave de X', () => {
+      for (const comoQuedoX of ['pagina abierta', 'respuesta perdida'] as const) {
+        localStorage.clear()
+        otraPestana()
+        const x = beginAttempt('flautas', tarjeta(), 'tok-A')!
+        if (comoQuedoX === 'pagina abierta') settleAttempt('flautas', { trackingToken: 'D'.repeat(32) })
+        otraPestana()
+        const deY = beginAttempt('flautas', y(), 'tok-A')!
+        expect(deY.key, comoQuedoX).not.toBe(x.key)
+        settleAttempt('flautas', { trackingToken: 'Y'.repeat(32) })
+        otraPestana()
+        expect(beginAttempt('flautas', tarjeta(), 'tok-A')!.key, comoQuedoX).toBe(x.key)
+        otraPestana()
+        expect(beginAttempt('flautas', y(), 'tok-A')!.key, comoQuedoX).toBe(deY.key) // y la de Y sigue siendo de Y
+      }
+    })
+
+    it('soltar una compra (resuelta, sin página o vista en su seguimiento) no suelta las otras', () => {
+      const x = beginAttempt('flautas', tarjeta(), 'tok-A')!
+      settleAttempt('flautas', { trackingToken: 'D'.repeat(32) })
+      otraPestana()
+      const deY = beginAttempt('flautas', y(), 'tok-A')!
+      settleAttempt('flautas') // la respuesta de Y no dejó página abierta: Y ya es nueva
+      otraPestana()
+      expect(beginAttempt('flautas', tarjeta(), 'tok-A')!.key).toBe(x.key)
+      settleAttempt('flautas', { trackingToken: 'D'.repeat(32) })
+      soltarCompraConTarjeta('flautas', 'D'.repeat(32)) // el seguimiento de X la vio resuelta
+      otraPestana()
+      const y2 = beginAttempt('flautas', y(), 'tok-A')!
+      expect(y2.key).not.toBe(deY.key)
+      settleAttempt('flautas', { trackingToken: 'Y'.repeat(32) })
+      otraPestana()
+      expect(beginAttempt('flautas', tarjeta(), 'tok-A')!.key).not.toBe(x.key)
+      otraPestana()
+      expect(beginAttempt('flautas', y(), 'tok-A')!.key).toBe(y2.key)
+    })
+
+    it('a lo más 5 compras: al pasar del tope sale la de actividad más antigua', () => {
+      const de = (i: number) => tarjeta({ expectedTotal: `${i}.00` })
+      const llaves: string[] = []
+      for (let i = 1; i <= 5; i++) {
+        otraPestana()
+        llaves.push(beginAttempt('flautas', de(i), 'tok-A')!.key)
+      }
+      // La 1 sigue con su página abierta en un reintento (el SERVIDOR la renovó): cuenta como reciente.
+      otraPestana()
+      expect(beginAttempt('flautas', de(1), 'tok-A')!.key).toBe(llaves[0])
+      settleAttempt('flautas', { trackingToken: 'D'.repeat(32) })
+      otraPestana()
+      beginAttempt('flautas', de(6), 'tok-A') // la sexta: sale la 2, la de actividad más antigua
+      expect(JSON.parse(localStorage.getItem('avq_card_attempt:flautas')!)).toHaveLength(5)
+      for (const i of [1, 3, 4, 5]) {
+        otraPestana()
+        expect(beginAttempt('flautas', de(i), 'tok-A')!.key, `compra ${i}`).toBe(llaves[i - 1])
+      }
+      otraPestana()
+      expect(beginAttempt('flautas', de(2), 'tok-A')!.key).not.toBe(llaves[1])
+    })
+
+    it('cada compra vence a su hora: X a los 35 min; Y, empezada después, todavía se comparte', () => {
+      vi.useFakeTimers({ toFake: ['Date'] })
+      try {
+        const x = beginAttempt('flautas', tarjeta(), 'tok-A')!
+        vi.setSystemTime(Date.now() + 20 * 60_000)
+        otraPestana()
+        const deY = beginAttempt('flautas', y(), 'tok-A')!
+        vi.setSystemTime(Date.now() + 16 * 60_000) // X lleva 36 min; Y, 16
+        otraPestana()
+        expect(beginAttempt('flautas', tarjeta(), 'tok-A')!.key).not.toBe(x.key)
+        otraPestana()
+        expect(beginAttempt('flautas', y(), 'tok-A')!.key).toBe(deY.key)
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+  })
+
+  it('sin localStorage (bloqueado o lleno), cada pestaña su intento, como antes', () => {
+    vi.spyOn(globalThis, 'localStorage', 'get').mockImplementation(() => {
+      throw new DOMException('bloqueado', 'SecurityError')
+    })
+    const a = beginAttempt('flautas', tarjeta())!
+    expect(a.key).toMatch(KEY_RE)
+    expect(() => settleAttempt('flautas', { trackingToken: 'D'.repeat(32) })).not.toThrow()
+    expect(() => soltarCompraConTarjeta('flautas', 'D'.repeat(32))).not.toThrow()
+    otraPestana()
+    expect(beginAttempt('flautas', tarjeta())!.key).not.toBe(a.key)
   })
 })

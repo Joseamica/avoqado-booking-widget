@@ -12,11 +12,15 @@ const api = vi.hoisted(() => ({
 vi.mock('./api', async () => ({ ...(await vi.importActual<typeof import('./api')>('./api')), ...api }))
 
 import { ApiError } from './api'
-import { buildOrderBody, checkoutOf, entroEnLaTienda, isDefinitive, nav, phoneToVerify, retry, send, storageWorks, submitOrder, verifyPhone } from './checkout'
+import {
+  buildOrderBody, checkoutOf, cotizar, entroEnLaTienda, isDefinitive, nav, phoneToVerify, retry, salioEnLaTienda, send, storageWorks, submitOrder,
+  verifyPhone,
+} from './checkout'
+import { toQuoteItems } from './cart'
 import { createOrderStore, type OrderStore } from './store'
 import { loadLastOrder, loadSession, saveSession } from './session'
-import { borrarSesion, guardarSesion, leerSesion, paginaDe } from '../lib/sesionDeCliente'
-import { setCustomerSession, tokenParaMandar } from '../state/booking'
+import { aplicarRenovacion, borrarSesion, documentoNuevoParaPruebas, guardarSesion, leerSesion, paginaDe, registrarSalida } from '../lib/sesionDeCliente'
+import { clearCustomerSession, setCustomerSession, tokenParaMandar } from '../state/booking'
 import { pendingAttempt } from './attempt'
 import { phoneE164 } from './phone'
 import type { CartLine } from './cart'
@@ -666,22 +670,156 @@ describe('fase 2: pagar con tarjeta', () => {
     expect(assign).toHaveBeenCalledWith(URL_PAGO)
   })
 
-  it.each([
-    ['CARD_PAYMENT_NOT_ACCEPTED', 'Este negocio ya no acepta tarjeta en línea. Elige pagar al recoger.'],
-    ['CARD_AMOUNT_OUT_OF_RANGE', 'El total no se puede pagar con tarjeta en línea (mínimo $10, máximo $50,000).'],
-  ])('400 %s ⇒ su texto, sin «Reintentar», y el intento se borra', async (code, text) => {
+  it('400 CARD_AMOUNT_OUT_OF_RANGE ⇒ su texto, sin «Reintentar», y el intento se borra', async () => {
     const { store, body } = card()
     store.info.value = { ...store.info.value!, paymentModes: { payAtPickup: true, cardOnline: true } }
-    api.createOrder.mockRejectedValueOnce(new ApiError('x', 400, code))
-    expect(await submitOrder(store, body)).toEqual({ kind: 'error', message: text, retryable: false })
+    api.createOrder.mockRejectedValueOnce(new ApiError('x', 400, 'CARD_AMOUNT_OUT_OF_RANGE'))
+    expect(await submitOrder(store, body)).toEqual({
+      kind: 'error', message: 'El total no se puede pagar con tarjeta en línea (mínimo $10, máximo $50,000).', retryable: false,
+    })
     expect(pendingAttempt(store.slug)).toBeNull()
+  })
+
+  it('ronda 2 (Ruling 59): 400 CARD_PAYMENT_NOT_ACCEPTED ⇒ su texto sin «Reintentar», el intento se borra, /info se relee y la caja queda elegida', async () => {
+    const { store, body } = card()
+    store.info.value = { ...store.info.value!, paymentModes: { payAtPickup: true, cardOnline: true } }
+    api.createOrder.mockRejectedValueOnce(new ApiError('x', 400, 'CARD_PAYMENT_NOT_ACCEPTED'))
+    api.getInfo.mockResolvedValueOnce({ ...store.info.value!, paymentModes: { payAtPickup: true, cardOnline: false } })
+    await send(store, body)
+    await flush()
+    const c = checkoutOf(store)
+    expect(c.feedback.value).toEqual({ kind: 'error', message: 'Este negocio ya no acepta tarjeta en línea. Elige pagar al recoger.', retryable: false })
+    expect(pendingAttempt(store.slug)).toBeNull()
+    expect(api.getInfo).toHaveBeenCalledTimes(1)
+    expect(store.info.value?.paymentModes.cardOnline).toBe(false)
+    expect(c.draft.value.payment).toBe('PAY_AT_PICKUP')
+    expect(store.screen.value).not.toBe('cart')
+    expect(store.cart.value).toEqual([line()])
   })
 
   it('400 CARD_PAYMENT_NOT_ACCEPTED en una tienda de sólo tarjeta ⇒ no ofrece pagar al recoger, porque no existe', async () => {
     const { store, body } = card()
     store.info.value = { ...store.info.value!, paymentModes: { payAtPickup: false, cardOnline: true } }
     api.createOrder.mockRejectedValueOnce(new ApiError('x', 400, 'CARD_PAYMENT_NOT_ACCEPTED'))
-    expect(await submitOrder(store, body)).toEqual({ kind: 'error', message: 'Este negocio ya no acepta tarjeta en línea.', retryable: false })
+    expect(await submitOrder(store, body)).toEqual({ kind: 'tarjetaNoDisponible', message: 'Este negocio ya no acepta tarjeta en línea.' })
+  })
+
+  it('ronda 2 (Ruling 59): «Mi equipo» de sólo tarjeta pasa a «Nadie» sin tarjeta: el primer «Pedir» relee /info y deja pagar en caja, con el carrito', async () => {
+    const { store, body } = card()
+    store.info.value = { ...store.info.value!, paymentModes: { payAtPickup: false, cardOnline: true } }
+    // El SERVIDOR revisa la tarjeta antes que la sesión: el formulario viejo recibe este rechazo, no el 401 de M4.
+    api.createOrder.mockRejectedValueOnce(new ApiError('Este negocio no acepta pagar con tarjeta en línea.', 400, 'CARD_PAYMENT_NOT_ACCEPTED'))
+    api.getInfo.mockResolvedValueOnce({ ...store.info.value!, requiresAcceptance: false, paymentModes: { payAtPickup: true, cardOnline: false } })
+    await send(store, body)
+    await flush()
+    expect(store.info.value?.requiresAcceptance).toBe(false)
+    expect(store.info.value?.paymentModes.payAtPickup).toBe(true)
+    expect(checkoutOf(store).draft.value.payment).toBe('PAY_AT_PICKUP')
+    expect(store.cart.value).toEqual([line()])
+    expect(pendingAttempt(store.slug)).toBeNull()
+    // Ya en «Nadie»: «Pedir» manda el pedido de caja, sin teléfono ni código.
+    api.createOrder.mockResolvedValueOnce(created())
+    await send(store, buildOrderBody(store, { customer: { name: 'Ana' }, note: null, paymentMode: 'PAY_AT_PICKUP' }))
+    expect(sent(1).body.paymentMode).toBe('PAY_AT_PICKUP')
+    expect(store.screen.value).toBe('tracking')
+  })
+
+  describe('ronda 2 #1 (Ruling 54): dos pestañas no pagan dos veces la misma compra', () => {
+    /**
+     * Otra pestaña del mismo navegador: su sessionStorage empieza vacía y la localStorage es la misma. Por omisión la pestaña duplicada:
+     * los mismos datos que `card()` (ronda 3: sólo la misma compra, de la misma sesión, se comparte).
+     */
+    function otraPestana(slug: string, items = [line()], customer: { name: string; phone: string } = { name: ' Ana López ', phone: PHONE }) {
+      sessionStorage.clear()
+      const store = createOrderStore(slug, { locale: 'es' })
+      store.cart.value = items
+      store.quote.value = quoteOf(170)
+      store.info.value = info
+      return { store, body: buildOrderBody(store, { customer, note: null, paymentMode: 'CARD_ONLINE' }) }
+    }
+
+    it('ronda 3 (Ruling 54 enmendada): otra clienta en el mismo navegador, con el mismo carrito, hace SU compra (nunca la página de la otra)', async () => {
+      const { store, body } = card()
+      api.createOrder.mockResolvedValueOnce(draft())
+      await send(store, body)
+      const deBea = otraPestana(store.slug, [line()], { name: 'Bea Ruiz', phone: '+525599998888' })
+      api.createOrder.mockResolvedValueOnce(draft({ trackingToken: 'B'.repeat(32) }))
+      await send(deBea.store, deBea.body)
+      expect(sent(1).key).not.toBe(sent(0).key)
+      expect(sent(1).body.customer).toEqual({ name: 'Bea Ruiz', phone: '+525599998888' })
+    })
+
+    it('ronda 3: «Cerrar sesión» en la tienda borra la compra compartida; la siguiente es nueva', async () => {
+      const { store, body } = card()
+      api.createOrder.mockResolvedValueOnce(draft())
+      await send(store, body)
+      expect(localStorage.getItem(`avq_card_attempt:${store.slug}`)).not.toBeNull()
+      salioEnLaTienda(store)
+      expect(localStorage.getItem(`avq_card_attempt:${store.slug}`)).toBeNull()
+      const tab2 = otraPestana(store.slug)
+      api.createOrder.mockResolvedValueOnce(draft({ trackingToken: 'E'.repeat(32) }))
+      await send(tab2.store, tab2.body)
+      expect(sent(1).key).not.toBe(sent(0).key)
+    })
+
+    it('mismo carrito: la segunda pestaña manda la llave y el cuerpo de la primera y abre la MISMA página de pago (un solo borrador)', async () => {
+      const { store, body, assign } = card()
+      api.createOrder.mockResolvedValueOnce(draft())
+      await send(store, body)
+      const tab2 = otraPestana(store.slug)
+      api.createOrder.mockResolvedValueOnce(draft({ replay: true }))
+      await send(tab2.store, tab2.body)
+      expect(api.createOrder).toHaveBeenCalledTimes(2)
+      expect(sent(1).key).toBe(sent(0).key)
+      expect(sent(1).body).toEqual(sent(0).body) // la compra de la primera, tal cual
+      expect(sent(1).token).toBe(sent(0).token)
+      expect(assign).toHaveBeenCalledTimes(2)
+      expect(assign).toHaveBeenLastCalledWith(URL_PAGO)
+    })
+
+    it('la respuesta de la primera se perdió (su intento sigue pendiente): la segunda manda ESA llave', async () => {
+      const { store, body } = card()
+      api.createOrder.mockRejectedValueOnce(offline())
+      await send(store, body)
+      const tab2 = otraPestana(store.slug)
+      api.createOrder.mockResolvedValueOnce(draft())
+      await send(tab2.store, tab2.body)
+      expect(sent(1).key).toBe(sent(0).key)
+    })
+
+    it('otro carrito: otra compra, con su llave', async () => {
+      const { store, body } = card()
+      api.createOrder.mockResolvedValueOnce(draft())
+      await send(store, body)
+      const tab2 = otraPestana(store.slug, [line({ quantity: 3 })])
+      api.createOrder.mockResolvedValueOnce(draft({ trackingToken: 'E'.repeat(32) }))
+      await send(tab2.store, tab2.body)
+      expect(sent(1).key).not.toBe(sent(0).key)
+    })
+
+    it('ya resuelta (un rechazo, o el borrador repetido que ya no espera su pago): la siguiente es una compra nueva', async () => {
+      // Un rechazo definitivo: no quedó página de pago.
+      const a = card()
+      api.createOrder.mockRejectedValueOnce(new ApiError('x', 400, 'CARD_AMOUNT_OUT_OF_RANGE'))
+      await send(a.store, a.body)
+      const a2 = otraPestana(a.store.slug)
+      api.createOrder.mockResolvedValueOnce(draft())
+      await send(a2.store, a2.body)
+      expect(sent(1).key).not.toBe(sent(0).key)
+      // La segunda pestaña recupera el borrador de la primera ya pagado (va a su seguimiento): una tercera ya es otra compra.
+      const b = card()
+      api.createOrder.mockResolvedValueOnce(draft())
+      await send(b.store, b.body)
+      const b2 = otraPestana(b.store.slug)
+      api.createOrder.mockResolvedValueOnce(draft({ replay: true, status: 'ACCEPTED', checkoutUrl: '' }))
+      await send(b2.store, b2.body)
+      expect(sent(3).key).toBe(sent(2).key)
+      expect(b2.store.screen.value).toBe('tracking')
+      const b3 = otraPestana(b.store.slug)
+      api.createOrder.mockResolvedValueOnce(draft({ trackingToken: 'F'.repeat(32) }))
+      await send(b3.store, b3.body)
+      expect(sent(4).key).not.toBe(sent(2).key)
+    })
   })
 
   it('un intento pendiente de tarjeta tras recargar se reintenta igual, sin pedir el código', async () => {
@@ -1103,7 +1241,7 @@ describe('W3: pedir con beneficios', () => {
     expect(api.createOrder).toHaveBeenCalledTimes(1)
     expect(leerSesion(store.slug)).toBeNull()
     expect(pendingAttempt(store.slug)?.key).toBe(sent(0).key)
-    expect(c.feedback.value).toEqual({ kind: 'sesionParaTerminar' })
+    expect(c.feedback.value).toMatchObject({ kind: 'sesionParaTerminar' }) // con la sesión de la que es (`gen`, pasada por familias)
   })
 
   it('un folio de $0 en «Nadie» (cerrado por el SERVIDOR) va directo al seguimiento', async () => {
@@ -1112,5 +1250,477 @@ describe('W3: pedir con beneficios', () => {
     api.createOrder.mockResolvedValueOnce(created({ total: '0.00', status: 'ACCEPTED' }))
     await send(store, body)
     expect(store.screen.value).toBe('tracking')
+  })
+})
+
+describe('D661: pagar con tarjeta en línea en «Nadie»', () => {
+  const URL_PAGO = 'https://checkout.stripe.com/c/pay/cs_test_nadie'
+  const nadieCardInfo = { ...info, requiresAcceptance: false, paymentModes: { payAtPickup: true, cardOnline: true } } as StoreInfo
+  /** «Nadie» con tarjeta en línea: con la sesión única de la página (salvo `sesion: false`) y el cuerpo de «Pagar ahora». */
+  function nadieCard(opts: { sesion?: boolean; token?: string } = {}) {
+    const slug = `nc${++n}`
+    if (opts.sesion !== false) guardarSesion(slug, { ...sesion(opts.token ?? 'tok-A'), guardadaEn: Date.now() } as any)
+    const store = createOrderStore(slug, { locale: 'es' }) // abre la página con lo guardado
+    store.cart.value = [line()]
+    store.quote.value = quoteOf(170)
+    store.info.value = nadieCardInfo
+    store.go('details')
+    checkoutOf(store)
+    const body = buildOrderBody(store, { customer: { name: ' Ana ' }, note: null, paymentMode: 'CARD_ONLINE' })
+    return { store, body }
+  }
+
+  it('tarjeta en «Nadie» manda sesión, CARD_ONLINE, sin teléfono', async () => {
+    const { store, body } = nadieCard()
+    expect(body).toEqual({
+      items: [{ productId: 'p-flauta', quantity: 2, modifiers: [{ modifierId: 'm-salsa', quantity: 1 }] }],
+      paymentMode: 'CARD_ONLINE', expectedTotal: '170.00', customer: { name: 'Ana' }, channel: 'LINK',
+    })
+    const assign = vi.spyOn(nav, 'assign').mockImplementation(() => {})
+    api.createOrder.mockResolvedValueOnce({ trackingToken: 'D'.repeat(32), checkoutUrl: URL_PAGO, status: 'AWAITING_PAYMENT', total: '170.00', replay: false })
+    await send(store, body)
+    expect(api.createOrder).toHaveBeenCalledTimes(1)
+    expect(sent().body).toEqual(body)
+    expect(sent().body.customer.phone).toBeUndefined()
+    expect(sent().token).toBe('tok-A')
+    expect(sent().key).toMatch(KEY_RE)
+    expect(api.requestOrderingOtp).not.toHaveBeenCalled() // sin código de «Mi equipo»: la sesión ya probó quién es
+    expect(assign).toHaveBeenCalledWith(URL_PAGO)
+  })
+
+  it('D661: sin sesión, «Pagar ahora» lleva a entrar sin llamar al servidor ni guardar un intento', async () => {
+    const { store, body } = nadieCard({ sesion: false })
+    expect(await submitOrder(store, body)).toEqual({ kind: 'entrarParaPagar' })
+    expect(api.createOrder).not.toHaveBeenCalled()
+    expect(pendingAttempt(store.slug)).toBeNull()
+    await send(store, body)
+    expect(store.screen.value).toBe('entrar')
+    expect(api.createOrder).not.toHaveBeenCalled()
+    expect(api.getInfo).not.toHaveBeenCalled() // /info ya dice «Nadie»: no hay nada que releer
+    expect(checkoutOf(store).feedback.value).toBeNull() // no es un error: es el paso que falta
+    expect(store.cart.value).toEqual([line()])
+  })
+
+  it('ronda 1 M4 (a): un intento con tarjeta de «Mi equipo» (teléfono, sin sesión) que al reintentar recibe 401 PHONE_VERIFICATION_REQUIRED ⇒ se suelta y lleva a entrar', async () => {
+    // El negocio pasó a «Nadie» con el intento en vuelo: ahora la tarjeta pide su cuenta. «Reintentar» no debe repetirlo para siempre.
+    const { store } = setup({ sessionPhone: null })
+    store.info.value = { ...info, paymentModes: { payAtPickup: true, cardOnline: true } } as StoreInfo
+    const body = buildOrderBody(store, { customer: { name: 'Ana', phone: PHONE }, note: null, paymentMode: 'CARD_ONLINE' })
+    api.createOrder.mockRejectedValueOnce(offline())
+    await send(store, body)
+    expect(pendingAttempt(store.slug)).not.toBeNull()
+    expect(sent(0).token).toBeUndefined()
+    api.getInfo.mockResolvedValue(nadieCardInfo)
+    api.createOrder.mockRejectedValueOnce(new ApiError('Entra a tu cuenta para pagar con tarjeta en línea.', 401, 'PHONE_VERIFICATION_REQUIRED'))
+    const r = await retry(store)
+    await flush()
+    expect(r?.kind).toBe('entrarParaPagar')
+    expect(pendingAttempt(store.slug)).toBeNull() // nunca se creó: el intento se suelta
+    const c = checkoutOf(store)
+    expect(c.pending.value).toBe(false)
+    expect(c.paraPagar).toBe(true) // al entrar regresa a «Tus datos»
+    expect(store.screen.value).toBe('entrar')
+    // La pantalla se pone al día: ya es «Nadie» (sin WhatsApp; la tarjeta va con su cuenta).
+    expect(store.info.value?.requiresAcceptance).toBe(false)
+    expect(api.getInfo).toHaveBeenCalledTimes(1)
+    expect(api.createOrder).toHaveBeenCalledTimes(2)
+  })
+
+  it('ronda 1 M4 (b): la tarjeta de «Nadie» con el negocio ya en «Mi equipo» recibe el 400 sin código «Escribe tu teléfono» ⇒ pide WhatsApp, como needsPhone', async () => {
+    const { store, body } = nadieCard()
+    api.createOrder.mockRejectedValueOnce(new ApiError('Error de validación: Escribe tu teléfono', 400))
+    api.getInfo.mockResolvedValueOnce({ ...nadieCardInfo, requiresAcceptance: true })
+    const r = await send(store, body)
+    await flush()
+    expect(r.kind).toBe('needsPhone')
+    expect(pendingAttempt(store.slug)).toBeNull()
+    expect(store.screen.value).toBe('details')
+    expect(store.info.value?.requiresAcceptance).toBe(true) // aparece el campo de WhatsApp
+    expect(api.getInfo).toHaveBeenCalledTimes(1)
+    expect(checkoutOf(store).feedback.value).toEqual({
+      kind: 'error', message: 'Este negocio cambió cómo recibe pedidos. Escribe tu WhatsApp para pedir.', retryable: false,
+    })
+    expect(store.cart.value).toEqual([line()])
+    // Otro 400 de validación sin código (no el del teléfono) sigue siendo el error de siempre.
+    const otro = nadieCard()
+    api.createOrder.mockRejectedValueOnce(new ApiError('Error de validación: El nombre es muy largo', 400))
+    expect((await submitOrder(otro.store, otro.body)).kind).toBe('error')
+  })
+
+  it.each([
+    ['TOO_MANY_PENDING_ORDERS', 409, 'Ya tienes pagos con tarjeta sin terminar en este negocio. Paga en caja o espera unos minutos.'],
+    ['CARD_AMOUNT_OUT_OF_RANGE', 400, 'Este monto no se puede pagar con tarjeta en línea. Paga en caja.'],
+  ])('ronda 1 M5: %s con la tarjeta de «Nadie» ⇒ su línea y «Pagar en caja» elegida (en «Nadie» la caja siempre recibe)', async (code, status, text) => {
+    const { store, body } = nadieCard()
+    api.createOrder.mockRejectedValueOnce(new ApiError('texto del servidor', status, code))
+    api.getInfo.mockResolvedValueOnce(nadieCardInfo)
+    const r = await send(store, body)
+    await flush()
+    expect(r).toEqual({ kind: 'tarjetaNoDisponible', message: text })
+    const c = checkoutOf(store)
+    expect(c.feedback.value).toEqual({ kind: 'error', message: text, retryable: false })
+    expect(c.draft.value.payment).toBe('PAY_AT_PICKUP')
+    expect(store.screen.value).toBe('details')
+    expect(store.cart.value).toEqual([line()])
+    expect(pendingAttempt(store.slug)).toBeNull()
+  })
+
+  it('D661: 400 CARD_PAYMENT_NOT_ACCEPTED en «Nadie» ⇒ una línea, «Pagar en caja» elegida, /info al día, el carrito intacto y el intento resuelto', async () => {
+    const { store, body } = nadieCard()
+    api.createOrder.mockRejectedValueOnce(new ApiError('Este negocio no acepta pagar con tarjeta en línea.', 400, 'CARD_PAYMENT_NOT_ACCEPTED'))
+    api.getInfo.mockResolvedValueOnce({ ...nadieCardInfo, paymentModes: { payAtPickup: true, cardOnline: false } })
+    await send(store, body)
+    await flush()
+    const c = checkoutOf(store)
+    expect(c.feedback.value).toEqual({ kind: 'error', message: 'Pagar en línea no está disponible ahora. Puedes pagar en caja.', retryable: false })
+    expect(c.draft.value.payment).toBe('PAY_AT_PICKUP')
+    expect(api.getInfo).toHaveBeenCalledTimes(1)
+    expect(store.info.value?.paymentModes.cardOnline).toBe(false)
+    expect(store.screen.value).toBe('details')
+    expect(store.cart.value).toEqual([line()])
+    expect(pendingAttempt(store.slug)).toBeNull()
+  })
+
+  it('D661: 409 CARD_ONLINE_QUEUE_FULL ⇒ ocupado, se puede pagar en caja; nunca «la tienda no está recibiendo pedidos»', async () => {
+    const { store, body } = nadieCard()
+    api.createOrder.mockRejectedValueOnce(new ApiError('Por ahora hay muchos pagos con tarjeta esperando.', 409, 'CARD_ONLINE_QUEUE_FULL'))
+    api.getInfo.mockResolvedValueOnce(nadieCardInfo)
+    const r = await send(store, body)
+    await flush()
+    expect(r.kind).not.toBe('storeUnavailable')
+    const c = checkoutOf(store)
+    expect(c.feedback.value).toEqual({
+      kind: 'error', message: 'Ahora hay muchos pagos en línea. Puedes pagar en caja o intentar en unos minutos.', retryable: false,
+    })
+    expect(c.draft.value.payment).toBe('PAY_AT_PICKUP')
+    expect(store.info.value?.status).toBe('OPEN')
+    expect(store.screen.value).toBe('details')
+    expect(store.cart.value).toEqual([line()])
+    expect(pendingAttempt(store.slug)).toBeNull()
+  })
+
+  describe('ronda 4: el mismo navegador compartido', () => {
+    const borrador = (over: Partial<CreatedCardOrder> = {}): CreatedCardOrder => ({
+      trackingToken: 'D'.repeat(32), checkoutUrl: URL_PAGO, status: 'AWAITING_PAYMENT', total: '170.00', replay: false, ...over,
+    })
+    /** Otra pestaña: su sessionStorage y su página empiezan de cero (abre con la sesión guardada); la localStorage es la misma. */
+    function pestanaNueva(slug: string) {
+      sessionStorage.clear()
+      documentoNuevoParaPruebas()
+      const store = createOrderStore(slug, { locale: 'es' })
+      store.cart.value = [line()]
+      store.quote.value = quoteOf(170)
+      store.info.value = nadieCardInfo
+      store.go('details')
+      checkoutOf(store)
+      return { store, body: buildOrderBody(store, { customer: { name: ' Ana ' }, note: null, paymentMode: 'CARD_ONLINE' }) }
+    }
+
+    it('Minor C: el SERVIDOR renovó la sesión entre dos «Pedir» (otro token, la misma clienta): la pestaña duplicada reusa la compra; otra clienta con el mismo cuerpo, no', async () => {
+      const { store, body } = nadieCard()
+      const assign = vi.spyOn(nav, 'assign').mockImplementation(() => {})
+      api.createOrder.mockResolvedValueOnce(borrador())
+      await send(store, body)
+      // Su respuesta traía la sesión renovada (la de Ana tenía más de un día): `api.ts` la guarda.
+      aplicarRenovacion(store.slug, new Headers({ 'x-customer-session': 'tok-A2' }), 'tok-A')
+      expect(leerSesion(store.slug)?.token).toBe('tok-A2')
+      const tab2 = pestanaNueva(store.slug)
+      api.createOrder.mockResolvedValueOnce(borrador({ replay: true }))
+      await send(tab2.store, tab2.body)
+      expect(sent(1).key).toBe(sent(0).key)
+      expect(sent(1).body).toEqual(sent(0).body)
+      expect(sent(1).token).toBe('tok-A') // la misma petición (la renovada es de la misma clienta)
+      expect(assign).toHaveBeenCalledTimes(2)
+      expect(assign).toHaveBeenLastCalledWith(URL_PAGO) // la MISMA página de pago: un solo borrador
+      // Bea entra en el mismo navegador y pide exactamente lo mismo (el mismo carrito y el mismo nombre: sólo la sesión las distingue).
+      guardarSesion(store.slug, sesionB() as any)
+      const deBea = pestanaNueva(store.slug)
+      api.createOrder.mockResolvedValueOnce(borrador({ trackingToken: 'B'.repeat(32) }))
+      await send(deBea.store, deBea.body)
+      expect(sent(2).body).toEqual(sent(0).body)
+      expect(sent(2).key).not.toBe(sent(0).key)
+      expect(sent(2).token).toBe('tok-B')
+    })
+
+    it('pasada por familias (Ruling 82): otra compra Y en medio no borra la de X: la copia exacta de X recupera su llave (dos borradores en total)', async () => {
+      const { store, body } = nadieCard()
+      const assign = vi.spyOn(nav, 'assign').mockImplementation(() => {})
+      api.createOrder.mockResolvedValueOnce(borrador()) // X: su página de pago queda abierta y su confirmación se pierde
+      await send(store, body)
+      const y = pestanaNueva(store.slug) // Y: otra compra distinta, de la misma clienta, en otra pestaña
+      y.store.cart.value = [line({ lineId: 'l2', productId: 'p-taco', quantity: 1 })]
+      y.store.quote.value = quoteOf(85)
+      api.createOrder.mockResolvedValueOnce(borrador({ trackingToken: 'Y'.repeat(32), checkoutUrl: `${URL_PAGO}_y` }))
+      await send(y.store, buildOrderBody(y.store, { customer: { name: ' Ana ' }, note: null, paymentMode: 'CARD_ONLINE' }))
+      const x2 = pestanaNueva(store.slug) // vuelve a X: el mismo cuerpo y la misma sesión
+      api.createOrder.mockResolvedValueOnce(borrador({ replay: true }))
+      await send(x2.store, x2.body)
+      expect(new Set([sent(0).key, sent(1).key, sent(2).key]).size).toBe(2) // dos borradores en total
+      expect(sent(2).key).toBe(sent(0).key) // el último envío recupera la llave de X
+      expect(sent(2).body).toEqual(sent(0).body)
+      expect(assign).toHaveBeenLastCalledWith(URL_PAGO) // la página de X, no una nueva
+    })
+
+    it('Ruling 54 extendida: con la respuesta perdida, «Cerrar sesión» suelta el intento de la pestaña: quien entra después no reenvía lo de la otra', async () => {
+      const { store, body } = nadieCard()
+      api.createOrder.mockRejectedValueOnce(offline())
+      await send(store, body)
+      const c = checkoutOf(store)
+      expect(pendingAttempt(store.slug)).not.toBeNull()
+      expect(c.feedback.value).toMatchObject({ kind: 'error', retryable: true }) // «Reintentar»
+      salioEnLaTienda(store)
+      expect(pendingAttempt(store.slug)).toBeNull()
+      // La pantalla ya no ofrece «Reintentar» lo de Ana ni deja «Pedir» bloqueado por eso.
+      expect(c.pending.value).toBe(false)
+      expect(c.feedback.value).toBeNull()
+      // Bea entra en esa pestaña: «Reintentar» ya no manda el cuerpo ni el token de Ana (ni, con tarjeta, la lleva a su página de pago).
+      guardarSesion(store.slug, sesionB() as any)
+      entroEnLaTienda(store, sesionB() as any, null)
+      expect(await retry(store)).toBeNull()
+      expect(api.createOrder).toHaveBeenCalledTimes(1)
+      // Su «Pedir» es SU compra: otra llave, con su sesión.
+      vi.spyOn(nav, 'assign').mockImplementation(() => {})
+      store.quote.value = quoteOf(170) // la tienda vuelve a cotizar al cambiar de sesión
+      api.createOrder.mockResolvedValueOnce(borrador({ trackingToken: 'B'.repeat(32) }))
+      await send(store, buildOrderBody(store, { customer: { name: 'Bea' }, note: null, paymentMode: 'CARD_ONLINE' }))
+      expect(sent(1).key).not.toBe(sent(0).key)
+      expect(sent(1).token).toBe('tok-B')
+      expect(sent(1).body.customer).toEqual({ name: 'Bea' })
+    })
+  })
+
+  describe('ronda 5: lo de Ana no se queda para quien sigue', () => {
+    /** Un token con la ficha legible (`sub`), como los del SERVIDOR. */
+    const jwt = (sub: string, n: number) => `h.${btoa(JSON.stringify({ sub, n }))}.s`
+    const sesionVencida = () => new ApiError('Tu sesión ya no es válida.', 401, 'CUSTOMER_TOKEN_INVALID')
+
+    it('(1) «Cerrar sesión» no deja en «Tus datos» lo que escribió Ana ni lo que eligió usar; el carrito se queda, como siempre', () => {
+      const { store } = nadieCard()
+      const c = checkoutOf(store)
+      c.draft.value = {
+        note: 'sin cebolla', name: 'Ana López', dial: '1', national: '5544422262', email: 'ana@correo.mx', accepted: true, payment: 'CARD_ONLINE',
+      }
+      c.eleccion.value = { premioId: 'pr1', puntos: 50, cupon: 'ANA10' }
+      salioEnLaTienda(store)
+      expect(c.draft.value).toEqual({ note: '', name: '', dial: '52', national: '', email: '', accepted: false })
+      expect(c.eleccion.value).toEqual({})
+      expect(store.cart.value).toEqual([line()])
+    })
+
+    it('(3) el intento que espera entrar (su token recibió 401) es de SU clienta: si entra otra, se suelta y no se le entrega', async () => {
+      const ana = jwt('c1', 1)
+      const { store, body } = nadieCard({ token: ana })
+      api.createOrder.mockRejectedValueOnce(sesionVencida())
+      expect((await send(store, body)).kind).toBe('needsSesion')
+      expect(pendingAttempt(store.slug)).toMatchObject({ requiereEntrar: true, token: ana })
+      // Entra Bea en esa pestaña: ni el cuerpo ni la llave de Ana son suyos.
+      const bea = { ...sesionB(), token: jwt('c2', 2) }
+      guardarSesion(store.slug, bea as any)
+      entroEnLaTienda(store, bea as any, 'details')
+      expect(pendingAttempt(store.slug)).toBeNull()
+      const c = checkoutOf(store)
+      expect(c.pending.value).toBe(false) // ni «Entra otra vez para terminar tu pedido» ni «Pedir» bloqueado
+      expect(c.feedback.value).toBeNull()
+      expect(await retry(store)).toBeNull()
+      expect(api.createOrder).toHaveBeenCalledTimes(1)
+    })
+
+    it('(3) si entra ella otra vez (otro token, la misma ficha), su pedido sale como hoy: su sesión nueva, la misma llave y el mismo cuerpo', async () => {
+      const { store, body } = nadieCard({ token: jwt('c1', 1) })
+      api.createOrder.mockRejectedValueOnce(sesionVencida())
+      await send(store, body)
+      const otraVez = { ...sesion(jwt('c1', 3)), guardadaEn: Date.now() }
+      guardarSesion(store.slug, otraVez as any)
+      entroEnLaTienda(store, otraVez as any, 'details')
+      expect(pendingAttempt(store.slug)).toMatchObject({ token: otraVez.token, requiereEntrar: false, porSesion: true })
+      vi.spyOn(nav, 'assign').mockImplementation(() => {})
+      api.createOrder.mockResolvedValueOnce({ trackingToken: 'D'.repeat(32), checkoutUrl: URL_PAGO, status: 'AWAITING_PAYMENT', total: '170.00', replay: false })
+      await retry(store)
+      expect(sent(1)).toMatchObject({ key: sent(0).key, token: otraVez.token })
+      expect(sent(1).body).toEqual(sent(0).body)
+    })
+  })
+
+  describe('pasada por familias (Ruling 84): una respuesta es de la sesión que la mandó', () => {
+    const jwt = (sub: string, n: number) => `h.${btoa(JSON.stringify({ sub, n }))}.s`
+    const borrador = (over: Partial<CreatedCardOrder> = {}): CreatedCardOrder => ({
+      trackingToken: 'D'.repeat(32), checkoutUrl: URL_PAGO, status: 'AWAITING_PAYMENT', total: '170.00', replay: false, ...over,
+    })
+    /** El POST de Ana se queda en camino; `responder` lo resuelve después. */
+    function enCamino() {
+      let responder: (o: CreatedCardOrder) => void = () => {}
+      api.createOrder.mockImplementationOnce(() => new Promise(ok => { responder = ok }))
+      return (o: CreatedCardOrder) => responder(o)
+    }
+    const nadaDeAna = (store: OrderStore, assign: unknown) => {
+      expect(assign).not.toHaveBeenCalled() // ni la página de pago de Ana
+      expect(loadLastOrder(store.slug)).toBeNull() // ni su seguimiento guardado
+      expect(store.trackingToken.value).toBeNull() // ni su pedido en pantalla
+      expect(store.screen.value).not.toBe('tracking')
+      expect(checkoutOf(store).feedback.value).toBeNull()
+    }
+
+    it('POST pendiente → «Cerrar sesión» → llega con su liga de pago: no abre Stripe, no guarda el seguimiento ni lo enseña', async () => {
+      const { store, body } = nadieCard({ token: jwt('c1', 1) })
+      const assign = vi.spyOn(nav, 'assign').mockImplementation(() => {})
+      const responder = enCamino()
+      const enVuelo = send(store, body)
+      await flush()
+      store.go('cuenta')
+      salioEnLaTienda(store)
+      store.go('menu')
+      responder(borrador())
+      const r = await enVuelo
+      nadaDeAna(store, assign)
+      expect(r.kind).toBe('ajena')
+      expect(store.screen.value).toBe('menu')
+      expect(pendingAttempt(store.slug)).toBeNull()
+    })
+
+    it('llega la sesión de OTRA clienta mientras va (entra en esta pestaña): tampoco se le enseña ni la lleva a pagar lo de Ana', async () => {
+      const { store, body } = nadieCard({ token: jwt('c1', 1) })
+      const assign = vi.spyOn(nav, 'assign').mockImplementation(() => {})
+      const responder = enCamino()
+      const enVuelo = send(store, body)
+      await flush()
+      const bea = { ...sesionB(), token: jwt('c2', 2) }
+      guardarSesion(store.slug, bea as any)
+      entroEnLaTienda(store, bea as any, null)
+      responder(borrador())
+      const r = await enVuelo
+      nadaDeAna(store, assign)
+      expect(r.kind).toBe('ajena')
+      expect(pendingAttempt(store.slug)).toBeNull() // el SERVIDOR contestó: el intento se resolvió
+    })
+
+    it('«Cerrar sesión» en OTRA pestaña mientras va: la respuesta tampoco abre el pago', async () => {
+      const { store, body } = nadieCard({ token: jwt('c1', 1) })
+      const assign = vi.spyOn(nav, 'assign').mockImplementation(() => {})
+      const responder = enCamino()
+      const enVuelo = send(store, body)
+      await flush()
+      registrarSalida(store.slug) // la marca compartida de «Cerrar sesión» (otra pestaña del mismo negocio)
+      borrarSesion(store.slug)
+      responder(borrador())
+      const r = await enVuelo
+      nadaDeAna(store, assign)
+      expect(r.kind).toBe('ajena')
+    })
+
+    it('el reintento de lo de Ana con la sesión de Bea ya en la página (sin «Cerrar sesión» aquí): su respuesta no se le enseña a Bea', async () => {
+      const ana = jwt('c1', 1)
+      const { store, body } = nadieCard({ token: ana })
+      const assign = vi.spyOn(nav, 'assign').mockImplementation(() => {})
+      api.createOrder.mockRejectedValueOnce(offline())
+      await send(store, body) // la respuesta se perdió: el intento de Ana sigue en esta pestaña
+      // En otra pestaña cambió la sesión guardada (sin el «Cerrar sesión» de ésta) y Bea entra aquí: el intento sin 401 se queda (ronda 5).
+      const bea = { ...sesionB(), token: jwt('c2', 2) }
+      guardarSesion(store.slug, bea as any)
+      entroEnLaTienda(store, bea as any, null)
+      expect(pendingAttempt(store.slug)?.token).toBe(ana)
+      api.createOrder.mockResolvedValueOnce(borrador())
+      const r = await retry(store)
+      expect(sent(1)).toMatchObject({ key: sent(0).key, token: ana }) // el mismo pedido de Ana (nunca uno nuevo)
+      nadaDeAna(store, assign)
+      expect(r?.kind).toBe('ajena')
+      expect(pendingAttempt(store.slug)).toBeNull()
+    })
+
+    it('lo que dejó una respuesta de Ana (la pregunta del precio, «entra para terminar») se va cuando cambia la sesión del negocio en la página', async () => {
+      for (const que of ['priceChanged', 'sesionParaTerminar'] as const) {
+        const { store, body } = nadieCard({ token: jwt('c1', 1) })
+        if (que === 'priceChanged') api.createOrder.mockRejectedValueOnce(fin(409, 'PRICE_CHANGED', { quote: quoteOf(190) }))
+        else api.createOrder.mockRejectedValueOnce(new ApiError('Tu sesión ya no es válida.', 401, 'CUSTOMER_TOKEN_INVALID'))
+        await send(store, body)
+        const c = checkoutOf(store)
+        expect(c.feedback.value?.kind, que).toBe(que)
+        // Ana sale en el widget de reservas de esta misma página: su pregunta ya no es de nadie (su «Confirmar» mandaría su nombre y sus
+        // beneficios con la sesión de quien siga, o el código a su WhatsApp).
+        clearCustomerSession(store.slug)
+        expect(c.feedback.value, que).toBeNull()
+      }
+      // La misma sesión renovada no es otra: la pregunta se queda.
+      const { store, body } = nadieCard({ token: jwt('c1', 1) })
+      api.createOrder.mockRejectedValueOnce(fin(409, 'PRICE_CHANGED', { quote: quoteOf(190) }))
+      await send(store, body)
+      aplicarRenovacion(store.slug, new Headers({ 'x-customer-session': jwt('c1', 9) }), jwt('c1', 1))
+      await cotizar(store, toQuoteItems(store.cart.value)).catch(() => {}) // la tienda lee la renovada: la misma identidad
+      expect(checkoutOf(store).feedback.value?.kind).toBe('priceChanged')
+    })
+
+    it('sin cambio de sesión (también si el SERVIDOR la renueva mientras va), la respuesta sí es suya: abre su pago y guarda su seguimiento', async () => {
+      const { store, body } = nadieCard({ token: jwt('c1', 1) })
+      const assign = vi.spyOn(nav, 'assign').mockImplementation(() => {})
+      api.createOrder.mockImplementationOnce(async () => {
+        aplicarRenovacion(store.slug, new Headers({ 'x-customer-session': jwt('c1', 9) }), jwt('c1', 1)) // la renovada: la misma sesión
+        return borrador()
+      })
+      expect((await send(store, body)).kind).toBe('created')
+      expect(assign).toHaveBeenCalledWith(URL_PAGO)
+      expect(loadLastOrder(store.slug)?.trackingToken).toBe('D'.repeat(32))
+      expect(store.screen.value).toBe('tracking')
+    })
+  })
+
+  describe('limpieza final (Ruling 77)', () => {
+    const jwt = (sub: string, n: number) => `h.${btoa(JSON.stringify({ sub, n }))}.s`
+    const vacio = { note: '', name: '', dial: '52', national: '', email: '', accepted: false }
+
+    it('(1) con el código de WhatsApp, el intento que esperaba entrar sale con la MISMA llave aunque el teléfono resuelva a otra ficha: nunca un segundo pedido', async () => {
+      const slug = `l77${++n}`
+      guardarSesion(slug, { ...sesion(jwt('c1', 1)), guardadaEn: Date.now() } as any)
+      const store = createOrderStore(slug, { locale: 'es' })
+      store.cart.value = [line()]
+      store.quote.value = quoteOf(170)
+      store.info.value = info // «Mi equipo», pagar al recoger
+      const body = buildOrderBody(store, { customer: { name: ' Ana López ', phone: PHONE }, note: null })
+      api.createOrder.mockRejectedValueOnce(offline()) // la respuesta se perdió: el pedido quizá ya existe
+      await send(store, body)
+      api.createOrder.mockRejectedValueOnce(new ApiError('Tu sesión ya no es válida.', 401, 'CUSTOMER_TOKEN_INVALID'))
+      expect((await retry(store))?.kind).toBe('needsOtp')
+      // Como OtpScreen: toma el cuerpo antes de verificar y lo manda después. El código del MISMO teléfono resuelve a otra ficha (c3).
+      const cuerpo = pendingAttempt(slug)?.body ?? checkoutOf(store).lastBody.value!
+      api.verifyOrderingOtp.mockResolvedValueOnce({ ...sesion(jwt('c3', 3)), customer: { ...sesion('x').customer, id: 'c3' } })
+      expect(await verifyPhone(store, PHONE, '123456')).toBe(true)
+      api.createOrder.mockRejectedValueOnce(new ApiError('x', 409, 'IDEMPOTENCY_KEY_CONFLICT', undefined, false, true))
+      await send(store, cuerpo)
+      expect(api.createOrder).toHaveBeenCalledTimes(3)
+      expect([sent(1).key, sent(2).key]).toEqual([sent(0).key, sent(0).key]) // la misma llave: el SERVIDOR nunca crea otro
+    })
+
+    it('(2) llega la sesión de OTRA clienta sin el «Cerrar sesión» de la tienda (tras un 401, o tras salir en reservas): lo de Ana se vacía', async () => {
+      const deAna = { note: 'sin cebolla', name: 'Ana López', dial: '52', national: '5544422262', email: 'ana@correo.mx', accepted: true }
+      for (const como of ['401', 'reservas'] as const) {
+        const { store } = nadieCard({ token: jwt('c1', 1) })
+        const c = checkoutOf(store)
+        c.draft.value = deAna
+        c.eleccion.value = { premioId: 'pr1', puntos: 50, cupon: 'ANA10' }
+        if (como === '401') {
+          api.quote.mockRejectedValueOnce(new ApiError('Tu sesión ya no es válida.', 401, 'CUSTOMER_TOKEN_INVALID')).mockResolvedValueOnce(quoteOf(170))
+          await cotizar(store, toQuoteItems(store.cart.value))
+          expect(paginaDe(store.slug, 'pedidos')).toBeNull()
+        } else clearCustomerSession(store.slug) // el «Cerrar sesión» del widget de reservas, en esta misma página
+        expect(c.draft.value, como).toEqual(deAna) // todavía es de Ana: puede volver a entrar a terminar
+        const bea = { ...sesionB(), token: jwt('c2', 2) }
+        guardarSesion(store.slug, bea as any)
+        entroEnLaTienda(store, bea as any, 'details')
+        expect(c.draft.value, como).toEqual(vacio)
+        expect(c.eleccion.value, como).toEqual({})
+      }
+    })
+
+    it('(2) si vuelve a entrar ella (la misma ficha), lo suyo se queda', async () => {
+      const { store } = nadieCard({ token: jwt('c1', 1) })
+      const c = checkoutOf(store)
+      c.draft.value = { ...vacio, name: 'Ana López', note: 'sin cebolla' }
+      c.eleccion.value = { cupon: 'ANA10' }
+      api.quote.mockRejectedValueOnce(new ApiError('Tu sesión ya no es válida.', 401, 'CUSTOMER_TOKEN_INVALID')).mockResolvedValueOnce(quoteOf(170))
+      await cotizar(store, toQuoteItems(store.cart.value))
+      const otraVez = { ...sesion(jwt('c1', 3)), guardadaEn: Date.now() }
+      guardarSesion(store.slug, otraVez as any)
+      entroEnLaTienda(store, otraVez as any, 'details')
+      expect(c.draft.value).toEqual({ ...vacio, name: 'Ana López', note: 'sin cebolla' })
+      expect(c.eleccion.value).toEqual({ cupon: 'ANA10' })
+    })
   })
 })
