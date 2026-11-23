@@ -77,11 +77,19 @@ describe('financial source of truth and one bounded read round', () => {
     expect(screen.getByRole('status').textContent).toBe('Esperando tu pago. Si no lo terminas, tu lugar se libera solo cuando venza el enlace de pago')
     expect(screen.queryByText(/Estamos confirmando/)).toBeNull()
   })
-  it('D681: volvió por «atrás» de Stripe: dice que no se completó, sin pedirle nada al SERVIDOR más que leer', async () => {
+  it('D681: volvió por «atrás» de Stripe: dice que no se completó y sigue consultando como en main (12 lecturas)', async () => {
     vi.mocked(api.getReservation).mockResolvedValue(detail('PENDING', 'PENDING'))
     render(<ManageBooking {...props} paymentCancelled paymentUnfinished depositReturn />); await flush()
     expect(screen.getByRole('status').textContent).toBe('No se completó el pago. Si no lo terminas, tu lugar se libera solo cuando venza el enlace de pago')
-    await advance(40000); expect(api.getReservation).toHaveBeenCalledTimes(1)
+    await advance(40000); expect(api.getReservation).toHaveBeenCalledTimes(12)
+  })
+  it('🔴 Codex texto r3 #4: volvió sin pagar y paga en la liga que seguía abierta: la ficha cambia sola a «Pago recibido»', async () => {
+    vi.mocked(api.getReservation).mockResolvedValueOnce(detail('PENDING', 'PENDING')).mockResolvedValue(detail('PAID', 'CONFIRMED'))
+    render(<ManageBooking {...props} paymentCancelled paymentUnfinished depositReturn />); await flush()
+    expect(screen.getByRole('status').textContent).toContain('No se completó el pago')
+    await advance(2500)
+    expect(screen.getByRole('status').textContent).toContain('Pago recibido')
+    await advance(40000); expect(api.getReservation).toHaveBeenCalledTimes(2)
   })
   it.each([
     ['REFUNDED', 'CANCELLED', 'Depósito reembolsado'], ['PAID', 'CONFIRMED', 'Pago recibido'], ['PAID', 'CANCELLED', 'Pago recibido'],

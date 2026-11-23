@@ -1394,12 +1394,22 @@ describe('D684a: elegir otra pestaña desde «Tu Reservación»', () => {
     expect(api.getReservation).toHaveBeenCalledTimes(1)
   })
 
-  it('llegó por la liga del correo (?manage=): sale de «Tu Reservación» y la liga se quita de la dirección', async () => {
-    window.history.replaceState({}, '', '/studio-a/appointments?manage=url-secret&campaign=fall')
+  it('🔴 Codex texto r3 #1: llegó por la liga del correo (?manage=): sale de «Tu Reservación» SIN tocar la dirección', async () => {
+    // La pestaña de la cabecera navega a /<negocio>#packs. Con `?manage=` todavía en la barra es una página nueva (como en main) y
+    // abre los paquetes; si el widget lo quitara antes, sólo cambiaría el «#» y se quedaría en la portada.
+    window.history.replaceState({}, '', '/studio-a?manage=url-secret&campaign=fall')
     const p = props()
     render(<BookingFlow props={p} />); await flush()
     expect(screen.getByText('OWN-A')).toBeTruthy()
     await salir(p.hostElement!); await flush()
+    expect(screen.queryByText('OWN-A')).toBeNull()
+    expect(window.location.search).toBe('?manage=url-secret&campaign=fall')
+  })
+
+  it('«Hacer una Nueva Reservación» desde la liga del correo sí quita `?manage=` (para que recargar no la vuelva a abrir)', async () => {
+    window.history.replaceState({}, '', '/studio-a/appointments?manage=url-secret&campaign=fall')
+    render(<BookingFlow props={props()} />); await flush()
+    fireEvent.click(screen.getByRole('button', { name: 'Hacer una Nueva Reservación' })); await flush()
     expect(screen.queryByText('OWN-A')).toBeNull()
     expect(window.location.search).toBe('?campaign=fall')
   })
@@ -1470,13 +1480,13 @@ describe('D683: volvió de Stripe sin pagar', () => {
   }
   const aviso = () => screen.getByRole('status').textContent ?? ''
 
-  it('🔴 D681: al volver por «atrás» de Stripe dice que no se completó y que se libera solo; sin «Pagar ahora»; una sola lectura', async () => {
+  it('🔴 D681: al volver por «atrás» de Stripe dice que no se completó y que se libera solo; sin «Pagar ahora»; consulta como en main', async () => {
     await volver('/studio-a/classes?avq_payment=cancelled&payment=cancelled&reservationId=r1')
     expect(aviso()).toBe(NO_SE_COMPLETO)
     expect(screen.queryByText(/Estamos confirmando/)).toBeNull()
     expect(screen.queryByText('Pagar ahora')).toBeNull()
     expect(screen.getByRole('button', { name: 'Cancelar Reservación' })).toBeTruthy()
-    await advance(40000); expect(api.getReservation).toHaveBeenCalledTimes(1)
+    await advance(40000); expect(api.getReservation).toHaveBeenCalledTimes(12)
     expect(api.getReservation).toHaveBeenCalledWith('studio-a', 'stored-a', expect.any(AbortSignal))
   })
 

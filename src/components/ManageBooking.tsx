@@ -88,8 +88,7 @@ export function ManageBooking({ venueSlug, cancelSecret, timezone, locale = 'es'
         if (!current()) return
         setReservation(fresh)
         setLoading(false)
-        // Sin pagar no hay aviso del banco que esperar: una sola lectura («Consultar de nuevo» sigue a la mano).
-        if (fresh.depositStatus === 'PENDING' && attempts < 12 && !paymentUnfinished) {
+        if (fresh.depositStatus === 'PENDING' && attempts < 12) {
           next = setTimeout(read, 2500)
         } else {
           setQuerying(false)

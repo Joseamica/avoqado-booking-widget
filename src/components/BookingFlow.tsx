@@ -158,7 +158,7 @@ export function BookingFlow({ props }: BookingFlowProps) {
     step.value = MANAGE_STEP
   }
 
-  function closeManage(info: PublicVenueInfo | null) {
+  function closeManage(info: PublicVenueInfo | null, quitarLiga = true) {
     clearPendingReservation(props.venue)
     recovery.saved = null
     recovery.returned = false
@@ -166,8 +166,9 @@ export function BookingFlow({ props }: BookingFlowProps) {
     setReturnNoticeClosed(true)
     setGuestDraft(null)
     setSubmissionError(null)
-    // D684a: la liga del correo (?manage=) ya no debe volver a abrir «Tu Reservación» al recargar.
-    try {
+    // D684a: la liga del correo (?manage=) ya no debe volver a abrir «Tu Reservación» al recargar. Al salir por una pestaña de la
+    // cabecera no se toca: esa pestaña carga otra página, y sin `?manage=` «Comprar paquetes» (/<negocio>#packs) sólo cambiaría el «#».
+    if (quitarLiga) try {
       const url = new URL(window.location.href)
       if (url.searchParams.has('manage')) {
         url.searchParams.delete('manage')
@@ -435,7 +436,7 @@ export function BookingFlow({ props }: BookingFlowProps) {
     // D684a: la cabecera de book.avoqado.io avisa antes de seguir el enlace de una pestaña. Cada pestaña recarga la página, y sin
     // esto la página nueva volvía a abrir «Tu Reservación» con la reserva guardada: las pestañas parecían no hacer nada.
     const onLeaveManage = () => {
-      if (step.value === MANAGE_STEP && manageOwnerRef.current) closeManage(venueInfo.value)
+      if (step.value === MANAGE_STEP && manageOwnerRef.current) closeManage(venueInfo.value, false)
     }
     host.addEventListener('_avq_show_account', onShowAccount)
     host.addEventListener('_avq_show_credit_packs', onShowCreditPacks)
