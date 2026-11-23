@@ -2,7 +2,7 @@ import { h } from 'preact'
 import type { CustomerCreditBalance, Product, UpfrontPolicy } from '../types'
 import type { TFunction } from '../i18n'
 import { precio } from '../lib/precio'
-import { cubreLugares } from '../lib/credits'
+import { avisoDelIlimitado, cubreLugares } from '../lib/credits'
 
 /** What the customer picked. The widget reads this on submit:
  *  - 'credits' + balanceIds[]: every service maps to a balance, redeem from each
@@ -19,6 +19,11 @@ interface PaymentChoiceInlineProps {
   products: Product[]
   /** Number of seats / credits per service. partySize rolled up. */
   seats: number
+  /** D679: lugares que paga con créditos, como los cuenta el SERVIDOR (lugares del mapa o, sin mapa, personas). Default `seats`. */
+  creditSeats?: number
+  /** D679: inicio del horario elegido (un Ilimitado que vence antes no lo paga) y zona del negocio para su fecha. */
+  startsAt?: string | null
+  timezone?: string
   /** Customer credit balances, fetched eagerly with productIds=all-products. */
   credits: CustomerCreditBalance | null
   /** Lead product's policy — drives the cash label (now / at venue). */
@@ -51,6 +56,7 @@ function pickBalancesForAllProducts(
   products: Product[],
   credits: CustomerCreditBalance | null,
   seats: number,
+  startsAt?: string | null,
 ): { balances: MatchingBalance[]; totalCreditsRequired: number } | null {
   if (!credits || products.length === 0) return null
 
@@ -62,6 +68,7 @@ function pickBalancesForAllProducts(
         productId: b.productId,
         remainingQuantity: b.remainingQuantity,
         unlimited: b.unlimited,
+        expiresAt: p.expiresAt,
         packName: p.creditPack.name,
       })),
     )
@@ -77,8 +84,8 @@ function pickBalancesForAllProducts(
     // the requirement. Picking the most-stocked balance leaves smaller
     // balances available for other bookings.
     const candidate = allBalances
-      // D679: un Ilimitado cubre 1 lugar (es personal).
-      .filter(b => b.productId === product.id && cubreLugares(b, seats, product.creditCost ?? 1))
+      // D679: un Ilimitado cubre 1 lugar (es personal) y sólo horarios antes de que venza.
+      .filter(b => b.productId === product.id && cubreLugares(b, seats, product.creditCost ?? 1, startsAt))
       .sort((a, b) => b.remainingQuantity - a.remainingQuantity)[0]
 
     if (!candidate) return null
@@ -99,6 +106,9 @@ function pickBalancesForAllProducts(
 export function PaymentChoiceInline({
   products,
   seats,
+  creditSeats = seats,
+  startsAt,
+  timezone,
   credits,
   upfrontPolicy,
   selected,
@@ -112,8 +122,21 @@ export function PaymentChoiceInline({
 
   // Credits viability — pickBalancesForAllProducts returns null unless every
   // product has a covering balance.
-  const coverage = pickBalancesForAllProducts(products, credits, seats)
+  const coverage = pickBalancesForAllProducts(products, credits, creditSeats, startsAt)
   const acceptsCredits = coverage !== null
+
+  // D679: si un Ilimitado de estos servicios no paga ESTA cita (2+ personas, o vence antes del horario), se dice por qué.
+  const ilimitado = acceptsCredits || !credits ? undefined : credits.purchases
+    .filter(p => p.status === 'ACTIVE')
+    .flatMap(p => p.itemBalances.map(b => ({ ...b, expiresAt: p.expiresAt })))
+    .find(b => b.unlimited && products.some(p => p.id === b.productId) && !cubreLugares(b, creditSeats, 1, startsAt))
+  if (acceptsCash && ilimitado) {
+    return (
+      <p role="status" style={{ margin: '0 0 20px', fontSize: '13px', fontWeight: '500', color: 'var(--avq-warning-fg)' }}>
+        {avisoDelIlimitado(t, ilimitado, startsAt, timezone)}
+      </p>
+    )
+  }
 
   // Don't render unless there's a real choice. Single-only fall-throughs
   // (cash-only or credit-only) keep going through the post-submit selectors.

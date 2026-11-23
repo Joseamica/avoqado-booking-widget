@@ -319,7 +319,9 @@
     "unlimitedUntil": "Ilimitado · vence el {{date}}",
     "unlimitedOneSeat": "Tu Ilimitado es personal: cubre 1 lugar a tu nombre",
     "oneSpotOnly": "Sólo 1 lugar",
-    "inYourName": "a tu nombre"
+    "inYourName": "a tu nombre",
+    "unlimitedExpiresBefore": "Tu Ilimitado vence el {{date}}, antes de este horario.",
+    "expiresBefore": "Vence antes"
   },
   "portal": {
     "title": "Mi cuenta",

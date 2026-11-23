@@ -2,7 +2,7 @@ import { h } from 'preact'
 import { useMemo, useState } from 'preact/hooks'
 import type { CustomerCreditBalance } from '../types'
 import type { TFunction } from '../i18n'
-import { cubreLugares, venceEl } from '../lib/credits'
+import { avisoDelIlimitado, cubreLugares, venceAntes, venceEl } from '../lib/credits'
 
 interface CreditSelectorProps {
   credits: CustomerCreditBalance
@@ -15,12 +15,14 @@ interface CreditSelectorProps {
   required?: boolean
   /** Zona del negocio, para «Ilimitado · vence el …». */
   timezone?: string
+  /** Inicio del horario elegido: un Ilimitado que vence antes no lo paga. */
+  startsAt?: string | null
   t: TFunction
 }
 
 const TX = 'background 0.15s var(--avq-ease), border-color 0.15s var(--avq-ease), box-shadow 0.15s var(--avq-ease), color 0.15s var(--avq-ease)'
 
-export function CreditSelector({ credits, productId, seats, onSelect, onSkip, onBuyMore, required, timezone, t }: CreditSelectorProps) {
+export function CreditSelector({ credits, productId, seats, onSelect, onSkip, onBuyMore, required, timezone, startsAt, t }: CreditSelectorProps) {
   const [hoveredId, setHoveredId] = useState<string | null>(null)
   const [skipHover, setSkipHover] = useState(false)
 
@@ -32,19 +34,19 @@ export function CreditSelector({ credits, productId, seats, onSelect, onSkip, on
           .filter(b => b.productId === productId && b.remainingQuantity > 0)
           .map(b => ({ ...b, packName: p.creditPack.name, expiresAt: p.expiresAt }))
       )
-    // D679: un Ilimitado cubre 1 lugar (es personal); su 99,999 no cuenta.
-    const suff = matching.filter(b => cubreLugares(b, seats))
-    const insuff = matching.filter(b => !cubreLugares(b, seats))
+    // D679: un Ilimitado cubre 1 lugar (es personal) y sólo horarios antes de que venza; su 99,999 no cuenta.
+    const suff = matching.filter(b => cubreLugares(b, seats, 1, startsAt))
+    const insuff = matching.filter(b => !cubreLugares(b, seats, 1, startsAt))
     return {
       sufficient: suff,
       insufficient: insuff,
       allInsufficient: suff.length === 0 && matching.length > 0,
       ordered: [...suff, ...insuff],
     }
-  }, [credits, productId, seats])
+  }, [credits, productId, seats, startsAt])
 
   if (ordered.length === 0) return null
-  const ilimitadoNoCubre = insufficient.some(b => b.unlimited)
+  const ilimitadoNoCubre = insufficient.find(b => b.unlimited)
 
   return (
     <div class="avq-animate-in" style={{ padding: '4px 0' }}>
@@ -77,7 +79,7 @@ export function CreditSelector({ credits, productId, seats, onSelect, onSkip, on
         }}>
           {allInsufficient
             ? ilimitadoNoCubre
-              ? t('creditPacks.unlimitedOneSeat')
+              ? avisoDelIlimitado(t, ilimitadoNoCubre, startsAt, timezone)
               : t('creditPacks.insufficient', { needed: seats, available: ordered[0].remainingQuantity })
             : seats > 1
               ? t('creditPacks.willUseN', { count: seats })
@@ -90,10 +92,12 @@ export function CreditSelector({ credits, productId, seats, onSelect, onSkip, on
       {/* Balance options */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '16px' }}>
         {ordered.map(balance => {
-          const canUse = cubreLugares(balance, seats)
+          const canUse = cubreLugares(balance, seats, 1, startsAt)
           const isHov = canUse && hoveredId === balance.id
           const remainingAfter = balance.remainingQuantity - seats
-          const noAlcanza = balance.unlimited ? t('creditPacks.oneSpotOnly') : t('creditPacks.notEnough')
+          const noAlcanza = !balance.unlimited
+            ? t('creditPacks.notEnough')
+            : venceAntes(balance, startsAt) ? t('creditPacks.expiresBefore') : t('creditPacks.oneSpotOnly')
 
           return (
             <button
@@ -133,7 +137,7 @@ export function CreditSelector({ credits, productId, seats, onSelect, onSkip, on
                   {balance.unlimited ? (
                     canUse
                       ? `${venceEl(t, balance.expiresAt, timezone)} · ${t('creditPacks.inYourName')}`
-                      : t('creditPacks.unlimitedOneSeat')
+                      : avisoDelIlimitado(t, balance, startsAt, timezone)
                   ) : (
                     <>
                       {t('creditPacks.remaining', {

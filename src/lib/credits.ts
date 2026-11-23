@@ -4,11 +4,19 @@
  */
 import type { TFunction } from '../i18n'
 
-type Saldo = { unlimited?: boolean; remainingQuantity: number }
+type Saldo = { unlimited?: boolean; remainingQuantity: number; expiresAt?: string | null }
 
-/** ¿Este saldo paga `seats` lugares? Un Ilimitado sólo 1; uno normal, si le alcanzan `seats × porLugar` créditos. */
-export function cubreLugares(b: Saldo, seats: number, porLugar = 1): boolean {
-  return b.unlimited ? seats <= 1 : b.remainingQuantity >= seats * porLugar
+/** Un Ilimitado que vence antes de que empiece el horario elegido (el SERVIDOR lo rechaza: `startsAt >= expiresAt`). */
+export function venceAntes(b: Saldo, startsAt?: string | null): boolean {
+  return !!(b.unlimited && b.expiresAt && startsAt && new Date(startsAt) >= new Date(b.expiresAt))
+}
+
+/**
+ * ¿Este saldo paga `seats` lugares del horario que empieza en `startsAt`? Un Ilimitado sólo 1, y sólo si el horario empieza
+ * antes de que venza; uno normal, si le alcanzan `seats × porLugar` créditos. El mismo orden que el SERVIDOR.
+ */
+export function cubreLugares(b: Saldo, seats: number, porLugar = 1, startsAt?: string | null): boolean {
+  return b.unlimited ? seats <= 1 && !venceAntes(b, startsAt) : b.remainingQuantity >= seats * porLugar
 }
 
 /** Sesiones que trae un paquete en venta; con un renglón Ilimitado, `'ilimitado'` (nunca 99,999). */
@@ -25,9 +33,17 @@ export function hayIlimitado(purchases: { itemBalances: { unlimited?: boolean }[
   return purchases.some(p => p.itemBalances.some(b => b.unlimited))
 }
 
+const fecha = (t: TFunction, iso: string, timeZone?: string) =>
+  new Intl.DateTimeFormat(t('cuenta.intl'), { day: 'numeric', month: 'long', timeZone }).format(new Date(iso))
+
 /** «Ilimitado · vence el 22 de diciembre» (fecha en la zona del negocio), o «Ilimitado» si no vence. */
 export function venceEl(t: TFunction, expiresAt?: string | null, timeZone?: string): string {
-  if (!expiresAt) return t('creditPacks.unlimited')
-  const date = new Intl.DateTimeFormat(t('cuenta.intl'), { day: 'numeric', month: 'long', timeZone }).format(new Date(expiresAt))
-  return t('creditPacks.unlimitedUntil', { date })
+  return expiresAt ? t('creditPacks.unlimitedUntil', { date: fecha(t, expiresAt, timeZone) }) : t('creditPacks.unlimited')
+}
+
+/** Por qué un Ilimitado no paga esta reserva: vence antes del horario, o es personal (1 lugar). */
+export function avisoDelIlimitado(t: TFunction, b: Saldo, startsAt?: string | null, timeZone?: string): string {
+  return venceAntes(b, startsAt)
+    ? t('creditPacks.unlimitedExpiresBefore', { date: fecha(t, b.expiresAt!, timeZone) })
+    : t('creditPacks.unlimitedOneSeat')
 }

@@ -1133,7 +1133,8 @@ export function CustomerPortal({
                   <span style={{ fontSize: '14px', fontWeight: '600', color: 'var(--avq-fg, #111827)' }}>{purchase.creditPack.name}</span>
                   {purchase.expiresAt && (
                     <span style={{ fontSize: '11px', color: 'var(--avq-muted-fg, #6b7280)' }}>
-                      {t('portal.expires', { date: new Date(purchase.expiresAt).toLocaleDateString() })}
+                      {/* D679 (Codex pantallas r1 #3): en la zona del negocio, la misma que «Ilimitado · vence el …» del renglón. */}
+                      {t('portal.expires', { date: new Intl.DateTimeFormat(intl, { timeZone: timezone }).format(new Date(purchase.expiresAt)) })}
                     </span>
                   )}
                 </div>

@@ -59,6 +59,15 @@ describe('D679 · «Mi cuenta» con un Ilimitado', () => {
     expect(container.textContent).not.toMatch(/9999/) // tampoco el paquete en venta («99999×»)
   })
 
+  it('Codex r1 #3: la cabecera y el renglón dan el vencimiento en la MISMA zona, la del negocio', async () => {
+    // 03:00 UTC del 22-dic: en CDMX (la zona de la prueba) es 21-dic; en el negocio (Tokio) ya es 22-dic.
+    vi.mocked(api.getCustomerPortal).mockResolvedValue(portal([{ ...ILIMITADO, expiresAt: '2026-12-22T03:00:00Z' }]))
+    render(<CustomerPortal venueSlug="testarudo" timezone="Asia/Tokyo" t={createT('es')} onBack={() => {}} onManageBooking={() => {}} />)
+    await screen.findByText('Hola, Ana')
+    expect(await screen.findByText('Ilimitado · vence el 22 de diciembre')).toBeTruthy()
+    expect(screen.getByText('Expira 22/12/2026')).toBeTruthy()
+  })
+
   it('una compra normal sin saldos visibles sigue en «Sin créditos» y nunca dice «Ilimitado»', async () => {
     vi.mocked(api.getCustomerPortal).mockResolvedValue(portal([{ ...ILIMITADO, creditPack: { name: 'Paquete 5' }, itemBalances: [] }]))
     const { container } = renderPortal()

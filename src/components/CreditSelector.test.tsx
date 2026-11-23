@@ -56,4 +56,22 @@ describe('D679 · CreditSelector con un Ilimitado', () => {
     expect((screen.getByRole('button', { name: /Paquete 5/ }) as HTMLButtonElement).disabled).toBe(false)
     expect(container.textContent).not.toMatch(/9999/)
   })
+
+  it('Codex r1 #2: la clase empieza después de que vence: deshabilitado con su fecha; un normal que sirve va primero', () => {
+    const normal = {
+      id: 'p2', creditPack: { name: 'Paquete 5' }, status: 'ACTIVE',
+      itemBalances: [{ id: 'b2', productId: 'yoga', product: { id: 'yoga', name: 'Yoga', type: 'CLASS' }, originalQuantity: 5, remainingQuantity: 3 }],
+    }
+    const tarde = '2026-12-24T16:00:00Z'
+    render(<CreditSelector {...props(1)} startsAt={tarde} />)
+    expect(screen.getByRole('status').textContent).toBe('Tu Ilimitado vence el 22 de diciembre, antes de este horario.')
+    expect((screen.getByRole('button', { name: /Mensual Ilimitado/ }) as HTMLButtonElement).disabled).toBe(true)
+    cleanup()
+    const p = props(1, conIlimitado([normal]))
+    render(<CreditSelector {...p} startsAt={tarde} />)
+    const botones = screen.getAllByRole('button').filter(b => /Paquete 5|Mensual Ilimitado/.test(b.getAttribute('aria-label') ?? ''))
+    expect(botones[0].getAttribute('aria-label')).toContain('Paquete 5')
+    fireEvent.click(botones[0])
+    expect(p.onSelect).toHaveBeenCalledWith('b2', 'yoga')
+  })
 })

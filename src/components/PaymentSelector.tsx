@@ -3,7 +3,7 @@ import { useMemo } from 'preact/hooks'
 import type { CustomerCreditBalance, Product, UpfrontPolicy } from '../types'
 import type { TFunction } from '../i18n'
 import { precio } from '../lib/precio'
-import { cubreLugares, venceEl } from '../lib/credits'
+import { avisoDelIlimitado, cubreLugares, venceEl } from '../lib/credits'
 
 interface PaymentSelectorProps {
   product: Product
@@ -29,6 +29,8 @@ interface PaymentSelectorProps {
   onBuyPack: () => void
   /** Zona del negocio, para «Ilimitado · vence el …». */
   timezone?: string
+  /** Inicio del horario elegido: un Ilimitado que vence antes no lo paga. */
+  startsAt?: string | null
   t: TFunction
 }
 
@@ -52,6 +54,7 @@ export function PaymentSelector({
   onSelectCash,
   onBuyPack,
   timezone,
+  startsAt,
   t,
 }: PaymentSelectorProps) {
   // When the venue can't charge online, hide anything that would move money
@@ -79,18 +82,18 @@ export function PaymentSelector({
           packName: p.creditPack.name,
           expiresAt: p.expiresAt,
           // D679: un Ilimitado cubre 1 lugar (es personal).
-          sufficient: cubreLugares(b, seats, creditCost),
+          sufficient: cubreLugares(b, seats, creditCost, startsAt),
           totalNeeded,
         })),
       )
       .filter(b => b.productId === product.id && b.remainingQuantity > 0)
       .sort((a, b) => b.remainingQuantity - a.remainingQuantity)
-  }, [credits, product.id, seats, creditCost])
+  }, [credits, product.id, seats, creditCost, startsAt])
 
   const sufficientBalance = creditBalances.find(b => b.sufficient) ?? null
   // D679: el Ilimitado que no cubre (2+ lugares) no es «te faltan créditos»: se dice aparte que es personal.
   const insufficientBalance = !sufficientBalance ? creditBalances.find(b => !b.unlimited) ?? null : null
-  const ilimitadoNoCubre = !sufficientBalance && creditBalances.some(b => b.unlimited)
+  const ilimitadoNoCubre = !sufficientBalance ? creditBalances.find(b => b.unlimited) : undefined
 
   const cashLabel =
     effectivePolicy === 'required'
@@ -144,7 +147,7 @@ export function PaymentSelector({
           <div role="status" style={{ ...paymentOptionStyle(true, true), cursor: 'default', display: 'flex', alignItems: 'center', gap: '12px' }}>
             <span style={iconBadgeStyle('warning')}>👤</span>
             <span style={{ fontSize: '13px', fontWeight: '600', color: 'var(--avq-fg, #111827)', textAlign: 'left' }}>
-              {t('creditPacks.unlimitedOneSeat')}
+              {avisoDelIlimitado(t, ilimitadoNoCubre, startsAt, timezone)}
             </span>
           </div>
         )}

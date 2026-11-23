@@ -46,6 +46,8 @@ interface GuestInfoFormProps {
   /** Restores customer-entered data after a recoverable scheduling conflict
    *  sends the wizard back to availability. */
   initialData?: GuestFormData | null
+  /** D679: avisa las personas que lleva el formulario (el pago con créditos de una cita sin mapa cuenta personas). */
+  onPartySizeChange?: (n: number) => void
 }
 
 function createSchema(requireEmail: boolean, requirePhone: boolean) {
@@ -62,7 +64,7 @@ function createSchema(requireEmail: boolean, requirePhone: boolean) {
   })
 }
 
-export function GuestInfoForm({ venueInfo, selectedSlot, selectedSpotCount, onSubmit, isSubmitting, t, loggedInCustomer, hideSubmitButton, registerSubmit, registerDraft, hidePartySize, initialData }: GuestInfoFormProps) {
+export function GuestInfoForm({ venueInfo, selectedSlot, selectedSpotCount, onSubmit, isSubmitting, t, loggedInCustomer, hideSubmitButton, registerSubmit, registerDraft, hidePartySize, initialData, onPartySizeChange }: GuestInfoFormProps) {
   const [phone, setPhone] = useState(initialData?.guestPhone ?? '')
   const [name, setName] = useState(initialData?.guestName ?? '')
   const [email, setEmail] = useState(initialData?.guestEmail ?? '')
@@ -74,6 +76,7 @@ export function GuestInfoForm({ venueInfo, selectedSlot, selectedSpotCount, onSu
   // from her Iyashi pack for one session.
   const [partySize, setPartySize] = useState(String(initialData?.partySize ?? 1))
   const [requests, setRequests] = useState(initialData?.specialRequests ?? '')
+  useEffect(() => { onPartySizeChange?.(Number(partySize) || 1) }, [partySize])
   const [errors, setErrors] = useState<Record<string, string>>({})
 
   // Stable submit fn the parent (sidebar Reserva-cita button) can call. We
