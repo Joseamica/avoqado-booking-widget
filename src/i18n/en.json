@@ -318,7 +318,8 @@
     "unlimited": "Unlimited",
     "unlimitedUntil": "Unlimited · expires {{date}}",
     "unlimitedOneSeat": "Your unlimited pass is personal: 1 spot in your name",
-    "oneSpotOnly": "1 spot only"
+    "oneSpotOnly": "1 spot only",
+    "inYourName": "in your name"
   },
   "portal": {
     "title": "My account",

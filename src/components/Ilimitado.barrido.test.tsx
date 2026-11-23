@@ -59,6 +59,14 @@ describe('D679 · ninguna pantalla enseña 99999 con un Ilimitado', () => {
     }
   })
 
+  it('donde se ofrece el Ilimitado (1 lugar) se dice que va a su nombre', () => {
+    for (const i of [0, 2, 4]) {
+      const { container } = render(pantallas[i][1]())
+      expect(container.textContent).toContain('a tu nombre')
+      cleanup()
+    }
+  })
+
   it('con 2 lugares «cómo pagar» no ofrece el Ilimitado y dice por qué', () => {
     const { container } = render(pantallas[3][1]())
     expect(container.textContent).toContain('Tu Ilimitado es personal: cubre 1 lugar a tu nombre')

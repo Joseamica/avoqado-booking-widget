@@ -39,6 +39,7 @@ describe('D679 · CreditSelector con un Ilimitado', () => {
     const p = props(1)
     const { container } = render(<CreditSelector {...p} />)
     expect(screen.getByRole('status').textContent).toBe('Ilimitado · vence el 22 de diciembre')
+    expect(screen.getByText('Ilimitado · vence el 22 de diciembre · a tu nombre')).toBeTruthy()
     expect(container.textContent).not.toMatch(/9999/)
     fireEvent.click(screen.getByRole('button', { name: /Mensual Ilimitado/ }))
     expect(p.onSelect).toHaveBeenCalledWith('b1', 'yoga')

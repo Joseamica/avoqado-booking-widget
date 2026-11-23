@@ -131,7 +131,9 @@ export function CreditSelector({ credits, productId, seats, onSelect, onSkip, on
                 </span>
                 <span style={{ fontSize: '12px', color: 'var(--avq-muted-fg, #6b7280)' }}>
                   {balance.unlimited ? (
-                    canUse ? venceEl(t, balance.expiresAt, timezone) : t('creditPacks.unlimitedOneSeat')
+                    canUse
+                      ? `${venceEl(t, balance.expiresAt, timezone)} · ${t('creditPacks.inYourName')}`
+                      : t('creditPacks.unlimitedOneSeat')
                   ) : (
                     <>
                       {t('creditPacks.remaining', {

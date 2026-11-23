@@ -128,7 +128,7 @@ export function PaymentSelector({
                 </div>
                 <div style={{ fontSize: '12px', color: 'var(--avq-muted-fg, #6b7280)', marginTop: '2px' }}>
                   {sufficientBalance.unlimited
-                    ? venceEl(t, sufficientBalance.expiresAt, timezone)
+                    ? `${venceEl(t, sufficientBalance.expiresAt, timezone)} · ${t('creditPacks.inYourName')}`
                     : t('payment.creditsRemaining', {
                         remaining: sufficientBalance.remainingQuantity - seats * creditCost,
                         total: sufficientBalance.originalQuantity,

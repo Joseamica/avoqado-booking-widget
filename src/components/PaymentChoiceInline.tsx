@@ -39,6 +39,7 @@ interface MatchingBalance {
   remainingQuantity: number
   productId: string
   required: number
+  unlimited?: boolean
 }
 
 /**
@@ -88,6 +89,7 @@ function pickBalancesForAllProducts(
       remainingQuantity: candidate.remainingQuantity,
       productId: candidate.productId,
       required,
+      unlimited: candidate.unlimited,
     })
   }
 
@@ -158,11 +160,13 @@ export function PaymentChoiceInline({
   //  - 1 service          → "Use N credits from X"
   //  - N services, 1 pack → "Use N credits across X services from Y"
   //  - N services, N packs → "Use N credits across X services"
-  const creditsHint = products.length === 1
+  const creditsHint = (products.length === 1
     ? tx.creditsHintSingle(coverage!.totalCreditsRequired, leadBalance.packName)
     : uniquePackNames.size === 1
       ? tx.creditsHintMulti(coverage!.totalCreditsRequired, leadBalance.packName)
-      : tx.creditsHintMixed(coverage!.totalCreditsRequired, products.length)
+      : tx.creditsHintMixed(coverage!.totalCreditsRequired, products.length))
+    // D679: el Ilimitado es personal; la reserva va a su nombre.
+    + (coverage!.balances.some(b => b.unlimited) ? ` · ${t('creditPacks.inYourName')}` : '')
 
   return (
     <div style={{ marginBottom: '20px' }}>
