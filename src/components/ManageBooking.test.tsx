@@ -7,7 +7,7 @@ import * as api from '../api/booking'
 import type { PublicReservationDetail, PublicVenueInfo } from '../types'
 
 vi.mock('../api/booking', () => ({
-  getReservation: vi.fn(), cancelReservation: vi.fn(), cancelHold: vi.fn(),
+  getReservation: vi.fn(), cancelReservation: vi.fn(), cancelHold: vi.fn(), abandonPayment: vi.fn(),
   getRescheduleAvailability: vi.fn(), createRescheduleHold: vi.fn(), rescheduleAppointment: vi.fn(),
 }))
 const venue: PublicVenueInfo = {
@@ -55,7 +55,7 @@ describe('reservation language matches the widget', () => {
 
 describe('financial source of truth and one bounded read round', () => {
   it.each([
-    ['PAID', 'CANCELLED', 'Pago recibido'], ['PENDING', 'CONFIRMED', 'Estamos confirmando el depósito'],
+    ['PAID', 'CANCELLED', 'Pago recibido'], ['PENDING', 'CONFIRMED', 'Esperando tu pago'],
     ['REFUNDED', 'CONFIRMED', 'Depósito reembolsado'], ['FORFEITED', 'CONFIRMED', 'Depósito retenido'],
     ['EXPIRED', 'CONFIRMED', 'El plazo del depósito expiró'], ['DISPUTED', 'CONFIRMED', 'Depósito en disputa'],
     ['CARD_HOLD', 'CONFIRMED', 'Retención de tarjeta'], [null, 'CONFIRMED', 'Aún no pudimos confirmar el estado del depósito'],
@@ -68,6 +68,31 @@ describe('financial source of truth and one bounded read round', () => {
     expect(screen.queryByText(/sin cargo|no se hizo cargo|no charge/i)).toBeNull()
     if (financial !== 'PAID') expect(screen.queryByText('Pago recibido')).toBeNull()
     if (financial !== 'PENDING') { await advance(40000); expect(api.getReservation).toHaveBeenCalledTimes(1) }
+  })
+  it('D681: con el depósito pendiente dice que espera el pago y hasta qué hora se aparta el lugar (no «confirmando»)', async () => {
+    vi.setSystemTime(new Date('2026-10-06T18:00:00Z'))
+    vi.mocked(api.getReservation).mockResolvedValue({ ...detail('PENDING', 'PENDING'), depositExpiresAt: '2026-10-06T18:25:00Z' })
+    render(<ManageBooking {...props} />); await flush()
+    expect(screen.getByRole('status').textContent).toContain('Esperando tu pago · si no pagas antes de las 12:25 p.m., se libera tu lugar')
+    expect(screen.queryByText(/Estamos confirmando/)).toBeNull()
+    expect(api.abandonPayment).not.toHaveBeenCalled()
+  })
+  it('D681: volvió por «atrás» de Stripe: pide soltar el lugar ANTES de leer y, suelto, lo dice', async () => {
+    const orden: string[] = []
+    vi.mocked(api.abandonPayment).mockImplementation(async () => { orden.push('soltar'); return { released: true, status: 'CANCELLED', depositStatus: 'EXPIRED', depositExpiresAt: null } })
+    vi.mocked(api.getReservation).mockImplementation(async () => { orden.push('leer'); return detail('EXPIRED', 'CANCELLED') })
+    render(<ManageBooking {...props} paymentCancelled paymentUnfinished depositReturn />); await flush()
+    expect(orden).toEqual(['soltar', 'leer'])
+    expect(api.abandonPayment).toHaveBeenCalledWith('studio-a', 'local-a')
+    expect(screen.getByRole('status').textContent).toContain('No se completó el pago; tu lugar no quedó apartado')
+  })
+  it('D681: si soltar falla, la lectura manda: sigue esperando el pago hasta su hora', async () => {
+    vi.setSystemTime(new Date('2026-10-06T18:00:00Z'))
+    vi.mocked(api.abandonPayment).mockRejectedValue(new Error('Stripe no contesta'))
+    vi.mocked(api.getReservation).mockResolvedValue({ ...detail('PENDING', 'PENDING'), depositExpiresAt: '2026-10-06T18:25:00Z' })
+    render(<ManageBooking {...props} paymentCancelled paymentUnfinished depositReturn />); await flush()
+    expect(screen.getByRole('status').textContent).toContain('Esperando tu pago · si no pagas antes de las 12:25 p.m., se libera tu lugar')
+    expect(api.abandonPayment).toHaveBeenCalledTimes(1)
   })
   it('reads PENDING then PAID sequentially and stops', async () => {
     vi.mocked(api.getReservation).mockResolvedValueOnce(detail('PENDING')).mockResolvedValue(detail('PAID', 'PENDING'))
@@ -82,7 +107,7 @@ describe('financial source of truth and one bounded read round', () => {
     vi.mocked(api.getReservation).mockResolvedValue(detail('PENDING'))
     render(<ManageBooking {...props} />); await flush(); await advance(27500)
     expect(api.getReservation).toHaveBeenCalledTimes(12)
-    expect(screen.getByRole('status').textContent).toContain('Aún no se confirma')
+    expect(screen.getByRole('status').textContent).toContain('Esperando tu pago') // D681: sin pagar no se dice «no se confirma»
     await advance(40000); expect(api.getReservation).toHaveBeenCalledTimes(12)
     fireEvent.click(screen.getByRole('button', { name: 'Consultar de nuevo' })); await flush()
     expect(api.getReservation).toHaveBeenCalledTimes(13)

@@ -11,6 +11,7 @@ import type { PublicVenueInfo, PublicReservationDetail, WidgetProps } from '../t
 vi.mock('../api/booking', () => ({
   getVenueInfo: vi.fn(), getCreditPacks: vi.fn(), getReservation: vi.fn(),
   getAvailability: vi.fn(), getClassSessionsRange: vi.fn(), createReservation: vi.fn(), createHold: vi.fn(), cancelHold: vi.fn(),
+  abandonPayment: vi.fn(),
   getCustomerCredits: vi.fn(), getCustomerPortal: vi.fn(), createPackCheckout: vi.fn(),
   esAndroid: () => false, // D656: «Mi cuenta» lo lee al pintarse
 }))
@@ -1459,8 +1460,9 @@ describe('D684b: /appointments en un negocio sin servicios con cita', () => {
 })
 
 // D683 (Mindform, 22-nov): reservó «Clase Lagree» $325, fue a Stripe y regresó sin pagar. «Tu Reservación» decía «Estamos
-// confirmando el depósito · Pendiente», como si hubiera pagado. La hora del apartado la da el SERVIDOR (`depositExpiresAt`, #596,
-// aditivo); la liga de pago es la que devolvió la reserva al crearse, guardada en este navegador. Sin las dos no hay «Pagar ahora».
+// confirmando el depósito · Pendiente», como si hubiera pagado. D681 (versión chica): al volver por la liga «atrás» de Stripe se le
+// pide al SERVIDOR soltar el lugar (`abandonPayment`); si lo suelta, «No se completó el pago; tu lugar no quedó apartado». Si
+// todavía espera el pago, «Esperando tu pago · si no pagas antes de las HH:MM, se libera tu lugar» (la hora: `depositExpiresAt`).
 describe('D683: volvió de Stripe sin pagar', () => {
   const permitido = { allowed: true, minHoursBeforeStart: 2, creditsUsed: 0, creditsRefundable: 0, refundPercent: 0, policyLabel: '' }
   const sinPagar = { ...detail, status: 'PENDING', depositStatus: 'PENDING', cancellation: permitido, depositExpiresAt: '2026-10-06T18:25:00Z' }
@@ -1474,10 +1476,20 @@ describe('D683: volvió de Stripe sin pagar', () => {
   }
   const aviso = () => screen.getByRole('status').textContent ?? ''
 
-  it('dice que el pago no se completó y hasta cuándo guarda el lugar; ofrece pagar y cancelar; no se queda consultando', async () => {
+  it('🔴 D681: al volver por «atrás» de Stripe le pide al SERVIDOR soltar el lugar, una vez, y dice que no quedó apartado', async () => {
+    vi.mocked(api.abandonPayment).mockResolvedValue({ released: true, status: 'CANCELLED', depositStatus: 'EXPIRED', depositExpiresAt: null })
+    await volver('/studio-a/classes?avq_payment=cancelled', { ...sinPagar, status: 'CANCELLED', depositStatus: 'EXPIRED' })
+    expect(api.abandonPayment).toHaveBeenCalledTimes(1)
+    expect(api.abandonPayment).toHaveBeenCalledWith('studio-a', 'stored-a')
+    expect(aviso()).toContain('No se completó el pago; tu lugar no quedó apartado')
+    expect(screen.queryByText(/Estamos confirmando/)).toBeNull()
+    expect(screen.queryByRole('link', { name: 'Pagar ahora' })).toBeNull()
+  })
+
+  it('si Stripe no dejó soltarlo: dice que espera su pago y hasta qué hora; ofrece pagar y cancelar; no se queda consultando', async () => {
+    vi.mocked(api.abandonPayment).mockRejectedValue(new Error('Stripe no contesta'))
     await volver('/studio-a/classes?avq_payment=cancelled&payment=cancelled&reservationId=r1')
-    expect(aviso()).toContain('Tu pago no se completó')
-    expect(aviso()).toContain('12:25 p.m.')
+    expect(aviso()).toContain('Esperando tu pago · si no pagas antes de las 12:25 p.m., se libera tu lugar')
     expect(screen.queryByText(/Estamos confirmando/)).toBeNull()
     expect(screen.getByRole('link', { name: 'Pagar ahora' }).getAttribute('href')).toBe(PAGO)
     expect(screen.getByRole('button', { name: 'Cancelar Reservación' })).toBeTruthy()
@@ -1489,7 +1501,7 @@ describe('D683: volvió de Stripe sin pagar', () => {
     ['con el plazo ya vencido', { ...sinPagar, depositExpiresAt: '2026-10-06T17:59:00Z' }, { ...saved, checkoutUrl: PAGO }],
   ])('%s: el aviso honesto, sin hora y sin «Pagar ahora»', async (_caso, reserva, guardada) => {
     await volver('/studio-a/classes?avq_payment=cancelled', reserva, guardada)
-    expect(aviso()).toContain('Tu pago no se completó')
+    expect(aviso()).toContain('Esperando tu pago')
     expect(aviso()).not.toMatch(/\d:\d\d/)
     expect(screen.queryByRole('link', { name: 'Pagar ahora' })).toBeNull()
     expect(screen.getByRole('button', { name: 'Cancelar Reservación' })).toBeTruthy()
@@ -1517,12 +1529,13 @@ describe('D683: volvió de Stripe sin pagar', () => {
     const antes = await volver('/studio-a/classes?avq_payment=cancelled')
     antes.unmount(); resetSignals()
     render(<BookingFlow props={props()} />); await flush()
-    expect(aviso()).toContain('Tu pago no se completó')
+    expect(aviso()).toContain('Esperando tu pago')
   })
 
-  it('regresó con «atrás» del navegador (sin pasar por Stripe de vuelta): también falta el pago', async () => {
+  it('regresó con «atrás» del navegador (sin pasar por Stripe de vuelta): también falta el pago, y no se suelta solo', async () => {
     await volver('/studio-a/classes')
-    expect(aviso()).toContain('Tu pago no se completó')
+    expect(aviso()).toContain('Esperando tu pago · si no pagas antes de las 12:25 p.m., se libera tu lugar')
+    expect(api.abandonPayment).not.toHaveBeenCalled()
   })
 
   it('volvió pagado y recarga mientras llega el aviso del banco: sigue «Estamos confirmando», sin «Pagar ahora»', async () => {
@@ -1536,7 +1549,7 @@ describe('D683: volvió de Stripe sin pagar', () => {
 
   it('si el lugar ya se liberó, dice lo que pasó y no ofrece pagar', async () => {
     await volver('/studio-a/classes?avq_payment=cancelled', { ...sinPagar, status: 'CANCELLED', depositStatus: 'EXPIRED' })
-    expect(aviso()).toContain('El plazo del depósito expiró')
+    expect(aviso()).toContain('No se completó el pago; tu lugar no quedó apartado')
     expect(screen.queryByRole('link', { name: 'Pagar ahora' })).toBeNull()
   })
 })

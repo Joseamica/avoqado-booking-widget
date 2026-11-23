@@ -163,8 +163,9 @@
     "unknown": "Aún no pudimos confirmar el estado del depósito",
     "missingReference": "No pudimos recuperar esta reserva en este navegador. Consulta tu confirmación o contacta al negocio",
     "close": "Cerrar aviso",
-    "notFinished": "Tu pago no se completó. Tu reservación aún no está confirmada.",
-    "heldUntil": "Te guardamos el lugar hasta las {{time}}; después se libera.",
+    "waiting": "Esperando tu pago · si no pagas antes de las {{time}}, se libera tu lugar",
+    "waitingNoTime": "Esperando tu pago",
+    "notCompleted": "No se completó el pago; tu lugar no quedó apartado",
     "payNow": "Pagar ahora"
   },
   "seats": {
