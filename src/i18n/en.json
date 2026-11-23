@@ -163,9 +163,8 @@
     "unknown": "We could not confirm the deposit status yet",
     "missingReference": "We could not recover this reservation in this browser. Check your confirmation or contact the business",
     "close": "Close notice",
-    "waiting": "Waiting for your payment · if you don't pay before {{time}}, your spot is released",
-    "waitingNoTime": "Waiting for your payment",
-    "notCompleted": "The payment wasn't completed; your spot was not held",
+    "waiting": "Waiting for your payment. If you don't complete it, your spot is released automatically in a few minutes",
+    "notCompleted": "The payment wasn't completed. If you don't finish it, your spot is released automatically in a few minutes",
     "payNow": "Pay now"
   },
   "seats": {

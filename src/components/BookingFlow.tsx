@@ -18,7 +18,7 @@ import {
   slotHoldToken, slotHoldExpiresAt,
   branding, DEFAULT_BRANDING,
 } from '../state/booking'
-import { resolveDepositReturn, savePendingReservation, clearPendingReservation, depositCheckoutUrl } from '../lib/depositReturn'
+import { resolveDepositReturn, savePendingReservation, clearPendingReservation, depositCheckoutUrl, newReturnRef } from '../lib/depositReturn'
 import { leerSesion, type SesionEmitida } from '../lib/sesionDeCliente'
 
 /** Quién compró el paquete en esta pestaña (para el regreso de Stripe). */
@@ -1601,8 +1601,10 @@ export function BookingFlow({ props }: BookingFlowProps) {
       const creditBalanceIds = Array.isArray(creditPayload) && creditPayload.length > 0 ? creditPayload : undefined
       // If the venue requires upfront payment, the server will return checkoutUrl
       // and we'll redirect to Stripe. Tell Stripe where to send the customer back.
-      const successUrl = depositCheckoutUrl('success')
-      const cancelUrl = depositCheckoutUrl('cancelled')
+      // D681: las dos ligas llevan la marca de ESTA reserva, para reconocer de cuál regresa.
+      const returnRef = newReturnRef()
+      const successUrl = depositCheckoutUrl('success', returnRef)
+      const cancelUrl = depositCheckoutUrl('cancelled', returnRef)
       // Multi-service appointments: send the full ordered productIds[] when
       // the customer picked more than one service. The server sums durations
       // and uses productIds[0] as the lead product for legacy joins.
@@ -1665,7 +1667,7 @@ export function BookingFlow({ props }: BookingFlowProps) {
         slotHoldExpiresAt.value = null
         setHoldReleaseFailed(false)
         pendingHoldReleaseActionRef.current = null
-        savePendingReservation(props.venue, result)
+        savePendingReservation(props.venue, { ...result, ref: returnRef })
         window.location.href = result.checkoutUrl
         return
       }

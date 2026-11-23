@@ -354,8 +354,6 @@ export interface PublicReservationDetail {
   specialRequests: string | null
   depositAmount: number | null
   depositStatus: string | null
-  /** D683: hasta cuándo se guarda el lugar sin pagar (ISO). Aditivo del SERVIDOR (#596); sin él no se dice hora ni se ofrece pagar. */
-  depositExpiresAt?: string | null
   cancellation?: {
     /** Full decision (venue toggle + status + time window). Disable the cancel
      *  control when false — never re-derive this client-side. */

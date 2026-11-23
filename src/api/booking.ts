@@ -205,17 +205,6 @@ export function getReservation(slug: string, cancelSecret: string, signal?: Abor
   return request(`${BASE}/venues/${slug}/reservations/${cancelSecret}`, { signal })
 }
 
-/**
- * D681: volvió de Stripe SIN pagar (la liga «atrás»). El SERVIDOR cierra la liga y suelta el lugar; si ya se había pagado, lo
- * aplica; si Stripe no contesta, no cambia nada (vence sola). Con tope: nunca deja la pantalla girando.
- */
-export function abandonPayment(
-  slug: string,
-  cancelSecret: string,
-): Promise<{ released: boolean; status: string; depositStatus: string | null; depositExpiresAt: string | null }> {
-  return request(`${BASE}/venues/${slug}/reservations/${cancelSecret}/abandon-payment`, { method: 'POST', body: '{}', signal: conTope() })
-}
-
 export function cancelReservation(slug: string, cancelSecret: string, reason?: string): Promise<{ confirmationCode: string; status: string; cancelledAt: string }> {
   return request(`${BASE}/venues/${slug}/reservations/${cancelSecret}/cancel`, {
     method: 'POST',

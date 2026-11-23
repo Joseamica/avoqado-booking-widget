@@ -7,7 +7,7 @@ import * as api from '../api/booking'
 import type { PublicReservationDetail, PublicVenueInfo } from '../types'
 
 vi.mock('../api/booking', () => ({
-  getReservation: vi.fn(), cancelReservation: vi.fn(), cancelHold: vi.fn(), abandonPayment: vi.fn(),
+  getReservation: vi.fn(), cancelReservation: vi.fn(), cancelHold: vi.fn(),
   getRescheduleAvailability: vi.fn(), createRescheduleHold: vi.fn(), rescheduleAppointment: vi.fn(),
 }))
 const venue: PublicVenueInfo = {
@@ -55,7 +55,8 @@ describe('reservation language matches the widget', () => {
 
 describe('financial source of truth and one bounded read round', () => {
   it.each([
-    ['PAID', 'CANCELLED', 'Pago recibido'], ['PENDING', 'CONFIRMED', 'Esperando tu pago'],
+    ['PAID', 'CANCELLED', 'Pago recibido'], ['PENDING', 'CONFIRMED', 'Aún no se confirma'],
+    ['PENDING', 'PENDING', 'Esperando tu pago. Si no lo completas, tu lugar se libera solo en unos minutos'],
     ['REFUNDED', 'CONFIRMED', 'Depósito reembolsado'], ['FORFEITED', 'CONFIRMED', 'Depósito retenido'],
     ['EXPIRED', 'CONFIRMED', 'El plazo del depósito expiró'], ['DISPUTED', 'CONFIRMED', 'Depósito en disputa'],
     ['CARD_HOLD', 'CONFIRMED', 'Retención de tarjeta'], [null, 'CONFIRMED', 'Aún no pudimos confirmar el estado del depósito'],
@@ -69,30 +70,28 @@ describe('financial source of truth and one bounded read round', () => {
     if (financial !== 'PAID') expect(screen.queryByText('Pago recibido')).toBeNull()
     if (financial !== 'PENDING') { await advance(40000); expect(api.getReservation).toHaveBeenCalledTimes(1) }
   })
-  it('D681: con el depósito pendiente dice que espera el pago y hasta qué hora se aparta el lugar (no «confirmando»)', async () => {
-    vi.setSystemTime(new Date('2026-10-06T18:00:00Z'))
-    vi.mocked(api.getReservation).mockResolvedValue({ ...detail('PENDING', 'PENDING'), depositExpiresAt: '2026-10-06T18:25:00Z' })
+  // D681 (sólo texto): nadie lee «Estamos confirmando» si no volvió por la liga de pago hecho, y el lugar lo suelta el aviso de Stripe.
+  it('D681: con la reserva y el depósito pendientes dice que espera el pago, sin hora y sin «confirmando»', async () => {
+    vi.mocked(api.getReservation).mockResolvedValue(detail('PENDING', 'PENDING'))
     render(<ManageBooking {...props} />); await flush()
-    expect(screen.getByRole('status').textContent).toContain('Esperando tu pago · si no pagas antes de las 12:25 p.m., se libera tu lugar')
+    expect(screen.getByRole('status').textContent).toBe('Esperando tu pago. Si no lo completas, tu lugar se libera solo en unos minutos')
     expect(screen.queryByText(/Estamos confirmando/)).toBeNull()
-    expect(api.abandonPayment).not.toHaveBeenCalled()
   })
-  it('D681: volvió por «atrás» de Stripe: pide soltar el lugar ANTES de leer y, suelto, lo dice', async () => {
-    const orden: string[] = []
-    vi.mocked(api.abandonPayment).mockImplementation(async () => { orden.push('soltar'); return { released: true, status: 'CANCELLED', depositStatus: 'EXPIRED', depositExpiresAt: null } })
-    vi.mocked(api.getReservation).mockImplementation(async () => { orden.push('leer'); return detail('EXPIRED', 'CANCELLED') })
+  it('D681: volvió por «atrás» de Stripe: dice que no se completó, sin pedirle nada al SERVIDOR más que leer', async () => {
+    vi.mocked(api.getReservation).mockResolvedValue(detail('PENDING', 'PENDING'))
     render(<ManageBooking {...props} paymentCancelled paymentUnfinished depositReturn />); await flush()
-    expect(orden).toEqual(['soltar', 'leer'])
-    expect(api.abandonPayment).toHaveBeenCalledWith('studio-a', 'local-a')
-    expect(screen.getByRole('status').textContent).toContain('No se completó el pago; tu lugar no quedó apartado')
+    expect(screen.getByRole('status').textContent).toBe('No se completó el pago. Si no lo terminas, tu lugar se libera solo en unos minutos')
+    await advance(40000); expect(api.getReservation).toHaveBeenCalledTimes(1)
   })
-  it('D681: si soltar falla, la lectura manda: sigue esperando el pago hasta su hora', async () => {
-    vi.setSystemTime(new Date('2026-10-06T18:00:00Z'))
-    vi.mocked(api.abandonPayment).mockRejectedValue(new Error('Stripe no contesta'))
-    vi.mocked(api.getReservation).mockResolvedValue({ ...detail('PENDING', 'PENDING'), depositExpiresAt: '2026-10-06T18:25:00Z' })
+  it.each([
+    ['REFUNDED', 'CANCELLED', 'Depósito reembolsado'], ['PAID', 'CONFIRMED', 'Pago recibido'], ['PAID', 'CANCELLED', 'Pago recibido'],
+    ['EXPIRED', 'CANCELLED', 'El plazo del depósito expiró'], ['FORFEITED', 'CANCELLED', 'Depósito retenido'],
+    ['PENDING', 'CANCELLED', 'Aún no se confirma'],
+  ])('D681 (Codex #6): volvió por «atrás» pero el depósito está %s y la reserva %s: manda el depósito, nunca «No se completó»', async (financial, administrative, notice) => {
+    vi.mocked(api.getReservation).mockResolvedValue(detail(financial, administrative))
     render(<ManageBooking {...props} paymentCancelled paymentUnfinished depositReturn />); await flush()
-    expect(screen.getByRole('status').textContent).toContain('Esperando tu pago · si no pagas antes de las 12:25 p.m., se libera tu lugar')
-    expect(api.abandonPayment).toHaveBeenCalledTimes(1)
+    expect(screen.getByRole('status').textContent).toContain(notice)
+    expect(screen.queryByText(/No se completó el pago|Esperando tu pago/)).toBeNull()
   })
   it('reads PENDING then PAID sequentially and stops', async () => {
     vi.mocked(api.getReservation).mockResolvedValueOnce(detail('PENDING')).mockResolvedValue(detail('PAID', 'PENDING'))
@@ -107,7 +106,7 @@ describe('financial source of truth and one bounded read round', () => {
     vi.mocked(api.getReservation).mockResolvedValue(detail('PENDING'))
     render(<ManageBooking {...props} />); await flush(); await advance(27500)
     expect(api.getReservation).toHaveBeenCalledTimes(12)
-    expect(screen.getByRole('status').textContent).toContain('Esperando tu pago') // D681: sin pagar no se dice «no se confirma»
+    expect(screen.getByRole('status').textContent).toContain('Aún no se confirma')
     await advance(40000); expect(api.getReservation).toHaveBeenCalledTimes(12)
     fireEvent.click(screen.getByRole('button', { name: 'Consultar de nuevo' })); await flush()
     expect(api.getReservation).toHaveBeenCalledTimes(13)

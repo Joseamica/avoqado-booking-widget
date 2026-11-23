@@ -23,7 +23,7 @@ interface ManageBookingProps {
   paymentUnfinished?: boolean
   /** D683: la página de pago de Stripe que devolvió la reserva al crearse, guardada en este navegador. */
   checkoutUrl?: string | null
-  /** D681: regresó por la liga «atrás» de Stripe (`cancel_url`): al abrir se le pide al SERVIDOR soltar el lugar. */
+  /** D681: regresó por la liga «atrás» de Stripe (`cancel_url`). Sólo cambia el texto: el lugar lo suelta el aviso de Stripe. */
   paymentCancelled?: boolean
 }
 
@@ -54,8 +54,6 @@ export function ManageBooking({ venueSlug, cancelSecret, timezone, locale = 'es'
   const renderSource = sourceRef.current
   const generationRef = useRef(0)
   const stopRef = useRef<(() => void) | null>(null)
-  // D681: se pide UNA vez por vuelta (recargar vuelve a pedirlo; el SERVIDOR no hace nada si ya no espera el pago).
-  const soltarRef = useRef(paymentCancelled)
 
   function stopReads() {
     generationRef.current++
@@ -80,12 +78,6 @@ export function ManageBooking({ venueSlug, cancelSecret, timezone, locale = 'es'
 
     async function read() {
       if (!current()) return
-      if (soltarRef.current) {
-        soltarRef.current = false
-        // Si falla (o Stripe no contesta), la lectura de abajo dice la verdad: sigue esperando el pago hasta su hora.
-        try { await api.abandonPayment(source.venueSlug, source.cancelSecret) } catch { /* la lectura manda */ }
-        if (!current()) return
-      }
       attempts++
       controller = new AbortController()
       try {
@@ -150,25 +142,19 @@ export function ManageBooking({ venueSlug, cancelSecret, timezone, locale = 'es'
   }
 
   const dateLocale = locale === 'en' ? 'en-US' : 'es-MX'
-  // D681/D683: texto honesto. Sólo quien volvió por la liga de pago hecho lee «Estamos confirmando»; cualquiera otro con el depósito
-  // pendiente lee que falta su pago y hasta qué hora se aparta el lugar (la hora la da el SERVIDOR, `depositExpiresAt`). Si volvió
-  // por «atrás» y el lugar ya se soltó, se le dice así. «Pagar ahora» sólo con la liga guardada en este navegador y el plazo vigente.
+  // D681/D683: texto honesto, sin tocar el SERVIDOR (el lugar lo suelta el aviso de Stripe cuando vence la liga). Sólo quien volvió
+  // por la liga de pago hecho lee «Estamos confirmando». Con la reserva y el depósito aún pendientes, cualquiera otro lee que falta
+  // su pago (y, si volvió por «atrás», que no se completó). Con cualquier otro estado del depósito (pagado, reembolsado, vencido…)
+  // manda ese estado. «Pagar ahora» sólo en esa vuelta y con la liga que guardó este navegador.
   const returnedPaid = depositReturn && !paymentUnfinished
-  const unpaid = reservation?.depositStatus === 'PENDING' && !returnedPaid
-  const holdEnds = unpaid ? Date.parse(reservation?.depositExpiresAt ?? '') : NaN
-  const holdTime = holdEnds > Date.now()
-    ? new Date(holdEnds).toLocaleTimeString(dateLocale, { hour: '2-digit', minute: '2-digit', timeZone: timezone })
-    : null
-  const payUrl = paymentUnfinished && holdTime && checkoutUrl?.startsWith('https://') ? checkoutUrl : null
-  const released = paymentCancelled && reservation != null && (reservation.status === 'CANCELLED' || reservation.depositStatus === 'EXPIRED')
+  const awaitingPayment = reservation?.status === 'PENDING' && reservation.depositStatus === 'PENDING' && !returnedPaid
+  const payUrl = awaitingPayment && paymentUnfinished && checkoutUrl?.startsWith('https://') ? checkoutUrl : null
 
   const financialNotice = (
     <div role="status" aria-live="polite" style={{ marginBottom: '16px', padding: '12px 14px', borderRadius: '12px', background: 'var(--avq-muted, #f8f9fb)', fontSize: '13px' }}>
-      {released
-        ? t('deposit.notCompleted')
-        : unpaid
-          ? (holdTime ? t('deposit.waiting', { time: holdTime }) : t('deposit.waitingNoTime'))
-          : t(depositNotice(reservation?.depositStatus ?? null, querying, depositReturn))}
+      {awaitingPayment
+        ? t(paymentCancelled ? 'deposit.notCompleted' : 'deposit.waiting')
+        : t(depositNotice(reservation?.depositStatus ?? null, querying && returnedPaid, depositReturn))}
     </div>
   )
 
