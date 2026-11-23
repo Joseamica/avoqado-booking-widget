@@ -42,7 +42,7 @@ import { CustomerPortal } from './CustomerPortal'
 import { leerCuenta } from '../state/miCuenta'
 import { ClassSessionList } from './ClassSessionList'
 import { ClassDetailView } from './ClassDetailView'
-import { UnifiedLanding, ofreceCitas } from './UnifiedLanding'
+import { UnifiedLanding } from './UnifiedLanding'
 import { PaymentSelector } from './PaymentSelector'
 import { TimezoneModal, getStoredTzPreference } from './TimezoneModal'
 import { VenueSidebarCard } from './VenueSidebarCard'
@@ -556,8 +556,9 @@ export function BookingFlow({ props }: BookingFlowProps) {
               // venue doesn't use (e.g. "Clases" when only appointments are
               // offered). Keeps the chrome from showing dead-end CTAs.
               hasClasses,
-              // D684b: lo mismo con «Citas» cuando el negocio sólo da clases.
-              hasAppointments: ofreceCitas(info.products ?? []),
+              // D684b: lo mismo con «Citas» cuando el negocio sólo da clases. Con el catálogo completo (no la ventana de 30 días de
+              // las clases): sin productos (un restaurante que recibe reservas) o con servicios que no son clase, «Citas» se queda.
+              hasAppointments: (info.products ?? []).some(p => p.type !== 'CLASS') || !hasClasses,
             },
           },
         }))
@@ -1318,7 +1319,6 @@ export function BookingFlow({ props }: BookingFlowProps) {
           onBack={() => closeManage(info)}
           depositReturn={Boolean(recovery.saved)}
           paymentUnfinished={recovery.paymentUnfinished && recovery.saved?.cancelSecret === manageSecret.value}
-          checkoutUrl={recovery.saved?.cancelSecret === manageSecret.value ? recovery.saved?.checkoutUrl : null}
           paymentCancelled={recovery.saved?.outcome === 'cancelled' && recovery.saved?.cancelSecret === manageSecret.value}
         />
         {!props.hideVenueHeader && (
@@ -1859,10 +1859,6 @@ export function BookingFlow({ props }: BookingFlowProps) {
     ? { ['--avq-accent' as any]: venueAccent }
     : undefined
 
-  // D684b: /appointments en un negocio que sólo da clases abría un calendario vacío («Todavía no se han añadido servicios»).
-  // Reemplaza sólo los pasos: la lista de paquetes de la cabecera sigue abriéndose encima.
-  const noAppointments = flowType.value === 'appointments' && !ofreceCitas(info.products)
-
   return (
     <div style={accentOverride}>
       {/* Venue header — suppressed when the host page already shows the brand
@@ -2006,23 +2002,6 @@ export function BookingFlow({ props }: BookingFlowProps) {
       )}
 
       {/* Steps */}
-      {noAppointments ? (
-        <div class="avq-animate-in" style={{ padding: '48px 0', textAlign: 'center' }}>
-          <p style={{ fontSize: '16px', fontWeight: '600', color: 'var(--avq-fg, #111827)', marginBottom: '20px' }}>
-            {t('service.noAppointments')}
-          </p>
-          <Button onClick={() => {
-            flowType.value = 'classes'
-            // Sólo en book.avoqado.io (la página que pone `hide-venue-header`) cambia la dirección, y la cabecera la sigue. Incrustado en
-            // un sitio ajeno, se cambia por dentro del widget y su dirección no se toca (Codex texto #4).
-            const base = props.hideVenueHeader ? appointmentsBasePath() : null
-            if (base) window.history.pushState({}, '', `${base.replace(/\/appointments$/, '')}/classes${window.location.search}`)
-            resetBooking(info)
-          }}>
-            {t('service.seeClasses')}
-          </Button>
-        </div>
-      ) : (
       <div class="avq-animate-in" key={`${step.value}-${showLanding}`}>
         {/* Reservation hero — wide cover photo above the appointments service
             step, gated by branding.showHeroImage + a configured heroImageUrl. */}
@@ -2821,7 +2800,6 @@ export function BookingFlow({ props }: BookingFlowProps) {
           />
         )}
       </div>
-      )}
 
       {/* Checkout form overlay — accessible modal */}
       {checkoutPackId && ventanaDelIntento.current === intentoDeCompra.current && (

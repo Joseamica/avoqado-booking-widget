@@ -4,11 +4,8 @@ const legacyKey = 'avq:pendingReservation'
 const reservationKey = (venue: string) => `${legacyKey}:${venue}`
 /** Cómo regresó de Stripe: por la liga de pago hecho (`success`) o por la de «atrás» (`cancelled`). */
 type PaymentOutcome = 'success' | 'cancelled'
-/**
- * `checkoutUrl`: la página de pago de Stripe que devolvió la reserva al crearse (D683, «Pagar ahora»). Sólo vive en este navegador.
- * `ref`: la marca que viaja en las ligas de regreso de ESA reserva (D681). Si regresa con otra, la vuelta es de otra reserva.
- */
-type SavedReservation = { venue: string; cancelSecret: string; confirmationCode: string; outcome?: PaymentOutcome; checkoutUrl?: string; ref?: string }
+/** `ref`: la marca que viaja en las ligas de regreso de ESA reserva (D681). Si regresa con otra, la vuelta es de otra reserva. */
+type SavedReservation = { venue: string; cancelSecret: string; confirmationCode: string; outcome?: PaymentOutcome; ref?: string }
 
 function readSaved(key: string, venue: string): SavedReservation | null {
   try {
@@ -20,13 +17,12 @@ function readSaved(key: string, venue: string): SavedReservation | null {
 
 export function savePendingReservation(
   venue: string,
-  result: Pick<PublicBookingResult, 'cancelSecret' | 'confirmationCode'> & { outcome?: PaymentOutcome; checkoutUrl?: string | null; ref?: string },
+  result: Pick<PublicBookingResult, 'cancelSecret' | 'confirmationCode'> & { outcome?: PaymentOutcome; ref?: string },
 ) {
   try {
     const outcome = result.outcome === 'success' || result.outcome === 'cancelled' ? { outcome: result.outcome } : {}
-    const pay = typeof result.checkoutUrl === 'string' && result.checkoutUrl.startsWith('https://') ? { checkoutUrl: result.checkoutUrl } : {}
     const ref = typeof result.ref === 'string' && result.ref.length > 0 ? { ref: result.ref } : {}
-    sessionStorage.setItem(reservationKey(venue), JSON.stringify({ venue, cancelSecret: result.cancelSecret, confirmationCode: result.confirmationCode, ...outcome, ...pay, ...ref }))
+    sessionStorage.setItem(reservationKey(venue), JSON.stringify({ venue, cancelSecret: result.cancelSecret, confirmationCode: result.confirmationCode, ...outcome, ...ref }))
     if (readSaved(legacyKey, venue)) sessionStorage.removeItem(legacyKey)
   } catch { /* blocked storage: the return screen explains it */ }
 }

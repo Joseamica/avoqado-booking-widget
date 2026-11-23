@@ -25,9 +25,7 @@
     "tabClasses": "Clases",
     "noClasses": "No hay clases disponibles",
     "classCapacity": "{{count}} lugares",
-    "classCapacity_one": "{{count}} lugar",
-    "noAppointments": "Este negocio no agenda citas en línea",
-    "seeClasses": "Ver clases"
+    "classCapacity_one": "{{count}} lugar"
   },
   "summary": {
     "title": "Resumen de la cita",
@@ -164,8 +162,7 @@
     "missingReference": "No pudimos recuperar esta reserva en este navegador. Consulta tu confirmación o contacta al negocio",
     "close": "Cerrar aviso",
     "waiting": "Esperando tu pago. Si no lo terminas, tu lugar se libera solo cuando venza el enlace de pago",
-    "notCompleted": "No se completó el pago. Si no lo terminas, tu lugar se libera solo cuando venza el enlace de pago",
-    "payNow": "Pagar ahora"
+    "notCompleted": "No se completó el pago. Si no lo terminas, tu lugar se libera solo cuando venza el enlace de pago"
   },
   "seats": {
     "title": "Elige tu lugar",

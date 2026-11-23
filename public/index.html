@@ -533,7 +533,7 @@
       <span id="nav-venue-name">Reservas</span>
     </a>
     <nav class="topnav-links" id="nav-links" aria-label="Secciones del sitio">
-      <a href="" data-route="appointments" data-requires="appointments" hidden>Citas</a>
+      <a href="" data-route="appointments" data-requires="appointments">Citas</a>
       <a href="" data-route="classes" data-requires="classes" hidden>Clases</a>
       <a href="" data-route="packs" data-requires="packs" hidden>Comprar paquetes</a>
     </nav>
@@ -561,7 +561,7 @@
 
       <!-- Default drawer (landing, classes, packs) — site navigation. -->
       <div class="drawer-default">
-        <a class="drawer-link" href="" data-route="appointments" data-requires="appointments" hidden>Citas</a>
+        <a class="drawer-link" href="" data-route="appointments" data-requires="appointments">Citas</a>
         <a class="drawer-link" href="" data-route="classes" data-requires="classes" hidden>Clases</a>
         <a class="drawer-link" href="" data-route="packs" data-requires="packs" hidden>Comprar paquetes</a>
         <button class="drawer-link is-cta" id="drawer-account" type="button">Mi cuenta</button>
@@ -1445,7 +1445,8 @@
           if (hasClasses) el.removeAttribute('hidden')
           else el.setAttribute('hidden', '')
         })
-        // D684b: «Citas» sólo si el negocio tiene servicios con cita. Sin el dato (widget viejo) se queda visible, como antes.
+        // D684b: el widget avisa `hasAppointments: false` sólo cuando el negocio da clases y nada más; sin el dato (widget viejo) o con
+        // `true`, «Citas» se ve como antes.
         var hasAppointments = info.hasAppointments !== false
         document.querySelectorAll('[data-requires="appointments"]').forEach(function (el) {
           if (hasAppointments) el.removeAttribute('hidden')

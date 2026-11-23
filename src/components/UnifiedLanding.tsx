@@ -5,14 +5,6 @@ import type { TFunction } from '../i18n'
 import { Spinner } from './ui/Spinner'
 import { precio } from '../lib/precio'
 
-/**
- * D684b: «Citas» se esconde sólo cuando el negocio da clases y ningún otro servicio (Mindform BSF). Sin productos (un restaurante
- * que recibe reservas sin servicios) o sin clases, «Citas» sigue: el SERVIDOR da horarios sin producto (Codex texto #3).
- */
-export function ofreceCitas(products: Pick<Product, 'type'>[]) {
-  return !products.some(p => p.type === 'CLASS') || products.some(p => p.type !== 'CLASS')
-}
-
 interface UnifiedLandingProps {
   /** Product list from venueInfo — used to decide which CTAs to surface. */
   products: Product[]
@@ -63,7 +55,7 @@ export function UnifiedLanding({
 }: UnifiedLandingProps) {
   const [tab, setTab] = useState<Tab>(initialTab ?? 'book')
   const hasClasses = products.some(p => p.type === 'CLASS')
-  const hasAppointments = ofreceCitas(products)
+  const hasAppointments = products.some(p => p.type !== 'CLASS')
   const hasPacks = creditPacks.length > 0
 
   return (
@@ -194,6 +186,9 @@ function BookTab({
           </button>
         )}
 
+        {!hasAppointments && !hasClasses && (
+          <div style={emptyStateStyle()}>{t('service.noProducts')}</div>
+        )}
       </div>
     </div>
   )
@@ -381,6 +376,9 @@ function ctaTitleStyle(): h.JSX.CSSProperties {
 }
 function ctaSubtitleStyle(): h.JSX.CSSProperties {
   return { fontSize: '13px', color: 'var(--avq-muted-fg, #6b7280)', lineHeight: '1.35' }
+}
+function emptyStateStyle(): h.JSX.CSSProperties {
+  return { padding: '32px 16px', textAlign: 'center', color: 'var(--avq-muted-fg, #6b7280)', fontSize: '14px' }
 }
 
 // ─── inline icons ─────────────────────────────────────────────────────

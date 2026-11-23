@@ -9,9 +9,6 @@ import * as api from '../api/booking'
 import { RescheduleFlow } from './RescheduleFlow'
 import { depositNotice } from '../lib/depositReturn'
 
-/** Ir a la página de pago de Stripe. Aparte para que las pruebas vean a dónde iría sin salir de la página. */
-export const pagoExterno = { abrir: (url: string): void => window.location.assign(url) }
-
 interface ManageBookingProps {
   venueSlug: string
   cancelSecret: string
@@ -24,8 +21,6 @@ interface ManageBookingProps {
   depositReturn?: boolean
   /** D683: regresó de Stripe sin la marca de pago hecho. Con el depósito PENDING, se le dice que falta pagar (no «confirmando»). */
   paymentUnfinished?: boolean
-  /** D683: la página de pago de Stripe que devolvió la reserva al crearse, guardada en este navegador. */
-  checkoutUrl?: string | null
   /** D681: regresó por la liga «atrás» de Stripe (`cancel_url`). Sólo cambia el texto: el lugar lo suelta el aviso de Stripe. */
   paymentCancelled?: boolean
 }
@@ -39,7 +34,7 @@ const statusConfig: Record<string, { bg: string; text: string }> = {
   NO_SHOW: { bg: '#ffedd5', text: '#9a3412' },
 }
 
-export function ManageBooking({ venueSlug, cancelSecret, timezone, locale = 'es', venueInfo, t, onBack, depositReturn = false, paymentUnfinished = false, checkoutUrl = null, paymentCancelled = false }: ManageBookingProps) {
+export function ManageBooking({ venueSlug, cancelSecret, timezone, locale = 'es', venueInfo, t, onBack, depositReturn = false, paymentUnfinished = false, paymentCancelled = false }: ManageBookingProps) {
   const [reservation, setReservation] = useState<PublicReservationDetail | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -49,7 +44,6 @@ export function ManageBooking({ venueSlug, cancelSecret, timezone, locale = 'es'
   const [cancelling, setCancelling] = useState(false)
 
   const [querying, setQuerying] = useState(false)
-  const [checkingPay, setCheckingPay] = useState(false)
   const [notFound, setNotFound] = useState(false)
   const sourceRef = useRef({ venueSlug, cancelSecret })
   if (sourceRef.current.venueSlug !== venueSlug || sourceRef.current.cancelSecret !== cancelSecret) {
@@ -145,42 +139,12 @@ export function ManageBooking({ venueSlug, cancelSecret, timezone, locale = 'es'
     }
   }
 
-  // D681 (Codex texto #1): el negocio pudo cancelar o el pago pudo entrar en otra pestaña mientras la ficha seguía abierta. Antes de
-  // mandar a Stripe se lee otra vez: sólo con la reserva y el depósito aún pendientes se abre la liga; si no, la ficha enseña lo real.
-  async function handlePayNow(url: string) {
-    if (checkingPay) return
-    const source = sourceRef.current
-    stopReads()
-    setCheckingPay(true)
-    setError(null)
-    const controller = new AbortController()
-    const timeout = setTimeout(() => controller.abort(), 10000)
-    let leaving = false
-    try {
-      const fresh = await api.getReservation(source.venueSlug, source.cancelSecret, controller.signal)
-      if (source !== sourceRef.current) return
-      if (fresh.status === 'PENDING' && fresh.depositStatus === 'PENDING') {
-        leaving = true
-        pagoExterno.abrir(url)
-        return
-      }
-      setReservation(fresh)
-    } catch {
-      if (source === sourceRef.current) setError(t('errors.reservationQueryFailed'))
-    } finally {
-      clearTimeout(timeout)
-      if (!leaving && source === sourceRef.current) { setCheckingPay(false); setQuerying(false) }
-    }
-  }
-
-  const dateLocale = locale === 'en' ? 'en-US' : 'es-MX'
   // D681/D683: texto honesto, sin tocar el SERVIDOR (el lugar lo suelta el aviso de Stripe cuando vence la liga). Sólo quien volvió
   // por la liga de pago hecho lee «Estamos confirmando». Con la reserva y el depósito aún pendientes, cualquiera otro lee que falta
   // su pago (y, si volvió por «atrás», que no se completó). Con cualquier otro estado del depósito (pagado, reembolsado, vencido…)
-  // manda ese estado. «Pagar ahora» sólo en esa vuelta y con la liga que guardó este navegador.
+  // manda ese estado.
   const returnedPaid = depositReturn && !paymentUnfinished
   const awaitingPayment = reservation?.status === 'PENDING' && reservation.depositStatus === 'PENDING' && !returnedPaid
-  const payUrl = awaitingPayment && paymentUnfinished && checkoutUrl?.startsWith('https://') ? checkoutUrl : null
 
   const financialNotice = (
     <div role="status" aria-live="polite" style={{ marginBottom: '16px', padding: '12px 14px', borderRadius: '12px', background: 'var(--avq-muted, #f8f9fb)', fontSize: '13px' }}>
@@ -217,6 +181,7 @@ export function ManageBooking({ venueSlug, cancelSecret, timezone, locale = 'es'
   const isCancelled = reservation.status === 'CANCELLED'
   const startDate = new Date(reservation.startsAt)
   const endDate = new Date(reservation.endsAt)
+  const dateLocale = locale === 'en' ? 'en-US' : 'es-MX'
   const dateStr = startDate.toLocaleDateString(dateLocale, {
     weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', timeZone: timezone,
   })
@@ -395,12 +360,6 @@ export function ManageBooking({ venueSlug, cancelSecret, timezone, locale = 'es'
       <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
         {!isCancelled && reservation.status !== 'COMPLETED' && reservation.status !== 'NO_SHOW' && !showCancel && !showReschedule && (
           <>
-            {/* D683: retoma el mismo pago de Stripe. Botón y no liga: antes de ir se revisa que siga pendiente (D681). */}
-            {payUrl && (
-              <Button fullWidth disabled={checkingPay} onClick={() => { void handlePayNow(payUrl) }}>
-                {t('deposit.payNow')}
-              </Button>
-            )}
             {/* Reschedule — primary outline. Disabled when out of window. */}
             {reservation.reschedule && (
               <Button

@@ -154,18 +154,36 @@ describe('D684: la cabecera desde «Tu Reservación», y «Citas» sólo si el n
     expect(salir).not.toHaveBeenCalled()
   })
 
-  it('sin servicios con cita, «Citas» se esconde de la cabecera y del menú; con servicios (o sin el dato) se ve', async () => {
+  const citas = () => Array.from(document.querySelectorAll('a[data-route="appointments"]'))
+  const avisar = (tipo: string, detail: Record<string, unknown>) => widget().dispatchEvent(new CustomEvent(tipo, { detail }))
+
+  it('🔴 estudio que sólo da clases (hasAppointments false): «Citas» se esconde de la cabecera y del menú; con servicios (o sin el dato) se ve', async () => {
     new Function(scriptDeLaPagina())()
     await esperar()
-    const citas = () => Array.from(document.querySelectorAll('a[data-route="appointments"]'))
     expect(citas()).toHaveLength(2)
-    const avisar = (venue: Record<string, unknown>) => widget().dispatchEvent(new CustomEvent('avoqado:venue-loaded', { detail: { venue } }))
-    avisar({ name: 'Mindform', hasClasses: true, hasAppointments: false })
+    citas().forEach(x => expect(x.hasAttribute('hidden')).toBe(false)) // antes del aviso, como en main
+    avisar('avoqado:venue-loaded', { venue: { name: 'Mindform', hasClasses: true, hasAppointments: false } })
     citas().forEach(x => expect(x.hasAttribute('hidden')).toBe(true))
-    avisar({ name: 'Mindform', hasClasses: true, hasAppointments: true })
+    avisar('avoqado:venue-loaded', { venue: { name: 'Mindform', hasClasses: true, hasAppointments: true } })
     citas().forEach(x => expect(x.hasAttribute('hidden')).toBe(false))
-    avisar({ name: 'Widget viejo', hasClasses: true })
+    avisar('avoqado:venue-loaded', { venue: { name: 'Widget viejo', hasClasses: true } })
     citas().forEach(x => expect(x.hasAttribute('hidden')).toBe(false))
+  })
+
+  it('sin productos (un restaurante): el widget avisa hasAppointments true y «Citas» se ve', async () => {
+    new Function(scriptDeLaPagina())()
+    await esperar()
+    avisar('avoqado:venue-loaded', { venue: { name: 'Restaurante', hasClasses: false, hasAppointments: true } })
+    citas().forEach(x => expect(x.hasAttribute('hidden')).toBe(false))
+  })
+
+  it('clases sin sesiones en 30 días: sólo se esconde «Clases»; «Citas» queda como en main', async () => {
+    new Function(scriptDeLaPagina())()
+    await esperar()
+    avisar('avoqado:venue-loaded', { venue: { name: 'Estudio', hasClasses: true, hasAppointments: true } })
+    avisar('avoqado:classes-availability', { hayClases: false })
+    citas().forEach(x => expect(x.hasAttribute('hidden')).toBe(false))
+    document.querySelectorAll('a[data-route="classes"]').forEach(x => expect(x.hasAttribute('hidden')).toBe(true))
   })
 })
 
