@@ -115,7 +115,8 @@
     "refundedSuccess": "We refunded {{count}} credit(s) to your account.",
     "rescheduleButton": "Change time",
     "rescheduleDisabledTooltip": "You can only change time up to {{hours}}h before the start.",
-    "checkAgain": "Check again"
+    "checkAgain": "Check again",
+    "unlimitedCancelFree": "Cancelling costs you nothing: your unlimited pass stays the same."
   },
   "reschedule": {
     "title": "Change time",
@@ -313,7 +314,11 @@
     "usarOtraCuenta": "Use another account",
     "pagoYaNoEsTuyo": "The account or business changed while we prepared your payment. Tap “Buy” again.",
     "preparandoPago": "Preparing your payment for {{paquete}}…",
-    "pagoRecibido": "Done! We received your payment: the credits go to the account you paid with."
+    "pagoRecibido": "Done! We received your payment: the credits go to the account you paid with.",
+    "unlimited": "Unlimited",
+    "unlimitedUntil": "Unlimited · expires {{date}}",
+    "unlimitedOneSeat": "Your unlimited pass is personal: 1 spot in your name",
+    "oneSpotOnly": "1 spot only"
   },
   "portal": {
     "title": "My account",
@@ -359,7 +364,8 @@
     "saveCard": "Save my card",
     "saveOnOther": "Have {{sistema}}? save it here",
     "enterWithCode": "Sign in with a code",
-    "phoneChangeHint": "To change it, use “Change my number”: we'll send you a WhatsApp code."
+    "phoneChangeHint": "To change it, use “Change my number”: we'll send you a WhatsApp code.",
+    "nameLockedUnlimited": "Your name is tied to your unlimited pass. To correct it, ask the studio."
   },
   "otp": {
     "title": "Sign in with WhatsApp",

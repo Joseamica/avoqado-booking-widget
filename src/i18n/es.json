@@ -115,7 +115,8 @@
     "refundedSuccess": "Te devolvimos {{count}} crédito(s) a tu cuenta.",
     "rescheduleButton": "Cambiar horario",
     "rescheduleDisabledTooltip": "Solo puedes cambiar el horario hasta {{hours}}h antes del inicio.",
-    "checkAgain": "Consultar de nuevo"
+    "checkAgain": "Consultar de nuevo",
+    "unlimitedCancelFree": "Cancelar no te cuesta nada: tu Ilimitado queda igual."
   },
   "reschedule": {
     "title": "Cambiar horario",
@@ -313,7 +314,11 @@
     "usarOtraCuenta": "Usar otra cuenta",
     "pagoYaNoEsTuyo": "Cambió la cuenta o el negocio mientras preparábamos tu pago. Vuelve a tocar «Comprar».",
     "preparandoPago": "Preparando tu pago de {{paquete}}…",
-    "pagoRecibido": "¡Listo! Recibimos tu pago: los créditos quedan en la cuenta con la que pagaste."
+    "pagoRecibido": "¡Listo! Recibimos tu pago: los créditos quedan en la cuenta con la que pagaste.",
+    "unlimited": "Ilimitado",
+    "unlimitedUntil": "Ilimitado · vence el {{date}}",
+    "unlimitedOneSeat": "Tu Ilimitado es personal: cubre 1 lugar a tu nombre",
+    "oneSpotOnly": "Sólo 1 lugar"
   },
   "portal": {
     "title": "Mi cuenta",
@@ -359,7 +364,8 @@
     "saveCard": "Guardar mi tarjeta",
     "saveOnOther": "¿Tienes {{sistema}}? guárdala aquí",
     "enterWithCode": "Entra con un código",
-    "phoneChangeHint": "Para cambiarlo, usa «Cambiar mi número»: te mandamos un código por WhatsApp."
+    "phoneChangeHint": "Para cambiarlo, usa «Cambiar mi número»: te mandamos un código por WhatsApp.",
+    "nameLockedUnlimited": "Tu nombre está ligado a tu Ilimitado. Para corregirlo, pídeselo al estudio."
   },
   "otp": {
     "title": "Entrar con WhatsApp",
