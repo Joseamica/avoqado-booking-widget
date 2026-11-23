@@ -51,6 +51,8 @@ class AvoqadoBookingWidget extends HTMLElement {
   showManageBooking(cancelSecret: string) {
     this.dispatchEvent(new CustomEvent('_avq_show_manage', { bubbles: false, detail: { cancelSecret } }))
   }
+  /** D684a: close «Tu Reservación» (and forget the saved reservation) before the host navigates to another tab. No-op elsewhere. */
+  leaveManageBooking() { this.dispatchEvent(new CustomEvent('_avq_leave_manage', { bubbles: false })) }
 
   private getProps(): WidgetProps {
     const common = readCommonAttrs(this)

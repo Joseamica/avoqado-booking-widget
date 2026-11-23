@@ -5,6 +5,7 @@ import { BookingFlow } from './BookingFlow'
 import * as api from '../api/booking'
 import * as state from '../state/booking'
 import { borrarSesion, fijarPagina, guardarSesion, leerSesion } from '../lib/sesionDeCliente'
+import { resolveDepositReturn, savePendingReservation } from '../lib/depositReturn'
 import type { PublicVenueInfo, PublicReservationDetail, WidgetProps } from '../types'
 
 vi.mock('../api/booking', () => ({
@@ -482,7 +483,7 @@ describe('BookingFlow booking repair', () => {
         expect((confirmed.mock.calls[0][0] as CustomEvent).detail.confirmationCode).toBe('R1-RESULT')
       } else {
         expect(window.location.hash).toBe('#r1-checkout')
-        expect(JSON.parse(sessionStorage.getItem('avq:pendingReservation:studio-a')!)).toEqual({ venue: 'studio-a', cancelSecret: 'r1-result', confirmationCode: 'R1-RESULT' })
+        expect(JSON.parse(sessionStorage.getItem('avq:pendingReservation:studio-a')!)).toEqual({ venue: 'studio-a', cancelSecret: 'r1-result', confirmationCode: 'R1-RESULT', ref: expect.any(String) })
         expect(confirmed).not.toHaveBeenCalled()
       }
     }
@@ -705,7 +706,8 @@ describe('BookingFlow deposit return through mounted components', () => {
     render(<BookingFlow props={p} />); await flush()
     expect(api.getReservation).toHaveBeenCalledWith('studio-a', 'stored-a', expect.any(AbortSignal))
     expect(screen.getByText('OWN-A')).toBeTruthy(); expect(screen.getByText('Pago recibido')).toBeTruthy()
-    expect(sessionStorage.getItem('avq:pendingReservation:studio-a')).toBe(JSON.stringify(saved))
+    // D683: la referencia pasa a su llave del negocio y recuerda cómo regresó de Stripe (para que recargar diga lo mismo).
+    expect(JSON.parse(sessionStorage.getItem('avq:pendingReservation:studio-a')!)).toEqual({ ...saved, outcome: flag })
     expect(window.location.search).toBe('?publicCampaign=fall'); expect(confirmed).not.toHaveBeenCalled()
   })
   it('persists the saved reference across reload and clears only on an explicit back click', async () => {
@@ -779,6 +781,9 @@ describe('BookingFlow deposit return through mounted components', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Reserva cita' })); await flush()
     expect(api.createReservation).toHaveBeenCalledTimes(1)
     const body = vi.mocked(api.createReservation).mock.calls[0][1]
+    // D681: las dos ligas de regreso llevan la misma marca de esta reserva, y es la que se guarda con ella.
+    const ref = new URL(body.successUrl!).searchParams.get('avq_ref')
+    expect(ref).toMatch(/^[a-z0-9]{4,}$/); expect(new URL(body.cancelUrl!).searchParams.get('avq_ref')).toBe(ref)
     for (const [key, flag] of [['successUrl', 'success'], ['cancelUrl', 'cancelled']] as const) {
       const url = new URL(body[key]!); expect(url.searchParams.get('avq_payment')).toBe(flag)
       expect(url.searchParams.has('manage')).toBe(false); expect(url.searchParams.has('avq_credits')).toBe(false)
@@ -786,7 +791,7 @@ describe('BookingFlow deposit return through mounted components', () => {
       expect(url.href).not.toContain('url-secret')
     }
     if (blockedWrite) expect(sessionStorage.getItem('avq:pendingReservation:studio-a')).toBeNull()
-    else expect(JSON.parse(sessionStorage.getItem('avq:pendingReservation:studio-a')!)).toEqual({ venue: 'studio-a', cancelSecret: 'new-a', confirmationCode: 'NEW-A' })
+    else expect(JSON.parse(sessionStorage.getItem('avq:pendingReservation:studio-a')!)).toEqual({ venue: 'studio-a', cancelSecret: 'new-a', confirmationCode: 'NEW-A', ref })
     expect(sessionStorage.getItem('avq:pendingReservation')).toBeNull()
   })
 })
@@ -1362,5 +1367,180 @@ describe('diseño 18-nov: «Clases» se esconde si no hay clases agendadas en 30
     vi.mocked(api.getClassSessionsRange).mockRejectedValue(new Error('sin red'))
     await portada()
     expect(screen.getByRole('button', { name: /Clases/ })).toBeTruthy()
+  })
+})
+
+// D684a (Mindform, 22-nov): volvió de Stripe sin pagar a «Tu Reservación» y tocar «Citas · Clases · Comprar paquetes» no hacía
+// nada. Cada pestaña es un enlace que recarga la página, y la página nueva volvía a abrir «Tu Reservación» con la reserva
+// guardada en el navegador. La cabecera ahora avisa (`leaveManageBooking`) antes de seguir el enlace.
+describe('D684a: elegir otra pestaña desde «Tu Reservación»', () => {
+  const salir = (host: HTMLElement) => act(async () => { host.dispatchEvent(new CustomEvent('_avq_leave_manage')) })
+
+  it('volvió de Stripe sin pagar y eligió otra pestaña: la página nueva enseña la pestaña, no «Tu Reservación» otra vez', async () => {
+    sessionStorage.setItem('avq:pendingReservation:studio-a', JSON.stringify(saved))
+    window.history.replaceState({}, '', '/studio-a/appointments?avq_payment=cancelled&payment=cancelled&reservationId=r1')
+    const p = props()
+    const antes = render(<BookingFlow props={p} />); await flush()
+    expect(screen.getByText('OWN-A')).toBeTruthy()
+    await salir(p.hostElement!); await flush()
+    expect(screen.queryByText('OWN-A')).toBeNull()
+    expect(sessionStorage.getItem('avq:pendingReservation:studio-a')).toBeNull()
+    // El enlace de la pestaña carga la página de nuevo.
+    antes.unmount(); resetSignals()
+    window.history.replaceState({}, '', '/studio-a/appointments')
+    render(<BookingFlow props={props()} />); await flush()
+    expect(screen.queryByText('OWN-A')).toBeNull()
+    expect(screen.getByRole('button', { name: '8 de octubre de 2026' })).toBeTruthy()
+    expect(api.getReservation).toHaveBeenCalledTimes(1)
+  })
+
+  it('🔴 Codex texto r3 #1: llegó por la liga del correo (?manage=): sale de «Tu Reservación» SIN tocar la dirección', async () => {
+    // La pestaña de la cabecera navega a /<negocio>#packs. Con `?manage=` todavía en la barra es una página nueva (como en main) y
+    // abre los paquetes; si el widget lo quitara antes, sólo cambiaría el «#» y se quedaría en la portada.
+    window.history.replaceState({}, '', '/studio-a?manage=url-secret&campaign=fall')
+    const p = props()
+    render(<BookingFlow props={p} />); await flush()
+    expect(screen.getByText('OWN-A')).toBeTruthy()
+    await salir(p.hostElement!); await flush()
+    expect(screen.queryByText('OWN-A')).toBeNull()
+    expect(window.location.search).toBe('?manage=url-secret&campaign=fall')
+  })
+
+  it('«Hacer una Nueva Reservación» desde la liga del correo sí quita `?manage=` (para que recargar no la vuelva a abrir)', async () => {
+    window.history.replaceState({}, '', '/studio-a/appointments?manage=url-secret&campaign=fall')
+    render(<BookingFlow props={props()} />); await flush()
+    fireEvent.click(screen.getByRole('button', { name: 'Hacer una Nueva Reservación' })); await flush()
+    expect(screen.queryByText('OWN-A')).toBeNull()
+    expect(window.location.search).toBe('?campaign=fall')
+  })
+
+  it('fuera de «Tu Reservación» el aviso de la cabecera no toca lo que lleva escrito', async () => {
+    const p = props()
+    await openAppointmentForm(p)
+    fireEvent.input(screen.getByLabelText(/Nombre/), { target: { value: 'Ana Escribiendo' } })
+    await salir(p.hostElement!); await flush()
+    expect((screen.getByLabelText(/Nombre/) as HTMLInputElement).value).toBe('Ana Escribiendo')
+  })
+})
+
+// D684b (Mindform, 22-nov): un estudio que sólo da clases enseñaba «Citas» en la cabecera de book.avoqado.io. Lo único que cambia
+// en el widget es el aviso a la página: `hasAppointments`, con el catálogo COMPLETO (no la ventana de 30 días de las clases). La
+// página (public/index.html) esconde «Citas» sólo con `false`. Lo demás del widget (portada, /appointments) queda como en `main`.
+describe('D684b: el widget le dice a la página si hay citas', () => {
+  const clase = { ...venue.products[0], id: 'clase-1', name: 'Clase Lagree', type: 'CLASS' }
+  async function avisoAlCargar(products: object[], sesiones: object[] = []) {
+    vi.mocked(api.getVenueInfo).mockResolvedValue({ ...venue, products } as PublicVenueInfo)
+    vi.mocked(api.getClassSessionsRange).mockResolvedValue({ dateFrom: '2026-10-06', dateTo: '2026-11-05', slots: sesiones } as any)
+    const host = document.createElement('div')
+    const avisos: Record<string, unknown>[] = []
+    host.addEventListener('avoqado:venue-loaded', e => avisos.push((e as CustomEvent).detail.venue))
+    render(<BookingFlow props={{ ...props(), hostElement: host }} />); await flush()
+    return avisos[0]
+  }
+
+  it('🔴 estudio que sólo da clases: hasAppointments false (la cabecera esconde «Citas»)', async () => {
+    expect(await avisoAlCargar([clase])).toMatchObject({ hasClasses: true, hasAppointments: false })
+  })
+  it('sin productos (un restaurante que recibe reservas): hasAppointments true, «Citas» se queda', async () => {
+    expect(await avisoAlCargar([])).toMatchObject({ hasClasses: false, hasAppointments: true })
+  })
+  it('con servicios con cita (con o sin clases): hasAppointments true', async () => {
+    expect(await avisoAlCargar([venue.products[0]])).toMatchObject({ hasClasses: false, hasAppointments: true })
+    cleanup(); resetSignals()
+    expect(await avisoAlCargar([venue.products[0], clase])).toMatchObject({ hasClasses: true, hasAppointments: true })
+  })
+  it('clases sin sesiones en 30 días: el aviso usa el catálogo completo, no esa ventana', async () => {
+    // Con servicios y clases sin sesiones próximas, «Citas» sigue (como en main); sólo «Clases» depende de los 30 días.
+    expect(await avisoAlCargar([venue.products[0], clase], [])).toMatchObject({ hasClasses: true, hasAppointments: true })
+    cleanup(); resetSignals()
+    expect(await avisoAlCargar([clase], [])).toMatchObject({ hasClasses: true, hasAppointments: false })
+  })
+  it('/appointments sigue como en main: sin productos abre el calendario', async () => {
+    await avisoAlCargar([])
+    expect(screen.getByRole('button', { name: '8 de octubre de 2026' })).toBeTruthy()
+  })
+})
+
+// D683 (Mindform, 22-nov): reservó «Clase Lagree» $325, fue a Stripe y regresó sin pagar. «Tu Reservación» decía «Estamos
+// confirmando el depósito · Pendiente», como si hubiera pagado. D681 (sólo texto, 22-nov): el SERVIDOR no cambia nada y el lugar lo
+// suelta el aviso de Stripe cuando vence la liga. Al volver por «atrás»: «No se completó el pago. Si no lo terminas, tu lugar se
+// libera solo cuando venza el enlace de pago». Sin volver por la liga de pago hecho, nunca «Estamos confirmando». Sin «Pagar ahora»:
+// quien quiera pagar vuelve a reservar o usa la liga de su correo.
+describe('D683: volvió de Stripe sin pagar', () => {
+  const permitido = { allowed: true, minHoursBeforeStart: 2, creditsUsed: 0, creditsRefundable: 0, refundPercent: 0, policyLabel: '' }
+  const sinPagar = { ...detail, status: 'PENDING', depositStatus: 'PENDING', cancellation: permitido }
+  const NO_SE_COMPLETO = 'No se completó el pago. Si no lo terminas, tu lugar se libera solo cuando venza el enlace de pago'
+  const ESPERANDO = 'Esperando tu pago. Si no lo terminas, tu lugar se libera solo cuando venza el enlace de pago'
+  async function volver(url: string, reserva: object = sinPagar, guardada: object = saved) {
+    sessionStorage.setItem('avq:pendingReservation:studio-a', JSON.stringify(guardada))
+    window.history.replaceState({}, '', url)
+    vi.mocked(api.getReservation).mockResolvedValue(reserva as PublicReservationDetail)
+    const vista = render(<BookingFlow props={props()} />); await flush()
+    return vista
+  }
+  const aviso = () => screen.getByRole('status').textContent ?? ''
+
+  it('🔴 D681: al volver por «atrás» de Stripe dice que no se completó y que se libera solo; sin «Pagar ahora»; consulta como en main', async () => {
+    await volver('/studio-a/classes?avq_payment=cancelled&payment=cancelled&reservationId=r1')
+    expect(aviso()).toBe(NO_SE_COMPLETO)
+    expect(screen.queryByText(/Estamos confirmando/)).toBeNull()
+    expect(screen.queryByText('Pagar ahora')).toBeNull()
+    expect(screen.getByRole('button', { name: 'Cancelar Reservación' })).toBeTruthy()
+    await advance(40000); expect(api.getReservation).toHaveBeenCalledTimes(12)
+    expect(api.getReservation).toHaveBeenCalledWith('studio-a', 'stored-a', expect.any(AbortSignal))
+  })
+
+  it('la marca de regreso se guarda con la reserva y se quita de la dirección al reconocerla; la liga de pago no se guarda', async () => {
+    savePendingReservation('studio-a', { cancelSecret: 'c1', confirmationCode: 'C1', ref: 'r-c1', checkoutUrl: 'https://checkout.stripe.com/x' } as any)
+    expect(JSON.parse(sessionStorage.getItem('avq:pendingReservation:studio-a')!)).toEqual({ venue: 'studio-a', cancelSecret: 'c1', confirmationCode: 'C1', ref: 'r-c1' })
+    window.history.replaceState({}, '', '/studio-a/classes?avq_payment=cancelled&avq_ref=r-c1')
+    expect(resolveDepositReturn('studio-a').saved?.cancelSecret).toBe('c1')
+    expect(window.location.search).toBe('')
+  })
+
+  it('🔴 D681 (Codex #1): regresa de Stripe con la marca de OTRA reserva: no le habla de la guardada', async () => {
+    // Abrió el pago de A, luego el de B en la misma pestaña (el navegador guarda sólo B) y volvió por la liga de A.
+    await volver('/studio-a/classes?avq_payment=cancelled&avq_ref=marca-de-a&payment=cancelled&reservationId=ra', sinPagar,
+      { ...saved, ref: 'marca-de-b' })
+    expect(api.getReservation).not.toHaveBeenCalled()
+    expect(screen.getByText('No pudimos recuperar esta reserva en este navegador. Consulta tu confirmación o contacta al negocio')).toBeTruthy()
+    expect(screen.queryByText(/No se completó el pago|Esperando tu pago/)).toBeNull()
+    expect(JSON.parse(sessionStorage.getItem('avq:pendingReservation:studio-a')!)).toEqual({ ...saved, ref: 'marca-de-b' })
+  })
+
+  it('regresa con la marca de la reserva guardada: la abre', async () => {
+    await volver('/studio-a/classes?avq_payment=cancelled&avq_ref=marca-de-b', sinPagar, { ...saved, ref: 'marca-de-b' })
+    expect(aviso()).toBe(NO_SE_COMPLETO)
+    expect(window.location.search).toBe('')
+  })
+
+  it('recargar después de volver sin pagar sigue diciendo que no se completó', async () => {
+    const antes = await volver('/studio-a/classes?avq_payment=cancelled')
+    antes.unmount(); resetSignals()
+    render(<BookingFlow props={props()} />); await flush()
+    expect(aviso()).toBe(NO_SE_COMPLETO)
+  })
+
+  it('regresó con «atrás» del navegador (sin pasar por Stripe de vuelta): espera su pago, sin «confirmando»', async () => {
+    await volver('/studio-a/classes')
+    expect(aviso()).toBe(ESPERANDO)
+  })
+
+  it('volvió pagado y recarga mientras llega el aviso del banco: sigue «Estamos confirmando»', async () => {
+    const antes = await volver('/studio-a/classes?avq_payment=success')
+    expect(aviso()).toContain('Estamos confirmando el depósito')
+    antes.unmount(); resetSignals()
+    render(<BookingFlow props={props()} />); await flush()
+    expect(aviso()).toContain('Estamos confirmando el depósito')
+  })
+
+  it.each([
+    ['vencida por Stripe', { ...sinPagar, status: 'CANCELLED', depositStatus: 'EXPIRED' }, 'El plazo del depósito expiró'],
+    ['pagada y reembolsada', { ...sinPagar, status: 'CANCELLED', depositStatus: 'REFUNDED' }, 'Depósito reembolsado'],
+    ['pagada por la liga que seguía abierta', { ...sinPagar, status: 'CONFIRMED', depositStatus: 'PAID' }, 'Pago recibido'],
+  ])('volvió por «atrás» y la reserva ya está %s: manda el depósito, sin «No se completó»', async (_caso, reserva, texto) => {
+    await volver('/studio-a/classes?avq_payment=cancelled', reserva)
+    expect(aviso()).toContain(texto)
+    expect(screen.queryByText(/No se completó el pago|Esperando tu pago/)).toBeNull()
   })
 })

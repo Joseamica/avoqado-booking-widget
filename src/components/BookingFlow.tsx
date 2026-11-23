@@ -18,7 +18,7 @@ import {
   slotHoldToken, slotHoldExpiresAt,
   branding, DEFAULT_BRANDING,
 } from '../state/booking'
-import { resolveDepositReturn, savePendingReservation, clearPendingReservation, depositCheckoutUrl } from '../lib/depositReturn'
+import { resolveDepositReturn, savePendingReservation, clearPendingReservation, depositCheckoutUrl, newReturnRef } from '../lib/depositReturn'
 import { leerSesion, type SesionEmitida } from '../lib/sesionDeCliente'
 
 /** Quién compró el paquete en esta pestaña (para el regreso de Stripe). */
@@ -158,7 +158,7 @@ export function BookingFlow({ props }: BookingFlowProps) {
     step.value = MANAGE_STEP
   }
 
-  function closeManage(info: PublicVenueInfo) {
+  function closeManage(info: PublicVenueInfo | null, quitarLiga = true) {
     clearPendingReservation(props.venue)
     recovery.saved = null
     recovery.returned = false
@@ -166,7 +166,17 @@ export function BookingFlow({ props }: BookingFlowProps) {
     setReturnNoticeClosed(true)
     setGuestDraft(null)
     setSubmissionError(null)
-    resetBooking(info)
+    // D684a: la liga del correo (?manage=) ya no debe volver a abrir «Tu Reservación» al recargar. Al salir por una pestaña de la
+    // cabecera no se toca: esa pestaña carga otra página, y sin `?manage=` «Comprar paquetes» (/<negocio>#packs) sólo cambiaría el «#».
+    if (quitarLiga) try {
+      const url = new URL(window.location.href)
+      if (url.searchParams.has('manage')) {
+        url.searchParams.delete('manage')
+        window.history.replaceState(window.history.state, '', url.toString())
+      }
+    } catch { /* sin historial: sólo se queda la liga en la barra */ }
+    if (info) resetBooking(info)
+    else if (step.value === MANAGE_STEP) step.value = 0
   }
 
   useEffect(() => {
@@ -423,13 +433,20 @@ export function BookingFlow({ props }: BookingFlowProps) {
         continueToManage()
       }
     }
+    // D684a: la cabecera de book.avoqado.io avisa antes de seguir el enlace de una pestaña. Cada pestaña recarga la página, y sin
+    // esto la página nueva volvía a abrir «Tu Reservación» con la reserva guardada: las pestañas parecían no hacer nada.
+    const onLeaveManage = () => {
+      if (step.value === MANAGE_STEP && manageOwnerRef.current) closeManage(venueInfo.value, false)
+    }
     host.addEventListener('_avq_show_account', onShowAccount)
     host.addEventListener('_avq_show_credit_packs', onShowCreditPacks)
     host.addEventListener('_avq_show_manage', onShowManage as EventListener)
+    host.addEventListener('_avq_leave_manage', onLeaveManage)
     return () => {
       host.removeEventListener('_avq_show_account', onShowAccount)
       host.removeEventListener('_avq_show_credit_packs', onShowCreditPacks)
       host.removeEventListener('_avq_show_manage', onShowManage as EventListener)
+      host.removeEventListener('_avq_leave_manage', onLeaveManage)
     }
   }, [props.hostElement, props.venue])
 
@@ -540,6 +557,9 @@ export function BookingFlow({ props }: BookingFlowProps) {
               // venue doesn't use (e.g. "Clases" when only appointments are
               // offered). Keeps the chrome from showing dead-end CTAs.
               hasClasses,
+              // D684b: lo mismo con «Citas» cuando el negocio sólo da clases. Con el catálogo completo (no la ventana de 30 días de
+              // las clases): sin productos (un restaurante que recibe reservas) o con servicios que no son clase, «Citas» se queda.
+              hasAppointments: (info.products ?? []).some(p => p.type !== 'CLASS') || !hasClasses,
             },
           },
         }))
@@ -1299,6 +1319,8 @@ export function BookingFlow({ props }: BookingFlowProps) {
           t={t}
           onBack={() => closeManage(info)}
           depositReturn={Boolean(recovery.saved)}
+          paymentUnfinished={recovery.paymentUnfinished && recovery.saved?.cancelSecret === manageSecret.value}
+          paymentCancelled={recovery.saved?.outcome === 'cancelled' && recovery.saved?.cancelSecret === manageSecret.value}
         />
         {!props.hideVenueHeader && (
           <div style={{ marginTop: '32px', textAlign: 'center', paddingBottom: '4px' }}>
@@ -1580,8 +1602,10 @@ export function BookingFlow({ props }: BookingFlowProps) {
       const creditBalanceIds = Array.isArray(creditPayload) && creditPayload.length > 0 ? creditPayload : undefined
       // If the venue requires upfront payment, the server will return checkoutUrl
       // and we'll redirect to Stripe. Tell Stripe where to send the customer back.
-      const successUrl = depositCheckoutUrl('success')
-      const cancelUrl = depositCheckoutUrl('cancelled')
+      // D681: las dos ligas llevan la marca de ESTA reserva, para reconocer de cuál regresa.
+      const returnRef = newReturnRef()
+      const successUrl = depositCheckoutUrl('success', returnRef)
+      const cancelUrl = depositCheckoutUrl('cancelled', returnRef)
       // Multi-service appointments: send the full ordered productIds[] when
       // the customer picked more than one service. The server sums durations
       // and uses productIds[0] as the lead product for legacy joins.
@@ -1644,7 +1668,7 @@ export function BookingFlow({ props }: BookingFlowProps) {
         slotHoldExpiresAt.value = null
         setHoldReleaseFailed(false)
         pendingHoldReleaseActionRef.current = null
-        savePendingReservation(props.venue, result)
+        savePendingReservation(props.venue, { ...result, ref: returnRef })
         window.location.href = result.checkoutUrl
         return
       }

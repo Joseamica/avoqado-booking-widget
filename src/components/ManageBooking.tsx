@@ -19,6 +19,10 @@ interface ManageBookingProps {
   t: TFunction
   onBack: () => void
   depositReturn?: boolean
+  /** D683: regresó de Stripe sin la marca de pago hecho. Con el depósito PENDING, se le dice que falta pagar (no «confirmando»). */
+  paymentUnfinished?: boolean
+  /** D681: regresó por la liga «atrás» de Stripe (`cancel_url`). Sólo cambia el texto: el lugar lo suelta el aviso de Stripe. */
+  paymentCancelled?: boolean
 }
 
 const statusConfig: Record<string, { bg: string; text: string }> = {
@@ -30,7 +34,7 @@ const statusConfig: Record<string, { bg: string; text: string }> = {
   NO_SHOW: { bg: '#ffedd5', text: '#9a3412' },
 }
 
-export function ManageBooking({ venueSlug, cancelSecret, timezone, locale = 'es', venueInfo, t, onBack, depositReturn = false }: ManageBookingProps) {
+export function ManageBooking({ venueSlug, cancelSecret, timezone, locale = 'es', venueInfo, t, onBack, depositReturn = false, paymentUnfinished = false, paymentCancelled = false }: ManageBookingProps) {
   const [reservation, setReservation] = useState<PublicReservationDetail | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -134,9 +138,18 @@ export function ManageBooking({ venueSlug, cancelSecret, timezone, locale = 'es'
     }
   }
 
+  // D681/D683: texto honesto, sin tocar el SERVIDOR (el lugar lo suelta el aviso de Stripe cuando vence la liga). Sólo quien volvió
+  // por la liga de pago hecho lee «Estamos confirmando». Con la reserva y el depósito aún pendientes, cualquiera otro lee que falta
+  // su pago (y, si volvió por «atrás», que no se completó). Con cualquier otro estado del depósito (pagado, reembolsado, vencido…)
+  // manda ese estado.
+  const returnedPaid = depositReturn && !paymentUnfinished
+  const awaitingPayment = reservation?.status === 'PENDING' && reservation.depositStatus === 'PENDING' && !returnedPaid
+
   const financialNotice = (
     <div role="status" aria-live="polite" style={{ marginBottom: '16px', padding: '12px 14px', borderRadius: '12px', background: 'var(--avq-muted, #f8f9fb)', fontSize: '13px' }}>
-      {t(depositNotice(reservation?.depositStatus ?? null, querying, depositReturn))}
+      {awaitingPayment
+        ? t(paymentCancelled ? 'deposit.notCompleted' : 'deposit.waiting')
+        : t(depositNotice(reservation?.depositStatus ?? null, querying && returnedPaid, depositReturn))}
     </div>
   )
 

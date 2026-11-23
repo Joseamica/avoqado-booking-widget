@@ -160,7 +160,9 @@
     "returnUnverified": "You returned from payment; we could not check its result yet",
     "unknown": "We could not confirm the deposit status yet",
     "missingReference": "We could not recover this reservation in this browser. Check your confirmation or contact the business",
-    "close": "Close notice"
+    "close": "Close notice",
+    "waiting": "Waiting for your payment. If you don't finish it, your spot is released automatically when the payment link expires",
+    "notCompleted": "The payment wasn't completed. If you don't finish it, your spot is released automatically when the payment link expires"
   },
   "seats": {
     "title": "Choose your spot",

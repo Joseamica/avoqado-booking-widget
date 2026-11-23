@@ -160,7 +160,9 @@
     "returnUnverified": "Volviste del pago; aún no pudimos consultar su resultado",
     "unknown": "Aún no pudimos confirmar el estado del depósito",
     "missingReference": "No pudimos recuperar esta reserva en este navegador. Consulta tu confirmación o contacta al negocio",
-    "close": "Cerrar aviso"
+    "close": "Cerrar aviso",
+    "waiting": "Esperando tu pago. Si no lo terminas, tu lugar se libera solo cuando venza el enlace de pago",
+    "notCompleted": "No se completó el pago. Si no lo terminas, tu lugar se libera solo cuando venza el enlace de pago"
   },
   "seats": {
     "title": "Elige tu lugar",
