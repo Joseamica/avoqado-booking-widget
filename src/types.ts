@@ -318,6 +318,8 @@ export interface CreditPackPublic {
     productId: string
     product: { id: string; name: string; type: string; price: number; imageUrl?: string; duration?: number }
     quantity: number
+    /** D679: renglón «Ilimitado» (su `quantity` es 99,999 y nunca se enseña). */
+    unlimited?: boolean
   }[]
 }
 
@@ -335,6 +337,8 @@ export interface CustomerCreditBalance {
       originalQuantity: number
       remainingQuantity: number
       sufficient?: boolean
+      /** D679: saldo de un Ilimitado (personal: cubre 1 lugar; su 99,999 nunca se enseña). */
+      unlimited?: boolean
     }[]
   }[]
   requestedSeats?: number | null
@@ -366,6 +370,8 @@ export interface PublicReservationDetail {
     minHoursBeforeStart: number | null
     creditsUsed: number
     creditsRefundable: number
+    /** D679: todos sus canjes son de un Ilimitado (cancelar no le quita nada). */
+    unlimited?: boolean
     refundPercent: number
     policyLabel: string
   }
@@ -457,6 +463,8 @@ export interface CustomerPortalData {
         product: { id: string; name: string; type: string; imageUrl: string | null }
         originalQuantity: number
         remainingQuantity: number
+        /** D679 */
+        unlimited?: boolean
       }>
     }>
   }

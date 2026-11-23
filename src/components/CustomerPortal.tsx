@@ -17,6 +17,7 @@ import { alCambiarLaPagina, epocaDe, paginaDe, soltarLaPagina, type SesionEmitid
 import { FOLIO_CAMBIO, trackingUrl, type FolioCambioDetail } from '../order/events'
 import { formatTime } from '../order/hours'
 import { precio } from '../lib/precio'
+import { hayIlimitado, saldoRestante, venceEl } from '../lib/credits'
 
 interface CustomerPortalProps {
   venueSlug: string
@@ -712,10 +713,10 @@ export function CustomerPortal({
 
   // Portal dashboard (authenticated)
   const customer = data.customer
-  const totalCredits = data.credits.purchases.reduce((sum, p) =>
-    sum + p.itemBalances.reduce((s, b) => s + b.remainingQuantity, 0), 0,
-  )
-  const hasCredits = data.credits.purchases.length > 0 && totalCredits > 0
+  // D679: el total sólo cuenta saldos normales; un Ilimitado también hace visible la sección (y nunca suma 99,999).
+  const totalCredits = saldoRestante(data.credits.purchases.flatMap(p => p.itemBalances))
+  const tieneIlimitado = hayIlimitado(data.credits.purchases)
+  const hasCredits = data.credits.purchases.length > 0 && (totalCredits > 0 || tieneIlimitado)
   const hasUpcoming = data.reservations.upcoming.length > 0
   const hasPast = data.reservations.past.length > 0
   // 🔴 Ante la duda gana iPhone: es el camino que ya funciona en producción. La liga
@@ -870,24 +871,37 @@ export function CustomerPortal({
             {t('portal.editProfile')}
           </h3>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-            <div>
-              <label style={labelStyle}>{t('portal.firstName')}</label>
-              <Input
-                type="text"
-                value={editFirstName}
-                placeholder={t('portal.firstName')}
-                onInput={(e) => setEditFirstName((e.target as HTMLInputElement).value)}
-              />
-            </div>
-            <div>
-              <label style={labelStyle}>{t('portal.lastName')}</label>
-              <Input
-                type="text"
-                value={editLastName}
-                placeholder={t('portal.lastName')}
-                onInput={(e) => setEditLastName((e.target as HTMLInputElement).value)}
-              />
-            </div>
+            {/* D679 (C7): con un Ilimitado vigente el pase es personal: su nombre lo corrige el estudio, no ella. */}
+            {tieneIlimitado ? (
+              <div>
+                <label style={labelStyle}>{t('portal.firstName')}</label>
+                <p style={{ fontSize: '14px', color: 'var(--avq-fg, #111827)', margin: '0 0 4px' }}>
+                  {[customer?.firstName, customer?.lastName].filter(Boolean).join(' ')}
+                </p>
+                <p style={{ fontSize: '12px', color: 'var(--avq-muted-fg, #6b7280)', margin: 0 }}>{t('portal.nameLockedUnlimited')}</p>
+              </div>
+            ) : (
+              <>
+                <div>
+                  <label style={labelStyle}>{t('portal.firstName')}</label>
+                  <Input
+                    type="text"
+                    value={editFirstName}
+                    placeholder={t('portal.firstName')}
+                    onInput={(e) => setEditFirstName((e.target as HTMLInputElement).value)}
+                  />
+                </div>
+                <div>
+                  <label style={labelStyle}>{t('portal.lastName')}</label>
+                  <Input
+                    type="text"
+                    value={editLastName}
+                    placeholder={t('portal.lastName')}
+                    onInput={(e) => setEditLastName((e.target as HTMLInputElement).value)}
+                  />
+                </div>
+              </>
+            )}
             {/* El teléfono no se edita aquí (seguridad, 1-oct): lo cambia el negocio, para no perder el historial. */}
             <div>
               <label style={labelStyle}>{t('portal.phone')}</label>
@@ -1119,7 +1133,8 @@ export function CustomerPortal({
                   <span style={{ fontSize: '14px', fontWeight: '600', color: 'var(--avq-fg, #111827)' }}>{purchase.creditPack.name}</span>
                   {purchase.expiresAt && (
                     <span style={{ fontSize: '11px', color: 'var(--avq-muted-fg, #6b7280)' }}>
-                      {t('portal.expires', { date: new Date(purchase.expiresAt).toLocaleDateString() })}
+                      {/* D679 (Codex pantallas r1 #3): en la zona del negocio, la misma que «Ilimitado · vence el …» del renglón. */}
+                      {t('portal.expires', { date: new Intl.DateTimeFormat(intl, { timeZone: timezone }).format(new Date(purchase.expiresAt)) })}
                     </span>
                   )}
                 </div>
@@ -1127,14 +1142,21 @@ export function CustomerPortal({
                   {purchase.itemBalances.map(balance => (
                     <div key={balance.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                       <span style={{ fontSize: '13px', color: 'var(--avq-fg, #111827)' }}>{balance.product.name}</span>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                        <div style={{ width: '48px', height: '6px', borderRadius: '3px', background: 'var(--avq-muted, #f8f9fb)', overflow: 'hidden' }}>
-                          <div style={{ height: '100%', borderRadius: '3px', background: 'var(--avq-accent, #6366f1)', width: `${(balance.remainingQuantity / balance.originalQuantity) * 100}%` }} />
-                        </div>
+                      {balance.unlimited ? (
+                        // D679: sin barra ni número: «Ilimitado · vence el …».
                         <span style={{ fontSize: '12px', fontWeight: '600', color: 'var(--avq-accent, #6366f1)' }}>
-                          {balance.remainingQuantity}/{balance.originalQuantity}
+                          {venceEl(t, purchase.expiresAt, timezone)}
                         </span>
-                      </div>
+                      ) : (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <div style={{ width: '48px', height: '6px', borderRadius: '3px', background: 'var(--avq-muted, #f8f9fb)', overflow: 'hidden' }}>
+                            <div style={{ height: '100%', borderRadius: '3px', background: 'var(--avq-accent, #6366f1)', width: `${(balance.remainingQuantity / balance.originalQuantity) * 100}%` }} />
+                          </div>
+                          <span style={{ fontSize: '12px', fontWeight: '600', color: 'var(--avq-accent, #6366f1)' }}>
+                            {balance.remainingQuantity}/{balance.originalQuantity}
+                          </span>
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -1263,7 +1285,7 @@ export function CustomerPortal({
                       background: 'var(--avq-muted, #f8f9fb)',
                       fontSize: '12px', color: 'var(--avq-fg, #111827)',
                     }}>
-                      <strong style={{ fontWeight: '700', color: 'var(--avq-accent, #6366f1)' }}>{item.quantity}×</strong>
+                      <strong style={{ fontWeight: '700', color: 'var(--avq-accent, #6366f1)' }}>{item.unlimited ? t('creditPacks.unlimited') : `${item.quantity}×`}</strong>
                       <span>{item.product.name}</span>
                     </span>
                   ))}

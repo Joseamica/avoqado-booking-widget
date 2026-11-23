@@ -2,6 +2,7 @@ import { h } from 'preact'
 import { useMemo, useState } from 'preact/hooks'
 import type { CustomerCreditBalance } from '../types'
 import type { TFunction } from '../i18n'
+import { avisoDelIlimitado, cubreLugares, venceAntes, venceEl } from '../lib/credits'
 
 interface CreditSelectorProps {
   credits: CustomerCreditBalance
@@ -12,12 +13,16 @@ interface CreditSelectorProps {
   onSkip: () => void
   onBuyMore?: () => void
   required?: boolean
+  /** Zona del negocio, para «Ilimitado · vence el …». */
+  timezone?: string
+  /** Inicio del horario elegido: un Ilimitado que vence antes no lo paga. */
+  startsAt?: string | null
   t: TFunction
 }
 
 const TX = 'background 0.15s var(--avq-ease), border-color 0.15s var(--avq-ease), box-shadow 0.15s var(--avq-ease), color 0.15s var(--avq-ease)'
 
-export function CreditSelector({ credits, productId, seats, onSelect, onSkip, onBuyMore, required, t }: CreditSelectorProps) {
+export function CreditSelector({ credits, productId, seats, onSelect, onSkip, onBuyMore, required, timezone, startsAt, t }: CreditSelectorProps) {
   const [hoveredId, setHoveredId] = useState<string | null>(null)
   const [skipHover, setSkipHover] = useState(false)
 
@@ -29,17 +34,19 @@ export function CreditSelector({ credits, productId, seats, onSelect, onSkip, on
           .filter(b => b.productId === productId && b.remainingQuantity > 0)
           .map(b => ({ ...b, packName: p.creditPack.name, expiresAt: p.expiresAt }))
       )
-    const suff = matching.filter(b => b.remainingQuantity >= seats)
-    const insuff = matching.filter(b => b.remainingQuantity < seats)
+    // D679: un Ilimitado cubre 1 lugar (es personal) y sólo horarios antes de que venza; su 99,999 no cuenta.
+    const suff = matching.filter(b => cubreLugares(b, seats, 1, startsAt))
+    const insuff = matching.filter(b => !cubreLugares(b, seats, 1, startsAt))
     return {
       sufficient: suff,
       insufficient: insuff,
       allInsufficient: suff.length === 0 && matching.length > 0,
       ordered: [...suff, ...insuff],
     }
-  }, [credits, productId, seats])
+  }, [credits, productId, seats, startsAt])
 
   if (ordered.length === 0) return null
+  const ilimitadoNoCubre = insufficient.find(b => b.unlimited)
 
   return (
     <div class="avq-animate-in" style={{ padding: '4px 0' }}>
@@ -71,19 +78,26 @@ export function CreditSelector({ credits, productId, seats, onSelect, onSkip, on
           color: allInsufficient ? 'var(--avq-warning-fg)' : 'var(--avq-success-fg)',
         }}>
           {allInsufficient
-            ? t('creditPacks.insufficient', { needed: seats, available: ordered[0].remainingQuantity })
+            ? ilimitadoNoCubre
+              ? avisoDelIlimitado(t, ilimitadoNoCubre, startsAt, timezone)
+              : t('creditPacks.insufficient', { needed: seats, available: ordered[0].remainingQuantity })
             : seats > 1
               ? t('creditPacks.willUseN', { count: seats })
-              : t('creditPacks.hasCredits')}
+              : sufficient.every(b => b.unlimited)
+                ? venceEl(t, sufficient[0].expiresAt, timezone)
+                : t('creditPacks.hasCredits')}
         </span>
       </div>
 
       {/* Balance options */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '16px' }}>
         {ordered.map(balance => {
-          const canUse = balance.remainingQuantity >= seats
+          const canUse = cubreLugares(balance, seats, 1, startsAt)
           const isHov = canUse && hoveredId === balance.id
           const remainingAfter = balance.remainingQuantity - seats
+          const noAlcanza = !balance.unlimited
+            ? t('creditPacks.notEnough')
+            : venceAntes(balance, startsAt) ? t('creditPacks.expiresBefore') : t('creditPacks.oneSpotOnly')
 
           return (
             <button
@@ -95,7 +109,7 @@ export function CreditSelector({ credits, productId, seats, onSelect, onSkip, on
               onMouseLeave={() => canUse && setHoveredId(null)}
               aria-label={canUse
                 ? t('creditPacks.useN', { count: seats }) + ' — ' + balance.packName
-                : t('creditPacks.notEnough') + ' — ' + balance.packName}
+                : noAlcanza + ' — ' + balance.packName}
               style={{
                 display: 'flex', width: '100%', alignItems: 'center', justifyContent: 'space-between',
                 padding: '14px 16px', borderRadius: '14px', textAlign: 'left',
@@ -120,12 +134,20 @@ export function CreditSelector({ credits, productId, seats, onSelect, onSkip, on
                   {balance.packName}
                 </span>
                 <span style={{ fontSize: '12px', color: 'var(--avq-muted-fg, #6b7280)' }}>
-                  {t('creditPacks.remaining', {
-                    remaining: balance.remainingQuantity,
-                    total: balance.originalQuantity,
-                  })}
-                  {canUse && seats > 0 && (
-                    <> · {t('creditPacks.afterUse', { remaining: remainingAfter })}</>
+                  {balance.unlimited ? (
+                    canUse
+                      ? `${venceEl(t, balance.expiresAt, timezone)} · ${t('creditPacks.inYourName')}`
+                      : avisoDelIlimitado(t, balance, startsAt, timezone)
+                  ) : (
+                    <>
+                      {t('creditPacks.remaining', {
+                        remaining: balance.remainingQuantity,
+                        total: balance.originalQuantity,
+                      })}
+                      {canUse && seats > 0 && (
+                        <> · {t('creditPacks.afterUse', { remaining: remainingAfter })}</>
+                      )}
+                    </>
                   )}
                 </span>
               </div>
@@ -139,7 +161,7 @@ export function CreditSelector({ credits, productId, seats, onSelect, onSkip, on
               }}>
                 {canUse
                   ? (seats > 1 ? t('creditPacks.useN', { count: seats }) : t('creditPacks.useCredit'))
-                  : t('creditPacks.notEnough')}
+                  : noAlcanza}
               </div>
             </button>
           )

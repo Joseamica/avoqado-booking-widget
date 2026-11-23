@@ -2,6 +2,7 @@ import { h } from 'preact'
 import { useState } from 'preact/hooks'
 import type { Product, CreditPackPublic } from '../types'
 import type { TFunction } from '../i18n'
+import { totalDeSesiones } from '../lib/credits'
 import { Spinner } from './ui/Spinner'
 import { precio } from '../lib/precio'
 
@@ -232,12 +233,15 @@ function PackCard({
   loading: boolean
   t: TFunction
 }) {
-  const totalSessions = pack.items.reduce((sum, i) => sum + i.quantity, 0)
+  const totalSessions = totalDeSesiones(pack.items)
   const productNames = Array.from(new Set(pack.items.map(i => i.product.name)))
+  // D679: un paquete con renglón Ilimitado dice «Ilimitado», nunca 99,999.
   const summary =
-    productNames.length === 1
-      ? `${totalSessions} × ${productNames[0]}`
-      : t('landing.packSummary', { count: totalSessions })
+    totalSessions === 'ilimitado'
+      ? productNames.length === 1 ? `${t('creditPacks.unlimited')} · ${productNames[0]}` : t('creditPacks.unlimited')
+      : productNames.length === 1
+        ? `${totalSessions} × ${productNames[0]}`
+        : t('landing.packSummary', { count: totalSessions })
 
   return (
     <div

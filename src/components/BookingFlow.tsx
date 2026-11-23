@@ -20,6 +20,7 @@ import {
 } from '../state/booking'
 import { resolveDepositReturn, savePendingReservation, clearPendingReservation, depositCheckoutUrl, newReturnRef } from '../lib/depositReturn'
 import { leerSesion, type SesionEmitida } from '../lib/sesionDeCliente'
+import { cubreLugares } from '../lib/credits'
 
 /** Quién compró el paquete en esta pestaña (para el regreso de Stripe). */
 const COMPRA_DE = 'avq:compraDe'
@@ -262,6 +263,12 @@ export function BookingFlow({ props }: BookingFlowProps) {
   const [inlinePayment, setInlinePayment] = useState<InlineChoice>(null)
   // codex-r4 R4-5: lo que se eligió pagar con los créditos de una sesión no sigue a otra (salió o entró aquí).
   useEffect(() => { setInlinePayment(null) }, [customerInfo.value?.id ?? null])
+  // D679 (Codex pantallas r1 #1): lugares que paga con créditos, como los cuenta el SERVIDOR: los del mapa o, sin mapa, las
+  // personas del formulario. Si cambian (o el horario), lo elegido con créditos se vuelve a elegir.
+  const [formPartySize, setFormPartySize] = useState(1)
+  const creditSeats = selectedSpotIds.value.length || formPartySize
+  const slotStartsAt = selectedSlot.value?.startsAt ?? null
+  useEffect(() => { setInlinePayment(prev => (prev?.kind === 'credits' ? null : prev)) }, [creditSeats, slotStartsAt])
   // Visibility of the top-nav-triggered "Comprar créditos" modal. The host
   // page calls widget.showCreditPacks() → the widget dispatches
   // _avq_show_credit_packs on its host element → this flag flips on. Picking
@@ -2480,6 +2487,9 @@ export function BookingFlow({ props }: BookingFlowProps) {
                       <PaymentChoiceInline
                         products={selectedProducts.value.length > 0 ? selectedProducts.value : [selectedProduct.value]}
                         seats={Math.max(selectedSpotIds.value.length, 1)}
+                        creditSeats={creditSeats}
+                        startsAt={slotStartsAt}
+                        timezone={info.timezone}
                         credits={customerCredits.value}
                         upfrontPolicy={selectedProduct.value.upfrontPolicy ?? 'at_venue'}
                         selected={inlinePayment}
@@ -2515,6 +2525,7 @@ export function BookingFlow({ props }: BookingFlowProps) {
                         ? (fn) => setFormSubmitFn(() => fn)
                         : undefined}
                       hidePartySize={flowType.value === 'classes'}
+                      onPartySizeChange={setFormPartySize}
                     />
                   </>
                 )
@@ -2540,6 +2551,8 @@ export function BookingFlow({ props }: BookingFlowProps) {
                     setShowPaymentSelector(false)
                     setShowNoCreditsBuyPrompt(true)
                   }}
+                  timezone={info.timezone}
+                  startsAt={slotStartsAt}
                   t={t}
                 />
               )}
@@ -2562,6 +2575,8 @@ export function BookingFlow({ props }: BookingFlowProps) {
                     setShowCreditSelector(false)
                     setShowNoCreditsBuyPrompt(true)
                   }}
+                  timezone={info.timezone}
+                  startsAt={slotStartsAt}
                   t={t}
                 />
               )}
@@ -2671,14 +2686,11 @@ export function BookingFlow({ props }: BookingFlowProps) {
             // Credits viable: every product has a covering balance.
             const credits = customerCredits.value
             if (!credits) return false
-            const seats = Math.max(selectedSpotIds.value.length, 1)
             const allBalances = credits.purchases
               .filter(p => p.status === 'ACTIVE')
-              .flatMap(p => p.itemBalances)
-            return products.every(p => {
-              const required = seats * (p.creditCost ?? 1)
-              return allBalances.some(b => b.productId === p.id && b.remainingQuantity >= required)
-            })
+              .flatMap(p => p.itemBalances.map(b => ({ ...b, expiresAt: p.expiresAt })))
+            // D679: un Ilimitado cubre 1 lugar (es personal) y sólo antes de vencer — la misma cuenta que PaymentChoiceInline.
+            return products.every(p => allBalances.some(b => b.productId === p.id && cubreLugares(b, creditSeats, p.creditCost ?? 1, slotStartsAt)))
           })()
 
           return (

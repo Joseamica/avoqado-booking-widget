@@ -2,6 +2,7 @@ import { h } from 'preact'
 import type { PublicVenueInfo, CreditPackPublic } from '../types'
 import type { CustomerInfo } from '../state/booking'
 import type { TFunction } from '../i18n'
+import { totalDeSesiones } from '../lib/credits'
 import { precio } from '../lib/precio'
 
 interface VenueSidebarCardProps {
@@ -31,9 +32,7 @@ export function VenueSidebarCard({
   const cheapestPack = creditPacks.length
     ? creditPacks.reduce((min, p) => (p.price < min.price ? p : min), creditPacks[0])
     : null
-  const totalSessions = cheapestPack
-    ? cheapestPack.items.reduce((sum, i) => sum + i.quantity, 0)
-    : 0
+  const totalSessions = cheapestPack ? totalDeSesiones(cheapestPack.items) : 0
 
   return (
     <div
@@ -132,8 +131,11 @@ export function VenueSidebarCard({
             {cheapestPack.name} →
           </div>
           <div style={{ fontSize: '11px', color: 'var(--avq-muted-fg, #6b7280)' }}>
-            {totalSessions > 0 ? `${totalSessions} ${t('landing.packSummary', { count: totalSessions }).split(' ').slice(1).join(' ')}` : ''}
-            {totalSessions > 0 && cheapestPack.price ? ' · ' : ''}
+            {/* D679: un Ilimitado dice «Ilimitado», nunca 99,999. */}
+            {totalSessions === 'ilimitado'
+              ? t('creditPacks.unlimited')
+              : totalSessions > 0 ? `${totalSessions} ${t('landing.packSummary', { count: totalSessions }).split(' ').slice(1).join(' ')}` : ''}
+            {(totalSessions === 'ilimitado' || totalSessions > 0) && cheapestPack.price ? ' · ' : ''}
             {cheapestPack.price ? formatPrice(cheapestPack.price, cheapestPack.currency) : ''}
           </div>
         </button>

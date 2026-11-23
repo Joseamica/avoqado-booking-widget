@@ -110,7 +110,6 @@ export function CreditPacksModal({
           </p>
         ) : (
           packs.map(pack => {
-            const totalSessions = pack.items.reduce((sum, i) => sum + i.quantity, 0)
             const isBuying = buyingPackId === pack.id
             return (
               <div
@@ -150,7 +149,7 @@ export function CreditPacksModal({
                     {pack.items.map(item => (
                       <li key={item.id || item.productId} style={{ display: 'flex', justifyContent: 'space-between', gap: '8px' }}>
                         <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                          {item.quantity}× {item.product?.name ?? '—'}
+                          {item.unlimited ? t('creditPacks.unlimited') : `${item.quantity}×`} {item.product?.name ?? '—'}
                         </span>
                       </li>
                     ))}

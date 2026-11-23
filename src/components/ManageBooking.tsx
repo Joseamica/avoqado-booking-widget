@@ -303,7 +303,10 @@ export function ManageBooking({ venueSlug, cancelSecret, timezone, locale = 'es'
               fontSize: '12px', color: 'var(--avq-warning-fg)',
               lineHeight: '1.5',
             }}>
-              {reservation.cancellation.creditsRefundable > 0 ? (
+              {reservation.cancellation.unlimited ? (
+                // D679: todos sus canjes son de un Ilimitado: cancelar no le quita nada (ni en la ventana tardía).
+                <span>{t('manage.unlimitedCancelFree')}</span>
+              ) : reservation.cancellation.creditsRefundable > 0 ? (
                 <span>{t('manage.refundPreview', {
                   refunded: reservation.cancellation.creditsRefundable,
                   total: reservation.cancellation.creditsUsed,

@@ -1544,3 +1544,54 @@ describe('D683: volvió de Stripe sin pagar', () => {
     expect(screen.queryByText(/No se completó el pago|Esperando tu pago/)).toBeNull()
   })
 })
+
+describe('D679 · pagar una cita con un Ilimitado (Codex pantallas r1 #1 y #2)', () => {
+  const saldo = (id: string, extra: Record<string, unknown>) => ({
+    id, productId: 'service-a', product: { id: 'service-a', name: 'Servicio propio', type: 'APPOINTMENTS_SERVICE' }, ...extra,
+  })
+  const ilimitado = (expiresAt: string) => ({
+    id: 'p-ili', creditPack: { name: 'Mensual Ilimitado' }, expiresAt, status: 'ACTIVE',
+    itemBalances: [saldo('b-ili', { originalQuantity: 99999, remainingQuantity: 99999, unlimited: true })],
+  })
+  const normal = { id: 'p-5', creditPack: { name: 'Paquete 5' }, status: 'ACTIVE', itemBalances: [saldo('b-5', { originalQuantity: 5, remainingQuantity: 3 })] }
+  function anaConCreditos(purchases: unknown[]) {
+    guardarSesion('studio-a', {
+      token: 'tok-ana', customer: { id: 'c1', firstName: 'Ana', lastName: 'Ruiz', email: null, phone: '5512345678' },
+      contactos: [{ tipo: 'PHONE', valor: '+525512345678', metodo: 'WHATSAPP', probadoEn: 1 }], guardadaEn: Date.now(),
+    })
+    state.bindCustomerSessionToVenue('studio-a')
+    state.entroAqui('studio-a', leerSesion('studio-a')!)
+    vi.mocked(api.getCustomerCredits).mockResolvedValue({ customer: { id: 'c1' }, purchases } as any)
+    vi.mocked(api.getCustomerPortal).mockReturnValue(new Promise(() => {}))
+  }
+  afterEach(() => state.clearCustomerSession('studio-a'))
+
+  it('#1: «Número de personas: 2» cuenta como 2 lugares: el Ilimitado deja de ofrecerse, sale su aviso y no se manda con él', async () => {
+    anaConCreditos([ilimitado('2026-11-05T06:00:00Z')])
+    await openAppointmentForm()
+    fireEvent.click(screen.getByRole('button', { name: /Pagar con créditos/ })); await flush()
+    fireEvent.input(screen.getByLabelText(/Número de personas/), { target: { value: '2' } }); await flush()
+    expect(screen.queryByRole('button', { name: /Pagar con créditos/ })).toBeNull()
+    expect(screen.getByText('Tu Ilimitado es personal: cubre 1 lugar a tu nombre')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Reserva cita' })); await flush()
+    // Lo elegido con 1 persona ya no vale con 2: no se manda con el Ilimitado (el SERVIDOR lo rechazaría); pregunta cómo pagar.
+    expect(api.createReservation).not.toHaveBeenCalled()
+    expect(screen.getByText('¿Cómo quieres pagar?')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: /Usar 1 crédito/ })).toBeNull()
+  })
+
+  it('#2: un Ilimitado que vence antes de la cita no se ofrece; lo dice con su fecha', async () => {
+    anaConCreditos([ilimitado('2026-10-07T05:00:00Z')]) // vence el 6-oct (CDMX); la cita es el 8
+    await openAppointmentForm()
+    expect(screen.queryByRole('button', { name: /Pagar con créditos/ })).toBeNull()
+    expect(screen.getByText('Tu Ilimitado vence el 6 de octubre, antes de este horario.')).toBeTruthy()
+  })
+
+  it('#2: con un paquete normal que sí sirve, se elige ése y no el Ilimitado vencido para esa fecha', async () => {
+    anaConCreditos([ilimitado('2026-10-07T05:00:00Z'), normal])
+    await openAppointmentForm()
+    const opcion = screen.getByRole('button', { name: /Pagar con créditos/ })
+    expect(opcion.textContent).toContain('Paquete 5')
+    expect(opcion.textContent).not.toContain('Mensual Ilimitado')
+  })
+})
