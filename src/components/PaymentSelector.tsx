@@ -81,8 +81,9 @@ export function PaymentSelector({
           ...b,
           packName: p.creditPack.name,
           expiresAt: p.expiresAt,
-          // D679: un Ilimitado cubre 1 lugar (es personal).
-          sufficient: cubreLugares(b, seats, creditCost, startsAt),
+          // D679: un Ilimitado cubre 1 lugar (es personal) y sólo horarios antes de que venza. La fecha vive en la compra, no en
+          // el saldo: sin pasársela, un horario posterior al vencimiento se ofrecía y lo rechazaba el SERVIDOR.
+          sufficient: cubreLugares({ ...b, expiresAt: p.expiresAt }, seats, creditCost, startsAt),
           totalNeeded,
         })),
       )
