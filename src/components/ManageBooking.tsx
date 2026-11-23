@@ -9,6 +9,9 @@ import * as api from '../api/booking'
 import { RescheduleFlow } from './RescheduleFlow'
 import { depositNotice } from '../lib/depositReturn'
 
+/** Ir a la página de pago de Stripe. Aparte para que las pruebas vean a dónde iría sin salir de la página. */
+export const pagoExterno = { abrir: (url: string): void => window.location.assign(url) }
+
 interface ManageBookingProps {
   venueSlug: string
   cancelSecret: string
@@ -46,6 +49,7 @@ export function ManageBooking({ venueSlug, cancelSecret, timezone, locale = 'es'
   const [cancelling, setCancelling] = useState(false)
 
   const [querying, setQuerying] = useState(false)
+  const [checkingPay, setCheckingPay] = useState(false)
   const [notFound, setNotFound] = useState(false)
   const sourceRef = useRef({ venueSlug, cancelSecret })
   if (sourceRef.current.venueSlug !== venueSlug || sourceRef.current.cancelSecret !== cancelSecret) {
@@ -138,6 +142,34 @@ export function ManageBooking({ venueSlug, cancelSecret, timezone, locale = 'es'
       setError(serverMsg || t('errors.generic'))
     } finally {
       if (source === sourceRef.current) setCancelling(false)
+    }
+  }
+
+  // D681 (Codex texto #1): el negocio pudo cancelar o el pago pudo entrar en otra pestaña mientras la ficha seguía abierta. Antes de
+  // mandar a Stripe se lee otra vez: sólo con la reserva y el depósito aún pendientes se abre la liga; si no, la ficha enseña lo real.
+  async function handlePayNow(url: string) {
+    if (checkingPay) return
+    const source = sourceRef.current
+    stopReads()
+    setCheckingPay(true)
+    setError(null)
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), 10000)
+    let leaving = false
+    try {
+      const fresh = await api.getReservation(source.venueSlug, source.cancelSecret, controller.signal)
+      if (source !== sourceRef.current) return
+      if (fresh.status === 'PENDING' && fresh.depositStatus === 'PENDING') {
+        leaving = true
+        pagoExterno.abrir(url)
+        return
+      }
+      setReservation(fresh)
+    } catch {
+      if (source === sourceRef.current) setError(t('errors.reservationQueryFailed'))
+    } finally {
+      clearTimeout(timeout)
+      if (!leaving && source === sourceRef.current) { setCheckingPay(false); setQuerying(false) }
     }
   }
 
@@ -363,15 +395,11 @@ export function ManageBooking({ venueSlug, cancelSecret, timezone, locale = 'es'
       <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
         {!isCancelled && reservation.status !== 'COMPLETED' && reservation.status !== 'NO_SHOW' && !showCancel && !showReschedule && (
           <>
-            {/* D683: retoma el mismo pago de Stripe (una liga, no un botón: es ir a otra página). */}
+            {/* D683: retoma el mismo pago de Stripe. Botón y no liga: antes de ir se revisa que siga pendiente (D681). */}
             {payUrl && (
-              <a href={payUrl} style={{
-                display: 'flex', alignItems: 'center', justifyContent: 'center', height: '46px',
-                borderRadius: 'var(--avq-btn-radius, 12px)', background: 'var(--avq-accent, #6366f1)', color: '#ffffff',
-                fontSize: '14px', fontWeight: '600', textDecoration: 'none',
-              }}>
+              <Button fullWidth disabled={checkingPay} onClick={() => { void handlePayNow(payUrl) }}>
                 {t('deposit.payNow')}
-              </a>
+              </Button>
             )}
             {/* Reschedule — primary outline. Disabled when out of window. */}
             {reservation.reschedule && (

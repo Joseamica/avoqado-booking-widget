@@ -42,7 +42,7 @@ import { CustomerPortal } from './CustomerPortal'
 import { leerCuenta } from '../state/miCuenta'
 import { ClassSessionList } from './ClassSessionList'
 import { ClassDetailView } from './ClassDetailView'
-import { UnifiedLanding } from './UnifiedLanding'
+import { UnifiedLanding, ofreceCitas } from './UnifiedLanding'
 import { PaymentSelector } from './PaymentSelector'
 import { TimezoneModal, getStoredTzPreference } from './TimezoneModal'
 import { VenueSidebarCard } from './VenueSidebarCard'
@@ -557,7 +557,7 @@ export function BookingFlow({ props }: BookingFlowProps) {
               // offered). Keeps the chrome from showing dead-end CTAs.
               hasClasses,
               // D684b: lo mismo con «Citas» cuando el negocio sólo da clases.
-              hasAppointments: (info.products ?? []).some(p => p.type !== 'CLASS'),
+              hasAppointments: ofreceCitas(info.products ?? []),
             },
           },
         }))
@@ -1861,7 +1861,7 @@ export function BookingFlow({ props }: BookingFlowProps) {
 
   // D684b: /appointments en un negocio que sólo da clases abría un calendario vacío («Todavía no se han añadido servicios»).
   // Reemplaza sólo los pasos: la lista de paquetes de la cabecera sigue abriéndose encima.
-  const noAppointments = flowType.value === 'appointments' && !info.products.some(p => p.type !== 'CLASS')
+  const noAppointments = flowType.value === 'appointments' && !ofreceCitas(info.products)
 
   return (
     <div style={accentOverride}>
@@ -2011,17 +2011,16 @@ export function BookingFlow({ props }: BookingFlowProps) {
           <p style={{ fontSize: '16px', fontWeight: '600', color: 'var(--avq-fg, #111827)', marginBottom: '20px' }}>
             {t('service.noAppointments')}
           </p>
-          {info.products.some(p => p.type === 'CLASS') && (
-            <Button onClick={() => {
-              flowType.value = 'classes'
-              // En book.avoqado.io la dirección también cambia (la cabecera la sigue); un sitio ajeno conserva la suya.
-              const base = appointmentsBasePath()
-              if (base) window.history.pushState({}, '', `${base.replace(/\/appointments$/, '')}/classes${window.location.search}`)
-              resetBooking(info)
-            }}>
-              {t('service.seeClasses')}
-            </Button>
-          )}
+          <Button onClick={() => {
+            flowType.value = 'classes'
+            // Sólo en book.avoqado.io (la página que pone `hide-venue-header`) cambia la dirección, y la cabecera la sigue. Incrustado en
+            // un sitio ajeno, se cambia por dentro del widget y su dirección no se toca (Codex texto #4).
+            const base = props.hideVenueHeader ? appointmentsBasePath() : null
+            if (base) window.history.pushState({}, '', `${base.replace(/\/appointments$/, '')}/classes${window.location.search}`)
+            resetBooking(info)
+          }}>
+            {t('service.seeClasses')}
+          </Button>
         </div>
       ) : (
       <div class="avq-animate-in" key={`${step.value}-${showLanding}`}>

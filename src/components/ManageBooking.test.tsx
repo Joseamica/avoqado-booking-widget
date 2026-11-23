@@ -56,7 +56,7 @@ describe('reservation language matches the widget', () => {
 describe('financial source of truth and one bounded read round', () => {
   it.each([
     ['PAID', 'CANCELLED', 'Pago recibido'], ['PENDING', 'CONFIRMED', 'Aún no se confirma'],
-    ['PENDING', 'PENDING', 'Esperando tu pago. Si no lo completas, tu lugar se libera solo en unos minutos'],
+    ['PENDING', 'PENDING', 'Esperando tu pago. Si no lo terminas, tu lugar se libera solo cuando venza el enlace de pago'],
     ['REFUNDED', 'CONFIRMED', 'Depósito reembolsado'], ['FORFEITED', 'CONFIRMED', 'Depósito retenido'],
     ['EXPIRED', 'CONFIRMED', 'El plazo del depósito expiró'], ['DISPUTED', 'CONFIRMED', 'Depósito en disputa'],
     ['CARD_HOLD', 'CONFIRMED', 'Retención de tarjeta'], [null, 'CONFIRMED', 'Aún no pudimos confirmar el estado del depósito'],
@@ -74,13 +74,13 @@ describe('financial source of truth and one bounded read round', () => {
   it('D681: con la reserva y el depósito pendientes dice que espera el pago, sin hora y sin «confirmando»', async () => {
     vi.mocked(api.getReservation).mockResolvedValue(detail('PENDING', 'PENDING'))
     render(<ManageBooking {...props} />); await flush()
-    expect(screen.getByRole('status').textContent).toBe('Esperando tu pago. Si no lo completas, tu lugar se libera solo en unos minutos')
+    expect(screen.getByRole('status').textContent).toBe('Esperando tu pago. Si no lo terminas, tu lugar se libera solo cuando venza el enlace de pago')
     expect(screen.queryByText(/Estamos confirmando/)).toBeNull()
   })
   it('D681: volvió por «atrás» de Stripe: dice que no se completó, sin pedirle nada al SERVIDOR más que leer', async () => {
     vi.mocked(api.getReservation).mockResolvedValue(detail('PENDING', 'PENDING'))
     render(<ManageBooking {...props} paymentCancelled paymentUnfinished depositReturn />); await flush()
-    expect(screen.getByRole('status').textContent).toBe('No se completó el pago. Si no lo terminas, tu lugar se libera solo en unos minutos')
+    expect(screen.getByRole('status').textContent).toBe('No se completó el pago. Si no lo terminas, tu lugar se libera solo cuando venza el enlace de pago')
     await advance(40000); expect(api.getReservation).toHaveBeenCalledTimes(1)
   })
   it.each([
