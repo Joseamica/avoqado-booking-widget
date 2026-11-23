@@ -20,6 +20,7 @@ import {
 } from '../state/booking'
 import { resolveDepositReturn, savePendingReservation, clearPendingReservation, depositCheckoutUrl, newReturnRef } from '../lib/depositReturn'
 import { leerSesion, type SesionEmitida } from '../lib/sesionDeCliente'
+import { cubreLugares } from '../lib/credits'
 
 /** Quién compró el paquete en esta pestaña (para el regreso de Stripe). */
 const COMPRA_DE = 'avq:compraDe'
@@ -2540,6 +2541,7 @@ export function BookingFlow({ props }: BookingFlowProps) {
                     setShowPaymentSelector(false)
                     setShowNoCreditsBuyPrompt(true)
                   }}
+                  timezone={info.timezone}
                   t={t}
                 />
               )}
@@ -2562,6 +2564,7 @@ export function BookingFlow({ props }: BookingFlowProps) {
                     setShowCreditSelector(false)
                     setShowNoCreditsBuyPrompt(true)
                   }}
+                  timezone={info.timezone}
                   t={t}
                 />
               )}
@@ -2675,10 +2678,8 @@ export function BookingFlow({ props }: BookingFlowProps) {
             const allBalances = credits.purchases
               .filter(p => p.status === 'ACTIVE')
               .flatMap(p => p.itemBalances)
-            return products.every(p => {
-              const required = seats * (p.creditCost ?? 1)
-              return allBalances.some(b => b.productId === p.id && b.remainingQuantity >= required)
-            })
+            // D679: un Ilimitado cubre 1 lugar (es personal) — la misma cuenta que PaymentChoiceInline.
+            return products.every(p => allBalances.some(b => b.productId === p.id && cubreLugares(b, seats, p.creditCost ?? 1)))
           })()
 
           return (

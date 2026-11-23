@@ -2,6 +2,7 @@ import { h } from 'preact'
 import type { CustomerCreditBalance, Product, UpfrontPolicy } from '../types'
 import type { TFunction } from '../i18n'
 import { precio } from '../lib/precio'
+import { cubreLugares } from '../lib/credits'
 
 /** What the customer picked. The widget reads this on submit:
  *  - 'credits' + balanceIds[]: every service maps to a balance, redeem from each
@@ -59,6 +60,7 @@ function pickBalancesForAllProducts(
         id: b.id,
         productId: b.productId,
         remainingQuantity: b.remainingQuantity,
+        unlimited: b.unlimited,
         packName: p.creditPack.name,
       })),
     )
@@ -74,7 +76,8 @@ function pickBalancesForAllProducts(
     // the requirement. Picking the most-stocked balance leaves smaller
     // balances available for other bookings.
     const candidate = allBalances
-      .filter(b => b.productId === product.id && b.remainingQuantity >= required)
+      // D679: un Ilimitado cubre 1 lugar (es personal).
+      .filter(b => b.productId === product.id && cubreLugares(b, seats, product.creditCost ?? 1))
       .sort((a, b) => b.remainingQuantity - a.remainingQuantity)[0]
 
     if (!candidate) return null

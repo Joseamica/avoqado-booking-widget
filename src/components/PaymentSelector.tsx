@@ -3,6 +3,7 @@ import { useMemo } from 'preact/hooks'
 import type { CustomerCreditBalance, Product, UpfrontPolicy } from '../types'
 import type { TFunction } from '../i18n'
 import { precio } from '../lib/precio'
+import { cubreLugares, venceEl } from '../lib/credits'
 
 interface PaymentSelectorProps {
   product: Product
@@ -26,6 +27,8 @@ interface PaymentSelectorProps {
   onSelectCash: () => void
   /** No matching credits found and user wants to buy a pack first. */
   onBuyPack: () => void
+  /** Zona del negocio, para «Ilimitado · vence el …». */
+  timezone?: string
   t: TFunction
 }
 
@@ -48,6 +51,7 @@ export function PaymentSelector({
   onSelectCredits,
   onSelectCash,
   onBuyPack,
+  timezone,
   t,
 }: PaymentSelectorProps) {
   // When the venue can't charge online, hide anything that would move money
@@ -73,7 +77,9 @@ export function PaymentSelector({
         p.itemBalances.map(b => ({
           ...b,
           packName: p.creditPack.name,
-          sufficient: b.remainingQuantity >= totalNeeded,
+          expiresAt: p.expiresAt,
+          // D679: un Ilimitado cubre 1 lugar (es personal).
+          sufficient: cubreLugares(b, seats, creditCost),
           totalNeeded,
         })),
       )
@@ -82,7 +88,9 @@ export function PaymentSelector({
   }, [credits, product.id, seats, creditCost])
 
   const sufficientBalance = creditBalances.find(b => b.sufficient) ?? null
-  const insufficientBalance = !sufficientBalance && creditBalances.length > 0 ? creditBalances[0] : null
+  // D679: el Ilimitado que no cubre (2+ lugares) no es «te faltan créditos»: se dice aparte que es personal.
+  const insufficientBalance = !sufficientBalance ? creditBalances.find(b => !b.unlimited) ?? null : null
+  const ilimitadoNoCubre = !sufficientBalance && creditBalances.some(b => b.unlimited)
 
   const cashLabel =
     effectivePolicy === 'required'
@@ -114,19 +122,31 @@ export function PaymentSelector({
               <span style={iconBadgeStyle('success')}>💳</span>
               <div style={{ textAlign: 'left', flex: 1 }}>
                 <div style={{ fontSize: '14px', fontWeight: '600', color: 'var(--avq-fg, #111827)' }}>
-                  {seats * creditCost === 1
+                  {seats * creditCost === 1 || sufficientBalance.unlimited
                     ? t('payment.useOneCredit', { pack: sufficientBalance.packName })
                     : t('payment.useNCredits', { count: seats * creditCost, pack: sufficientBalance.packName })}
                 </div>
                 <div style={{ fontSize: '12px', color: 'var(--avq-muted-fg, #6b7280)', marginTop: '2px' }}>
-                  {t('payment.creditsRemaining', {
-                    remaining: sufficientBalance.remainingQuantity - seats * creditCost,
-                    total: sufficientBalance.originalQuantity,
-                  })}
+                  {sufficientBalance.unlimited
+                    ? venceEl(t, sufficientBalance.expiresAt, timezone)
+                    : t('payment.creditsRemaining', {
+                        remaining: sufficientBalance.remainingQuantity - seats * creditCost,
+                        total: sufficientBalance.originalQuantity,
+                      })}
                 </div>
               </div>
             </div>
           </button>
+        )}
+
+        {/* D679: el Ilimitado no paga 2+ lugares; se dice, sin «te faltan» ni su número */}
+        {acceptsCredits && ilimitadoNoCubre && (
+          <div role="status" style={{ ...paymentOptionStyle(true, true), cursor: 'default', display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <span style={iconBadgeStyle('warning')}>👤</span>
+            <span style={{ fontSize: '13px', fontWeight: '600', color: 'var(--avq-fg, #111827)', textAlign: 'left' }}>
+              {t('creditPacks.unlimitedOneSeat')}
+            </span>
+          </div>
         )}
 
         {/* Insufficient credits — show "buy more" CTA (only if the venue can charge) */}

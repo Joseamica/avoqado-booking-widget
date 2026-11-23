@@ -220,3 +220,26 @@ describe('financial source of truth and one bounded read round', () => {
     expect(fetch.mock.calls[0][1].signal).toBe(controller.signal)
   })
 })
+
+describe('D679 · cancelar una reserva pagada con un Ilimitado', () => {
+  async function abrirCancelar(cancellation: Partial<NonNullable<PublicReservationDetail['cancellation']>>) {
+    const reservation = detail(null)
+    reservation.cancellation = { ...reservation.cancellation!, ...cancellation }
+    vi.mocked(api.getReservation).mockResolvedValue(reservation)
+    const view = render(<ManageBooking {...props} />); await flush()
+    fireEvent.click(screen.getByRole('button', { name: 'Cancelar Reservación' })); await flush()
+    return view
+  }
+
+  it('con cancellation.unlimited dice «Cancelar no te cuesta nada: tu Ilimitado queda igual.», sin números', async () => {
+    const { container } = await abrirCancelar({ creditsUsed: 1, creditsRefundable: 1, refundPercent: 0, unlimited: true })
+    expect(screen.getByText('Cancelar no te cuesta nada: tu Ilimitado queda igual.')).toBeTruthy()
+    expect(container.textContent).not.toMatch(/te devolvemos|pierdes|9999/)
+  })
+
+  it('con pago mixto (sin la marca) sigue el aviso de hoy con los números por canje', async () => {
+    await abrirCancelar({ creditsUsed: 3, creditsRefundable: 2, refundPercent: 50 })
+    expect(screen.getByText('Si cancelas ahora, te devolvemos 2 de 3 créditos.')).toBeTruthy()
+    expect(screen.queryByText(/no te cuesta nada/)).toBeNull()
+  })
+})

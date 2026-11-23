@@ -81,7 +81,7 @@ export function CreditPackBanner({ packs, onBuy, buyingPackId, t }: CreditPackBa
                     fontSize: '12px', color: 'var(--avq-fg, #111827)',
                   }}>
                     <strong style={{ fontWeight: '700', color: 'var(--avq-accent, #6366f1)' }}>
-                      {item.quantity}×
+                      {item.unlimited ? t('creditPacks.unlimited') : `${item.quantity}×`}
                     </strong>
                     <span>{item.product.name}</span>
                   </span>
