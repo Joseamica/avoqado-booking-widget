@@ -116,7 +116,8 @@
     "rescheduleButton": "Cambiar horario",
     "rescheduleDisabledTooltip": "Solo puedes cambiar el horario hasta {{hours}}h antes del inicio.",
     "checkAgain": "Consultar de nuevo",
-    "unlimitedCancelFree": "Cancelar no te cuesta nada: tu Ilimitado queda igual."
+    "unlimitedCancelFree": "Cancelar no te cuesta nada: tu Ilimitado queda igual.",
+    "unlimitedKept": "Tu Ilimitado queda igual."
   },
   "reschedule": {
     "title": "Cambiar horario",
@@ -217,6 +218,7 @@
     "payOptionalHint": "Puedes pagar ahora o al llegar",
     "useOneCredit": "Usar 1 crédito ({{pack}})",
     "useNCredits": "Usar {{count}} créditos ({{pack}})",
+    "useMyPass": "Usar mi pase ({{pack}})",
     "creditsRemaining": "Te quedarán {{remaining}} de {{total}}",
     "creditsInsufficient": "No te alcanza con tus créditos",
     "creditsInsufficientHint": "Necesitas {{needed}} y solo tienes {{available}}. Compra más.",
@@ -320,6 +322,7 @@
     "unlimitedOneSeat": "Tu Ilimitado es personal: cubre 1 lugar a tu nombre",
     "oneSpotOnly": "Sólo 1 lugar",
     "inYourName": "a tu nombre",
+    "unlimitedPersonal": "Personal: sólo a tu nombre",
     "unlimitedExpiresBefore": "Tu Ilimitado vence el {{date}}, antes de este horario.",
     "expiresBefore": "Vence antes"
   },

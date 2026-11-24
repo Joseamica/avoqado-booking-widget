@@ -235,13 +235,13 @@ function PackCard({
 }) {
   const totalSessions = totalDeSesiones(pack.items)
   const productNames = Array.from(new Set(pack.items.map(i => i.product.name)))
-  // D679: un paquete con renglón Ilimitado dice «Ilimitado», nunca 99,999.
+  // D679: un paquete con renglón Ilimitado dice «Ilimitado», nunca 99,999. D687: un renglón por clase («Ilimitado · Yoga»).
   const summary =
     totalSessions === 'ilimitado'
-      ? productNames.length === 1 ? `${t('creditPacks.unlimited')} · ${productNames[0]}` : t('creditPacks.unlimited')
-      : productNames.length === 1
-        ? `${totalSessions} × ${productNames[0]}`
-        : t('landing.packSummary', { count: totalSessions })
+      ? pack.items.map(i => i.unlimited ? `${t('creditPacks.unlimited')} · ${i.product.name}` : `${i.quantity} × ${i.product.name}`)
+      : [productNames.length === 1
+          ? `${totalSessions} × ${productNames[0]}`
+          : t('landing.packSummary', { count: totalSessions })]
 
   return (
     <div
@@ -263,7 +263,12 @@ function PackCard({
               {pack.description}
             </div>
           )}
-          <div style={{ fontSize: '12px', color: 'var(--avq-muted-fg, #6b7280)', marginTop: '6px' }}>{summary}</div>
+          <div style={{ fontSize: '12px', color: 'var(--avq-muted-fg, #6b7280)', marginTop: '6px' }}>
+            {summary.map((line, i) => <div key={i}>{line}</div>)}
+          </div>
+          {totalSessions === 'ilimitado' && (
+            <div style={{ fontSize: '12px', color: 'var(--avq-muted-fg, #6b7280)', marginTop: '2px' }}>{t('creditPacks.unlimitedPersonal')}</div>
+          )}
           {pack.validityDays != null && pack.validityDays > 0 && (
             <div style={{ fontSize: '12px', color: 'var(--avq-muted-fg, #9ca3af)', marginTop: '2px' }}>
               {t('landing.validity', { days: pack.validityDays })}

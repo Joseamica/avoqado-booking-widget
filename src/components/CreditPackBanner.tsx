@@ -86,6 +86,10 @@ export function CreditPackBanner({ packs, onBuy, buyingPackId, t }: CreditPackBa
                     <span>{item.product.name}</span>
                   </span>
                 ))}
+                {/* D687: el Ilimitado es personal. */}
+                {pack.items.some(i => i.unlimited) && (
+                  <span style={{ alignSelf: 'center', fontSize: '12px', color: 'var(--avq-muted-fg, #6b7280)' }}>{t('creditPacks.unlimitedPersonal')}</span>
+                )}
               </div>
 
               {/* Validity + Buy */}

@@ -57,6 +57,7 @@ describe('D679 · «Mi cuenta» con un Ilimitado', () => {
     expect(await screen.findByText('Ilimitado · vence el 22 de diciembre')).toBeTruthy()
     expect(screen.queryByText('No tienes créditos disponibles')).toBeNull()
     expect(container.textContent).not.toMatch(/9999/) // tampoco el paquete en venta («99999×»)
+    expect(await screen.findByText('Personal: sólo a tu nombre')).toBeTruthy() // D687: el paquete en venta dice que es personal
   })
 
   it('Codex r1 #3: la cabecera y el renglón dan el vencimiento en la MISMA zona, la del negocio', async () => {
@@ -96,5 +97,17 @@ describe('D679 · «Mi cuenta» con un Ilimitado', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Editar Perfil' }))
     expect(screen.getByPlaceholderText('Nombre')).toBeTruthy()
     expect(screen.queryByText(/ligado a tu Ilimitado/)).toBeNull()
+    expect(screen.getByRole('button', { name: 'Guardar' })).toBeTruthy()
+  })
+
+  it('D687: con un Ilimitado «Editar Perfil» no tiene nada que guardar: sin «Guardar», y «Cancelar» lo cierra', async () => {
+    vi.mocked(api.getCustomerPortal).mockResolvedValue(portal([ILIMITADO]))
+    renderPortal()
+    await screen.findByText('Hola, Ana')
+    fireEvent.click(screen.getByRole('button', { name: 'Editar Perfil' }))
+    expect(screen.queryByRole('button', { name: 'Guardar' })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Cancelar' }))
+    expect(screen.queryByText(/ligado a tu Ilimitado/)).toBeNull()
+    expect(api.updateCustomerProfile).not.toHaveBeenCalled()
   })
 })

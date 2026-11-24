@@ -917,9 +917,12 @@ export function CustomerPortal({
               <Button variant="ghost" onClick={() => { setEditingProfile(false); setError(null) }}>
                 {t('portal.cancel')}
               </Button>
-              <Button onClick={handleSaveProfile} disabled={profileSaving}>
-                {profileSaving ? <Spinner size={18} /> : t('portal.save')}
-              </Button>
+              {/* D687: con un Ilimitado no queda nada editable (nombre bloqueado, teléfono por «Cambiar mi número»): sin «Guardar». */}
+              {!tieneIlimitado && (
+                <Button onClick={handleSaveProfile} disabled={profileSaving}>
+                  {profileSaving ? <Spinner size={18} /> : t('portal.save')}
+                </Button>
+              )}
             </div>
           </div>
         </div>
@@ -1289,6 +1292,10 @@ export function CustomerPortal({
                       <span>{item.product.name}</span>
                     </span>
                   ))}
+                  {/* D687: el Ilimitado es personal. */}
+                  {pack.items.some(i => i.unlimited) && (
+                    <span style={{ alignSelf: 'center', fontSize: '12px', color: 'var(--avq-muted-fg, #6b7280)' }}>{t('creditPacks.unlimitedPersonal')}</span>
+                  )}
                 </div>
 
                 {/* Validity + Buy */}

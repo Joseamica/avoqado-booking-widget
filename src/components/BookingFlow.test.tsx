@@ -594,6 +594,25 @@ describe('BookingFlow booking repair', () => {
     expect(api.getAvailability).toHaveBeenCalledTimes(availabilityReads + 1)
   })
 
+  it('D687: un rechazo del SERVIDOR sale UNA vez (el aviso que se queda, sin el toast repetido) y se lleva a la vista', async () => {
+    const MSG = 'Ya tienes un lugar en esta clase con tu Ilimitado.'
+    const scroll = vi.fn()
+    Element.prototype.scrollIntoView = scroll
+    try {
+      vi.mocked(api.createReservation).mockRejectedValueOnce({ status: 400, data: { code: 'CREDIT_UNLIMITED_SAME_CLASS', message: MSG } })
+      await openAppointmentForm()
+      fireEvent.input(screen.getByLabelText(/Nombre/), { target: { value: 'Ana Prueba' } })
+      fireEvent.input(screen.getByLabelText(/Teléfono/), { target: { value: '5512345678' } })
+      fireEvent.click(screen.getByRole('button', { name: 'Reserva cita' })); await flush()
+      expect(screen.getAllByText(MSG)).toHaveLength(1)
+      expect(screen.getByRole('alert').textContent).toBe(MSG)
+      expect(state.toastMessage.value).toBeNull()
+      expect(scroll).toHaveBeenCalledTimes(1)
+    } finally {
+      delete (Element.prototype as { scrollIntoView?: unknown }).scrollIntoView
+    }
+  })
+
   it('retains the mounted draft during failure and retries once with the correction', async () => {
     let reject!: (reason: unknown) => void
     vi.mocked(api.createReservation).mockImplementationOnce(() => new Promise((_, fail) => { reject = fail }))
@@ -1577,7 +1596,7 @@ describe('D679 · pagar una cita con un Ilimitado (Codex pantallas r1 #1 y #2)',
     // Lo elegido con 1 persona ya no vale con 2: no se manda con el Ilimitado (el SERVIDOR lo rechazaría); pregunta cómo pagar.
     expect(api.createReservation).not.toHaveBeenCalled()
     expect(screen.getByText('¿Cómo quieres pagar?')).toBeTruthy()
-    expect(screen.queryByRole('button', { name: /Usar 1 crédito/ })).toBeNull()
+    expect(screen.queryByRole('button', { name: /Usar 1 crédito|Usar mi pase/ })).toBeNull()
   })
 
   it('#2: un Ilimitado que vence antes de la cita no se ofrece; lo dice con su fecha', async () => {
