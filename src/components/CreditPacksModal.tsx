@@ -153,6 +153,8 @@ export function CreditPacksModal({
                         </span>
                       </li>
                     ))}
+                    {/* D687: el Ilimitado es personal. */}
+                    {pack.items.some(i => i.unlimited) && <li>{t('creditPacks.unlimitedPersonal')}</li>}
                   </ul>
                 )}
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>

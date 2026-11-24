@@ -126,9 +126,12 @@ export function PaymentSelector({
               <span style={iconBadgeStyle('success')}>💳</span>
               <div style={{ textAlign: 'left', flex: 1 }}>
                 <div style={{ fontSize: '14px', fontWeight: '600', color: 'var(--avq-fg, #111827)' }}>
-                  {seats * creditCost === 1 || sufficientBalance.unlimited
-                    ? t('payment.useOneCredit', { pack: sufficientBalance.packName })
-                    : t('payment.useNCredits', { count: seats * creditCost, pack: sufficientBalance.packName })}
+                  {/* D687: un pase no tiene «créditos»: «Usar mi pase (…)». */}
+                  {sufficientBalance.unlimited
+                    ? t('payment.useMyPass', { pack: sufficientBalance.packName })
+                    : seats * creditCost === 1
+                      ? t('payment.useOneCredit', { pack: sufficientBalance.packName })
+                      : t('payment.useNCredits', { count: seats * creditCost, pack: sufficientBalance.packName })}
                 </div>
                 <div style={{ fontSize: '12px', color: 'var(--avq-muted-fg, #6b7280)', marginTop: '2px' }}>
                   {sufficientBalance.unlimited

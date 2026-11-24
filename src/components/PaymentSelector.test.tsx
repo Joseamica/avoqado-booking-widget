@@ -44,6 +44,27 @@ describe('D679 · PaymentSelector con un Ilimitado', () => {
     expect(container.textContent).not.toMatch(/9999/)
   })
 
+  it.each([
+    ['es', 'Usar mi pase (Mensual Ilimitado)'],
+    ['en', 'Use my pass (Mensual Ilimitado)'],
+  ] as const)('D687: el botón del pase no habla de créditos (%s)', (locale, texto) => {
+    render(<PaymentSelector {...props('2026-12-20T16:00:00Z')} t={createT(locale)} />)
+    expect(screen.getByRole('button', { name: /Mensual Ilimitado/ }).textContent).toContain(texto)
+    expect(screen.queryByText(/crédito|credit/)).toBeNull()
+  })
+
+  it('D687: el paquete normal sigue diciendo «Usar 1 crédito (…)» y «Usar N créditos (…)»', () => {
+    const normal: CustomerCreditBalance = { customer: { id: 'c1' }, purchases: [{
+      id: 'p5', creditPack: { name: 'Paquete 5' }, expiresAt: VENCE, status: 'ACTIVE',
+      itemBalances: [{ id: 'b5', productId: 'yoga', product: { id: 'yoga', name: 'Yoga', type: 'CLASS' }, originalQuantity: 5, remainingQuantity: 5 }],
+    }] }
+    render(<PaymentSelector {...props('2026-12-20T16:00:00Z')} credits={normal} />)
+    expect(screen.getByRole('button', { name: /Paquete 5/ }).textContent).toContain('Usar 1 crédito (Paquete 5)')
+    cleanup()
+    render(<PaymentSelector {...props('2026-12-20T16:00:00Z', 2)} credits={normal} />)
+    expect(screen.getByRole('button', { name: /Paquete 5/ }).textContent).toContain('Usar 2 créditos (Paquete 5)')
+  })
+
   it('2 lugares: no lo ofrece y dice que es personal', () => {
     render(<PaymentSelector {...props('2026-12-20T16:00:00Z', 2)} />)
     expect(screen.queryByRole('button', { name: /Mensual Ilimitado/ })).toBeNull()

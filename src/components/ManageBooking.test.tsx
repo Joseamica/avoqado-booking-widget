@@ -242,4 +242,27 @@ describe('D679 · cancelar una reserva pagada con un Ilimitado', () => {
     expect(screen.getByText('Si cancelas ahora, te devolvemos 2 de 3 créditos.')).toBeTruthy()
     expect(screen.queryByText(/no te cuesta nada/)).toBeNull()
   })
+
+  async function yaCancelada(cancellation: Partial<NonNullable<PublicReservationDetail['cancellation']>>, locale: 'es' | 'en' = 'es') {
+    const reservation = detail(null, 'CANCELLED')
+    reservation.cancellation = { ...reservation.cancellation!, allowed: false, ...cancellation }
+    vi.mocked(api.getReservation).mockResolvedValue(reservation)
+    const view = render(<ManageBooking {...props} locale={locale} t={createT(locale)} />); await flush()
+    return view
+  }
+
+  it.each([
+    ['es', 'Tu Ilimitado queda igual.', /devolvimos|crédito|9999/],
+    ['en', 'Your unlimited pass stays the same.', /refunded|credit|9999/],
+  ] as const)('D687: ya cancelada con un Ilimitado dice que queda igual, sin «créditos devueltos» (%s)', async (locale, texto, prohibido) => {
+    const { container } = await yaCancelada({ creditsUsed: 1, creditsRefundable: 1, unlimited: true }, locale)
+    expect(screen.getByText(texto)).toBeTruthy()
+    expect(container.textContent).not.toMatch(prohibido)
+  })
+
+  it('D687: ya cancelada con un paquete normal sigue diciendo cuántos créditos se devolvieron', async () => {
+    await yaCancelada({ creditsUsed: 2, creditsRefundable: 2 })
+    expect(screen.getByText('Te devolvimos 2 crédito(s) a tu cuenta.')).toBeTruthy()
+    expect(screen.queryByText(/queda igual/)).toBeNull()
+  })
 })

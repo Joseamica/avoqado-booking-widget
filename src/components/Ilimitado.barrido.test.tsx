@@ -70,6 +70,32 @@ describe('D679 · ninguna pantalla enseña 99999 con un Ilimitado', () => {
   it('con 2 lugares «cómo pagar» no ofrece el Ilimitado y dice por qué', () => {
     const { container } = render(pantallas[3][1]())
     expect(container.textContent).toContain('Tu Ilimitado es personal: cubre 1 lugar a tu nombre')
-    expect(container.textContent).not.toContain('Usar 1 crédito')
+    expect(container.textContent).not.toMatch(/Usar 1 crédito|Usar mi pase/)
+  })
+})
+
+describe('D687 · la tarjeta de venta del Ilimitado', () => {
+  const pilates = { id: 'i2', productId: 'pilates', product: { id: 'pilates', name: 'Pilates', type: 'CLASS', price: 200 }, quantity: 99999, unlimited: true }
+  const dosClases: CreditPackPublic = { ...pack, items: [...pack.items, pilates] }
+  const normal: CreditPackPublic = { ...pack, id: 'pk5', name: 'Paquete 5', items: [{ ...pack.items[0], quantity: 5, unlimited: false }] }
+  const pestana = (packs: CreditPackPublic[]) =>
+    <UnifiedLanding products={[yoga]} creditPacks={packs} onPickAppointments={fn} onPickClasses={fn} onBuyPack={fn} buyingPackId={null} initialTab="packs" t={t} />
+
+  it('con dos clases nombra cada una («Ilimitado · Yoga», «Ilimitado · Pilates»), como el normal dice «5 × Yoga»', () => {
+    const { container } = render(pestana([dosClases]))
+    expect(container.textContent).toContain('Ilimitado · Yoga')
+    expect(container.textContent).toContain('Ilimitado · Pilates')
+    expect(container.textContent).not.toMatch(/9999/)
+  })
+
+  it('cada tarjeta que lo vende dice que es personal; el paquete normal no', () => {
+    for (const [, pantalla] of pantallas.slice(5, 8)) {
+      const { container } = render(pantalla())
+      expect(container.textContent).toContain('Personal: sólo a tu nombre')
+      cleanup()
+    }
+    const { container } = render(pestana([normal]))
+    expect(container.textContent).toContain('5 × Yoga')
+    expect(container.textContent).not.toContain('Personal')
   })
 })

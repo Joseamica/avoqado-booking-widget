@@ -116,7 +116,8 @@
     "rescheduleButton": "Change time",
     "rescheduleDisabledTooltip": "You can only change time up to {{hours}}h before the start.",
     "checkAgain": "Check again",
-    "unlimitedCancelFree": "Cancelling costs you nothing: your unlimited pass stays the same."
+    "unlimitedCancelFree": "Cancelling costs you nothing: your unlimited pass stays the same.",
+    "unlimitedKept": "Your unlimited pass stays the same."
   },
   "reschedule": {
     "title": "Change time",
@@ -217,6 +218,7 @@
     "payOptionalHint": "Pay now or at the venue",
     "useOneCredit": "Use 1 credit ({{pack}})",
     "useNCredits": "Use {{count}} credits ({{pack}})",
+    "useMyPass": "Use my pass ({{pack}})",
     "creditsRemaining": "{{remaining}} of {{total}} left after this",
     "creditsInsufficient": "Not enough credits",
     "creditsInsufficientHint": "Need {{needed}}, only {{available}} available. Buy more.",
@@ -320,6 +322,7 @@
     "unlimitedOneSeat": "Your unlimited pass is personal: 1 spot in your name",
     "oneSpotOnly": "1 spot only",
     "inYourName": "in your name",
+    "unlimitedPersonal": "Personal: in your name only",
     "unlimitedExpiresBefore": "Your unlimited pass expires {{date}}, before this time slot.",
     "expiresBefore": "Expires first"
   },

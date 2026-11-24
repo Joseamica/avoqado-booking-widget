@@ -246,6 +246,9 @@ export function BookingFlow({ props }: BookingFlowProps) {
   const reservationSubmittingRef = useRef(false)
   const expiryTransition = useSignal<Promise<void> | null>(null)
   const [submissionError, setSubmissionError] = useState<string | null>(null)
+  // D687: el rechazo sale UNA vez, en el aviso que se queda (sin el toast repetido); si quedó fuera de la vista, se lleva a ella.
+  const submissionErrorRef = useRef<HTMLParagraphElement>(null)
+  useEffect(() => { if (submissionError) submissionErrorRef.current?.scrollIntoView?.({ block: 'nearest' }) }, [submissionError])
   // Square-style /appointments wizard: ServiceDetailView intermediate page.
   // When non-null, the service-step main column renders the detail view instead
   // of the list. mode='add' for products not yet picked, 'edit' for ones already
@@ -1726,9 +1729,7 @@ export function BookingFlow({ props }: BookingFlowProps) {
         if (!(await releaseHoldBefore(continueAfterSlotConflict))) return
         continueAfterSlotConflict()
       } else {
-        const message = err.data?.message ?? t('errors.generic')
-        setSubmissionError(message)
-        showToast(message, 'error')
+        setSubmissionError(err.data?.message ?? t('errors.generic'))
         expireAfterError = holdHasExpired()
       }
     } finally {
@@ -1974,7 +1975,7 @@ export function BookingFlow({ props }: BookingFlowProps) {
         </div>
       )}
 
-      {submissionError && <p role="alert">{submissionError}</p>}
+      {submissionError && <p ref={submissionErrorRef} role="alert">{submissionError}</p>}
       {reservationSubmittingRef.current && <p role="status">{t('form.submitting')}</p>}
 
       {/* Step indicator — hidden for:
