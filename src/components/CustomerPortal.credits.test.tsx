@@ -111,3 +111,38 @@ describe('D679 · «Mi cuenta» con un Ilimitado', () => {
     expect(api.updateCustomerProfile).not.toHaveBeenCalled()
   })
 })
+
+describe('Task 15 · «Mi cuenta»: paquetes en venta de menor a mayor, con ahorro y destacado', () => {
+  const clase = { id: 'lagree', name: 'Lagree', type: 'CLASS', price: 300 }
+  const mk = (id: string, n: number, price: number, extra: Record<string, unknown> = {}) => ({
+    id, name: `Paquete ${n}`, price, currency: 'MXN', validityDays: 30,
+    items: [{ id: `i${id}`, productId: 'lagree', product: clase, quantity: n }], ...extra,
+  })
+
+  it('1, 5, 8, 12, 25; precio por sesión, «Ahorras $500» y el destacado marcado', async () => {
+    vi.mocked(api.getCustomerPortal).mockResolvedValue(portal([]))
+    vi.mocked(api.getCreditPacks).mockResolvedValue([
+      mk('p12', 12, 2400), mk('p1', 1, 300), mk('p25', 25, 4000),
+      mk('p5', 5, 1000, { badgeText: 'Más popular', badgeIcon: 'star' }), mk('p8', 8, 1600),
+    ] as any)
+    const { container } = renderPortal()
+    await screen.findByText('Hola, Ana')
+    await screen.findByText('Más popular')
+    const ids = [...container.querySelectorAll('[data-paquete]')].map(e => e.getAttribute('data-paquete'))
+    expect(ids).toEqual(['p1', 'p5', 'p8', 'p12', 'p25'])
+    const c5 = container.querySelector('[data-paquete="p5"]')!
+    expect(c5.textContent).toContain('$200 por sesión')
+    expect(c5.textContent).toContain('Ahorras $500')
+    expect(c5.getAttribute('data-destacado')).toBe('true')
+    expect(c5.querySelector('[data-destacado-etiqueta] svg')).toBeTruthy()
+  })
+
+  it('SERVIDOR viejo (sin etiqueta): sin destacado y sin errores', async () => {
+    vi.mocked(api.getCustomerPortal).mockResolvedValue(portal([]))
+    vi.mocked(api.getCreditPacks).mockResolvedValue([mk('p5', 5, 1000), mk('p1', 1, 300)] as any)
+    const { container } = renderPortal()
+    await screen.findByText('Hola, Ana')
+    await screen.findByText('Paquete 5')
+    expect(container.querySelector('[data-destacado]')).toBeNull()
+  })
+})

@@ -2,6 +2,8 @@ import { h } from 'preact'
 import type { CreditPackPublic } from '../types'
 import type { TFunction } from '../i18n'
 import { precio } from '../lib/precio'
+import { ordenarPaquetes } from '../lib/paquetes'
+import { EtiquetaDestacada, LineaDePrecio, atributosDePaquete, bordeDePaquete } from './ui/PaqueteExtras'
 
 interface CreditPacksModalProps {
   packs: CreditPackPublic[]
@@ -109,18 +111,20 @@ export function CreditPacksModal({
             {tx.empty}
           </p>
         ) : (
-          packs.map(pack => {
+          ordenarPaquetes(packs).map(pack => {
             const isBuying = buyingPackId === pack.id
             return (
               <div
                 key={pack.id}
+                {...atributosDePaquete(pack)}
                 style={{
-                  border: '1px solid var(--avq-border, #e8eaed)',
+                  border: bordeDePaquete(pack),
                   borderRadius: '12px',
                   padding: '16px',
                   display: 'flex', flexDirection: 'column', gap: '10px',
                 }}
               >
+                <EtiquetaDestacada pack={pack} />
                 <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '12px' }}>
                   <div style={{ minWidth: 0 }}>
                     <div style={{ fontSize: '15px', fontWeight: '700', color: 'var(--avq-fg, #111827)' }}>
@@ -140,6 +144,7 @@ export function CreditPacksModal({
                     {formatPrice(pack.price, pack.currency)}
                   </span>
                 </div>
+                <LineaDePrecio pack={pack} packs={packs} t={t} />
                 {pack.items.length > 0 && (
                   <ul style={{
                     listStyle: 'none', margin: 0, padding: 0,
@@ -166,12 +171,11 @@ export function CreditPacksModal({
                     onClick={() => onBuy(pack.id)}
                     disabled={isBuying}
                     style={{
-                      padding: '10px 18px',
+                      padding: '14px 24px', minHeight: '52px', fontSize: '16px',
                       background: 'var(--avq-accent, #2563eb)',
                       color: '#ffffff',
                       border: 0,
                       borderRadius: '10px',
-                      fontSize: '13px',
                       fontWeight: '600',
                       cursor: isBuying ? 'wait' : 'pointer',
                       opacity: isBuying ? 0.6 : 1,

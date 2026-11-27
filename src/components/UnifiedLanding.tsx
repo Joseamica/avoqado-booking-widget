@@ -5,6 +5,8 @@ import type { TFunction } from '../i18n'
 import { totalDeSesiones } from '../lib/credits'
 import { Spinner } from './ui/Spinner'
 import { precio } from '../lib/precio'
+import { ordenarPaquetes } from '../lib/paquetes'
+import { EtiquetaDestacada, LineaDePrecio, atributosDePaquete, bordeDePaquete } from './ui/PaqueteExtras'
 
 interface UnifiedLandingProps {
   /** Product list from venueInfo — used to decide which CTAs to surface. */
@@ -214,8 +216,8 @@ function PacksTab({
       <p style={subtitleStyle()}>{t('landing.packsSubtitle')}</p>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-        {packs.map(pack => (
-          <PackCard key={pack.id} pack={pack} onBuy={onBuyPack} loading={buyingPackId === pack.id} t={t} />
+        {ordenarPaquetes(packs).map(pack => (
+          <PackCard key={pack.id} pack={pack} packs={packs} onBuy={onBuyPack} loading={buyingPackId === pack.id} t={t} />
         ))}
       </div>
     </div>
@@ -224,11 +226,13 @@ function PacksTab({
 
 function PackCard({
   pack,
+  packs,
   onBuy,
   loading,
   t,
 }: {
   pack: CreditPackPublic
+  packs: CreditPackPublic[]
   onBuy: (id: string) => void
   loading: boolean
   t: TFunction
@@ -245,19 +249,21 @@ function PackCard({
 
   return (
     <div
+      {...atributosDePaquete(pack)}
       style={{
         padding: '16px',
         borderRadius: '14px',
-        border: '1px solid var(--avq-border, #e8eaed)',
+        border: bordeDePaquete(pack),
         background: 'var(--avq-bg, #ffffff)',
         display: 'flex',
         flexDirection: 'column',
         gap: '12px',
       }}
     >
+      <EtiquetaDestacada pack={pack} />
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: '15px', fontWeight: '600', color: 'var(--avq-fg, #111827)' }}>{pack.name}</div>
+          <div style={{ fontSize: '17px', fontWeight: '600', color: 'var(--avq-fg, #111827)' }}>{pack.name}</div>
           {pack.description && (
             <div style={{ fontSize: '13px', color: 'var(--avq-muted-fg, #6b7280)', marginTop: '2px', lineHeight: '1.4' }}>
               {pack.description}
@@ -276,11 +282,13 @@ function PackCard({
           )}
         </div>
         <div style={{ textAlign: 'right' }}>
-          <div style={{ fontSize: '17px', fontWeight: '700', color: 'var(--avq-fg, #111827)', whiteSpace: 'nowrap' }}>
+          <div style={{ fontSize: '20px', fontWeight: '700', color: 'var(--avq-fg, #111827)', whiteSpace: 'nowrap' }}>
             {formatPrice(pack.price, pack.currency)}
           </div>
         </div>
       </div>
+
+      <LineaDePrecio pack={pack} packs={packs} t={t} />
 
       <button
         type="button"
@@ -288,12 +296,13 @@ function PackCard({
         disabled={loading}
         style={{
           width: '100%',
-          padding: '11px 16px',
+          padding: '14px 16px',
+          minHeight: '52px',
           borderRadius: '10px',
           border: 'none',
           background: loading ? 'var(--avq-muted-fg, #9ca3af)' : 'var(--avq-accent, #6366f1)',
           color: '#ffffff',
-          fontSize: '14px',
+          fontSize: '16px',
           fontWeight: '600',
           cursor: loading ? 'not-allowed' : 'pointer',
           display: 'flex',
