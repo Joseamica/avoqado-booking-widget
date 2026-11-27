@@ -538,6 +538,7 @@
   "reservaClases": {
     "incluida": "Incluida en tu paquete",
     "claseSuelta": "{{precio}} · clase suelta",
+    "conPaquete": "Con paquete",
     "sesionDe": "sesión de {{clase}}",
     "sesionesDe": "sesiones de {{clase}}",
     "credito": "crédito",
@@ -664,6 +665,8 @@
       "usaDe": "Usa {{n}} de tus {{restante}} {{unidad}}",
       "usaUltima": "Usa tu última {{unidad}}",
       "usaUltimas": "Usa tus últimas {{n}} {{unidad}}",
+      "usaUltimoCredito": "Usa tu último crédito",
+      "usaUltimosCreditos": "Usa tus últimos {{n}} créditos",
       "usaIlimitado": "Usa tu Ilimitado",
       "venceEl": "{{paquete}} · vence el {{fecha}}",
       "cambiar": "Cambiar",
@@ -681,6 +684,8 @@
       "pagar": "Pagar {{precio}}",
       "pagarSinPrecio": "Pagar con tarjeta",
       "cargando": "Cargando tu paquete…",
+      "sinSaldo": "No pudimos leer tu paquete",
+      "reintentarSaldo": "Reintentar",
       "enviando": "Reservando…"
     },
     "revisar": {

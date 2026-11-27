@@ -103,6 +103,19 @@ describe('ClassDetailView: el detalle de la clase (Task 11)', () => {
     expect(texto()).not.toContain('Incluida')
   })
 
+  it('una clase que sólo se reserva con paquete dice «Con paquete», no «$325 · clase suelta»', () => {
+    pintar({ product: { ...lagree, requireCreditForBooking: true } as Product })
+    expect(screen.getAllByText('Con paquete')).toHaveLength(1)
+    expect(texto()).not.toContain('clase suelta')
+    expect(texto()).not.toContain('$325')
+  })
+
+  it('una clase que sólo se reserva con paquete y su paquete la cubre: «Incluida en tu paquete»', () => {
+    pintar({ product: { ...lagree, requireCreditForBooking: true } as Product, cubre: CINCO })
+    expect(screen.getByText('Incluida en tu paquete')).toBeTruthy()
+    expect(texto()).not.toContain('Con paquete')
+  })
+
   it('sin precios (el negocio los apaga) no hay monto', () => {
     branding.value = { ...DEFAULT_BRANDING, showPrices: false }
     pintar()

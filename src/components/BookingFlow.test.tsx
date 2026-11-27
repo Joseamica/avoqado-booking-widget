@@ -2903,7 +2903,7 @@ describe('Task 13: «Confirma tu reserva» — nada se reserva sin el botón, y 
     expect(screen.getByText('Usa 1 de tus 4 sesiones de Lagree')).toBeTruthy()
   })
 
-  it('invitada en una clase gratis o que se paga en el estudio: el resumen lateral no tiene botón y sólo «Confirmar reserva» reserva; con paquete, el resumen dice «A pagar hoy $0»', async () => {
+  it('invitada en una clase gratis o que se paga en el estudio: el resumen lateral no tiene botón y sólo «Confirmar reserva» reserva; con paquete, el resumen dice «Incluida en tu paquete» (ola final W5)', async () => {
     const r = await aConfirmar(gratis)
     const lateral = () => document.querySelector('.avq-appts-sidebar') as HTMLElement
     expect(lateral()).toBeTruthy()
@@ -2920,7 +2920,8 @@ describe('Task 13: «Confirma tu reserva» — nada se reserva sin el botón, y 
     entrar()
     await aConfirmar(enEstudio)
     expect(within(lateral()).queryAllByRole('button')).toHaveLength(0)
-    expect(within(lateral()).getByText('A pagar hoy').nextElementSibling?.textContent).toBe('$0')
+    expect(lateral().textContent).toContain('Incluida en tu paquete')
+    expect(lateral().textContent).not.toMatch(/\$|A pagar/)
     expect(api.createReservation).not.toHaveBeenCalled()
   })
 
@@ -3132,6 +3133,131 @@ describe('Task 13: «Confirma tu reserva» — nada se reserva sin el botón, y 
     expect(screen.getByText('Usa 1 de tus 4 sesiones de Lagree')).toBeTruthy()
     await advance(60_000); await flush()
     expect(api.createReservation).not.toHaveBeenCalled()
+  })
+
+  describe('ola final W1: al volver de la confirmación al horario se releen sus reservas y su saldo', () => {
+    it('«Atrás» desde la confirmación vuelve a leer y marca «Reservada» la clase que quedó', async () => {
+      entrar()
+      await aConfirmar(enEstudio)
+      expect(screen.getByRole('heading', { name: 'Confirma tu reserva' })).toBeTruthy()
+      const reservasAntes = vi.mocked(api.getMisReservasDeClase).mock.calls.length
+      const saldosAntes = vi.mocked(api.getCustomerCredits).mock.calls.length
+      guardadas = [mia()] // la reserva quedó (p. ej. desde otra pestaña)
+      fireEvent.click(boton('Atrás')); await flush(); await flush()
+      expect(vi.mocked(api.getMisReservasDeClase).mock.calls.length).toBeGreaterThan(reservasAntes)
+      expect(vi.mocked(api.getCustomerCredits).mock.calls.length).toBeGreaterThan(saldosAntes)
+      expect(within(screen.getByRole('button', { name: /Lagree.*15:00/ })).getByText('Reservada')).toBeTruthy()
+    })
+
+    it('tras «sí quedó» y «Reservar otra clase», la franja enseña el saldo nuevo (una sesión menos)', async () => {
+      entrar()
+      respuestaPerdida()
+      await aConfirmar(enEstudio)
+      fireEvent.click(boton('Confirmar reserva')); await flush()
+      await advance(2000); await flush()
+      expect(screen.getByRole('heading', { name: '¡Tu lugar está apartado!' })).toBeTruthy()
+      vi.mocked(api.getCustomerCredits).mockResolvedValue(saldo({ ...B5, restante: 3 }))
+      fireEvent.click(boton('Reservar otra clase')); await flush(); await flush()
+      expect(document.querySelector('.avq-franja')?.textContent).toBe('Hola, Ana · tienes 3 sesiones de Lagree · vencen el 11 dic')
+      expect(within(screen.getByRole('button', { name: /Lagree.*15:00/ })).getByText('Reservada')).toBeTruthy()
+    })
+  })
+
+  describe('ola final W5: el costado de la confirmación no enseña montos de la clase si se paga con paquete o es gratis', () => {
+    const costado = () => document.querySelector('.avq-confirmacion-lateral') as HTMLElement
+
+    it('con su paquete: «Incluida en tu paquete», sin «$325», Subtotal, Total ni «A pagar hoy»', async () => {
+      entrar()
+      await aConfirmar(enEstudio)
+      expect(screen.getByText('Usa 1 de tus 4 sesiones de Lagree')).toBeTruthy()
+      expect(costado().textContent).toContain('Incluida en tu paquete')
+      expect(costado().textContent).not.toMatch(/\$|Subtotal|Total|A pagar/)
+    })
+
+    it('clase gratis: sin montos y sin «Incluida en tu paquete»', async () => {
+      await aConfirmar(gratis)
+      expect(costado().textContent).not.toMatch(/\$|Subtotal|Total|A pagar|Incluida/)
+    })
+
+    it('sin paquete, en el estudio: sigue con «$325» y «A pagar en el estudio $325»', async () => {
+      await aConfirmar(enEstudio)
+      expect(costado().textContent).toContain('$325')
+      expect(within(costado()).getByText('A pagar en el estudio').nextElementSibling?.textContent).toBe('$325')
+      expect(costado().textContent).not.toContain('Incluida')
+    })
+  })
+
+  describe('ola final W6: la confirmación de una clase usa la cuenta de SU estudio, no las señales compartidas', () => {
+    it('dos widgets: Ana entró en A (las señales compartidas son suyas) y B no tiene sesión ⇒ B no dice «Reservando como Ana» ni manda su token', async () => {
+      entrar() // Ana en studio-a, el estudio activo de las señales compartidas
+      expect(state.customerToken.value).toBe('tok-ana')
+      vi.mocked(api.getVenueInfo).mockImplementation(async slug => ({
+        ...venue, slug, name: slug === 'studio-a' ? 'Studio A' : 'Studio B', canCharge: true, products: [enEstudio as any],
+      }))
+      vi.mocked(api.getClassSessionsRange).mockResolvedValue({ ...VENTANA, slots: [s15()] } as any)
+      window.history.replaceState({}, '', '/pagina-con-dos-estudios')
+      const a = render(<BookingFlow props={{ ...props('studio-a'), flowType: 'classes' }} />)
+      const b = render(<BookingFlow props={{ ...props('studio-b'), flowType: 'classes' }} />)
+      await flush(); await flush()
+      const enA = a.container as HTMLElement
+      const enB = b.container as HTMLElement
+      expect(enA.querySelector('.avq-franja')?.textContent).toContain('Hola, Ana')
+      fireEvent.click(within(enB).getByRole('button', { name: /Lagree.*15:00/ })); await flush()
+      fireEvent.click(within(enB).getByRole('button', { name: 'Reservar' })); await flush(); await flush()
+      expect(within(enB).getByRole('heading', { name: 'Confirma tu reserva' })).toBeTruthy()
+      expect(enB.textContent).not.toContain('Reservando como')
+      expect(enB.textContent).not.toContain('Ana')
+      fireEvent.input(within(enB).getByLabelText(/Nombre/), { target: { value: 'Bea Invitada' } })
+      fireEvent.input(within(enB).getByLabelText(/Teléfono/), { target: { value: '5512345678' } })
+      fireEvent.click(within(enB).getByRole('button', { name: 'Confirmar reserva' })); await flush()
+      expect(api.createReservation).toHaveBeenCalledTimes(1)
+      const [slug, body, token] = vi.mocked(api.createReservation).mock.calls[0]
+      expect(slug).toBe('studio-b')
+      expect(token).toBeUndefined()
+      expect(body.guestName).toBe('Bea Invitada')
+      // B no la trata como de una cuenta: «Ver mi reserva» (de invitada), nunca «Ver mis reservas».
+      expect(within(enB).queryByRole('button', { name: 'Ver mis reservas' })).toBeNull()
+    })
+  })
+
+  describe('ola final W7: con sesión, si no se pudo leer su paquete, no se le ofrece pagar con tarjeta', () => {
+    it('la primera lectura del saldo falla ⇒ «No pudimos leer tu paquete» con «Reintentar», sin «Pagar $325» y con el botón deshabilitado; al releerlo, su paquete', async () => {
+      entrar()
+      vi.mocked(api.getCustomerCredits).mockRejectedValue(sinRed())
+      await aConfirmar(enLinea)
+      expect(screen.getByRole('heading', { name: 'Confirma tu reserva' })).toBeTruthy()
+      expect(screen.getByText('No pudimos leer tu paquete')).toBeTruthy()
+      expect(texto()).not.toMatch(/Pagar \$325|con tarjeta|A pagar hoy/)
+      expect(elBoton().disabled).toBe(true)
+      fireEvent.click(elBoton()); await flush()
+      expect(api.createReservation).not.toHaveBeenCalled()
+      const lecturas = vi.mocked(api.getCustomerCredits).mock.calls.length
+      vi.mocked(api.getCustomerCredits).mockResolvedValue(saldo(B5))
+      fireEvent.click(boton('Reintentar')); await flush(); await flush()
+      expect(vi.mocked(api.getCustomerCredits).mock.calls.length).toBe(lecturas + 1)
+      expect(screen.queryByText('No pudimos leer tu paquete')).toBeNull()
+      expect(screen.getByText('Usa 1 de tus 4 sesiones de Lagree')).toBeTruthy()
+      expect(elBoton().disabled).toBe(false)
+      fireEvent.click(boton('Confirmar reserva')); await flush()
+      expect(vi.mocked(api.createReservation).mock.calls[0][1].creditItemBalanceId).toBe('b5')
+    })
+
+    it('una clase que sólo se paga con paquete: si falla la lectura, tampoco le dice que no tiene paquete', async () => {
+      entrar()
+      vi.mocked(api.getCustomerCredits).mockRejectedValue(sinRed())
+      await aConfirmar(soloPaquete)
+      expect(screen.getByText('No pudimos leer tu paquete')).toBeTruthy()
+      expect(boton('Reintentar')).toBeTruthy()
+      expect(texto()).not.toContain('Compra un paquete')
+      expect(elBoton().disabled).toBe(true)
+    })
+
+    it('invitada (sin sesión): sin aviso de paquete, como hoy', async () => {
+      vi.mocked(api.getCustomerCredits).mockRejectedValue(sinRed())
+      await aConfirmar(enLinea)
+      expect(screen.queryByText('No pudimos leer tu paquete')).toBeNull()
+      expect(boton('Pagar $325')).toBeTruthy()
+    })
   })
 
   describe('Task 14: «¡Tu lugar está apartado!» dice qué clase, con quién, en qué lugar y cuántas sesiones le quedan', () => {

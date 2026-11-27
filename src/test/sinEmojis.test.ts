@@ -1,41 +1,64 @@
 import { describe, expect, it } from "vitest";
-import { readdirSync, readFileSync, statSync } from "node:fs";
-import { join } from "node:path";
+import paginaHospedada from "../../public/index.html?raw";
 import { iconoDeDestacado } from "../components/ui/Icono";
 
 const EMOJI =
   /[\u{1F300}-\u{1FAFF}\u{231A}-\u{23FF}\u{2600}-\u{27BF}\u{2B50}]/u;
 
-function archivos(dir: string, salida: string[] = []): string[] {
-  for (const nombre of readdirSync(dir)) {
-    const ruta = join(dir, nombre);
-    if (statSync(ruta).isDirectory()) archivos(ruta, salida);
-    else if (ruta.endsWith(".tsx") && !ruta.endsWith(".test.tsx"))
-      salida.push(ruta);
+// Lo que ve la clienta: los componentes (.tsx), los .ts que no son prueba y los textos de src/i18n. Los títulos de las pruebas
+// (*.test.tsx, *.test.ts) no son interfaz: quedan fuera. Se leen con Vite (`?raw`), como las demás pruebas de la página.
+const fuentes = import.meta.glob<string>(
+  [
+    "../**/*.tsx",
+    "!../**/*.test.tsx",
+    "../**/*.ts",
+    "!../**/*.test.ts",
+    "../i18n/*.json",
+  ],
+  { query: "?raw", import: "default", eager: true },
+);
+
+/** Las líneas con un emoji, como `archivo:línea`; los comentarios no cuentan. */
+function lineasConEmoji(archivos: Record<string, string>): string[] {
+  const encontrados: string[] = [];
+  for (const [ruta, texto] of Object.entries(archivos)) {
+    texto.split("\n").forEach((linea: string, i: number) => {
+      const t = linea.trim();
+      if (
+        t.startsWith("//") ||
+        t.startsWith("*") ||
+        t.startsWith("/*") ||
+        t.startsWith("{/*")
+      )
+        return;
+      if (EMOJI.test(linea)) encontrados.push(`${ruta}:${i + 1}`);
+    });
   }
-  return salida;
+  return encontrados;
 }
 
-// Los títulos de las pruebas (*.test.tsx) no son interfaz: quedan fuera.
 describe("sin emojis en la interfaz", () => {
-  it("ningún .tsx ni public/index.html trae un emoji", () => {
-    const encontrados: string[] = [];
-    for (const ruta of [...archivos("src"), "public/index.html"]) {
-      readFileSync(ruta, "utf8")
-        .split("\n")
-        .forEach((linea, i) => {
-          const t = linea.trim();
-          if (
-            t.startsWith("//") ||
-            t.startsWith("*") ||
-            t.startsWith("/*") ||
-            t.startsWith("{/*")
-          )
-            return;
-          if (EMOJI.test(linea)) encontrados.push(`${ruta}:${i + 1}`);
-        });
-    }
-    expect(encontrados).toEqual([]);
+  it("lee los componentes, los .ts que no son prueba y los textos de i18n", () => {
+    const rutas = Object.keys(fuentes);
+    expect(rutas).toContain("../components/BookingFlow.tsx");
+    expect(rutas).toContain("../i18n/es.json");
+    expect(rutas).toContain("../i18n/en.json");
+    expect(rutas).toContain("../lib/paquetes.ts");
+    expect(rutas.some((r) => r.endsWith(".test.tsx") || r.endsWith(".test.ts"))).toBe(false);
+  });
+
+  it("ningún .tsx, .ts, texto de i18n ni public/index.html trae un emoji", () => {
+    expect(
+      lineasConEmoji({ ...fuentes, "public/index.html": paginaHospedada }),
+    ).toEqual([]);
+  });
+
+  it("atrapa un emoji fuera de un comentario y deja pasar uno dentro", () => {
+    expect(
+      lineasConEmoji({
+        "x.tsx": "const a = 1;\n// \u{1F389} comentario\n<p>Listo \u{1F389}</p>",
+      }),
+    ).toEqual(["x.tsx:3"]);
   });
 
   it("mapea los íconos de destacado del servidor", () => {

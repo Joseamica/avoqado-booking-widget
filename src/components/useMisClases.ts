@@ -156,6 +156,13 @@ export interface MisClases {
    */
   saldoListo: boolean
   /**
+   * Ola final W7: con sesión, la última lectura del saldo falló y no hay uno leído antes para esta cuenta. «Confirma tu reserva» dice
+   * «No pudimos leer tu paquete» con «Reintentar» y no ofrece pagar con tarjeta (podría tener paquete) hasta leerlo.
+   */
+  saldoFallo: boolean
+  /** Ola final W7: «Reintentar» vuelve a leer el saldo de la cuenta de AHORA; mientras llega, `saldoListo` es falso. */
+  reintentarSaldo: () => void
+  /**
    * Task 13 (fix r1 #2): la lectura de sus reservas de la ventana de AHORA. `esperando` mientras no llega (la confirmación no deja
    * confirmar: sin ella `antes` saldría vacío y el Ilimitado ya usado en la clase se ofrecería); `listas` con una lectura buena
    * (`paraRevisar.ultima`); `fallaron` si la última falló o no hay ventana (se deja confirmar, pero no se puede revisar a ciegas).
@@ -196,6 +203,8 @@ export function useMisClases(
   const [vuelta, setVuelta] = useState(0)
   const [creditos, setCreditos] = useState<Leido<CustomerCreditBalance> | null>(null)
   const [saldoIntentado, setSaldoIntentado] = useState<Leido<true> | null>(null)
+  /** La última lectura del saldo de esta cuenta falló (W7); una buena lo borra. */
+  const [falloSaldo, setFalloSaldo] = useState<Leido<true> | null>(null)
   /** La ventana cuya última lectura de reservas FALLÓ (con su cuenta); una buena la borra. */
   const [falloReservas, setFalloReservas] = useState<Leido<VentanaDelHorario> | null>(null)
   const [leidas, setLeidas] = useState<Leido<ReservasLeidas> | null>(null)
@@ -217,6 +226,7 @@ export function useMisClases(
           turnoReservas.current++
           setCreditos(null)
           setSaldoIntentado(null)
+          setFalloSaldo(null)
           setLeidas(null)
           setFalloReservas(null)
         }
@@ -253,13 +263,18 @@ export function useMisClases(
     const n = ++turnoCreditos.current
     const pedida = { slug: c.slug, identidad: c.identidad }
     let saldo: CustomerCreditBalance | null = null
+    let fallo = false
     try {
       saldo = await api.getCustomerCredits(c.slug, {}, c.token)
     } catch {
-      /* sin el saldo: el horario se ve igual, sin franja ni «Incluida» */
+      /* sin el saldo: el horario se ve igual, sin franja ni «Incluida»; la confirmación lo dice (W7) */
+      fallo = true
     }
     if (n !== turnoCreditos.current || !sigue(pedida)) return
-    if (saldo) setCreditos({ ...pedida, datos: saldo })
+    if (saldo) {
+      setCreditos({ ...pedida, datos: saldo })
+      setFalloSaldo(null)
+    } else if (fallo) setFalloSaldo({ ...pedida, datos: true })
     setSaldoIntentado({ ...pedida, datos: true })
   }
   const leerReservas = (c: CuentaDelEstudio, ventana: VentanaDelHorario) =>
@@ -282,6 +297,14 @@ export function useMisClases(
     yaLeyo.current = true
     void leerReservas(cuenta, { dateFrom: desde, dateTo: hasta })
   }, [slug, identidad, o.activo, desde, hasta])
+
+  const reintentarSaldo = () => {
+    const c = cuentaDelEstudio(slugVivo.current)
+    if (!c) return
+    // Mientras relee, «Cargando tu paquete…»: ni el aviso viejo ni la tarjeta.
+    setSaldoIntentado(null)
+    void leerSaldo(c)
+  }
 
   const refrescar = () => {
     if (!yaLeyo.current) return
@@ -357,6 +380,8 @@ export function useMisClases(
     cuenta,
     instancia: instancia.current,
     saldoListo: deEstaCuenta(saldoIntentado) === true,
+    saldoFallo: !misCreditos && deEstaCuenta(falloSaldo) === true,
+    reintentarSaldo,
     reservasLeidas,
     creditos: misCreditos,
     ilimitadoUsadoEn: usados,

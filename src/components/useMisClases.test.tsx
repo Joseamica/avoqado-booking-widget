@@ -250,6 +250,50 @@ describe('Task 13: `saldoListo` (la confirmación no deja confirmar hasta leer s
   })
 })
 
+describe('ola final W7: `saldoFallo` y `reintentarSaldo`', () => {
+  it('la primera lectura falla ⇒ `saldoFallo`; «Reintentar» relee (sin listo mientras llega) y, con el saldo, se borra', async () => {
+    entrar('un-estudio')
+    vi.mocked(api.getMisReservasDeClase).mockResolvedValue(pagina([]))
+    vi.mocked(api.getCustomerCredits).mockRejectedValueOnce(new TypeError('Failed to fetch'))
+    const salida: { actual?: MisClases } = {}
+    render(<Sonda slug="un-estudio" ventana={VENTANA} salida={salida} />)
+    await flush()
+    expect(salida.actual!.creditos).toBeNull()
+    expect(salida.actual!.saldoListo).toBe(true)
+    expect(salida.actual!.saldoFallo).toBe(true)
+    let dar!: (v: any) => void
+    vi.mocked(api.getCustomerCredits).mockImplementationOnce(() => new Promise(ok => { dar = ok }))
+    await act(async () => { salida.actual!.reintentarSaldo() }); await flush()
+    expect(salida.actual!.saldoListo).toBe(false)
+    expect(api.getCustomerCredits).toHaveBeenLastCalledWith('un-estudio', {}, 'tok-ana')
+    await act(async () => dar({ customer: null, purchases: [] })); await flush()
+    expect(salida.actual!.saldoListo).toBe(true)
+    expect(salida.actual!.saldoFallo).toBe(false)
+    expect(salida.actual!.creditos).not.toBeNull()
+  })
+
+  it('con un saldo ya leído, una relectura que falla no lo vuelve `saldoFallo` (se queda el anterior)', async () => {
+    entrar('un-estudio')
+    vi.mocked(api.getMisReservasDeClase).mockResolvedValue(pagina([]))
+    const salida: { actual?: MisClases } = {}
+    render(<Sonda slug="un-estudio" ventana={VENTANA} salida={salida} />)
+    await flush()
+    expect(salida.actual!.creditos).not.toBeNull()
+    vi.mocked(api.getCustomerCredits).mockRejectedValueOnce(new TypeError('Failed to fetch'))
+    await act(async () => { salida.actual!.refrescar() }); await flush()
+    expect(salida.actual!.creditos).not.toBeNull()
+    expect(salida.actual!.saldoFallo).toBe(false)
+  })
+
+  it('sin sesión nunca es `saldoFallo`', async () => {
+    bindCustomerSessionToVenue('otro-estudio')
+    const salida: { actual?: MisClases } = {}
+    render(<Sonda slug="otro-estudio" ventana={VENTANA} salida={salida} />)
+    await flush()
+    expect(salida.actual!.saldoFallo).toBe(false)
+  })
+})
+
 describe('Task 13 fix r1 #2: `reservasLeidas` (la confirmación espera la lectura de sus reservas)', () => {
   it('«esperando» mientras llega; «listas» con la lectura buena; «fallaron» si falló', async () => {
     entrar('un-estudio')

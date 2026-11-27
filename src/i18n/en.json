@@ -538,6 +538,7 @@
   "reservaClases": {
     "incluida": "Included in your pack",
     "claseSuelta": "{{precio}} · drop-in class",
+    "conPaquete": "With a package",
     "sesionDe": "{{clase}} session",
     "sesionesDe": "{{clase}} sessions",
     "credito": "credit",
@@ -664,6 +665,8 @@
       "usaDe": "Uses {{n}} of your {{restante}} {{unidad}}",
       "usaUltima": "Uses your last {{unidad}}",
       "usaUltimas": "Uses your last {{n}} {{unidad}}",
+      "usaUltimoCredito": "Uses your last credit",
+      "usaUltimosCreditos": "Uses your last {{n}} credits",
       "usaIlimitado": "Uses your Unlimited",
       "venceEl": "{{paquete}} · expires {{fecha}}",
       "cambiar": "Change",
@@ -681,6 +684,8 @@
       "pagar": "Pay {{precio}}",
       "pagarSinPrecio": "Pay by card",
       "cargando": "Loading your package…",
+      "sinSaldo": "We couldn't read your package",
+      "reintentarSaldo": "Try again",
       "enviando": "Booking…"
     },
     "revisar": {

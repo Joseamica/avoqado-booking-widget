@@ -61,6 +61,8 @@ interface AppointmentSummarySidebarProps {
    * Nunca un «$0» que no es real. Citas no lo usa.
    */
   sinPrecios?: boolean
+  /** Con `sinPrecios`, lo que se dice en lugar del precio (ola final W5: «Incluida en tu paquete» al pagar con paquete). */
+  leyendaSinPrecio?: string
   t: TFunction
 }
 
@@ -92,15 +94,18 @@ export function AppointmentSummarySidebar({
   dueAtVenue,
   totalsNote,
   sinPrecios = false,
+  leyendaSinPrecio,
   t,
 }: AppointmentSummarySidebarProps) {
   const [expanded, setExpanded] = useState(true)
   const isEmpty = products.length === 0
 
   const hasVariable = products.some(p => p.price == null)
-  const priceLabel = isEmpty || sinPrecios
+  const priceLabel = isEmpty
     ? null
-    : totalPrice != null && totalPrice > 0
+    : sinPrecios
+      ? (leyendaSinPrecio ?? null)
+      : totalPrice != null && totalPrice > 0
       ? `${hasVariable ? '+' : ''}${formatPriceMXN(totalPrice)}`
       : t('summary.variablePrice')
 

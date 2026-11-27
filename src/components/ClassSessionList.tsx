@@ -196,7 +196,7 @@ export function ClassSessionList({
     return m
   }, [products])
 
-  /** «$325 · clase suelta», «Incluida en tu paquete» o nada (sin precios, o sin monto). */
+  /** «$325 · clase suelta», «Incluida en tu paquete», «Con paquete» (sólo se reserva con paquete) o nada (sin precios, o sin monto). */
   function precioDe(slot: PublicClassSessionSlot): PrecioDeLaFila | null {
     const product = productById.get(slot.productId)
     const incluida = cubreSesion ? cubreSesion(slot) : false
@@ -204,6 +204,7 @@ export function ClassSessionList({
       precio: product?.price != null ? Number(product.price) : null,
       showPrices: branding.value.showPrices,
       incluida,
+      soloConPaquete: product?.requireCreditForBooking === true,
     })
     return texto ? { texto, incluida } : null
   }

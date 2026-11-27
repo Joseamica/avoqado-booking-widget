@@ -139,6 +139,8 @@ interface PlanDeLaConfirmacion {
   aceptaEstudio: boolean
   /** Con cuenta, su saldo o sus reservas de la ventana todavía no se leen: no se deja confirmar. */
   cargando: boolean
+  /** Ola final W7: con cuenta, no se pudo leer su saldo: «No pudimos leer tu paquete» con «Reintentar»; no se deja confirmar. */
+  sinSaldo: boolean
   /** La clase sólo se paga con paquete y no tiene uno que la pague. */
   sinComoPagar: boolean
   precio: number | null
@@ -1404,6 +1406,15 @@ export function BookingFlow({ props }: BookingFlowProps) {
     productos: venueInfo.value?.products ?? [],
   })
   refrescarMisClases.current = misClases.refrescar
+  // Ola final W1: de la confirmación (o de la revisión y «Listo», que salen en ese mismo paso) al horario, `activo` sigue verdadero y
+  // los efectos de `useMisClases` no vuelven a correr. Al salir de la confirmación («Atrás», «Reservar otra clase», un 409, el enlace
+  // «Horario») se vuelven a leer sus reservas y su saldo: la clase que quedó sale «Reservada» y la franja trae el saldo nuevo.
+  const estabaEnConfirmacion = useRef(false)
+  useEffect(() => {
+    const antes = estabaEnConfirmacion.current
+    estabaEnConfirmacion.current = enConfirmacionDeClase
+    if (antes && !enConfirmacionDeClase) refrescarMisClases.current()
+  }, [enConfirmacionDeClase])
   const instanciaViva = useRef('')
   instanciaViva.current = misClases.instancia
 
@@ -1500,7 +1511,8 @@ export function BookingFlow({ props }: BookingFlowProps) {
     } catch {
       politica = null // una fecha o zona que no se lee: sin línea antes que una línea equivocada
     }
-    const conCuenta = !!customerToken.value
+    // Ola final W6: la cuenta de ESTE estudio (con dos widgets en la página, las señales compartidas pueden ser de otro).
+    const conCuenta = !!misClases.cuenta
     return (
       <ConfirmacionDeClase
         clase={x.clase}
@@ -2070,7 +2082,10 @@ export function BookingFlow({ props }: BookingFlowProps) {
         holdId: slotHoldToken.value ?? undefined,
         successUrl,
         cancelUrl,
-      }, customerToken.value ?? undefined /* Bearer token stamps customerId server-side */)
+      }, (clase
+        // Ola final W6: una clase sale con el token de la sesión de ESTE estudio (o ninguno, de invitada).
+        ? cuentaDelEstudio(props.venue)?.token
+        : customerToken.value) ?? undefined /* Bearer token stamps customerId server-side */)
       // Task 13 (r5 #5): la cuenta del estudio cambió entre el toque y la respuesta: esa reserva no se enseña ni se manda a pagar
       // a quien está ahora frente a la página.
       if (clase?.intento && !sigueSiendoEl(clase.intento)) {
@@ -2488,6 +2503,8 @@ export function BookingFlow({ props }: BookingFlowProps) {
     // podría «encontrar» una reserva que ya tenía) y se ofrecería un Ilimitado ya usado en esa clase. Si la lectura FALLÓ, se deja
     // confirmar (la revisión se cuida sola, ver `trasUnResultadoIncierto`).
     const cargando = !!cuenta && (!misClases.saldoListo || misClases.reservasLeidas === 'esperando')
+    // Ola final W7: si la lectura de su saldo falló, no se le ofrece pagar con tarjeta (podría tener paquete) hasta leerlo.
+    const sinSaldo = !!cuenta && usaPaquetes && misClases.saldoFallo
     const unitario = producto.price != null ? Number(producto.price) : null
     // Cuando el Ilimitado no se ofrece (vence antes, ya lo usó en esta clase, o es otro lugar), se dice por qué, como hoy.
     let avisoIlimitado: string | null = null
@@ -2514,6 +2531,7 @@ export function BookingFlow({ props }: BookingFlowProps) {
       aceptaTarjeta: sinPaquete === 'tarjeta' && opciones.length > 0,
       aceptaEstudio: sinPaquete === 'estudio' && opciones.length > 0,
       cargando,
+      sinSaldo,
       sinComoPagar: !opcion && sinPaquete === null,
       precio: unitario != null && branding.value.showPrices !== false ? unitario * n : null,
       avisoIlimitado,
@@ -2542,21 +2560,22 @@ export function BookingFlow({ props }: BookingFlowProps) {
   async function confirmarClase(data: GuestFormData) {
     const p = planDeConfirmacion.current
     const slot = selectedSlot.value
-    if (!p || !slot?.classSessionId || p.cargando || confirmandoRef.current || reservationSubmittingRef.current) return
+    if (!p || !slot?.classSessionId || p.cargando || p.sinSaldo || confirmandoRef.current || reservationSubmittingRef.current) return
     if (p.sinComoPagar) {
       // Sólo se paga con paquete y no tiene: sin sesión, que entre (Task 12); con sesión ya se le enseña la compra de paquete.
-      if (!customerToken.value) abrirEntrar()
+      if (!cuentaDelEstudio(props.venue)) abrirEntrar()
       return
     }
     const datos: GuestFormData = { ...data, specialRequests: notaDeClase.trim() || undefined }
     const opcion = p.opciones.find(o => o.balanceId === p.elegida) ?? null
-    const conCuenta = !!customerToken.value
-    const cuenta = conCuenta ? cuentaDelEstudio(props.venue) : null
+    // Ola final W6: «con cuenta» es la sesión de ESTE estudio en la página, nunca las señales compartidas (que con dos widgets
+    // pueden ser de otro estudio); el POST sale con su token (`submitReservation`).
+    const cuenta = cuentaDelEstudio(props.venue)
     const pr = misClases.paraRevisar
-    const intento: Intento | null = conCuenta
+    const intento: Intento | null = cuenta
       ? {
         slug: props.venue,
-        identidad: cuenta?.identidad ?? '',
+        identidad: cuenta.identidad,
         instancia: misClases.instancia,
         classSessionId: slot.classSessionId,
         spotIds: [...selectedSpotIds.value],
@@ -3208,7 +3227,7 @@ export function BookingFlow({ props }: BookingFlowProps) {
                   t={t}
                 />
               )
-            })() : plan.sinComoPagar && !plan.cargando && misClases.cuenta ? (
+            })() : plan.sinComoPagar && !plan.cargando && !plan.sinSaldo && misClases.cuenta ? (
               // Sólo se paga con paquete y no tiene uno que la pague: lo dice (con el porqué del Ilimitado) y le ofrece comprar, como hoy.
               <div class="avq-animate-in" style={{ padding: '4px 0' }}>
                 <div
@@ -3252,6 +3271,8 @@ export function BookingFlow({ props }: BookingFlowProps) {
                 otroLugar={plan.otroLugar}
                 avisoIlimitado={plan.avisoIlimitado}
                 cargando={plan.cargando}
+                sinSaldo={plan.sinSaldo}
+                onReintentarSaldo={misClases.reintentarSaldo}
                 t={t}
               >
                 {ofreceEntrarConPaquete && (
@@ -3279,7 +3300,8 @@ export function BookingFlow({ props }: BookingFlowProps) {
                   t={t}
                   initialData={guestDraft}
                   registerDraft={read => { guestDraftReader.current = read }}
-                  loggedInCustomer={customerInfo.value}
+                  // Ola final W6: el prellenado y «Reservando como» son de la cuenta de ESTE estudio.
+                  loggedInCustomer={misClases.cuenta?.cliente ?? null}
                   hideSubmitButton
                   registerSubmit={fn => setFormSubmitFn(() => fn)}
                   hidePartySize
@@ -3558,6 +3580,11 @@ export function BookingFlow({ props }: BookingFlowProps) {
           // celular se esconde: la confirmación ya trae sus renglones.
           if (flowType.value === 'classes') {
             const claseLateral = selectedProduct.value ? [selectedProduct.value] : []
+            // Ola final W5: con paquete (o gratis) la clase no cuesta nada hoy ni en el estudio: el costado no enseña su precio ni
+            // totales (nunca «$325 · Total $325 · A pagar hoy $0») y, con su paquete, dice «Incluida en tu paquete».
+            // W7: sin poder leer su paquete, tampoco «A pagar hoy $325».
+            const sinMontosDeLaClase = plan?.precio == null || plan?.pago === 'paquete' || plan?.pago === 'gratis' || !!plan?.sinSaldo
+            const conSuPaquete = plan?.pago === 'paquete' && !plan.sinComoPagar
             return (
               <div class="avq-appts-layout avq-confirmacion-layout">
                 <div class="avq-appts-main">{formStepBody}</div>
@@ -3570,8 +3597,9 @@ export function BookingFlow({ props }: BookingFlowProps) {
                       selectedDate={selectedDate.value}
                       selectedSlot={selectedSlot.value}
                       // Fix r1 #1: sin un precio de verdad (`showPrices` apagado o sin precio), ningún monto: nunca un «$0» falso.
-                      showTotals={plan?.precio != null}
-                      sinPrecios={plan?.precio == null}
+                      showTotals={!sinMontosDeLaClase}
+                      sinPrecios={sinMontosDeLaClase}
+                      leyendaSinPrecio={conSuPaquete ? t('reservaClases.incluida') : undefined}
                       subtotal={plan?.precio ?? undefined}
                       taxes={0}
                       dueToday={plan?.pago === 'tarjeta' ? (plan.precio ?? 0) : 0}

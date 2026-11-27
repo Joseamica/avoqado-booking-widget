@@ -62,9 +62,16 @@ export function ahorroFrenteAUnaSesion(
 /** «Incluida en tu paquete», «$325 · clase suelta» o nada (sin precios o sin monto). */
 export function etiquetaDePrecio(
   t: TFunction,
-  a: { precio: number | null; showPrices: boolean; incluida: boolean },
+  a: {
+    precio: number | null;
+    showPrices: boolean;
+    incluida: boolean;
+    /** La clase sólo se reserva con paquete (`requireCreditForBooking`): no hay clase suelta que cobrar. */
+    soloConPaquete?: boolean;
+  },
 ): string | null {
   if (a.incluida) return t("reservaClases.incluida");
+  if (a.soloConPaquete) return t("reservaClases.conPaquete");
   if (!a.showPrices || a.precio == null) return null;
   return t("reservaClases.claseSuelta", {
     precio: precio(

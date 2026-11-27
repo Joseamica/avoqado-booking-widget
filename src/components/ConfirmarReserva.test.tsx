@@ -59,6 +59,19 @@ describe('ConfirmarReserva', () => {
     expect(props.onConfirmar).not.toHaveBeenCalled()
   })
 
+  it('ola final W7: sin poder leer su paquete, «No pudimos leer tu paquete» con «Reintentar», sin «Pagar $325» ni totales, y no deja confirmar', () => {
+    const onReintentarSaldo = vi.fn()
+    const { props } = pinta({ sinSaldo: true, onReintentarSaldo, opciones: [], elegida: null, pago: 'tarjeta', aceptaTarjeta: false })
+    expect(screen.getByText('No pudimos leer tu paquete')).toBeTruthy()
+    expect(texto()).not.toMatch(/Pagar|\$325|A pagar hoy/)
+    const boton = screen.getByRole('button', { name: 'Confirmar reserva' }) as HTMLButtonElement
+    expect(boton.disabled).toBe(true)
+    fireEvent.click(boton)
+    expect(props.onConfirmar).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'Reintentar' }))
+    expect(onReintentarSaldo).toHaveBeenCalledTimes(1)
+  })
+
   it('dos paquetes ⇒ «Cambiar» enseña los dos y elegir el otro avisa su balanceId', () => {
     const otro = paquete({ balanceId: 'b10', packName: 'Paquete de 10', restante: 9, original: 10, vence: '2027-01-20T18:00:00Z' })
     const { props } = pinta({ opciones: [paquete(), otro] })
@@ -133,6 +146,25 @@ describe('ConfirmarReserva', () => {
     cleanup()
     pinta({ opciones: [paquete({ soloEstaClase: false })] })
     expect(screen.getByText('Usa 1 de tus 4 créditos')).toBeTruthy()
+  })
+
+  it('un paquete de varias clases con su último crédito: «Usa tu último crédito» / «Usa tus últimos 2 créditos», en masculino', () => {
+    const { unmount } = pinta({ opciones: [paquete({ restante: 1, soloEstaClase: false })] })
+    expect(screen.getByText('Usa tu último crédito')).toBeTruthy()
+    expect(texto()).not.toContain('última crédito')
+    unmount()
+    pinta({ lugares: ['1', '3'], opciones: [paquete({ restante: 2, soloEstaClase: false })] })
+    expect(screen.getByText('Usa tus últimos 2 créditos')).toBeTruthy()
+    expect(texto()).not.toContain('últimas 2 créditos')
+  })
+
+  it('en inglés: «Uses your last credit» / «Uses your last 2 credits»', () => {
+    const en = createT('en')
+    const { unmount } = pinta({ t: en, opciones: [paquete({ restante: 1, soloEstaClase: false })] })
+    expect(screen.getByText('Uses your last credit')).toBeTruthy()
+    unmount()
+    pinta({ t: en, lugares: ['1', '3'], opciones: [paquete({ restante: 2, soloEstaClase: false })] })
+    expect(screen.getByText('Uses your last 2 credits')).toBeTruthy()
   })
 
   it('«Otro lugar en esta clase» arriba, cuando se llegó desde «Reservar otro lugar para alguien»', () => {

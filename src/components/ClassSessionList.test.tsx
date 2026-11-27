@@ -106,6 +106,26 @@ describe('Horario: lista con tira de días (celular)', () => {
     expect(cubreSesion).toHaveBeenCalledWith(s11)
   })
 
+  it('una clase que sólo se reserva con paquete dice «Con paquete», no «$325 · clase suelta»', async () => {
+    await pintar([s11], { products: [{ ...lagree, requireCreditForBooking: true } as Product] })
+    const f = fila(/Lagree.*11:00/)
+    expect(within(f).getByText('Con paquete')).toBeTruthy()
+    expect(f.textContent).not.toContain('clase suelta')
+    expect(f.textContent).not.toContain('$325')
+  })
+
+  it('una clase que sólo se reserva con paquete y su paquete la cubre: «Incluida en tu paquete»', async () => {
+    await pintar([s11], { products: [{ ...lagree, requireCreditForBooking: true } as Product], cubreSesion: () => true })
+    const f = fila(/Lagree.*11:00/)
+    expect(within(f).getByText('Incluida en tu paquete')).toBeTruthy()
+    expect(f.textContent).not.toContain('Con paquete')
+  })
+
+  it('en inglés, la clase que sólo se reserva con paquete dice «With a package»', async () => {
+    await pintar([s11], { products: [{ ...lagree, requireCreditForBooking: true } as Product], t: createT('en') })
+    expect(within(fila(/Lagree/)).getByText('With a package')).toBeTruthy()
+  })
+
   it('lugares: «8 lugares» libres (verde), «2 lugares» de «pocos», «1 lugar» en singular', async () => {
     await pintar([v09, s11, s13])
     // El primer día de la tira es «Mañana» (viernes), con un solo lugar.

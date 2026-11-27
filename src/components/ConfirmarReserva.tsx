@@ -84,6 +84,12 @@ interface ConfirmarReservaProps {
   avisoIlimitado?: string | null
   /** Todavía se lee su paquete: no se deja confirmar (se cobraría con tarjeta a quien tiene paquete). */
   cargando?: boolean
+  /**
+   * Ola final W7: con sesión, no se pudo leer su paquete. «No pudimos leer tu paquete» con «Reintentar»; no se ofrece pagar con
+   * tarjeta (podría tener paquete) y no se deja confirmar hasta leerlo.
+   */
+  sinSaldo?: boolean
+  onReintentarSaldo?: () => void
   /** Sus datos (el formulario de la invitada, o «Reservando como Ana»). */
   children?: ComponentChildren
 }
@@ -96,7 +102,7 @@ interface ConfirmarReservaProps {
 export function ConfirmarReserva({
   clase, cuando, coach, lugares, opciones, elegida, onElegir, pago, precio, politica, nota, onNota, enviando, onConfirmar, t,
   timeZone = 'America/Mexico_City', aceptaTarjeta = false, aceptaEstudio = false, otroLugar = false, avisoIlimitado = null, cargando = false,
-  children,
+  sinSaldo = false, onReintentarSaldo, children,
 }: ConfirmarReservaProps) {
   const raiz = useSinChatEncima()
   const [cambiando, setCambiando] = useState(false)
@@ -114,6 +120,8 @@ export function ConfirmarReserva({
   const queUsa = (o: OpcionDePaquete): string => {
     if (o.ilimitado) return t(`${K}.usaIlimitado`)
     const u = (cantidad: number) => unidad(t, { cantidad, nombreClase: clase, soloEstaClase: o.soloEstaClase })
+    // «crédito» es masculino: «Usa tu último crédito» (como `Confirmation`), no «Usa tu última crédito».
+    if (o.restante <= n && !o.soloEstaClase) return n === 1 ? t(`${K}.usaUltimoCredito`) : t(`${K}.usaUltimosCreditos`, { n })
     if (o.restante <= n) return n === 1 ? t(`${K}.usaUltima`, { unidad: u(1) }) : t(`${K}.usaUltimas`, { n, unidad: u(n) })
     return t(`${K}.usaDe`, { n, restante: o.restante, unidad: u(o.restante) })
   }
@@ -136,9 +144,11 @@ export function ConfirmarReserva({
 
   const hoy = pago === 'tarjeta' ? precio : 0
   const enElEstudio = pago === 'estudio' ? precio : null
+  // Cargando o sin poder leer su paquete: ni forma de pago, ni totales, ni botón que reserve.
+  const espera = cargando || sinSaldo
   const etiqueta = enviando
     ? t(`${K}.enviando`)
-    : pago === 'tarjeta'
+    : pago === 'tarjeta' && !sinSaldo
       ? (precio != null ? t(`${K}.pagar`, { precio: plata(precio) }) : t(`${K}.pagarSinPrecio`))
       : t(`${K}.confirmar`)
 
@@ -170,6 +180,18 @@ export function ConfirmarReserva({
 
       {cargando ? (
         <p class="avq-cf-cargando" role="status"><Spinner size={18} />{t(`${K}.cargando`)}</p>
+      ) : sinSaldo ? (
+        <div class="avq-cf-pago" role="status">
+          <Icono nombre="alerta" size={22} />
+          <div class="avq-cf-pago-que">
+            <strong>{t(`${K}.sinSaldo`)}</strong>
+          </div>
+          {onReintentarSaldo && (
+            <button type="button" class="avq-cf-cambiar" onClick={onReintentarSaldo}>
+              {t(`${K}.reintentarSaldo`)}
+            </button>
+          )}
+        </div>
       ) : caja && (
         <div class="avq-cf-pago">
           <Icono nombre={caja.icono} size={22} />
@@ -191,7 +213,7 @@ export function ConfirmarReserva({
         </div>
       )}
 
-      {!cargando && cambiando && formas > 1 && (
+      {!espera && cambiando && formas > 1 && (
         <div id={idGrupo} role="radiogroup" aria-label={t(`${K}.comoPagar`)} class="avq-cf-formas">
           {opciones.map(o => (
             <button
@@ -220,14 +242,14 @@ export function ConfirmarReserva({
         </div>
       )}
 
-      {!cargando && avisoIlimitado && (
+      {!espera && avisoIlimitado && (
         <p class="avq-cf-aviso" role="status"><Icono nombre="alerta" size={20} /><span>{avisoIlimitado}</span></p>
       )}
 
-      {!cargando && hoy != null && (
+      {!espera && hoy != null && (
         <div class="avq-cf-total"><span>{t(`${K}.aPagarHoy`)}</span><span>{plata(hoy)}</span></div>
       )}
-      {!cargando && enElEstudio != null && (
+      {!espera && enElEstudio != null && (
         <div class="avq-cf-total avq-cf-total--estudio"><span>{t(`${K}.aPagarEnElEstudio`)}</span><span>{plata(enElEstudio)}</span></div>
       )}
 
@@ -257,8 +279,8 @@ export function ConfirmarReserva({
         <button
           type="button"
           class="avq-cf-btn"
-          disabled={enviando || cargando}
-          onClick={() => { if (!enviando && !cargando) onConfirmar() }}
+          disabled={enviando || espera}
+          onClick={() => { if (!enviando && !espera) onConfirmar() }}
         >
           {etiqueta}
         </button>

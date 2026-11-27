@@ -159,11 +159,13 @@ export function ClassDetailView({
         ? t(`${K}.libreSinTotal`)
         : t(`${K}.libresSinTotal`, { libres: remaining })
 
-  // El mismo precio que la fila del horario («$325 · clase suelta»); con su paquete, «Incluida en tu paquete».
+  // El mismo precio que la fila del horario («$325 · clase suelta»); con su paquete, «Incluida en tu paquete»; si sólo se reserva
+  // con paquete y no tiene uno que la cubra, «Con paquete» (no hay clase suelta).
   const etiqueta = etiquetaDePrecio(t, {
     precio: product?.price != null ? Number(product.price) : null,
     showPrices: branding.value.showPrices,
     incluida: !!cubre,
+    soloConPaquete: product?.requireCreditForBooking === true,
   })
 
   const pendiente = miLugar?.estado === 'faltaPagar' || miLugar?.estado === 'porAprobar'
