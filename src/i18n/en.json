@@ -249,17 +249,7 @@
     "peopleMax": "people max",
     "enrolled": "enrolled",
     "about": "About this class",
-    "aboutInstructor": "Your instructor",
-    "free": "Free",
-    "orOneCredit": "or 1 credit",
-    "orNCredits": "or {{count}} credits",
-    "payAtBooking": "Pay at booking · cancel free up to 12h before",
-    "payAtVenue": "Pay when you arrive",
-    "payOptional": "Pay now or on arrival",
-    "bookCta": "Reserve spot",
-    "bookWithCredit": "Reserve with credits",
-    "breadcrumbAll": "All classes",
-    "staff": "Staff"
+    "aboutInstructor": "Your instructor"
   },
   "classList": {
     "title": "Upcoming classes",
@@ -617,6 +607,25 @@
       "sesiones": "Your pack: {{restante}} of {{total}}",
       "ilimitado": "Your pack: Unlimited",
       "vence": "expires {{fecha}}"
+    },
+    "detalle": {
+      "volver": "Schedule",
+      "coach": "Coach",
+      "libres": "{{libres}} of {{total}} spots open",
+      "libresSinTotal": "{{libres}} spots open",
+      "libreSinTotal": "1 spot open",
+      "llena": "Class full",
+      "teQuedan": "You have {{n}} {{unidad}} left",
+      "teQueda": "You have {{n}} {{unidad}} left",
+      "tienesIlimitado": "You have Unlimited",
+      "tienesIlimitadoDe": "You have Unlimited {{clase}}",
+      "dudas": "Questions about this class? Message us",
+      "reservar": "Book",
+      "yaTienesLugar": "You already have a spot in this class",
+      "lugar": "spot {{lugar}}",
+      "lugares": "spots {{lugares}}",
+      "verMiReserva": "View my booking",
+      "otroLugar": "Book another spot for someone"
     }
   }
 }

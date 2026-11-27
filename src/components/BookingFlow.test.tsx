@@ -166,7 +166,7 @@ describe('BookingFlow booking repair', () => {
     window.history.replaceState({}, '', '/studio-a/classes')
     render(<BookingFlow props={{ ...props(), flowType: 'classes' }} />); await flush()
     fireEvent.click(screen.getByRole('button', { name: /Clase propia.*11:00/ })); await flush()
-    fireEvent.click(screen.getByRole('button', { name: 'Reservar lugar' })); await flush()
+    fireEvent.click(screen.getByRole('button', { name: 'Reservar' })); await flush()
     fireEvent.input(screen.getByLabelText(/Nombre/), { target: { value: 'Ana Clase' } })
     fireEvent.input(screen.getByLabelText(/Teléfono/), { target: { value: '5512345678' } })
     fireEvent.input(screen.getByLabelText(/Peticiones/), { target: { value: 'Clase sin perder borrador' } })
@@ -174,7 +174,7 @@ describe('BookingFlow booking repair', () => {
     expect(state.selectedSlot.value).toBeNull()
     expect(api.createReservation).not.toHaveBeenCalled()
     fireEvent.click(screen.getByRole('button', { name: /Clase propia.*11:00/ })); await flush()
-    fireEvent.click(screen.getByRole('button', { name: 'Reservar lugar' })); await flush()
+    fireEvent.click(screen.getByRole('button', { name: 'Reservar' })); await flush()
     expect((screen.getByLabelText(/Nombre/) as HTMLInputElement).value).toBe('Ana Clase')
     expect((screen.getByLabelText(/Teléfono/) as HTMLInputElement).value).toBe('5512345678')
     expect((screen.getByLabelText(/Peticiones/) as HTMLTextAreaElement).value).toBe('Clase sin perder borrador')
@@ -195,7 +195,7 @@ describe('BookingFlow booking repair', () => {
     state.bindCustomerSessionToVenue('studio-a')
     render(<BookingFlow props={{ ...props(), flowType: 'classes' }} />); await flush()
     fireEvent.click(screen.getByRole('button', { name: /Clase propia.*11:00/ })); await flush()
-    fireEvent.click(screen.getByRole('button', { name: 'Reservar lugar' })); await flush()
+    fireEvent.click(screen.getByRole('button', { name: 'Reservar' })); await flush()
     guardarSesion('studio-a', {
       token: 'tok-otra', customer: { id: 'c9', firstName: 'Bea', lastName: null, email: 'bea@correo.mx', phone: '5511112222' },
       contactos: [{ tipo: 'PHONE', valor: '+525511112222', metodo: 'WHATSAPP', probadoEn: 1 }], guardadaEn: Date.now(),
@@ -392,7 +392,7 @@ describe('BookingFlow booking repair', () => {
     window.history.replaceState({}, '', '/studio-a/classes')
     render(<BookingFlow props={{ ...props(), flowType: 'classes' }} />); await settle()
     ;(screen.getByRole('button', { name: /Clase propia.*11:00/ }) as HTMLButtonElement).click(); await settle()
-    ;(screen.getByRole('button', { name: 'Reservar lugar' }) as HTMLButtonElement).click(); await settle()
+    ;(screen.getByRole('button', { name: 'Reservar' }) as HTMLButtonElement).click(); await settle()
     expect(screen.getByText('Clase reservada durante 10:00')).toBeTruthy()
     expect(state.slotHoldToken.value).toBeNull()
     // Keep the native render scheduling: act would flush after the transition
@@ -667,7 +667,7 @@ describe('BookingFlow booking repair', () => {
       expect(view.getByText('OWN-A')).toBeTruthy()
       ;(view.getByRole('button', { name: 'Hacer una Nueva Reservación' }) as HTMLButtonElement).click(); await settle()
       ;(view.getByRole('button', { name: /Clase propia.*11:00/ }) as HTMLButtonElement).click(); await settle()
-      ;(view.getByRole('button', { name: 'Reservar lugar' }) as HTMLButtonElement).click()
+      ;(view.getByRole('button', { name: 'Reservar' }) as HTMLButtonElement).click()
       for (let i = 0; i < 4; i++) await Promise.resolve()
       // Form readiness must not wait for passive effects after the first paint.
       expect(view.getByText('Clase reservada durante 10:00')).toBeTruthy()
@@ -682,7 +682,7 @@ describe('BookingFlow booking repair', () => {
       ;(view.getByRole('button', { name: 'Atrás' }) as HTMLButtonElement).click(); await settle()
       const clock = vi.spyOn(Date, 'now').mockReturnValue(firstExpiry + 1000)
       ;(view.getByRole('button', { name: /Clase propia.*11:00/ }) as HTMLButtonElement).click(); await settle()
-      ;(view.getByRole('button', { name: 'Reservar lugar' }) as HTMLButtonElement).click()
+      ;(view.getByRole('button', { name: 'Reservar' }) as HTMLButtonElement).click()
       for (let i = 0; i < 4; i++) await Promise.resolve()
       expect(view.getByText('Clase reservada durante 10:00')).toBeTruthy()
       expect(state.slotHoldExpiresAt.value).toBeGreaterThan(firstExpiry)
@@ -1705,7 +1705,7 @@ describe('Portada: identidad del negocio, horario directo y «Clases | Citas»',
     window.history.replaceState({}, '', '/studio-a/classes')
     const { p, rerender } = montar(lasDos, { showIdentity: true, flowType: 'classes' }); await flush()
     fireEvent.click(screen.getByRole('button', { name: /Lagree.*11:00/ })); await flush()
-    expect(screen.getByRole('button', { name: 'Reservar lugar' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Reservar' })).toBeTruthy()
     window.history.replaceState({}, '', '/studio-a/appointments')
     rerender(<BookingFlow props={{ ...p, flowType: 'appointments' }} />); await flush()
     // Un estudio con 2 clases y UN servicio llega a citas con ese servicio ya elegido, como hoy.
@@ -1715,7 +1715,7 @@ describe('Portada: identidad del negocio, horario directo y «Clases | Citas»',
     window.history.replaceState({}, '', '/studio-a/classes')
     rerender(<BookingFlow props={{ ...p, flowType: 'classes' }} />); await flush()
     expect(screen.getByRole('button', { name: /Lagree.*11:00/ })).toBeTruthy()
-    expect(screen.queryByRole('button', { name: 'Reservar lugar' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Reservar' })).toBeNull()
   })
 
   it('negocio sin clases: igual que hoy, va a citas; incrustado no toca la URL del sitio', async () => {
@@ -1878,7 +1878,7 @@ describe('Task 10: lo que la clienta ya tiene, en el horario', () => {
     expect(llena.disabled).toBe(false)
     fireEvent.click(llena); await flush()
     // Ruling 1: abre el DETALLE de la clase (Task 11 dibuja ahí «Ya tienes lugar en esta clase»).
-    expect(screen.getByText('Todas las clases')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Horario' })).toBeTruthy()
     expect(state.selectedSlot.value?.classSessionId).toBe('s-13')
   })
 
@@ -2054,5 +2054,114 @@ describe('Task 10: lo que la clienta ya tiene, en el horario', () => {
     expect(document.body.textContent).not.toContain('Reservada')
     expect(api.getCustomerCredits).toHaveBeenCalledWith('studio-a', {}, 'tok-bea')
     expect(api.getMisReservasDeClase).toHaveBeenCalledWith('studio-a', VENTANA, 'tok-bea')
+  })
+
+  describe('Task 11: el detalle de la clase', () => {
+    // Jueves 8 a las 15:00 de CDMX; «ahora» es el martes 6 a las 12:00.
+    const POLITICA = { allowCustomerCancel: true, minHoursBeforeStart: null, creditRefundMode: 'TIME_BASED' as const,
+      creditFreeRefundHoursBefore: 24, creditLateRefundPercent: 0 }
+    const sinRastroDePolitica = () => expect(document.body.textContent).not.toMatch(/cancela|12\s?h/i)
+
+    it('tocar su clase marcada ⇒ «Ya tienes lugar en esta clase · lugar 3»; «Ver mi reserva» abre «Gestionar» con su cancelSecret', async () => {
+      entrar('studio-a', SES_ANA)
+      vi.mocked(api.getMisReservasDeClase).mockResolvedValue(pagina([mia('s-11', { spotIds: ['3'] })]))
+      await horario()
+      fireEvent.click(fila(/Lagree.*11:00/)); await flush()
+      expect(screen.getByText('Ya tienes lugar en esta clase · lugar 3')).toBeTruthy()
+      expect(screen.queryByRole('button', { name: 'Reservar' })).toBeNull()
+      fireEvent.click(screen.getByRole('button', { name: 'Ver mi reserva' })); await flush()
+      expect(state.manageSecret.value).toBe('sec-s-11')
+      expect(vi.mocked(api.getReservation).mock.calls[0].slice(0, 2)).toEqual(['studio-a', 'sec-s-11'])
+      expect(screen.queryByText('Ya tienes lugar en esta clase · lugar 3')).toBeNull()
+      expect(api.createReservation).not.toHaveBeenCalled()
+    })
+
+    it('«Reservar otro lugar para alguien» sigue el flujo normal sin mandar nada al SERVIDOR y deja la marca para la confirmación', async () => {
+      entrar('studio-a', SES_ANA)
+      vi.mocked(api.getMisReservasDeClase).mockResolvedValue(pagina([mia('s-11', { spotIds: ['3'] })]))
+      await horario()
+      fireEvent.click(fila(/Lagree.*11:00/)); await flush()
+      fireEvent.click(screen.getByRole('button', { name: 'Reservar otro lugar para alguien' })); await flush()
+      expect(screen.queryByText('Ya tienes lugar en esta clase · lugar 3')).toBeNull()
+      expect(state.selectedSlot.value?.classSessionId).toBe('s-11')
+      // Para Task 13: «Otro lugar en esta clase» y sin Ilimitado. Sólo vale para ESA clase.
+      expect(state.otroLugarEnLaClase.value).toBe('s-11')
+      expect(state.esOtroLugarEnLaClase()).toBe(true)
+      expect(api.createReservation).not.toHaveBeenCalled()
+      expect(api.createHold).not.toHaveBeenCalled()
+    })
+
+    it('«Reservar» a secas no deja la marca, y la marca sólo vale para la clase en que se tocó', async () => {
+      entrar('studio-a', SES_ANA)
+      vi.mocked(api.getMisReservasDeClase).mockResolvedValue(pagina([mia('s-11', { spotIds: ['3'] })]))
+      await horario()
+      // Una marca vieja (de otra visita a la de las 15:00) no sobrevive a volver a tocar la clase en el horario.
+      state.otroLugarEnLaClase.value = 's-15'
+      fireEvent.click(fila(/Lagree.*15:00/)); await flush()
+      expect(state.otroLugarEnLaClase.value).toBeNull()
+      expect(screen.queryByText(/Ya tienes lugar/)).toBeNull()
+      fireEvent.click(screen.getByRole('button', { name: 'Reservar' })); await flush()
+      expect(state.otroLugarEnLaClase.value).toBeNull()
+      expect(state.esOtroLugarEnLaClase()).toBe(false)
+      // La de otra clase no cuenta para la elegida.
+      state.otroLugarEnLaClase.value = 's-11'
+      expect(state.esOtroLugarEnLaClase()).toBe(false)
+    })
+
+    it('con la clase llena y su lugar, «Reservar otro lugar» no aparece', async () => {
+      entrar('studio-a', SES_ANA)
+      vi.mocked(api.getMisReservasDeClase).mockResolvedValue(pagina([mia('s-13', { spotIds: ['4'], startsAt: s13.startsAt })]))
+      await horario()
+      fireEvent.click(fila(/Lagree.*13:00/)); await flush()
+      expect(screen.getByText('Ya tienes lugar en esta clase · lugar 4')).toBeTruthy()
+      expect(screen.getByRole('button', { name: 'Ver mi reserva' })).toBeTruthy()
+      expect(screen.queryByRole('button', { name: /otro lugar/ })).toBeNull()
+    })
+
+    it('con su paquete: «Incluida en tu paquete», «Te quedan 4 sesiones de Lagree» y la política real del SERVIDOR; sin «o 1 crédito»', async () => {
+      entrar('studio-a', SES_ANA)
+      vi.mocked(api.getVenueInfo).mockResolvedValue({ ...estudio, cancellationPolicy: POLITICA })
+      vi.mocked(api.getClassSessionsRange).mockResolvedValue({ ...VENTANA, slots: [s11, s13, s15] })
+      window.history.replaceState({}, '', '/studio-a/classes')
+      render(<BookingFlow props={{ ...props(), flowType: 'classes' }} />); await flush(); await flush()
+      fireEvent.click(fila(/Lagree.*15:00/)); await flush()
+      expect(screen.getByText('Incluida en tu paquete')).toBeTruthy()
+      expect(screen.getByText('Te quedan 4 sesiones de Lagree · vencen el 11 dic')).toBeTruthy()
+      expect(screen.getByText(
+        'Cancela gratis hasta el miércoles 7 a las 15:00 y la sesión regresa a tu paquete. Hasta el jueves 8 a las 15:00 puedes cancelar, pero ya no regresa.',
+      )).toBeTruthy()
+      expect(document.body.textContent).not.toMatch(/crédito|\$325/)
+      expect(screen.getByRole('button', { name: 'Reservar' })).toBeTruthy()
+    })
+
+    it('sin sesión paga con tarjeta: «$325 · clase suelta» y la línea sólo dice hasta cuándo cancelar en línea', async () => {
+      vi.mocked(api.getVenueInfo).mockResolvedValue({ ...estudio, cancellationPolicy: POLITICA })
+      vi.mocked(api.getClassSessionsRange).mockResolvedValue({ ...VENTANA, slots: [s11, s13, s15] })
+      window.history.replaceState({}, '', '/studio-a/classes')
+      render(<BookingFlow props={{ ...props(), flowType: 'classes' }} />); await flush(); await flush()
+      fireEvent.click(fila(/Lagree.*15:00/)); await flush()
+      expect(screen.getByText('$325 · clase suelta')).toBeTruthy()
+      expect(screen.getByText('Puedes cancelar en línea hasta el jueves 8 a las 15:00.')).toBeTruthy()
+      expect(document.body.textContent).not.toContain('Incluida')
+    })
+
+    it('SERVIDOR viejo (sin `cancellationPolicy`): no hay línea de política y nunca «12h»', async () => {
+      entrar('studio-a', SES_ANA)
+      await horario()
+      fireEvent.click(fila(/Lagree.*15:00/)); await flush()
+      expect(screen.getByText('Incluida en tu paquete')).toBeTruthy()
+      sinRastroDePolitica()
+    })
+
+    it('«¿Dudas sobre esta clase? Escríbenos» sólo si el negocio recibe mensajes', async () => {
+      const r = await horario()
+      fireEvent.click(fila(/Lagree.*15:00/)); await flush()
+      expect(screen.getByRole('button', { name: '¿Dudas sobre esta clase? Escríbenos' })).toBeTruthy()
+      r.unmount()
+      vi.mocked(api.getVenueInfo).mockResolvedValue({ ...estudio, chat: { mode: 'DISABLED', canMessage: false } })
+      render(<BookingFlow props={{ ...props(), flowType: 'classes' }} />); await flush(); await flush()
+      fireEvent.click(fila(/Lagree.*15:00/)); await flush()
+      expect(screen.queryByRole('button', { name: /Escríbenos/ })).toBeNull()
+    })
   })
 })

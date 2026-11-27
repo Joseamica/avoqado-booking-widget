@@ -15,12 +15,14 @@ import {
   flowType, visibleProducts,
   selectedProducts, selectedStaffId, totalDuration, totalPrice, selectedModifiers,
   addSelectedProduct, removeSelectedProduct,
-  slotHoldToken, slotHoldExpiresAt,
+  slotHoldToken, slotHoldExpiresAt, otroLugarEnLaClase,
   branding, DEFAULT_BRANDING,
 } from '../state/booking'
 import { resolveDepositReturn, savePendingReservation, clearPendingReservation, depositCheckoutUrl, newReturnRef } from '../lib/depositReturn'
 import { leerSesion, type SesionEmitida } from '../lib/sesionDeCliente'
 import { cubreLugares } from '../lib/credits'
+import { lineaDePolitica } from '../lib/politica'
+import { pagoDeLaClase, type OpcionDePaquete } from '../lib/eleccionDePaquete'
 
 /** Quién compró el paquete en esta pestaña (para el regreso de Stripe). */
 const COMPRA_DE = 'avq:compraDe'
@@ -42,7 +44,7 @@ import { CheckoutModal } from './CheckoutModal'
 import { CustomerPortal } from './CustomerPortal'
 import { leerCuenta } from '../state/miCuenta'
 import { ClassSessionList } from './ClassSessionList'
-import { ClassDetailView } from './ClassDetailView'
+import { ClassDetailView, cubreDe } from './ClassDetailView'
 import { TuPaqueteFranja } from './TuPaqueteFranja'
 import { useMisClases, type VentanaDelHorario } from './useMisClases'
 import { UnifiedLanding } from './UnifiedLanding'
@@ -1957,6 +1959,40 @@ export function BookingFlow({ props }: BookingFlowProps) {
   // Diseño 27-nov (portada): la identidad del negocio (sólo en la página propia) y «Clases | Citas» van arriba de la ENTRADA
   // de cada flujo: el horario de clases, o el primer paso de citas (servicio, profesional, o día y hora si hay un servicio).
   const puedeEscribir = info.chat?.canMessage !== false // como el botón flotante: sin el dato (SERVIDOR viejo), se enseña
+  // Task 11: el detalle de la clase dice si su paquete la paga y la política real del SERVIDOR (sin ella, ninguna línea).
+  const politicaDeLaClase = (slot: PublicClassSessionSlot, opciones: OpcionDePaquete[], product: Product | null): string | null => {
+    // Con qué pagaría esta reserva: su paquete (el default), o sin él lo que dice la clase (una que exige paquete se paga con
+    // uno). Con tarjeta, en el estudio o gratis la línea sólo dice hasta cuándo se cancela en línea: nunca promete de más.
+    const pagaCon = opciones[0]
+      ? (opciones[0].ilimitado ? 'ilimitado' : 'paquete')
+      : product?.requireCreditForBooking
+        ? 'paquete'
+        : product ? pagoDeLaClase(product, info.canCharge) : 'estudio'
+    try {
+      return lineaDePolitica(t, info.cancellationPolicy, {
+        startsAt: slot.startsAt, timeZone: resolveDisplayTz(info.timezone), pagaCon, sesiones: 1, locale: props.locale,
+        ahora: Date.now(),
+      })
+    } catch {
+      return null // una fecha o zona que no se lee: sin línea antes que una línea equivocada
+    }
+  }
+  const slotDelDetalle = classDetailActive && selectedSlot.value ? (selectedSlot.value as PublicClassSessionSlot) : null
+  const opcionesDelDetalle = slotDelDetalle ? misClases.opcionesDe(slotDelDetalle) : []
+  const politicaDelDetalle = slotDelDetalle
+    ? politicaDeLaClase(slotDelDetalle, opcionesDelDetalle, info.products.find(p => p.id === slotDelDetalle.productId) ?? null)
+    : null
+  /** «Reservar» (o «Reservar otro lugar para alguien», con el `classSessionId` de ESA clase): al mapa o al formulario. */
+  const seguirDesdeElDetalle = (otroLugar: string | null) => {
+    otroLugarEnLaClase.value = otroLugar
+    setClassDetailActive(false)
+    if (selectedProduct.value?.layoutConfig) {
+      setSeatPickerActive(true)
+      step.value = config.timeStep
+    } else {
+      step.value = config.formStep
+    }
+  }
   const tipos = contarTipos(info)
   // El interruptor sólo existe si hay las dos cosas (y clases agendadas, diseño 18-nov). Quien pega el widget con un
   // `flow-type` fijo ya eligió: ahí no se ofrece el otro lado.
@@ -2161,17 +2197,26 @@ export function BookingFlow({ props }: BookingFlowProps) {
             product={selectedProduct.value}
             miLugar={misClases.reservaDe(selectedSlot.value as PublicClassSessionSlot)}
             timezone={resolveDisplayTz(info.timezone)}
-            onBook={() => {
-              setClassDetailActive(false)
-              if (selectedProduct.value?.layoutConfig) {
-                setSeatPickerActive(true)
-                step.value = config.timeStep
-              } else {
-                step.value = config.formStep
+            politica={politicaDelDetalle}
+            cubre={cubreDe(opcionesDelDetalle, (selectedSlot.value as PublicClassSessionSlot).productName)}
+            puedeEscribir={puedeEscribir}
+            onBook={() => seguirDesdeElDetalle(null)}
+            // «Reservar otro lugar para alguien»: el mismo flujo, marcado para ESA clase (Task 13: «Otro lugar en esta clase», sin
+            // el Ilimitado, que es personal). Al SERVIDOR se le pide lo de siempre.
+            onOtroLugar={() => seguirDesdeElDetalle(selectedSlot.value?.classSessionId ?? null)}
+            onVerMiReserva={async (cancelSecret) => {
+              // Como «Mi cuenta»: abre «Gestionar» con el cancelSecret de su reserva.
+              const continueToManage = () => {
+                setClassDetailActive(false)
+                otroLugarEnLaClase.value = null
+                openManage(cancelSecret)
               }
+              if (slotHoldToken.value && !(await releaseHoldBefore(continueToManage))) return
+              continueToManage()
             }}
             onBack={() => {
               setClassDetailActive(false)
+              otroLugarEnLaClase.value = null
               selectedSlot.value = null
               selectedProduct.value = null
             }}
@@ -2198,6 +2243,7 @@ export function BookingFlow({ props }: BookingFlowProps) {
                   selectedProduct.value = product
                   selectedSlot.value = slot
                   selectedSpotIds.value = []
+                  otroLugarEnLaClase.value = null
                   setClassDetailActive(true)
                 }}
                 // Con clases, el horario es la portada: no hay a dónde «volver» (y si hay citas, está «Clases | Citas»).

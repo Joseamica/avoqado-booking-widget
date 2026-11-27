@@ -249,17 +249,7 @@
     "peopleMax": "personas máx",
     "enrolled": "inscritas",
     "about": "Acerca de esta clase",
-    "aboutInstructor": "Tu instructor",
-    "free": "Gratis",
-    "orOneCredit": "o 1 crédito",
-    "orNCredits": "o {{count}} créditos",
-    "payAtBooking": "Pago al reservar · cancelación gratis hasta 12h antes",
-    "payAtVenue": "Pago al llegar al establecimiento",
-    "payOptional": "Puedes pagar ahora o al llegar",
-    "bookCta": "Reservar lugar",
-    "bookWithCredit": "Reservar con créditos",
-    "breadcrumbAll": "Todas las clases",
-    "staff": "Instructor"
+    "aboutInstructor": "Tu instructor"
   },
   "classList": {
     "title": "Próximas clases",
@@ -617,6 +607,25 @@
       "sesiones": "Tu paquete: {{restante}} de {{total}}",
       "ilimitado": "Tu paquete: Ilimitado",
       "vence": "vence el {{fecha}}"
+    },
+    "detalle": {
+      "volver": "Horario",
+      "coach": "Coach",
+      "libres": "{{libres}} de {{total}} lugares libres",
+      "libresSinTotal": "{{libres}} lugares libres",
+      "libreSinTotal": "1 lugar libre",
+      "llena": "Clase llena",
+      "teQuedan": "Te quedan {{n}} {{unidad}}",
+      "teQueda": "Te queda {{n}} {{unidad}}",
+      "tienesIlimitado": "Tienes Ilimitado",
+      "tienesIlimitadoDe": "Tienes Ilimitado de {{clase}}",
+      "dudas": "¿Dudas sobre esta clase? Escríbenos",
+      "reservar": "Reservar",
+      "yaTienesLugar": "Ya tienes lugar en esta clase",
+      "lugar": "lugar {{lugar}}",
+      "lugares": "lugares {{lugares}}",
+      "verMiReserva": "Ver mi reserva",
+      "otroLugar": "Reservar otro lugar para alguien"
     }
   }
 }
