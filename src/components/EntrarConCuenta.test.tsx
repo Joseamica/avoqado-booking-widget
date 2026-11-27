@@ -350,6 +350,19 @@ describe('W2: entrar a la cuenta', () => {
     expect(onEntro).not.toHaveBeenCalled()
   })
 
+  it('`sinTituloAlInicio` (la ventanita de la clase ya dice para qué se entra): el primer paso no repite su título; el del otro contacto sí', async () => {
+    vi.mocked(api.verifyOtp).mockResolvedValueOnce({ fichaNueva: true, pruebaPendiente: 'prueba-del-whatsapp' } as any)
+    onEntro = vi.fn<(s: unknown) => void>()
+    render(<EntrarConCuenta slug={SLUG} negocio="Un estudio" t={createT('es')} onEntro={onEntro} sinTituloAlInicio />)
+    expect(screen.queryByRole('heading', { name: 'Entra a tu cuenta' })).toBeNull()
+    expect(screen.queryByText(/Para usar tus premios/)).toBeNull()
+    expect(screen.getAllByRole('button').map(b => b.textContent)).toEqual(['Seguir con WhatsApp', 'Seguir con correo'])
+    await codigoPorWhatsApp()
+    teclearCodigo()
+    fireEvent.click(await screen.findByRole('button', { name: 'Sí, con otro teléfono o correo' }))
+    expect(screen.getByRole('heading', { name: 'Entra con tu otro teléfono o correo' })).toBeTruthy()
+  })
+
   it('en inglés, con las mismas llaves que en español', () => {
     show('en')
     expect(screen.getByRole('heading', { name: 'Sign in to your account' })).toBeTruthy()

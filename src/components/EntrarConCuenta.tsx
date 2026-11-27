@@ -29,6 +29,11 @@ interface Props {
    * (`null` en el primer paso, donde su «atrás» ya sale de la pantalla).
    */
   alCambiarAtras?: (atras: (() => void) | null) => void
+  /**
+   * Quien la monta ya dice para qué se entra (la ventanita «Entra para reservar» de la clase): el primer paso no repite «Entra a tu
+   * cuenta» ni su texto. Al entrar con un segundo contacto («Entra con tu otro teléfono o correo») el título sí se enseña.
+   */
+  sinTituloAlInicio?: boolean
 }
 
 const ESPERA_S = 30
@@ -55,7 +60,7 @@ function correoDe(idToken: string): string | null {
   }
 }
 
-export function EntrarConCuenta({ slug, negocio, t, onEntro, alCambiarAtras }: Props) {
+export function EntrarConCuenta({ slug, negocio, t, onEntro, alCambiarAtras, sinTituloAlInicio }: Props) {
   const nombreNegocio = negocio || t('entrar.esteNegocio')
   const [paso, setPaso] = useState<Paso>('inicio')
   const [canal, setCanal] = useState<Canal>('phone')
@@ -266,7 +271,7 @@ export function EntrarConCuenta({ slug, negocio, t, onEntro, alCambiarAtras }: P
   if (paso === 'inicio')
     return (
       <div class="avq-animate-in" style={columna}>
-        {cabeza(
+        {(prueba || !sinTituloAlInicio) && cabeza(
           prueba ? t('entrar.tituloOtro') : t('entrar.titulo'),
           prueba ? t('entrar.introOtro') : t('entrar.intro', { negocio: nombreNegocio }),
         )}

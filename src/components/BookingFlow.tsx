@@ -23,6 +23,7 @@ import { leerSesion, type SesionEmitida } from '../lib/sesionDeCliente'
 import { cubreLugares } from '../lib/credits'
 import { lineaDePolitica } from '../lib/politica'
 import { pagoDeLaClase, type OpcionDePaquete } from '../lib/eleccionDePaquete'
+import { decidirConflicto } from '../lib/conflictoDeClase'
 
 /** Quién compró el paquete en esta pestaña (para el regreso de Stripe). */
 const COMPRA_DE = 'avq:compraDe'
@@ -43,7 +44,10 @@ import { CreditSelector } from './CreditSelector'
 import { CheckoutModal } from './CheckoutModal'
 import { CustomerPortal } from './CustomerPortal'
 import { leerCuenta } from '../state/miCuenta'
-import { ClassSessionList } from './ClassSessionList'
+import { ClassSessionList, ventanaDesdeHoy } from './ClassSessionList'
+import { EntrarModal, contextoDeLaClase } from './EntrarModal'
+import { idiomaDe } from './ListaDelHorario'
+import { Icono } from './ui/Icono'
 import { ClassDetailView, cubreDe } from './ClassDetailView'
 import { TuPaqueteFranja } from './TuPaqueteFranja'
 import { useMisClases, type VentanaDelHorario } from './useMisClases'
@@ -212,6 +216,15 @@ export function BookingFlow({ props }: BookingFlowProps) {
   const [ventanaDelHorario, setVentanaDelHorario] = useState<VentanaDelHorario | null>(null)
   const alAvisarVentana = (v: VentanaDelHorario) =>
     setVentanaDelHorario(antes => (antes && antes.dateFrom === v.dateFrom && antes.dateTo === v.dateTo ? antes : { ...v }))
+  // Task 12: la ventana con que se relee una clase tras un 409 (la del horario ya cargado; el envío la lee al responder).
+  const ventanaParaReleer = useRef<VentanaDelHorario | null>(null)
+  ventanaParaReleer.current = ventanaDelHorario
+  // Task 12: «Entra para reservar» en una ventanita encima de la clase (nunca «Mi cuenta»). Cada apertura es un intento: cerrarla,
+  // abrir «Mi cuenta» o cambiar de negocio invalida al anterior, así que una entrada que termina tarde no adopta la cuenta ni sigue
+  // sola (como «Antes de pagar» de los paquetes). `seguir` es lo que la clienta iba a hacer con ESA clase (al mapa o a confirmar).
+  const [entrarPara, setEntrarPara] = useState<{ intento: number; classSessionId: string | null; aviso: string | null } | null>(null)
+  const intentoDeEntrar = useRef(0)
+  const alEntrarSigue = useRef<(() => void) | null>(null)
   // Fix r1: el sondeo al volver de Stripe y el regreso a la pestaña también ponen al día la franja, «Incluida» y las marcas.
   const refrescarMisClases = useRef<() => void>(() => {})
   const [buyingPackId, setBuyingPackId] = useState<string | null>(null)
@@ -247,6 +260,7 @@ export function BookingFlow({ props }: BookingFlowProps) {
     // Cambió de negocio con «Entra a tu cuenta» abierta: esa ventana ya no es de esta compra.
     setEntroComo(null)
     setCheckoutPackId(null)
+    cerrarEntrar()
   }, [props.venue])
   useEffect(() => {
     // Abrió «Mi cuenta»: la ventana de compra queda atrás. Al VOLVER no se limpia nada: un «Comprar» tocado justo al volver se
@@ -254,6 +268,7 @@ export function BookingFlow({ props }: BookingFlowProps) {
     if (!showPortal.value) return
     setEntroComo(null)
     setCheckoutPackId(null)
+    cerrarEntrar()
   }, [showPortal.value])
   const [pendingFormData, setPendingFormData] = useState<GuestFormData | null>(null)
   const [showCreditSelector, setShowCreditSelector] = useState(false)
@@ -1610,6 +1625,32 @@ export function BookingFlow({ props }: BookingFlowProps) {
     setEntroComo({ token: r.token, quien: [c.firstName, c.email ?? c.phone].filter(Boolean).join(' · ') })
   }
 
+  /**
+   * Task 12: abre «Entra para reservar» sobre la clase elegida, sin ir a «Mi cuenta». `seguir` es lo que iba a hacer con ESA clase
+   * (al mapa o a confirmar); sin él, la pantalla en que está (el formulario, la puerta) se pone al día sola con la sesión.
+   */
+  function abrirEntrar(o: { aviso?: string | null; seguir?: () => void } = {}) {
+    intentoDeEntrar.current++
+    alEntrarSigue.current = o.seguir ?? null
+    setEntrarPara({ intento: intentoDeEntrar.current, classSessionId: selectedSlot.value?.classSessionId ?? null, aviso: o.aviso ?? null })
+  }
+  function cerrarEntrar() {
+    intentoDeEntrar.current++
+    alEntrarSigue.current = null
+    setEntrarPara(null)
+  }
+  /**
+   * Entró desde la ventanita: la página adopta ESA sesión (como «Antes de pagar», sin releer lo guardado) y sigue con la MISMA clase.
+   * Una entrada de una ventanita ya cerrada (o de un widget retirado) no se adopta: pudo terminar con otra persona enfrente.
+   */
+  function alEntrarParaReservar(r: SesionEmitida, intento: number, classSessionId: string | null) {
+    if (!montado.current || intento !== intentoDeEntrar.current) return
+    const seguir = alEntrarSigue.current
+    cerrarEntrar()
+    entroAqui(props.venue, r)
+    if (seguir && (selectedSlot.value?.classSessionId ?? null) === classSessionId) seguir()
+  }
+
   /** Su toque en «Ir al pago», ya con su cuenta y en ESTA ventana. */
   function irAlPagoConCuenta() {
     const packId = checkoutPackId
@@ -1676,6 +1717,61 @@ export function BookingFlow({ props }: BookingFlowProps) {
     }
   }
 
+  /**
+   * Task 12: el SERVIDOR rechazó la reserva de una clase con 409 (alguien tomó su lugar, o la clase se llenó entre elegir y
+   * confirmar). Se vuelve a leer ESA clase con la MISMA ventana del horario ya cargado (no «el día local»: con un SERVIDOR en UTC,
+   * una clase de las 20:00 quedaría fuera) y se decide con `decidirConflicto`: de vuelta al mapa sin los lugares que ya se ocuparon
+   * (nunca vuelven a viajar), o al horario recargado. Nada se reserva solo.
+   */
+  async function resolverConflictoDeClase(err: any, slot: PublicClassSessionSlot, elegidos: string[]) {
+    const vuelta = cambiosDeNegocio.current
+    const info = venueInfo.value
+    const ventana = ventanaParaReleer.current ?? ventanaDesdeHoy(resolveDisplayTz(info?.timezone ?? 'America/Mexico_City'))
+    let fresca: PublicClassSessionSlot | null | undefined
+    try {
+      const res = await api.getClassSessionsRange(props.venue, { dateFrom: ventana.dateFrom, dateTo: ventana.dateTo })
+      fresca = res.slots.find(s => s.classSessionId === slot.classSessionId) ?? null
+    } catch {
+      fresca = undefined // sin red: decide con lo que dijo el 409
+    }
+    // Mientras se releía, el widget se fue a otro negocio, se retiró o ya es otra clase: esa respuesta no pinta nada.
+    if (!montado.current || cambiosDeNegocio.current !== vuelta || selectedSlot.value?.classSessionId !== slot.classSessionId) return
+    const decision = decidirConflicto({
+      code: err?.data?.code,
+      details: err?.data?.details,
+      actual: slot,
+      fresca,
+      elegidos,
+      conMapa: Boolean(selectedProduct.value?.layoutConfig) && elegidos.length > 0,
+    })
+    const aplicar = () => {
+      setShowCreditSelector(false)
+      setShowPaymentSelector(false)
+      setShowNoCreditsBuyPrompt(false)
+      setPendingFormData(null)
+      setClassDetailActive(false)
+      if (decision.a === 'mapa') {
+        selectedSlot.value = decision.slot
+        selectedSpotIds.value = decision.lugares
+        setSeatPickerActive(true)
+        step.value = config.timeStep
+        // «Sólo queda 1 lugar» lo dice el mapa mismo (con su número), hasta que quite lugares.
+        if (decision.aviso === 'lugarTomado') showToast(t('reservaClases.conflicto.lugarTomado'), 'error')
+        return
+      }
+      // Al horario: se vuelve a pedir al regresar (la clase ya sale como está).
+      selectedSlot.value = null
+      selectedSpotIds.value = []
+      selectedProduct.value = null
+      otroLugarEnLaClase.value = null
+      setSeatPickerActive(false)
+      step.value = config.timeStep
+      showToast(decision.a === 'generico' ? t('errors.slotTaken') : t(`reservaClases.conflicto.${decision.aviso}`), 'error')
+    }
+    if (!(await releaseHoldBefore(aplicar))) return
+    aplicar()
+  }
+
   // Submit reservation. `creditPayload` accepts either a single balance ID
   // (legacy single-service path) or a list (Square multi-service redemption,
   // where each selected service consumes its own balance).
@@ -1694,8 +1790,9 @@ export function BookingFlow({ props }: BookingFlowProps) {
     let expireAfterError = false
     setSubmissionError(null)
     isLoading.value = true
+    const lugaresMandados = selectedSpotIds.value
     try {
-      const spots = selectedSpotIds.value
+      const spots = lugaresMandados
       const creditBalanceId = typeof creditPayload === 'string' ? creditPayload : undefined
       const creditBalanceIds = Array.isArray(creditPayload) && creditPayload.length > 0 ? creditPayload : undefined
       // If the venue requires upfront payment, the server will return checkoutUrl
@@ -1803,8 +1900,16 @@ export function BookingFlow({ props }: BookingFlowProps) {
       } else if (err?.status === 401) {
         // W1 (alcance A): la sesión de esta pestaña dejó de valer (salió en otra, venció o la revocaron). `request` ya la dejó sin
         // sesión; aquí no se reintenta con la vieja ni se pinta rojo: el formulario, el horario y lo escrito se quedan.
-        showToast(t('entrar.sesionCerradaSigue'))
+        // Task 12: en clases se entra otra vez en la ventanita, encima de la clase (nunca «Mi cuenta»); cerrarla deja seguir sin
+        // cuenta, salvo en una clase que sólo se paga con paquete.
+        if (flowType.value === 'classes') {
+          abrirEntrar({
+            aviso: t(selectedProduct.value?.requireCreditForBooking ? 'entrar.sesionCerrada' : 'entrar.sesionCerradaSigue'),
+          })
+        } else showToast(t('entrar.sesionCerradaSigue'))
         expireAfterError = holdHasExpired()
+      } else if (err.status === 409 && flowType.value === 'classes' && slot.classSessionId) {
+        await resolverConflictoDeClase(err, slot as PublicClassSessionSlot, lugaresMandados)
       } else if (err.status === 409) {
         const continueAfterSlotConflict = () => {
           showToast(t('errors.slotTaken'), 'error')
@@ -1921,6 +2026,11 @@ export function BookingFlow({ props }: BookingFlowProps) {
         if (err?.status === 401) {
           // W1: «sin sesión» con calma (sin rojo): para usar sus créditos, que entre otra vez.
           clearCustomerSession(props.venue, err.enviado ?? sessionToken)
+          // Task 12: en clases, en la ventanita encima de la clase (el aviso va dentro: un toast quedaría debajo del velo).
+          if (flowType.value === 'classes') {
+            abrirEntrar({ aviso: t('entrar.sesionCerrada') })
+            return
+          }
           showToast(t('creditPacks.loginToUseCredits'))
           showPortal.value = true
           return
@@ -1935,6 +2045,11 @@ export function BookingFlow({ props }: BookingFlowProps) {
     } else if (requiresCredit) {
       // Guest on a credits-only product: say it and open sign-in — the
       // capability is not hidden, it's explained (activación rule).
+      // Task 12: en clases, «Entra para reservar» encima de la clase (sólo se llega aquí si la sesión se perdió en el camino).
+      if (flowType.value === 'classes') {
+        abrirEntrar()
+        return
+      }
       showToast(t('creditPacks.loginToUseCredits'), 'error')
       showPortal.value = true
       return
@@ -1992,6 +2107,27 @@ export function BookingFlow({ props }: BookingFlowProps) {
     } else {
       step.value = config.formStep
     }
+  }
+  /** «Reservar» del detalle. Sin sesión, una clase que sólo se paga con paquete pide entrar primero: en la ventanita, no en «Mi cuenta». */
+  const reservarDesdeElDetalle = () => {
+    if (selectedProduct.value?.requireCreditForBooking && !customerToken.value) {
+      abrirEntrar({ seguir: () => seguirDesdeElDetalle(null) })
+      return
+    }
+    seguirDesdeElDetalle(null)
+  }
+  // Sin sesión, en una clase que también se paga con un paquete de venta: «¿Ya tienes paquete? Entra para usarlo» en el formulario.
+  const productoDeLaClase = flowType.value === 'classes' ? selectedProduct.value : null
+  const ofreceEntrarConPaquete = Boolean(
+    productoDeLaClase && !customerToken.value && !productoDeLaClase.requireCreditForBooking && (productoDeLaClase.price ?? 0) > 0
+      && creditPacks.value.some(pack => pack.items?.some(item => item.productId === productoDeLaClase.id)),
+  )
+  /** «Lagree · jueves 8 · 15:00» de la clase elegida (la ventanita y el mapa). */
+  const contextoDeLaElegida = (): string => {
+    const slot = selectedSlot.value as PublicClassSessionSlot | null
+    if (!slot) return ''
+    const nombre = slot.productName || selectedProduct.value?.name || ''
+    return contextoDeLaClase(nombre, slot.startsAt, resolveDisplayTz(info.timezone), idiomaDe(t))
   }
   const tipos = contarTipos(info)
   // El interruptor sólo existe si hay las dos cosas (y clases agendadas, diseño 18-nov). Quien pega el widget con un
@@ -2200,7 +2336,7 @@ export function BookingFlow({ props }: BookingFlowProps) {
             politica={politicaDelDetalle}
             cubre={cubreDe(opcionesDelDetalle, (selectedSlot.value as PublicClassSessionSlot).productName)}
             puedeEscribir={puedeEscribir}
-            onBook={() => seguirDesdeElDetalle(null)}
+            onBook={reservarDesdeElDetalle}
             // «Reservar otro lugar para alguien»: el mismo flujo, marcado para ESA clase (Task 13: «Otro lugar en esta clase», sin
             // el Ilimitado, que es personal). Al SERVIDOR se le pide lo de siempre.
             onOtroLugar={() => seguirDesdeElDetalle(selectedSlot.value?.classSessionId ?? null)}
@@ -2555,6 +2691,10 @@ export function BookingFlow({ props }: BookingFlowProps) {
               setSeatPickerActive(false)
               step.value = config.formStep
             }}
+            libres={selectedSlot.value.remaining ?? null}
+            coach={selectedSlot.value.instructor?.firstName ?? null}
+            contexto={flowType.value === 'classes' ? contextoDeLaElegida() : null}
+            accionFija={flowType.value === 'classes'}
             t={t}
           />
         )}
@@ -2620,7 +2760,8 @@ export function BookingFlow({ props }: BookingFlowProps) {
                     </p>
                     <button
                       type="button"
-                      onClick={() => { showPortal.value = true }}
+                      // Task 12: en clases se entra en la ventanita, sin salir de la clase; citas sigue como hoy.
+                      onClick={() => { if (flowType.value === 'classes') abrirEntrar(); else showPortal.value = true }}
                       style={{
                         padding: '11px 22px', borderRadius: '10px', border: 'none',
                         background: 'var(--avq-accent, #6366f1)', color: '#ffffff',
@@ -2646,6 +2787,23 @@ export function BookingFlow({ props }: BookingFlowProps) {
                         locale={props.locale}
                         t={t}
                       />
+                    )}
+
+                    {ofreceEntrarConPaquete && (
+                      <button
+                        type="button"
+                        onClick={() => abrirEntrar()}
+                        style={{
+                          display: 'flex', alignItems: 'center', gap: '10px', width: '100%', minHeight: '52px', margin: '0 0 20px',
+                          padding: '12px 16px', borderRadius: '12px', textAlign: 'left', cursor: 'pointer', font: 'inherit',
+                          fontSize: '16px', fontWeight: '600', color: 'var(--avq-accent, #6366f1)',
+                          background: 'color-mix(in srgb, var(--avq-accent, #6366f1) 6%, var(--avq-bg, #ffffff))',
+                          border: '1px solid color-mix(in srgb, var(--avq-accent, #6366f1) 22%, transparent)',
+                        }}
+                      >
+                        <Icono nombre="paquete" />
+                        <span>{t('reservaClases.entrar.yaTienesPaquete')}</span>
+                      </button>
                     )}
 
                     <GuestInfoForm
@@ -2977,6 +3135,23 @@ export function BookingFlow({ props }: BookingFlowProps) {
           onIrAlPago={irAlPagoConCuenta}
           onOtraCuenta={usarOtraCuenta}
           onClose={cerrarCuenta}
+          t={t}
+        />
+      )}
+
+      {/* Task 12: «Entra para reservar», encima de la clase elegida (sólo mientras sigue siendo ESA clase). */}
+      {entrarPara && entrarPara.intento === intentoDeEntrar.current && selectedSlot.value
+        && (selectedSlot.value.classSessionId ?? null) === entrarPara.classSessionId && (
+        <EntrarModal
+          key={entrarPara.intento}
+          slug={props.venue}
+          negocio={info.name}
+          contexto={contextoDeLaElegida()}
+          aviso={entrarPara.aviso}
+          onEntro={((intento, classSessionId) => (r: SesionEmitida) => alEntrarParaReservar(r, intento, classSessionId))(
+            entrarPara.intento, entrarPara.classSessionId,
+          )}
+          onClose={cerrarEntrar}
           t={t}
         />
       )}

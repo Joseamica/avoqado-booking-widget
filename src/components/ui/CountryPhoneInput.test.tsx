@@ -65,7 +65,7 @@ describe('CountryPhoneInput', () => {
         "field": [
           "display: flex",
           "align-items: stretch",
-          "height: 46px",
+          "height: var(--avq-campo-alto, 46px)",
           "border-radius: 12px",
           "border: 1.5px solid var(--avq-border, #e8eaed)",
           "background: var(--avq-bg, #ffffff)",
@@ -75,7 +75,7 @@ describe('CountryPhoneInput', () => {
         "fieldFocused": [
           "display: flex",
           "align-items: stretch",
-          "height: 46px",
+          "height: var(--avq-campo-alto, 46px)",
           "border-radius: 12px",
           "border: 1.5px solid var(--avq-accent, #6366f1)",
           "background: var(--avq-bg, #ffffff)",

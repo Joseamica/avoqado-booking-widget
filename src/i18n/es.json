@@ -626,6 +626,30 @@
       "lugares": "lugares {{lugares}}",
       "verMiReserva": "Ver mi reserva",
       "otroLugar": "Reservar otro lugar para alguien"
+    },
+    "entrar": {
+      "titulo": "Entra para reservar",
+      "yaTienesPaquete": "¿Ya tienes paquete? Entra para usarlo"
+    },
+    "mapa": {
+      "grupo": "Mapa de lugares",
+      "frente": "Frente · coach",
+      "frenteCon": "Frente · {{coach}} (coach)",
+      "libre": "Libre",
+      "ocupado": "Ocupado",
+      "tuLugar": "Tu lugar",
+      "lugar": "Lugar {{lugar}}",
+      "lugarOcupado": "Lugar {{lugar}}, ocupado",
+      "continuarLugar": "Continuar con el lugar {{lugar}}",
+      "continuarLugares": "Continuar con los lugares {{lugares}}",
+      "soloQueda": "Sólo queda {{n}} lugar",
+      "soloQuedan": "Sólo quedan {{n}} lugares",
+      "y": "y"
+    },
+    "conflicto": {
+      "lugarTomado": "Ese lugar lo acaba de tomar alguien; elige otro",
+      "seLleno": "Esta clase se acaba de llenar",
+      "noDisponible": "Esa clase ya no está disponible"
     }
   }
 }

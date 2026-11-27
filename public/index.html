@@ -440,9 +440,10 @@
       body.con-bottombar .page { padding-bottom: calc(96px + env(safe-area-inset-bottom)); }
       body.con-bottombar .textus-fab { bottom: calc(80px + env(safe-area-inset-bottom)); }
     }
-    /* Diseño 27-nov (detalle de la clase): en el celular el widget fija «Reservar» abajo, encima de la barra, y avisa en el
-       elemento (`data-detalle-de-clase`). El botón flotante del chat lo taparía; ahí no hace falta: el detalle trae su
-       «¿Dudas sobre esta clase? Escríbenos». Un navegador sin `:has` lo deja como siempre. */
+    /* Diseño 27-nov (detalle de la clase y su mapa de lugares): en el celular el widget fija «Reservar» (o «Continuar con el
+       lugar N») abajo, encima de la barra, y avisa en el elemento (`data-detalle-de-clase`). El botón flotante del chat lo
+       taparía; ahí no hace falta: el detalle trae su «¿Dudas sobre esta clase? Escríbenos». Un navegador sin `:has` lo deja
+       como siempre. */
     @media (max-width: 640px) {
       body:has(avoqado-booking[data-detalle-de-clase]) .textus-fab { display: none; }
     }

@@ -21,7 +21,8 @@ export function Button({ children, onClick, type = 'button', variant = 'primary'
 
   const base: Record<string, string> = {
     display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-    borderRadius: 'var(--avq-btn-radius, 12px)', padding: '0 20px', height: '46px',
+    // `--avq-btn-alto`: quien la monta puede pedir botones más altos (la ventanita de entrar en el celular: 56 px).
+    borderRadius: 'var(--avq-btn-radius, 12px)', padding: '0 20px', height: 'var(--avq-btn-alto, 46px)',
     fontSize: '14px', fontWeight: '600',
     cursor: disabled ? 'not-allowed' : 'pointer',
     opacity: disabled ? '0.5' : '1',

@@ -626,6 +626,30 @@
       "lugares": "spots {{lugares}}",
       "verMiReserva": "View my booking",
       "otroLugar": "Book another spot for someone"
+    },
+    "entrar": {
+      "titulo": "Sign in to book",
+      "yaTienesPaquete": "Already have a package? Sign in to use it"
+    },
+    "mapa": {
+      "grupo": "Spot map",
+      "frente": "Front · coach",
+      "frenteCon": "Front · {{coach}} (coach)",
+      "libre": "Available",
+      "ocupado": "Taken",
+      "tuLugar": "Your spot",
+      "lugar": "Spot {{lugar}}",
+      "lugarOcupado": "Spot {{lugar}}, taken",
+      "continuarLugar": "Continue with spot {{lugar}}",
+      "continuarLugares": "Continue with spots {{lugares}}",
+      "soloQueda": "Only {{n}} spot left",
+      "soloQuedan": "Only {{n}} spots left",
+      "y": "and"
+    },
+    "conflicto": {
+      "lugarTomado": "Someone just took that spot; pick another",
+      "seLleno": "This class just filled up",
+      "noDisponible": "That class is no longer available"
     }
   }
 }

@@ -2165,3 +2165,297 @@ describe('Task 10: lo que la clienta ya tiene, en el horario', () => {
     })
   })
 })
+
+describe('Task 12: entrar en una ventanita sin salir de la clase, y aviso cuando alguien toma tu lugar', () => {
+  // Un «dado» de 3 × 3 con cinco máquinas (maqueta pasos-con-aire-v7, paso 3).
+  const DADO = {
+    iconType: 'reformer' as const, rows: 3, cols: 3, showInstructor: true,
+    spots: [
+      { id: 'p1', row: 0, col: 0, label: '1', enabled: true },
+      { id: 'p2', row: 0, col: 2, label: '2', enabled: true },
+      { id: 'p3', row: 1, col: 1, label: '3', enabled: true },
+      { id: 'p4', row: 2, col: 0, label: '4', enabled: true },
+      { id: 'p5', row: 2, col: 2, label: '5', enabled: true },
+    ],
+  }
+  const lagree = { ...venue.products[0], id: 'class-a', name: 'Lagree', price: 325, duration: 50, type: 'CLASS' as const }
+  const conMapa = { ...lagree, layoutConfig: DADO }
+  const VENTANA = { dateFrom: '2026-10-06', dateTo: '2026-11-05' }
+  // Jueves 8 de octubre a las 15:00 de CDMX.
+  const s15 = (extra: Record<string, unknown> = {}) => ({
+    startsAt: '2026-10-08T21:00:00Z', endsAt: '2026-10-08T21:50:00Z', available: true, classSessionId: 's-15',
+    productId: 'class-a', productName: 'Lagree', remaining: 8, capacity: 10, enrolled: 2, takenSpotIds: [] as string[], ...extra,
+  })
+  const SES_ANA = { token: 'tok-ana', customer: ANA, contactos: [TEL] }
+  const PAQ_LAGREE = { ...PAQUETE, id: 'pk-lagree', name: 'Paquete Lagree', items: [{ ...PAQUETE.items[0], productId: 'class-a' }] }
+  const CONFIRMADA = {
+    confirmationCode: 'OK-1', cancelSecret: 'sec-ok', startsAt: '2026-10-08T21:00:00Z', endsAt: '2026-10-08T21:50:00Z',
+    status: 'CONFIRMED', depositRequired: false,
+  } as any
+  const GENERICO = 'Este horario ya no está disponible. Por favor elige otro horario.'
+  const conflicto = (data: Record<string, unknown>) => Object.assign(new Error('Conflicto'), { status: 409, data: { message: 'Conflicto', ...data } })
+  const boton = (name: string | RegExp) => screen.getByRole('button', { name }) as HTMLButtonElement
+  const dialogo = () => screen.queryByRole('dialog', { name: 'Entra para reservar' })
+  const aviso = () => state.toastMessage.value?.text ?? null
+  const enElHorario = () => screen.queryByRole('button', { name: /Lagree.*15:00/ })
+  const entrar = () => {
+    guardarSesion('studio-a', { ...SES_ANA, guardadaEn: Date.now() })
+    state.entroAqui('studio-a', leerSesion('studio-a')!)
+  }
+  /** El horario con la clase de las 15:00 y su detalle abierto. */
+  async function abrirClase(producto: Record<string, unknown>, estudio: Partial<PublicVenueInfo> = {}) {
+    vi.mocked(api.getVenueInfo).mockResolvedValue({ ...venue, canCharge: true, products: [producto as any], ...estudio })
+    vi.mocked(api.getClassSessionsRange).mockResolvedValue({ ...VENTANA, slots: [s15()] })
+    window.history.replaceState({}, '', '/studio-a/classes')
+    render(<BookingFlow props={{ ...props(), flowType: 'classes' }} />); await flush(); await flush()
+    fireEvent.click(screen.getByRole('button', { name: /Lagree.*15:00/ })); await flush()
+  }
+  /** Lo que devuelve la relectura de la clase tras el 409 (y cualquier lectura del horario después). */
+  const alReleer = (slots: unknown[]) => vi.mocked(api.getClassSessionsRange).mockResolvedValue({ ...VENTANA, slots } as any)
+  const lecturaTrasElConflicto = (desde: number) => vi.mocked(api.getClassSessionsRange).mock.calls[desde]
+
+  beforeEach(() => {
+    fijarPagina('studio-a', 'reservas', null)
+    state.bindCustomerSessionToVenue('studio-a')
+    vi.mocked(api.getCustomerPortal).mockReturnValue(new Promise(() => {}))
+    vi.mocked(api.getCreditPacks).mockResolvedValue([])
+    vi.mocked(api.getCustomerCredits).mockResolvedValue({ customer: null, purchases: [] } as any)
+    vi.mocked(api.getMisReservasDeClase).mockResolvedValue({ reservations: [], total: 0, nextCursor: null, unlimitedUsedSessionIds: [] })
+  })
+  afterEach(() => {
+    cleanup(); borrarSesion('studio-a'); state.clearCustomerSession('studio-a'); fijarPagina('studio-a', 'reservas', null)
+    delete (globalThis as any).__entradaDePrueba; delete (globalThis as any).__onEntro
+  })
+
+  describe('entrar en una ventanita', () => {
+    it('sin sesión, clase que exige paquete: «Reservar» abre «Entra para reservar» (no «Mi cuenta»); al entrar sigue al mapa con la MISMA clase', async () => {
+      ;(globalThis as any).__entradaDePrueba = SES_ANA
+      await abrirClase({ ...conMapa, requireCreditForBooking: true })
+      fireEvent.click(boton('Reservar')); await flush()
+      const d = dialogo()!
+      expect(d).toBeTruthy()
+      expect(within(d).getByText('Lagree · jueves 8 · 15:00')).toBeTruthy()
+      expect(state.showPortal.value).toBe(false)
+      expect(screen.queryByRole('heading', { name: 'Elige tu lugar' })).toBeNull()
+      fireEvent.click(within(d).getByRole('button', { name: 'Simular entrar' })); await flush()
+      expect(dialogo()).toBeNull()
+      expect(state.showPortal.value).toBe(false)
+      expect(state.customerToken.value).toBe('tok-ana')
+      expect(screen.getByRole('heading', { name: 'Elige tu lugar' })).toBeTruthy()
+      expect(state.selectedSlot.value?.classSessionId).toBe('s-15')
+      expect(api.createReservation).not.toHaveBeenCalled()
+    })
+
+    it('cerrar la ventanita deja el detalle; una entrada que termina tarde no adopta la cuenta ni sigue sola', async () => {
+      await abrirClase({ ...conMapa, requireCreditForBooking: true })
+      fireEvent.click(boton('Reservar')); await flush()
+      const entradaVieja = (globalThis as any).__onEntro
+      fireEvent.keyDown(document, { key: 'Escape' }); await flush()
+      expect(dialogo()).toBeNull()
+      expect(boton('Reservar')).toBeTruthy()
+      await act(async () => {
+        guardarSesion('studio-a', { ...SES_ANA, guardadaEn: Date.now() })
+        entradaVieja(SES_ANA)
+      }); await flush()
+      expect(state.customerToken.value).toBeNull()
+      expect(screen.queryByRole('heading', { name: 'Elige tu lugar' })).toBeNull()
+      expect(state.showPortal.value).toBe(false)
+    })
+
+    it('negocio con «Requerir cuenta para reservar»: el botón de la puerta abre la ventanita, no «Mi cuenta»', async () => {
+      ;(globalThis as any).__entradaDePrueba = SES_ANA
+      await abrirClase(lagree, { publicBooking: { ...venue.publicBooking, requireAccount: true } })
+      fireEvent.click(boton('Reservar')); await flush()
+      expect(screen.getByRole('heading', { name: 'Inicia sesión para reservar' })).toBeTruthy()
+      fireEvent.click(boton('Iniciar sesión / crear cuenta')); await flush()
+      expect(dialogo()).toBeTruthy()
+      expect(state.showPortal.value).toBe(false)
+      fireEvent.click(within(dialogo()!).getByRole('button', { name: 'Simular entrar' })); await flush()
+      expect(dialogo()).toBeNull()
+      expect(state.showPortal.value).toBe(false)
+      expect(screen.queryByRole('heading', { name: 'Inicia sesión para reservar' })).toBeNull()
+      expect(state.selectedSlot.value?.classSessionId).toBe('s-15')
+    })
+
+    it('clase que acepta tarjeta y paquete, sin sesión: el formulario enseña «¿Ya tienes paquete? Entra para usarlo» y abre la ventanita', async () => {
+      vi.mocked(api.getCreditPacks).mockResolvedValue([PAQ_LAGREE] as any)
+      await abrirClase(lagree)
+      fireEvent.click(boton('Reservar')); await flush()
+      fireEvent.click(boton('¿Ya tienes paquete? Entra para usarlo')); await flush()
+      expect(dialogo()).toBeTruthy()
+      expect(state.showPortal.value).toBe(false)
+    })
+
+    it('sin un paquete que pague la clase, el formulario no lo ofrece', async () => {
+      vi.mocked(api.getCreditPacks).mockResolvedValue([PAQUETE] as any) // es de otro servicio
+      await abrirClase(lagree)
+      fireEvent.click(boton('Reservar')); await flush()
+      expect(screen.getByLabelText(/Nombre/)).toBeTruthy()
+      expect(screen.queryByRole('button', { name: /Ya tienes paquete/ })).toBeNull()
+    })
+
+    it('401 al consultar sus paquetes ⇒ la ventanita (con «Tu sesión se cerró»), nunca «Mi cuenta», sin reserva', async () => {
+      entrar()
+      vi.mocked(api.getCustomerCredits).mockImplementation(async (_slug, params: any) => {
+        if (params?.productId) throw Object.assign(new Error('x'), { status: 401, data: { message: 'x' }, enviado: 'tok-ana' })
+        return { customer: null, purchases: [] } as any
+      })
+      await abrirClase(lagree)
+      fireEvent.click(boton('Reservar')); await flush(); await flush()
+      expect(dialogo()).toBeTruthy()
+      expect(within(dialogo()!).getByRole('status').textContent).toBe('Tu sesión se cerró. Entra otra vez.')
+      expect(state.showPortal.value).toBe(false)
+      expect(state.customerToken.value).toBeNull()
+      expect(api.createReservation).not.toHaveBeenCalled()
+    })
+
+    it('401 al confirmar ⇒ la ventanita, nunca «Mi cuenta», sin reserva creada', async () => {
+      entrar()
+      vi.mocked(api.createReservation).mockImplementationOnce(async () => {
+        // Lo que hace `request`: la página queda sin sesión antes de lanzar el error.
+        state.clearCustomerSession('studio-a', 'tok-ana')
+        throw Object.assign(new Error('x'), { status: 401, data: { message: 'x', code: 'CUSTOMER_SESSION_CLOSED' }, enviado: 'tok-ana' })
+      })
+      await abrirClase(lagree)
+      fireEvent.click(boton('Reservar')); await flush(); await flush()
+      expect(api.createReservation).toHaveBeenCalledTimes(1)
+      expect(dialogo()).toBeTruthy()
+      expect(within(dialogo()!).getByRole('status').textContent).toBe('Tu sesión se cerró. Puedes seguir sin cuenta o entrar otra vez.')
+      expect(state.showPortal.value).toBe(false)
+      expect(state.bookingResult.value).toBeNull()
+      expect(state.selectedSlot.value?.classSessionId).toBe('s-15')
+    })
+  })
+
+  describe('alguien tomó tu lugar o la clase se llenó', () => {
+    async function alMapaYContinuar(lugares: string[]) {
+      fireEvent.click(boton('Reservar')); await flush()
+      for (const l of lugares) { fireEvent.click(boton(`Lugar ${l}`)); await flush() }
+      fireEvent.click(boton(/^Continuar con /)); await flush(); await flush()
+    }
+
+    it('409 SPOTS_TAKEN: relee con la MISMA ventana del horario, regresa al mapa sin el lugar tomado y con el aviso; el tomado no vuelve a viajar', async () => {
+      entrar()
+      vi.mocked(api.createReservation)
+        .mockRejectedValueOnce(conflicto({ code: 'SPOTS_TAKEN', details: { takenSpotIds: ['p3'] } }))
+        .mockResolvedValueOnce(CONFIRMADA)
+      await abrirClase(conMapa)
+      // El horario ya cargado llega a 60 días («Más fechas»): la relectura usa ESA ventana, no la de arranque ni «el día local».
+      fireEvent.click(screen.getByRole('button', { name: 'Horario' })); await flush()
+      fireEvent.click(boton('Más fechas')); await flush(); await flush()
+      const VENTANA_60 = { dateFrom: '2026-10-06', dateTo: '2026-12-05' }
+      expect(vi.mocked(api.getClassSessionsRange).mock.calls.at(-1)).toEqual(['studio-a', VENTANA_60])
+      fireEvent.click(screen.getByRole('button', { name: /Lagree.*15:00/ })); await flush()
+      const lecturas = vi.mocked(api.getClassSessionsRange).mock.calls.length
+      alReleer([s15({ takenSpotIds: ['p3', 'p2'], remaining: 6 })])
+      await alMapaYContinuar(['1', '3'])
+      expect(api.createReservation).toHaveBeenCalledTimes(1)
+      expect(vi.mocked(api.createReservation).mock.calls[0][1].spotIds).toEqual(['p1', 'p3'])
+      expect(lecturaTrasElConflicto(lecturas)).toEqual(['studio-a', VENTANA_60])
+      expect(screen.getByRole('heading', { name: 'Elige tu lugar' })).toBeTruthy()
+      expect(boton('Lugar 3, ocupado').disabled).toBe(true)
+      expect(boton('Lugar 2, ocupado').disabled).toBe(true)
+      expect(state.selectedSpotIds.value).toEqual(['p1'])
+      expect(aviso()).toBe('Ese lugar lo acaba de tomar alguien; elige otro')
+      expect(state.bookingResult.value).toBeNull()
+      fireEvent.click(boton('Continuar con el lugar 1')); await flush(); await flush()
+      expect(api.createReservation).toHaveBeenCalledTimes(2)
+      expect(vi.mocked(api.createReservation).mock.calls[1][1].spotIds).toEqual(['p1'])
+    })
+
+    it('409 CLASS_FULL con available 0 ⇒ regresa al horario recargado con «Esta clase se acaba de llenar»', async () => {
+      entrar()
+      vi.mocked(api.createReservation).mockRejectedValueOnce(conflicto({ code: 'CLASS_FULL', details: { available: 0 } }))
+      await abrirClase(conMapa)
+      const lecturas = vi.mocked(api.getClassSessionsRange).mock.calls.length
+      alReleer([s15({ remaining: 0, available: false, enrolled: 10 })])
+      await alMapaYContinuar(['3'])
+      expect(lecturaTrasElConflicto(lecturas)).toEqual(['studio-a', VENTANA])
+      expect(aviso()).toBe('Esta clase se acaba de llenar')
+      expect(state.selectedSlot.value).toBeNull()
+      expect(enElHorario()).toBeTruthy()
+      // El horario se volvió a pedir al regresar: la clase ya sale llena.
+      expect(vi.mocked(api.getClassSessionsRange).mock.calls.length).toBeGreaterThan(lecturas + 1)
+      expect(screen.queryByRole('heading', { name: 'Elige tu lugar' })).toBeNull()
+    })
+
+    it('409 CLASS_FULL con 1 lugar y dos pedidos ⇒ se queda en el mapa con «Sólo queda 1 lugar» hasta quitar uno', async () => {
+      entrar()
+      vi.mocked(api.createReservation).mockRejectedValueOnce(conflicto({ code: 'CLASS_FULL', details: { available: 1 } }))
+      await abrirClase(conMapa)
+      alReleer([s15({ remaining: 1, enrolled: 9 })])
+      await alMapaYContinuar(['1', '3'])
+      expect(screen.getByRole('heading', { name: 'Elige tu lugar' })).toBeTruthy()
+      expect(screen.getByRole('alert').textContent).toBe('Sólo queda 1 lugar')
+      expect(state.selectedSpotIds.value).toEqual(['p1', 'p3'])
+      expect(boton('Continuar con los lugares 1 y 3').disabled).toBe(true)
+      fireEvent.click(boton('Lugar 3')); await flush()
+      expect(screen.queryByRole('alert')).toBeNull()
+      expect(boton('Continuar con el lugar 1').disabled).toBe(false)
+      expect(api.createReservation).toHaveBeenCalledTimes(1)
+    })
+
+    it('si al releer la clase ya no aparece ⇒ regresa al horario con «Esa clase ya no está disponible»', async () => {
+      entrar()
+      vi.mocked(api.createReservation).mockRejectedValueOnce(conflicto({ code: 'SPOTS_TAKEN', details: { takenSpotIds: ['p3'] } }))
+      await abrirClase(conMapa)
+      alReleer([])
+      await alMapaYContinuar(['3'])
+      expect(aviso()).toBe('Esa clase ya no está disponible')
+      expect(state.selectedSlot.value).toBeNull()
+      expect(screen.queryByRole('heading', { name: 'Elige tu lugar' })).toBeNull()
+    })
+
+    it.each([
+      [undefined, 3, GENERICO], ['CLASS_FULL', 3, GENERICO], ['SPOTS_TAKEN', 3, GENERICO],
+      [undefined, 0, 'Esta clase se acaba de llenar'], ['CLASS_FULL', 0, 'Esta clase se acaba de llenar'],
+      ['SPOTS_TAKEN', 0, 'Esta clase se acaba de llenar'],
+    ] as const)('clase sin mapa (1 lugar), 409 con código %s y %i lugares al releer ⇒ «%s» y al horario', async (code, libres, texto) => {
+      entrar()
+      vi.mocked(api.createReservation).mockRejectedValueOnce(conflicto(code ? { code, details: {} } : {}))
+      await abrirClase(lagree)
+      alReleer([s15(libres ? { remaining: libres } : { remaining: 0, available: false })])
+      fireEvent.click(boton('Reservar')); await flush(); await flush()
+      expect(api.createReservation).toHaveBeenCalledTimes(1)
+      expect(aviso()).toBe(texto)
+      expect(state.selectedSlot.value).toBeNull()
+      expect(enElHorario()).toBeTruthy()
+    })
+
+    it.each([
+      ['sin lugares', s15({ remaining: 0, available: false }), { horario: 'Esta clase se acaba de llenar' }],
+      ['su lugar ocupado', s15({ takenSpotIds: ['p3'], remaining: 6 }), { mapa: ['p1'], toast: 'Ese lugar lo acaba de tomar alguien; elige otro' }],
+      ['menos lugares que los elegidos', s15({ remaining: 1 }), { mapa: ['p1', 'p3'], alerta: 'Sólo queda 1 lugar' }],
+      ['nada que lo explique', s15(), { horario: GENERICO }],
+    ] as const)('SERVIDOR viejo (409 sin código) con mapa, %s: decide con la relectura', async (_caso, relectura, espera: any) => {
+      entrar()
+      vi.mocked(api.createReservation).mockRejectedValueOnce(conflicto({}))
+      await abrirClase(conMapa)
+      alReleer([relectura])
+      await alMapaYContinuar(['1', '3'])
+      if (espera.horario) {
+        expect(aviso()).toBe(espera.horario)
+        expect(state.selectedSlot.value).toBeNull()
+        expect(screen.queryByRole('heading', { name: 'Elige tu lugar' })).toBeNull()
+      } else {
+        expect(screen.getByRole('heading', { name: 'Elige tu lugar' })).toBeTruthy()
+        expect(state.selectedSpotIds.value).toEqual(espera.mapa)
+        if (espera.toast) expect(aviso()).toBe(espera.toast)
+        if (espera.alerta) expect(screen.getByRole('alert').textContent).toBe(espera.alerta)
+      }
+      expect(api.createReservation).toHaveBeenCalledTimes(1)
+    })
+
+    it('la relectura falla (sin red): con lo que dijo el 409 basta para quitar el lugar tomado', async () => {
+      entrar()
+      vi.mocked(api.createReservation).mockRejectedValueOnce(conflicto({ code: 'SPOTS_TAKEN', details: { takenSpotIds: ['p3'] } }))
+      await abrirClase(conMapa)
+      vi.mocked(api.getClassSessionsRange).mockRejectedValue(new TypeError('Failed to fetch'))
+      await alMapaYContinuar(['1', '3'])
+      expect(screen.getByRole('heading', { name: 'Elige tu lugar' })).toBeTruthy()
+      expect(boton('Lugar 3, ocupado').disabled).toBe(true)
+      expect(state.selectedSpotIds.value).toEqual(['p1'])
+      expect(aviso()).toBe('Ese lugar lo acaba de tomar alguien; elige otro')
+    })
+  })
+})

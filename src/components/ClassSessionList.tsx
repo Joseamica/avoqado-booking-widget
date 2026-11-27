@@ -95,6 +95,17 @@ const PAGE_DAYS = 30
 const MAX_DAYS = 60
 
 /**
+ * La ventana que pide el horario: desde hoy (en la zona que se enseña) y `dias` más, con el tope del SERVIDOR. Task 12 relee una
+ * clase con la ventana que el horario avisó (`onVentana`); ésta es la de arranque, por si no avisó ninguna.
+ */
+export function ventanaDesdeHoy(timezone: string, dias: number = INITIAL_DAYS): { dateFrom: string; dateTo: string } {
+  const todayVenue = new Date().toLocaleDateString('en-CA', { timeZone: timezone })
+  const toDate = new Date(`${todayVenue}T00:00:00Z`)
+  toDate.setUTCDate(toDate.getUTCDate() + Math.min(dias, MAX_DAYS))
+  return { dateFrom: todayVenue, dateTo: toDate.toISOString().slice(0, 10) }
+}
+
+/**
  * Horario de las clases de un negocio (diseño 27-nov, `portada-v3`): en pantallas anchas, la semana tipo calendario
  * (`CalendarView`); en el celular, la lista con tira de días (`ListaDelHorario`). Tocar una clase la abre (`onSelect`);
  * una llena sólo si ya es suya. Used when flowType=classes.
@@ -120,17 +131,10 @@ export function ClassSessionList({
   const [openChip, setOpenChip] = useState<null | 'class' | 'instructor' | 'rooms'>(null)
 
   // Compute the date range based on the window. Today's date in the venue tz.
-  const { dateFrom, dateTo, atMaxWindow } = useMemo(() => {
-    const todayVenue = new Date().toLocaleDateString('en-CA', { timeZone: timezone })
-    const fromDate = new Date(`${todayVenue}T00:00:00Z`)
-    const toDate = new Date(fromDate)
-    toDate.setUTCDate(toDate.getUTCDate() + Math.min(windowDays, MAX_DAYS))
-    return {
-      dateFrom: todayVenue,
-      dateTo: toDate.toISOString().slice(0, 10),
-      atMaxWindow: windowDays >= MAX_DAYS,
-    }
-  }, [timezone, windowDays])
+  const { dateFrom, dateTo, atMaxWindow } = useMemo(
+    () => ({ ...ventanaDesdeHoy(timezone, windowDays), atMaxWindow: windowDays >= MAX_DAYS }),
+    [timezone, windowDays],
+  )
 
   useEffect(() => { onVentana?.({ dateFrom, dateTo }) }, [dateFrom, dateTo])
 

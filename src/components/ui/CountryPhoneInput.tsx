@@ -100,7 +100,7 @@ export function CountryPhoneInput({
   return (
     <div ref={rootRef} style={{ position: 'relative' }}>
       <div style={{
-        display: 'flex', alignItems: 'stretch', height: '46px',
+        display: 'flex', alignItems: 'stretch', height: 'var(--avq-campo-alto, 46px)', // la tienda lo pone en 52 px abajo
         borderRadius: '12px', border: `1.5px solid ${borderColor}`,
         background: 'var(--avq-bg, #ffffff)', overflow: 'hidden',
         transition: 'border-color 0.2s ease',
