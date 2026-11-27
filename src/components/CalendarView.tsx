@@ -6,9 +6,10 @@ import { encabezadoDeDia } from '../lib/fechas'
 import { Icono } from './ui/Icono'
 import {
   ESTILOS_LUGARES, Lugares, agruparPorDia, diaCorto, diaDeLaSesion, duracion, horaDeLaSesion, idiomaDe, lugaresDeLaSesion,
-  minutosDeLaSesion, nombreDeCoach, nombreDeLaSesion, numeroDelDia, sePuedeTocar, sumarDias, textoDeLugares, textoDeReserva,
+  minutosDeLaSesion, nombreDeCoach, nombreDeLaSesion, numeroDelDia, reservaPendiente, sePuedeTocar, sumarDias, textoDeLugares,
+  textoDeReserva,
 } from './ListaDelHorario'
-import type { MiReserva } from './ListaDelHorario'
+import type { MiReserva, ReservaEnLaSesion } from './ListaDelHorario'
 
 interface CalendarViewProps {
   /** Same slots the ClassSessionList consumes — already sorted by startsAt server-side. */
@@ -136,7 +137,7 @@ function TarjetaDeClase({ slot, dia, hora, reserva, mostrarDuracion, onSelect, t
   slot: PublicClassSessionSlot
   dia: string
   hora: string
-  reserva: { lugar: string | null } | null
+  reserva: ReservaEnLaSesion | null
   mostrarDuracion: boolean
   onSelect: (slot: PublicClassSessionSlot) => void
   t: TFunction
@@ -164,9 +165,9 @@ function TarjetaDeClase({ slot, dia, hora, reserva, mostrarDuracion, onSelect, t
       <span class="avq-tarjeta-clase">{slot.productName}</span>
       {coach && <span class="avq-tarjeta-coach">{coach}</span>}
       <span class="avq-tarjeta-lugares">
-        {textoReserva ? (
-          <span class="avq-tarjeta-reservada">
-            <Icono nombre="check" size={13} />
+        {reserva && textoReserva ? (
+          <span class={`avq-tarjeta-reservada${reservaPendiente(reserva) ? ' avq-tarjeta-reservada--pendiente' : ''}`}>
+            <Icono nombre={reservaPendiente(reserva) ? 'reloj' : 'check'} size={13} />
             <span>{textoReserva}</span>
           </span>
         ) : <Lugares slot={slot} t={t} conIcono />}
@@ -201,4 +202,5 @@ const ESTILOS = `
     display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
   .avq-tarjeta-lugares { margin-top: 5px; font-size: 11px; }
   .avq-tarjeta-reservada { display: inline-flex; align-items: center; gap: 4px; font-weight: 600; color: var(--avq-success-fg, #15803d); }
+  .avq-tarjeta-reservada--pendiente { color: var(--avq-warning-fg, #b45309); }
 `

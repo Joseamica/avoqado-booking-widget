@@ -13,6 +13,7 @@ import type {
   MiPedido,
   MiTarjeta,
   PaginaDeMiCuenta,
+  PaginaDeMisReservasDeClase,
 } from '../types'
 import {
   aplicarRenovacion, epocaDe, renovarLaPagina, soltarLaPagina, tokenDeLaPagina, type FichaNueva, type SesionEmitida, type Superficie,
@@ -394,6 +395,20 @@ export function getCustomerPortal(slug: string, token: string, superficie: Super
   return request(`${BASE}/venues/${slug}/customer/portal`, {
     signal: conTope(), // codex-r1 #5: recién entrada, «Mi cuenta» no gira para siempre
   }, { slug, token, superficie })
+}
+
+/**
+ * Task 10: las reservas de clase de la clienta en la MISMA ventana que el horario (`dateFrom`/`dateTo` iguales a los del rango): una
+ * página de 100; para todas, se sigue `nextCursor`. Un SERVIDOR viejo responde 404: el horario sólo se queda sin marcas.
+ */
+export function getMisReservasDeClase(
+  slug: string,
+  params: { dateFrom: string; dateTo: string; cursor?: string },
+  token: string,
+): Promise<PaginaDeMisReservasDeClase> {
+  const q = new URLSearchParams({ dateFrom: params.dateFrom, dateTo: params.dateTo })
+  if (params.cursor) q.append('cursor', params.cursor)
+  return request(`${BASE}/venues/${slug}/customer/class-reservations?${q}`, undefined, { slug, token })
 }
 
 // W4 (S13): las páginas siguientes de «Mi cuenta» (el portal trae la primera de cada una) y «Guardar en mi cuenta».

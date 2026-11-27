@@ -535,6 +535,33 @@ export interface CustomerPortalData {
 
 /** S13: una página de «Mi cuenta» (20 por omisión; `nextCursor` = hay más). */
 export interface PaginaDeMiCuenta<T> { items: T[]; total: number; nextCursor: string | null }
+
+/**
+ * Task 10: una reserva de clase de la clienta del token en la ventana del horario (`GET …/customer/class-reservations`). Sólo las
+ * vivas: `PENDING`, `CONFIRMED` y `CHECKED_IN`.
+ */
+export interface MiReservaDeClase {
+  classSessionId: string
+  /** Los lugares guardados en la reserva (el número que se enseña). */
+  spotIds: string[]
+  confirmationCode: string
+  cancelSecret: string
+  /** El inicio de la CLASE (el mismo que el horario), no la copia guardada en la reserva. */
+  startsAt: string
+  status: 'PENDING' | 'CONFIRMED' | 'CHECKED_IN'
+  /** `PENDING` = falta pagar el depósito; `null` = sin depósito. */
+  depositStatus: string | null
+  /** Se pagó con un saldo Ilimitado. */
+  usedUnlimited: boolean
+}
+/** Una página (100, la impone el SERVIDOR; `nextCursor` = hay más). */
+export interface PaginaDeMisReservasDeClase {
+  reservations: MiReservaDeClase[]
+  total: number
+  nextCursor: string | null
+  /** Clases de la ventana donde ya usó su Ilimitado (también terminadas o «No asistió»): no se marcan como reservadas. */
+  unlimitedUsedSessionIds?: string[]
+}
 export type EstadoDeTarjeta = 'ACTIVA' | 'BLOQUEADA' | 'DESACTIVADA' | 'VENCIDA'
 /** `venceEl`: `yyyy-MM-dd` en la zona del negocio. `codigo`: sólo ACTIVA y con contacto probado. */
 export interface MiTarjeta { id: string; last4: string; saldo: number; venceEl: string | null; codigo: string | null; estado: EstadoDeTarjeta; disponible: boolean }

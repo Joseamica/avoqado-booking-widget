@@ -6,12 +6,12 @@ import * as api from '../api/booking'
 import * as state from '../state/booking'
 import { borrarSesion, fijarPagina, guardarSesion, leerSesion } from '../lib/sesionDeCliente'
 import { resolveDepositReturn, savePendingReservation } from '../lib/depositReturn'
-import type { PublicVenueInfo, PublicReservationDetail, WidgetProps } from '../types'
+import type { CustomerCreditBalance, MiReservaDeClase, PublicVenueInfo, PublicReservationDetail, WidgetProps } from '../types'
 
 vi.mock('../api/booking', () => ({
   getVenueInfo: vi.fn(), getCreditPacks: vi.fn(), getReservation: vi.fn(),
   getAvailability: vi.fn(), getClassSessionsRange: vi.fn(), createReservation: vi.fn(), createHold: vi.fn(), cancelHold: vi.fn(),
-  getCustomerCredits: vi.fn(), getCustomerPortal: vi.fn(), createPackCheckout: vi.fn(),
+  getCustomerCredits: vi.fn(), getCustomerPortal: vi.fn(), createPackCheckout: vi.fn(), getMisReservasDeClase: vi.fn(),
   esAndroid: () => false, // D656: «Mi cuenta» lo lee al pintarse
 }))
 // «Entra a tu cuenta» de verdad pide un código o Google; aquí sólo importa que, al entrar, guarde la sesión y avise (como el real).
@@ -1770,5 +1770,228 @@ describe('Portada: identidad del negocio, horario directo y «Clases | Citas»',
     montar({ ...soloClases, canCharge: true }, { showIdentity: true }); await flush()
     expect(screen.getByRole('dialog', { name: 'Comprar créditos' })).toBeTruthy()
     expect(screen.getByRole('button', { name: /Lagree.*11:00/ })).toBeTruthy()
+  })
+})
+
+describe('Task 10: lo que la clienta ya tiene, en el horario', () => {
+  const lagree = { ...venue.products[0], id: 'class-a', name: 'Lagree', price: 325, duration: 50, type: 'CLASS' as const }
+  const estudio: PublicVenueInfo = { ...venue, canCharge: true, products: [lagree] }
+  const PAQ_LAGREE = { ...PAQUETE, id: 'pk-lagree', name: 'Paquete Lagree', items: [{ ...PAQUETE.items[0], productId: 'class-a' }] }
+  const clase = (id: string, inicio: string, extra: Record<string, unknown> = {}) => ({
+    startsAt: inicio, endsAt: new Date(new Date(inicio).getTime() + 50 * 60000).toISOString(), available: true,
+    classSessionId: id, productId: 'class-a', productName: 'Lagree', remaining: 8, capacity: 10, enrolled: 2, ...extra,
+  })
+  // Jueves 8 de octubre en CDMX (UTC−6): 11:00, 13:00 (llena) y 15:00.
+  const s11 = clase('s-11', '2026-10-08T17:00:00Z')
+  const s13 = clase('s-13', '2026-10-08T19:00:00Z', { available: false, remaining: 0, enrolled: 10 })
+  const s15 = clase('s-15', '2026-10-08T21:00:00Z')
+  const SES_ANA = { token: 'tok-ana', customer: ANA, contactos: [TEL] }
+  const SES_BEA = { token: 'tok-bea', customer: BEA, contactos: [TEL] }
+  const VENTANA = { dateFrom: '2026-10-06', dateTo: '2026-11-05' }
+
+  function saldo(...compras: Array<{ id: string; restante: number; original: number; vence?: string; ilimitado?: boolean }>): CustomerCreditBalance {
+    return {
+      customer: null,
+      purchases: compras.map(c => ({
+        id: `compra-${c.id}`, creditPack: { name: c.ilimitado ? 'Ilimitado' : `Paquete de ${c.original}` }, expiresAt: c.vence, status: 'ACTIVE',
+        itemBalances: [{
+          id: c.id, productId: 'class-a', product: { id: 'class-a', name: 'Lagree', type: 'CLASS' },
+          originalQuantity: c.ilimitado ? 99999 : c.original, remainingQuantity: c.ilimitado ? 99998 : c.restante, unlimited: c.ilimitado,
+        }],
+      })),
+    }
+  }
+  const mia = (classSessionId: string, extra: Partial<MiReservaDeClase> = {}): MiReservaDeClase => ({
+    classSessionId, spotIds: [], confirmationCode: `C-${classSessionId}`, cancelSecret: `sec-${classSessionId}`,
+    startsAt: '2026-10-08T17:00:00Z', status: 'CONFIRMED', depositStatus: null, usedUnlimited: false, ...extra,
+  })
+  const pagina = (reservations: MiReservaDeClase[], extra: Record<string, unknown> = {}) =>
+    ({ reservations, total: reservations.length, nextCursor: null, unlimitedUsedSessionIds: [] as string[], ...extra })
+  const entrar = (slug: string, ses: typeof SES_ANA) => {
+    state.bindCustomerSessionToVenue(slug)
+    guardarSesion(slug, { ...ses, guardadaEn: Date.now() })
+    state.entroAqui(slug, leerSesion(slug)!)
+  }
+  const fila = (re: RegExp, dentro: HTMLElement = document.body) => within(dentro).getByRole('button', { name: re }) as HTMLButtonElement
+  const franja = (dentro: ParentNode = document) => dentro.querySelector('.avq-franja')?.textContent ?? null
+  async function horario(slots = [s11, s13, s15]) {
+    vi.mocked(api.getVenueInfo).mockResolvedValue(estudio)
+    vi.mocked(api.getClassSessionsRange).mockResolvedValue({ ...VENTANA, slots })
+    window.history.replaceState({}, '', '/studio-a/classes')
+    const r = render(<BookingFlow props={{ ...props(), flowType: 'classes' }} />)
+    await flush(); await flush()
+    return r
+  }
+
+  beforeEach(() => {
+    fijarPagina('studio-a', 'reservas', null); fijarPagina('studio-b', 'reservas', null)
+    vi.mocked(api.getCustomerPortal).mockReturnValue(new Promise(() => {}))
+    vi.mocked(api.getCreditPacks).mockResolvedValue([PAQ_LAGREE] as any)
+    vi.mocked(api.getCustomerCredits).mockResolvedValue(saldo({ id: 'b5', restante: 4, original: 5, vence: '2026-12-11T18:00:00Z' }))
+    vi.mocked(api.getMisReservasDeClase).mockResolvedValue(pagina([]))
+  })
+  afterEach(() => { cleanup(); fijarPagina('studio-a', 'reservas', null); fijarPagina('studio-b', 'reservas', null) })
+
+  it('con sesión y un paquete de 5 con 4: «Hola, Ana · tienes 4 sesiones de Lagree · vencen el 11 dic»; el costado ya no le vende el paquete', async () => {
+    entrar('studio-a', SES_ANA)
+    await horario()
+    expect(franja()).toBe('Hola, Ana · tienes 4 sesiones de Lagree · vencen el 11 dic')
+    // El saldo se lee SIN productId (con él, el SERVIDOR recorta los saldos y «sesiones de Lagree» saldría mal).
+    expect(api.getCustomerCredits).toHaveBeenCalledWith('studio-a', {}, 'tok-ana')
+    const costado = document.querySelector('.avq-classes-sidebar') as HTMLElement
+    expect(costado.textContent).toContain('Tu paquete: 4 de 5 · vence el 11 dic')
+    expect(costado.textContent).not.toContain('Paquete Lagree')
+    expect(costado.textContent).toContain('Ana')
+    // Las clases que su paquete paga dicen «Incluida en tu paquete», no el precio suelto.
+    expect(within(fila(/Lagree.*11:00/)).getByText('Incluida en tu paquete')).toBeTruthy()
+    expect(fila(/Lagree.*11:00/).textContent).not.toContain('$325')
+  })
+
+  it('una sesión: «tienes 1 sesión de Lagree · vence el …»; un Ilimitado nunca enseña su número', async () => {
+    entrar('studio-a', SES_ANA)
+    vi.mocked(api.getCustomerCredits).mockResolvedValue(saldo({ id: 'b1', restante: 1, original: 5, vence: '2026-12-11T18:00:00Z' }))
+    const r = await horario()
+    expect(franja()).toBe('Hola, Ana · tienes 1 sesión de Lagree · vence el 11 dic')
+    r.unmount()
+    vi.mocked(api.getCustomerCredits).mockResolvedValue(saldo({ id: 'u1', restante: 0, original: 0, ilimitado: true, vence: '2026-12-20T18:00:00Z' }))
+    await horario()
+    expect(franja()).toBe('Hola, Ana · tienes Ilimitado de Lagree · vence el 20 dic')
+    const costado = document.querySelector('.avq-classes-sidebar') as HTMLElement
+    expect(costado.textContent).toContain('Tu paquete: Ilimitado · vence el 20 dic')
+    expect(document.body.textContent).not.toMatch(/9999/)
+  })
+
+  it('sus clases se marcan «Reservada · lugar 3», «Falta pagar» o «Por aprobar»; tocar la suya, aunque esté llena, abre el detalle', async () => {
+    entrar('studio-a', SES_ANA)
+    vi.mocked(api.getMisReservasDeClase).mockResolvedValue(pagina([
+      mia('s-11', { spotIds: ['3'] }),
+      mia('s-13', { status: 'PENDING', depositStatus: 'PENDING', startsAt: s13.startsAt }),
+      mia('s-15', { status: 'PENDING', depositStatus: null, startsAt: s15.startsAt }),
+    ]))
+    await horario()
+    // La misma ventana que el horario, con el token de ESTE estudio.
+    expect(api.getMisReservasDeClase).toHaveBeenCalledWith('studio-a', VENTANA, 'tok-ana')
+    expect(within(fila(/Lagree.*11:00/)).getByText('Reservada · lugar 3')).toBeTruthy()
+    expect(within(fila(/Lagree.*13:00/)).getByText('Falta pagar')).toBeTruthy()
+    expect(within(fila(/Lagree.*15:00/)).getByText('Por aprobar')).toBeTruthy()
+    const llena = fila(/Lagree.*13:00/)
+    expect(llena.disabled).toBe(false)
+    fireEvent.click(llena); await flush()
+    // Ruling 1: abre el DETALLE de la clase (Task 11 dibuja ahí «Ya tienes lugar en esta clase»).
+    expect(screen.getByText('Todas las clases')).toBeTruthy()
+    expect(state.selectedSlot.value?.classSessionId).toBe('s-13')
+  })
+
+  it('«Incluida» se decide por sesión: no después de que vence el Ilimitado, ni donde ya lo usó', async () => {
+    entrar('studio-a', SES_ANA)
+    // El Ilimitado vence el jueves 8 a las 14:00 de CDMX.
+    vi.mocked(api.getCustomerCredits).mockResolvedValue(saldo({ id: 'u1', restante: 0, original: 0, ilimitado: true, vence: '2026-10-08T20:00:00Z' }))
+    vi.mocked(api.getMisReservasDeClase).mockResolvedValue(pagina([], { unlimitedUsedSessionIds: ['s-11'] }))
+    const s12 = clase('s-12', '2026-10-08T18:00:00Z')
+    await horario([s11, s12, s15])
+    expect(within(fila(/Lagree.*12:00/)).getByText('Incluida en tu paquete')).toBeTruthy()
+    // 15:00 empieza después de que vence: precio suelto.
+    expect(fila(/Lagree.*15:00/).textContent).not.toContain('Incluida')
+    expect(within(fila(/Lagree.*15:00/)).getByText('$325 · clase suelta')).toBeTruthy()
+    // 11:00: ya usó su Ilimitado en esa clase (el SERVIDOR rechaza el segundo).
+    expect(fila(/Lagree.*11:00/).textContent).not.toContain('Incluida')
+    // Y no se marca como reservada: usar el Ilimitado no es lo mismo que tener lugar.
+    expect(fila(/Lagree.*11:00/).textContent).not.toContain('Reservada')
+  })
+
+  it('con 250 reservas en el rango recorre las tres páginas y marca todas', async () => {
+    entrar('studio-a', SES_ANA)
+    const relleno = (n: number, desde: number) => Array.from({ length: n }, (_, i) => mia(`otra-${desde + i}`))
+    vi.mocked(api.getMisReservasDeClase)
+      .mockResolvedValueOnce(pagina([mia('s-11', { spotIds: ['1'] }), ...relleno(99, 0)], { total: 250, nextCursor: 'p2' }))
+      .mockResolvedValueOnce(pagina([...relleno(99, 99), mia('s-13', { spotIds: ['2'] })], { total: 250, nextCursor: 'p3' }))
+      .mockResolvedValueOnce(pagina([...relleno(49, 198), mia('s-15', { spotIds: ['5'] })], { total: 250, nextCursor: null }))
+    await horario(); await flush()
+    expect(vi.mocked(api.getMisReservasDeClase).mock.calls).toEqual([
+      ['studio-a', VENTANA, 'tok-ana'],
+      ['studio-a', { ...VENTANA, cursor: 'p2' }, 'tok-ana'],
+      ['studio-a', { ...VENTANA, cursor: 'p3' }, 'tok-ana'],
+    ])
+    expect(within(fila(/Lagree.*11:00/)).getByText('Reservada · lugar 1')).toBeTruthy()
+    expect(within(fila(/Lagree.*13:00/)).getByText('Reservada · lugar 2')).toBeTruthy()
+    expect(within(fila(/Lagree.*15:00/)).getByText('Reservada · lugar 5')).toBeTruthy()
+  })
+
+  it('sin sesión: ni franja ni marcas, y no se llama a ninguna de las dos lecturas', async () => {
+    const r = await horario()
+    expect(api.getCustomerCredits).not.toHaveBeenCalled()
+    expect(api.getMisReservasDeClase).not.toHaveBeenCalled()
+    expect(franja()).toBeNull()
+    expect(r.container.textContent).not.toMatch(/Reservada|Tu paquete|Incluida/)
+    expect(fila(/Lagree.*13:00/).disabled).toBe(true)
+    expect(within(fila(/Lagree.*11:00/)).getByText('$325 · clase suelta')).toBeTruthy()
+  })
+
+  it.each([
+    ['el saldo', () => vi.mocked(api.getCustomerCredits).mockRejectedValue(Object.assign(new Error('x'), { status: 500 }))],
+    ['sus reservas (SERVIDOR viejo, 404)', () => vi.mocked(api.getMisReservasDeClase).mockRejectedValue(Object.assign(new Error('x'), { status: 404 }))],
+  ])('si falla %s, el horario se ve igual sin esa parte y sin avisos de error', async (_que, fallar) => {
+    entrar('studio-a', SES_ANA)
+    vi.mocked(api.getMisReservasDeClase).mockResolvedValue(pagina([mia('s-11', { spotIds: ['3'] })]))
+    fallar()
+    await horario()
+    const fallaElSaldo = _que === 'el saldo'
+    expect(franja()).toBe(fallaElSaldo ? null : 'Hola, Ana · tienes 4 sesiones de Lagree · vencen el 11 dic')
+    expect(fila(/Lagree.*11:00/).textContent?.includes('Reservada · lugar 3')).toBe(fallaElSaldo)
+    expect(fila(/Lagree.*15:00/)).toBeTruthy()
+    expect(state.toastMessage.value).toBeNull()
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+
+  it('dos <avoqado-booking> de dos estudios: cada uno pinta sólo el nombre, saldo y reservas de SU estudio', async () => {
+    entrar('studio-a', SES_ANA)
+    entrar('studio-b', SES_BEA) // el último en montarse: las señales compartidas son de Bea
+    vi.mocked(api.getVenueInfo).mockImplementation(async slug => ({ ...estudio, slug, name: slug === 'studio-a' ? 'Studio A' : 'Studio B' }))
+    vi.mocked(api.getClassSessionsRange).mockImplementation(async slug => ({
+      ...VENTANA, slots: [clase(slug === 'studio-a' ? 'sa-11' : 'sb-11', '2026-10-08T17:00:00Z')],
+    }))
+    vi.mocked(api.getCustomerCredits).mockImplementation(async (slug: string) => slug === 'studio-a'
+      ? saldo({ id: 'ba', restante: 4, original: 5, vence: '2026-12-11T18:00:00Z' })
+      : saldo({ id: 'bb', restante: 2, original: 10, vence: '2026-12-20T18:00:00Z' }))
+    vi.mocked(api.getMisReservasDeClase).mockImplementation(async (slug: string) =>
+      pagina([slug === 'studio-a' ? mia('sa-11', { spotIds: ['3'] }) : mia('sb-11', { spotIds: ['7'] })]))
+    window.history.replaceState({}, '', '/pagina-con-dos-estudios')
+    const a = render(<BookingFlow props={{ ...props('studio-a'), flowType: 'classes' }} />)
+    const b = render(<BookingFlow props={{ ...props('studio-b'), flowType: 'classes' }} />)
+    await flush(); await flush()
+    const enA = a.container as HTMLElement
+    const enB = b.container as HTMLElement
+    expect(franja(enA)).toBe('Hola, Ana · tienes 4 sesiones de Lagree · vencen el 11 dic')
+    expect(franja(enB)).toBe('Hola, Bea · tienes 2 sesiones de Lagree · vencen el 20 dic')
+    expect(within(fila(/Lagree.*11:00/, enA)).getByText('Reservada · lugar 3')).toBeTruthy()
+    expect(within(fila(/Lagree.*11:00/, enB)).getByText('Reservada · lugar 7')).toBeTruthy()
+    expect(enA.textContent).not.toMatch(/Bea|lugar 7|2 de 10/)
+    expect(enB.textContent).not.toMatch(/Ana|lugar 3|4 de 5/)
+    // Cada lectura sale con el token de SU estudio.
+    for (const [slug, , token] of [...vi.mocked(api.getCustomerCredits).mock.calls, ...vi.mocked(api.getMisReservasDeClase).mock.calls]) {
+      expect(token).toBe(slug === 'studio-a' ? 'tok-ana' : 'tok-bea')
+    }
+  })
+
+  it('cambia de cuenta en el mismo estudio: lo de Ana se borra al instante y su respuesta tardía no se pinta', async () => {
+    let reservasDeAna!: (p: ReturnType<typeof pagina>) => void
+    vi.mocked(api.getCustomerCredits).mockImplementation((_s: string, _p: unknown, token: string) =>
+      token === 'tok-ana' ? Promise.resolve(saldo({ id: 'b5', restante: 4, original: 5, vence: '2026-12-11T18:00:00Z' })) : new Promise(() => {}))
+    vi.mocked(api.getMisReservasDeClase).mockImplementation((_s: string, _p: unknown, token: string) =>
+      token === 'tok-ana' ? new Promise(ok => { reservasDeAna = ok }) : new Promise(() => {}))
+    entrar('studio-a', SES_ANA)
+    await horario()
+    expect(franja()).toBe('Hola, Ana · tienes 4 sesiones de Lagree · vencen el 11 dic')
+    await act(async () => {
+      guardarSesion('studio-a', { ...SES_BEA, guardadaEn: Date.now() })
+      state.entroAqui('studio-a', leerSesion('studio-a')!)
+    })
+    await flush()
+    expect(franja()).toBeNull()
+    expect(document.body.textContent).not.toContain('4 de 5')
+    await act(async () => reservasDeAna(pagina([mia('s-11', { spotIds: ['3'] })]))); await flush()
+    expect(document.body.textContent).not.toContain('Reservada')
+    expect(api.getCustomerCredits).toHaveBeenCalledWith('studio-a', {}, 'tok-bea')
+    expect(api.getMisReservasDeClase).toHaveBeenCalledWith('studio-a', VENTANA, 'tok-bea')
   })
 })

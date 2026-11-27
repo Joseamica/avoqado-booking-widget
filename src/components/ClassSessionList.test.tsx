@@ -335,3 +335,43 @@ describe('Horario: semana tipo calendario (pantallas anchas)', () => {
     expect(screen.getByRole('button', { name: 'Lunes, 28 de diciembre' })).toBeTruthy()
   })
 })
+
+// Task 10: lo que la clienta ya tiene, en el horario (la franja, la ventana para sus reservas y los estados de su reserva).
+describe('Horario: lo que la clienta ya tiene', () => {
+  it('la franja de su paquete va arriba del horario, debajo del título', async () => {
+    await pintar([s11], { franja: <p class="avq-franja-prueba">Hola, Ana · tienes 4 sesiones de Lagree</p> })
+    const franja = screen.getByText('Hola, Ana · tienes 4 sesiones de Lagree')
+    const titulo = screen.getByRole('heading', { name: 'Próximas clases' })
+    expect(titulo.compareDocumentPosition(franja) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(franja.compareDocumentPosition(fila(/Lagree.*11:00/)) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it('avisa la ventana que pidió (para leer sus reservas con las mismas fechas), también al pedir más días', async () => {
+    const onVentana = vi.fn()
+    await pintar([s11], { onVentana })
+    expect(onVentana).toHaveBeenLastCalledWith({ dateFrom: '2026-11-26', dateTo: '2026-12-26' })
+    fireEvent.click(screen.getByRole('button', { name: 'Más fechas' }))
+    await flush()
+    expect(onVentana).toHaveBeenLastCalledWith({ dateFrom: '2026-11-26', dateTo: '2027-01-25' })
+  })
+
+  it('una reserva con el depósito pendiente dice «Falta pagar»; una que espera al estudio, «Por aprobar»', async () => {
+    const miReserva = (slot: PublicClassSessionSlot) =>
+      slot.classSessionId === 's-11' ? { lugar: '3', estado: 'faltaPagar' as const }
+        : slot.classSessionId === 's-13' ? { lugar: null, estado: 'porAprobar' as const } : null
+    await pintar([s11, s13, s15], { miReserva })
+    expect(within(fila(/Lagree.*11:00/)).getByText('Falta pagar')).toBeTruthy()
+    expect(fila(/Lagree.*11:00/).textContent).not.toContain('Reservada')
+    expect(within(fila(/Lagree.*13:00/)).getByText('Por aprobar')).toBeTruthy()
+    expect(fila(/Lagree.*15:00/).textContent).not.toMatch(/Falta pagar|Por aprobar|Reservada/)
+  })
+
+  it('con dos lugares en la misma clase: «Reservada · lugares 3, 4» (lista y semana)', async () => {
+    await pintar([s11], { miReserva: () => ({ lugar: '3', lugares: ['3', '4'] }) })
+    expect(within(fila(/Lagree.*11:00/)).getByText('Reservada · lugares 3, 4')).toBeTruthy()
+    cleanup()
+    pantalla(1024)
+    await pintar([s11], { miReserva: () => ({ lugar: null, estado: 'faltaPagar' as const }) })
+    expect(within(screen.getByRole('button', { name: /Lagree.*11:00/ })).getByText('Falta pagar')).toBeTruthy()
+  })
+})

@@ -12,8 +12,19 @@ import { Icono } from './ui/Icono'
 
 /** ¿Un paquete de la clienta cubre esta sesión? Por default, no. */
 export type CubreSesion = (slot: PublicClassSessionSlot) => boolean
+/**
+ * Cómo va su reserva en la sesión (r2 B5): `reservada` (confirmada o ya llegó), `faltaPagar` (`PENDING` con el depósito pendiente) o
+ * `porAprobar` (`PENDING` sin depósito que pagar: la aprueba el estudio).
+ */
+export type EstadoDeMiReserva = 'reservada' | 'faltaPagar' | 'porAprobar'
+/** Lo que el horario enseña de su reserva. `estado` por default `reservada`; `lugares` cuando apartó más de uno. */
+export interface ReservaEnLaSesion {
+  lugar: string | null
+  lugares?: string[]
+  estado?: EstadoDeMiReserva
+}
 /** La reserva de la clienta en esta sesión, si la tiene. Por default, ninguna. */
-export type MiReserva = (slot: PublicClassSessionSlot) => { lugar: string | null } | null
+export type MiReserva = (slot: PublicClassSessionSlot) => ReservaEnLaSesion | null
 
 export type Idioma = 'es' | 'en'
 export const idiomaDe = (t: TFunction): Idioma => (t('cuenta.intl').startsWith('en') ? 'en' : 'es')
@@ -106,9 +117,16 @@ export function textoDeLugares(t: TFunction, l: { estado: EstadoDeLugares; resta
   return l.restantes === 1 ? t('reservaClases.horario.lugar') : t('reservaClases.horario.lugares', { n: l.restantes })
 }
 
-export function textoDeReserva(t: TFunction, r: { lugar: string | null }): string {
+/** «Reservada · lugar 3», «Reservada · lugares 3, 4», «Reservada», «Falta pagar» o «Por aprobar». */
+export function textoDeReserva(t: TFunction, r: ReservaEnLaSesion): string {
+  if (r.estado === 'faltaPagar') return t('reservaClases.horario.faltaPagar')
+  if (r.estado === 'porAprobar') return t('reservaClases.horario.porAprobar')
+  if (r.lugares && r.lugares.length > 1) return t('reservaClases.horario.reservadaLugares', { lugares: r.lugares.join(', ') })
   return r.lugar ? t('reservaClases.horario.reservadaLugar', { lugar: r.lugar }) : t('reservaClases.horario.reservada')
 }
+
+/** Confirmada: la palomita en verde; lo que todavía espera algo (pago o aprobación): el reloj en ámbar. */
+export const reservaPendiente = (r: ReservaEnLaSesion) => r.estado === 'faltaPagar' || r.estado === 'porAprobar'
 
 /** «8 lugares» en verde, «2 lugares» en ámbar («pocos») o «Llena» en gris. */
 export function Lugares({ slot, t, conIcono = false }: { slot: PublicClassSessionSlot; t: TFunction; conIcono?: boolean }) {
@@ -129,7 +147,7 @@ export function nombreDeLaSesion(partes: Array<string | null | undefined | false
 }
 
 /** Una clase llena sólo se puede tocar si es de ella (para abrir su clase). */
-export const sePuedeTocar = (slot: PublicClassSessionSlot, reserva: { lugar: string | null } | null) =>
+export const sePuedeTocar = (slot: PublicClassSessionSlot, reserva: ReservaEnLaSesion | null) =>
   reserva != null || lugaresDeLaSesion(slot).estado !== 'llena'
 
 export type PrecioDeLaFila = { texto: string; incluida: boolean }
@@ -222,7 +240,7 @@ function FilaDeClase({ slot, dia, hora, precio, reserva, mostrarDuracion, onSele
   dia: string
   hora: string
   precio: PrecioDeLaFila | null
-  reserva: { lugar: string | null } | null
+  reserva: ReservaEnLaSesion | null
   mostrarDuracion: boolean
   onSelect: (slot: PublicClassSessionSlot) => void
   t: TFunction
@@ -257,9 +275,9 @@ function FilaDeClase({ slot, dia, hora, precio, reserva, mostrarDuracion, onSele
           {coach && textoLugares && <span aria-hidden="true"> · </span>}
           <Lugares slot={slot} t={t} />
         </span>
-        {textoReserva && (
-          <span class="avq-fila-reservada">
-            <Icono nombre="check" size={15} />
+        {reserva && textoReserva && (
+          <span class={`avq-fila-reservada${reservaPendiente(reserva) ? ' avq-fila-reservada--pendiente' : ''}`}>
+            <Icono nombre={reservaPendiente(reserva) ? 'reloj' : 'check'} size={15} />
             <span>{textoReserva}</span>
           </span>
         )}
@@ -319,6 +337,7 @@ const ESTILOS = `
   .avq-fila-accion--llena { border-color: var(--avq-border, #e7e5e4); color: var(--avq-muted-fg, #a8a29e); }
   .avq-fila-reservada { display: inline-flex; align-items: center; gap: 5px; font-size: 14px; font-weight: 600;
     color: var(--avq-success-fg, #15803d); }
+  .avq-fila-reservada--pendiente { color: var(--avq-warning-fg, #b45309); }
   .avq-horario-vacio { padding: 32px 8px; text-align: center; font-size: 14px; color: var(--avq-muted-fg, #6b7280); }
   /* Celular (≤ 640 px): letra para leer de 16–17 px, filas y botones de 56 px, bloques separados 24 px. */
   @media (max-width: 640px) {

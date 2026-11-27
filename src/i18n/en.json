@@ -599,7 +599,24 @@
       "llena": "Full",
       "reservar": "Book",
       "reservada": "Booked",
-      "reservadaLugar": "Booked · spot {{lugar}}"
+      "reservadaLugar": "Booked · spot {{lugar}}",
+      "reservadaLugares": "Booked · spots {{lugares}}",
+      "faltaPagar": "Payment due",
+      "porAprobar": "Awaiting approval"
+    },
+    "franja": {
+      "hola": "Hi, {{nombre}}",
+      "tienes": "you have {{n}} {{unidad}}",
+      "tienesIlimitado": "you have Unlimited",
+      "tienesIlimitadoDe": "you have Unlimited {{clase}}",
+      "vence": "expires {{fecha}}",
+      "vencen": "expire {{fecha}}",
+      "primerasVencen": "the first ones expire {{fecha}}"
+    },
+    "tuPaquete": {
+      "sesiones": "Your pack: {{restante}} of {{total}}",
+      "ilimitado": "Your pack: Unlimited",
+      "vence": "expires {{fecha}}"
     }
   }
 }

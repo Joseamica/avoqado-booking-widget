@@ -1,4 +1,4 @@
-import { h } from 'preact'
+import { h, type ComponentChildren } from 'preact'
 import { useEffect, useMemo, useState } from 'preact/hooks'
 import type { Product, PublicClassSessionSlot } from '../types'
 import type { TFunction } from '../i18n'
@@ -77,6 +77,13 @@ interface ClassSessionListProps {
   cubreSesion?: CubreSesion
   /** Su reserva en la sesión: «Reservada · lugar N», y una clase llena suya se puede tocar. Por default, ninguna. */
   miReserva?: MiReserva
+  /** Task 10: lo que va debajo del título y arriba de los días («Hola, Ana · tienes 4 sesiones de Lagree · …»). */
+  franja?: ComponentChildren
+  /**
+   * Task 10: la ventana de fechas que pide el horario (al montarse y cada vez que crece). Sus reservas se leen con las MISMAS
+   * `dateFrom`/`dateTo`: el SERVIDOR las lee con la misma función, así que toda clase suya del horario sale en esa lectura.
+   */
+  onVentana?: (ventana: { dateFrom: string; dateTo: string }) => void
   t: TFunction
 }
 
@@ -93,7 +100,7 @@ const MAX_DAYS = 60
  * una llena sólo si ya es suya. Used when flowType=classes.
  */
 export function ClassSessionList({
-  venueSlug, timezone, onSelect, onExit, venuePhone, onBuyPack, products, cubreSesion, miReserva, t,
+  venueSlug, timezone, onSelect, onExit, venuePhone, onBuyPack, products, cubreSesion, miReserva, franja, onVentana, t,
 }: ClassSessionListProps) {
   const [slots, setSlots] = useState<PublicClassSessionSlot[]>([])
   const [loading, setLoading] = useState(true)
@@ -124,6 +131,8 @@ export function ClassSessionList({
       atMaxWindow: windowDays >= MAX_DAYS,
     }
   }, [timezone, windowDays])
+
+  useEffect(() => { onVentana?.({ dateFrom, dateTo }) }, [dateFrom, dateTo])
 
   useEffect(() => {
     let cancelled = false
@@ -322,6 +331,8 @@ export function ClassSessionList({
           </div>
         )}
       </div>
+
+      {franja}
 
       {/* Filter chips with dropdowns. Container used to have overflowX:auto
        * for horizontal scroll on narrow viewports, but the CSS spec quirk

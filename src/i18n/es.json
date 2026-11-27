@@ -599,7 +599,24 @@
       "llena": "Llena",
       "reservar": "Reservar",
       "reservada": "Reservada",
-      "reservadaLugar": "Reservada · lugar {{lugar}}"
+      "reservadaLugar": "Reservada · lugar {{lugar}}",
+      "reservadaLugares": "Reservada · lugares {{lugares}}",
+      "faltaPagar": "Falta pagar",
+      "porAprobar": "Por aprobar"
+    },
+    "franja": {
+      "hola": "Hola, {{nombre}}",
+      "tienes": "tienes {{n}} {{unidad}}",
+      "tienesIlimitado": "tienes Ilimitado",
+      "tienesIlimitadoDe": "tienes Ilimitado de {{clase}}",
+      "vence": "vence el {{fecha}}",
+      "vencen": "vencen el {{fecha}}",
+      "primerasVencen": "las primeras vencen el {{fecha}}"
+    },
+    "tuPaquete": {
+      "sesiones": "Tu paquete: {{restante}} de {{total}}",
+      "ilimitado": "Tu paquete: Ilimitado",
+      "vence": "vence el {{fecha}}"
     }
   }
 }

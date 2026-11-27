@@ -4,12 +4,19 @@ import type { TFunction } from '../i18n'
 import { branding } from '../state/booking'
 import { InstructorAvatar } from './InstructorAvatar'
 import { precio } from '../lib/precio'
+import type { MiLugarEnLaClase } from './useMisClases'
 
 interface ClassDetailViewProps {
   /** The slot the customer tapped on the listing. */
   slot: PublicClassSessionSlot
   /** The matching product object (resolved by parent from venueInfo.products). */
   product: Product | null
+  /**
+   * Task 10: su lugar en ESTA clase si ya la reservó (`null` si no, o sin sesión). Se llega aquí tocando la clase marcada en el
+   * horario, también si está llena; Task 11 dibuja con él la caja «Ya tienes lugar en esta clase» («Ver mi reserva» con su
+   * `principal.cancelSecret`).
+   */
+  miLugar?: MiLugarEnLaClase | null
   /** Venue timezone — controls date/time display. */
   timezone: string
   /** Forwarded to the parent. Customer hit "Reservar" — proceed to seat / form. */

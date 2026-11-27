@@ -43,6 +43,8 @@ import { CustomerPortal } from './CustomerPortal'
 import { leerCuenta } from '../state/miCuenta'
 import { ClassSessionList } from './ClassSessionList'
 import { ClassDetailView } from './ClassDetailView'
+import { TuPaqueteFranja } from './TuPaqueteFranja'
+import { useMisClases, type VentanaDelHorario } from './useMisClases'
 import { UnifiedLanding } from './UnifiedLanding'
 import { IdentidadDelNegocio } from './IdentidadDelNegocio'
 import { ClasesOCitas } from './ClasesOCitas'
@@ -204,6 +206,10 @@ export function BookingFlow({ props }: BookingFlowProps) {
   // back from detail returns to the listing; "Reservar" continues to seat
   // picker (if layoutConfig) or the form step.
   const [classDetailActive, setClassDetailActive] = useState(false)
+  // Task 10: la ventana de fechas que pidió el horario; sus reservas de clase se leen con las mismas (y Task 13 las vuelve a leer).
+  const [ventanaDelHorario, setVentanaDelHorario] = useState<VentanaDelHorario | null>(null)
+  const alAvisarVentana = (v: VentanaDelHorario) =>
+    setVentanaDelHorario(antes => (antes && antes.dateFrom === v.dateFrom && antes.dateTo === v.dateTo ? antes : { ...v }))
   const [buyingPackId, setBuyingPackId] = useState<string | null>(null)
   // El paquete que espera a que la clienta entre a su cuenta (sin sesión, «Comprar» abre «Entra a tu cuenta»), y su número de intento.
   const [checkoutPackId, setCheckoutPackId] = useState<string | null>(null)
@@ -1264,6 +1270,16 @@ export function BookingFlow({ props }: BookingFlowProps) {
     props.hostElement.dispatchEvent(new CustomEvent(name, { bubbles: true, composed: true, detail }))
   }
 
+  // Task 10: lo que la clienta ya tiene en ESTE estudio (saldo sin productId y sus clases reservadas en la ventana del horario), en el
+  // estado de esta instancia, nunca en las señales compartidas. Se vuelve a leer cada vez que el horario queda a la vista.
+  // Para Task 13: `misClases.paraRevisar` ({ slug, identidad, instancia, ventana, ultima, leer }).
+  const misClases = useMisClases(props.venue, {
+    activo: !!venueInfo.value && !showLanding && flowType.value === 'classes' && step.value < config.formStep
+      && !seatPickerActive && !classDetailActive && !showPortal.value,
+    ventana: ventanaDelHorario,
+    productos: venueInfo.value?.products ?? [],
+  })
+
   if (isLoading.value && !reservationSubmittingRef.current) {
     return (
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '64px 0', gap: '12px' }}>
@@ -2138,6 +2154,7 @@ export function BookingFlow({ props }: BookingFlowProps) {
           <ClassDetailView
             slot={selectedSlot.value as PublicClassSessionSlot}
             product={selectedProduct.value}
+            miLugar={misClases.reservaDe(selectedSlot.value as PublicClassSessionSlot)}
             timezone={resolveDisplayTz(info.timezone)}
             onBook={() => {
               setClassDetailActive(false)
@@ -2181,6 +2198,19 @@ export function BookingFlow({ props }: BookingFlowProps) {
                 // Con clases, el horario es la portada: no hay a dónde «volver» (y si hay citas, está «Clases | Citas»).
                 // Sólo un negocio sin clases (una liga /classes vieja) sale a lo que sí tiene.
                 onExit={tipos.clases === 0 ? () => irAlFlujo('appointments') : undefined}
+                // Task 10: con sesión, su paquete arriba, «Incluida» por sesión y sus clases marcadas (tocar la suya abre el detalle).
+                cubreSesion={misClases.cubreSesion}
+                miReserva={misClases.miReserva}
+                onVentana={alAvisarVentana}
+                franja={misClases.franja && (
+                  <TuPaqueteFranja
+                    nombre={misClases.cuenta?.cliente?.firstName ?? null}
+                    opciones={misClases.franja.opciones}
+                    nombreClase={misClases.franja.nombreClase}
+                    timeZone={info.timezone}
+                    t={t}
+                  />
+                )}
                 t={t}
               />
             </div>
@@ -2189,7 +2219,8 @@ export function BookingFlow({ props }: BookingFlowProps) {
                 info={info}
                 creditPacks={creditPacks.value}
                 onBuyPack={handleBuyPack}
-                customerInfo={customerInfo.value}
+                customerInfo={misClases.cuenta?.cliente ?? null}
+                tuPaquete={misClases.franja?.opciones[0] ?? null}
                 t={t}
               />
             </aside>

@@ -2,14 +2,22 @@ import { h } from 'preact'
 import type { PublicVenueInfo, CreditPackPublic } from '../types'
 import type { CustomerInfo } from '../state/booking'
 import type { TFunction } from '../i18n'
+import type { OpcionDePaquete } from '../lib/eleccionDePaquete'
 import { totalDeSesiones } from '../lib/credits'
 import { precio } from '../lib/precio'
+import { textoDeTuPaquete } from './TuPaqueteFranja'
 
 interface VenueSidebarCardProps {
   info: PublicVenueInfo
   creditPacks: CreditPackPublic[]
   onBuyPack: (packId: string) => void
+  /** La clienta con sesión en ESTE estudio (no la de las señales compartidas: con dos estudios en la página, cada uno la suya). */
   customerInfo: CustomerInfo | null
+  /**
+   * Task 10: el paquete que ya tiene (el que se usa por default). Entonces la tarjeta ya no le anuncia un paquete: dice «Tu paquete:
+   * 4 de 5 · vence el 11 dic».
+   */
+  tuPaquete?: OpcionDePaquete | null
   t: TFunction
 }
 
@@ -27,9 +35,10 @@ export function VenueSidebarCard({
   creditPacks,
   onBuyPack,
   customerInfo,
+  tuPaquete,
   t,
 }: VenueSidebarCardProps) {
-  const cheapestPack = creditPacks.length
+  const cheapestPack = !tuPaquete && creditPacks.length
     ? creditPacks.reduce((min, p) => (p.price < min.price ? p : min), creditPacks[0])
     : null
   const totalSessions = cheapestPack ? totalDeSesiones(cheapestPack.items) : 0
@@ -108,6 +117,23 @@ export function VenueSidebarCard({
         label="Zona horaria"
         value={info.timezone.split('/').pop()?.replace(/_/g, ' ') ?? info.timezone}
       />
+
+      {tuPaquete && (
+        <div
+          class="avq-tu-paquete"
+          style={{
+            marginTop: '16px',
+            padding: '14px 16px',
+            background: 'var(--avq-muted, #f8f9fb)',
+            border: '1px solid var(--avq-border, #e8eaed)',
+            borderRadius: '12px',
+            fontSize: '13px', fontWeight: '600', lineHeight: 1.4,
+            color: 'var(--avq-fg, #111827)',
+          }}
+        >
+          {textoDeTuPaquete(t, tuPaquete, info.timezone)}
+        </div>
+      )}
 
       {cheapestPack && (
         <button
