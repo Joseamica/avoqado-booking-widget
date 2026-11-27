@@ -24,7 +24,10 @@ export type NombreIcono =
   | "atras"
   | "correo"
   | "globo"
-  | "frente";
+  | "frente"
+  | "asiento"
+  | "anterior"
+  | "siguiente";
 
 /** Trazos de 24×24, a mano, en la misma familia (Lucide-like). Cada uno es un conjunto de `d` de path. */
 const TRAZOS: Record<NombreIcono, string[]> = {
@@ -106,6 +109,12 @@ const TRAZOS: Record<NombreIcono, string[]> = {
     "M5 21a7 7 0 0 1 14 0",
     "M9 12.5 12 15l3-2.5",
   ],
+  asiento: [
+    "M5 9h14a2 2 0 0 1 2 2v2a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-2a2 2 0 0 1 2-2Z",
+    "M6 15v3M18 15v3",
+  ],
+  anterior: ["M15 18l-6-6 6-6"],
+  siguiente: ["M9 18l6-6-6-6"],
 };
 
 /** Un ícono de trazo (1.75, puntas redondas, `currentColor`); decorativo: el texto lo dice quien lo usa. */

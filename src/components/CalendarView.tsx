@@ -1,8 +1,14 @@
 import { h } from 'preact'
-import { useMemo, useState } from 'preact/hooks'
+import { useEffect, useMemo, useState } from 'preact/hooks'
 import type { PublicClassSessionSlot } from '../types'
 import type { TFunction } from '../i18n'
-import { InstructorAvatar } from './InstructorAvatar'
+import { encabezadoDeDia } from '../lib/fechas'
+import { Icono } from './ui/Icono'
+import {
+  ESTILOS_LUGARES, Lugares, diaCorto, diaDeLaSesion, duracion, horaDeLaSesion, idiomaDe, minutosDeLaSesion, nombreDeCoach,
+  nombreDeLaSesion, numeroDelDia, sePuedeTocar, sumarDias, textoDeLugares, lugaresDeLaSesion, textoDeReserva,
+} from './ListaDelHorario'
+import type { MiReserva } from './ListaDelHorario'
 
 interface CalendarViewProps {
   /** Same slots the ClassSessionList consumes — already sorted by startsAt server-side. */
@@ -13,426 +19,185 @@ interface CalendarViewProps {
   onSelect: (slot: PublicClassSessionSlot) => void
   /** Reference "now" for testability. Defaults to Date.now() at render time. */
   nowMs?: number
+  /** Su reserva en la sesión: la tarjeta dice «Reservada · lugar N» y, aunque la clase esté llena, se puede tocar. */
+  miReserva?: MiReserva
+  mostrarDuracion?: boolean
+  /** Último día (YYYY-MM-DD, incluido) que ya trajo el horario. */
+  ultimoDia?: string
+  /** Si quedan días por traer: se piden al llegar a una semana que pasa de `ultimoDia`. */
+  onNecesitaMasDias?: () => void
   t: TFunction
 }
 
-const DAY_NAMES_ES = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb']
-const DAY_NAMES_EN = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
-
-/** Build the week starting Sunday containing the date. Returns array of YYYY-MM-DD strings. */
-function buildWeek(centerDateStr: string, timezone: string): string[] {
-  const center = new Date(`${centerDateStr}T12:00:00Z`)
-  // Compute the day-of-week in venue tz to find Sunday offset.
-  const dowName = center.toLocaleDateString('en-US', { weekday: 'short', timeZone: timezone })
-  const dowMap: Record<string, number> = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 }
-  const dow = dowMap[dowName] ?? 0
-  const days: string[] = []
-  for (let i = 0; i < 7; i++) {
-    const d = new Date(center)
-    d.setUTCDate(d.getUTCDate() + (i - dow))
-    days.push(d.toLocaleDateString('en-CA', { timeZone: timezone }))
-  }
-  return days
-}
-
-/** Convert ISO startsAt to a YYYY-MM-DD bucket key in the venue tz. */
-function isoToVenueDate(iso: string, timezone: string): string {
-  return new Date(iso).toLocaleDateString('en-CA', { timeZone: timezone })
-}
-
-function formatTimeOfDay(iso: string, timezone: string, locale: 'en' | 'es'): string {
-  const d = new Date(iso)
-  return d.toLocaleTimeString(locale === 'es' ? 'es-MX' : 'en-US', {
-    hour: 'numeric',
-    minute: '2-digit',
-    hour12: locale === 'en',
-    timeZone: timezone,
-  })
-}
-
-/* Variant palette removed — Square's class calendar uses a single neutral
- * surface throughout. Capacity tier (full / low / open) is signaled via a
- * small dot in the card corner instead of bg color shifting. */
-
-export function CalendarView({ slots, timezone, onSelect, nowMs, t }: CalendarViewProps) {
+/**
+ * Semana tipo calendario (diseño 27-nov, `portada-v3`): siete columnas desde hoy, cada una con su día («HOY · JUE 26»)
+ * y sus clases: hora, duración de la sesión, clase, coach y lugares. Las flechas mueven una semana.
+ */
+export function CalendarView({
+  slots, timezone, onSelect, nowMs, miReserva, mostrarDuracion = true, ultimoDia, onNecesitaMasDias, t,
+}: CalendarViewProps) {
   const now = nowMs ?? Date.now()
-  const locale: 'en' | 'es' = (t('classList.today') === 'Today' ? 'en' : 'es')
-  const dayNames = locale === 'es' ? DAY_NAMES_ES : DAY_NAMES_EN
-  const todayKey = new Date(now).toLocaleDateString('en-CA', { timeZone: timezone })
+  const idioma = idiomaDe(t)
+  const hoy = diaDeLaSesion(new Date(now).toISOString(), timezone)
 
-  // Track the "anchor" date the customer is viewing. Defaults to today; arrows
-  // shift by 7 days. We don't refetch slots when shifting — slots come from the
-  // parent's range fetch, which already covers ~30 days ahead. So this is purely
-  // a viewport shift over the same data.
-  const [anchorDate, setAnchorDate] = useState<string>(todayKey)
-  const week = useMemo(() => buildWeek(anchorDate, timezone), [anchorDate, timezone])
+  // La semana empieza hoy (no el domingo pasado): no se gastan columnas en días que ya pasaron.
+  const [ancla, setAncla] = useState<string>(hoy)
+  const semana = useMemo(() => Array.from({ length: 7 }, (_, i) => sumarDias(ancla, i)), [ancla])
 
-  // Group slots by venue-local date once; cheap because slots are pre-sorted.
-  const byDate = useMemo(() => {
-    const map = new Map<string, PublicClassSessionSlot[]>()
+  const porDia = useMemo(() => {
+    const m = new Map<string, PublicClassSessionSlot[]>()
     for (const s of slots) {
-      const k = isoToVenueDate(s.startsAt, timezone)
-      const bucket = map.get(k)
-      if (bucket) bucket.push(s)
-      else map.set(k, [s])
+      const k = diaDeLaSesion(s.startsAt, timezone)
+      const lista = m.get(k)
+      if (lista) lista.push(s)
+      else m.set(k, [s])
     }
-    return map
+    return m
   }, [slots, timezone])
 
-  // Mobile: which day is "selected" for the day-list view. Defaults to today
-  // if today is in the visible week; otherwise the first day of the week.
-  const [selectedDay, setSelectedDay] = useState<string>(() => {
-    return week.includes(todayKey) ? todayKey : week[0]
-  })
+  // Una semana que pasa de lo ya traído pide los días que faltan (el horario trae 30 días y llega hasta 60).
+  const ultimoVisible = semana[6]
+  useEffect(() => {
+    if (ultimoDia && onNecesitaMasDias && ultimoVisible > ultimoDia) onNecesitaMasDias()
+  }, [ultimoVisible, ultimoDia])
 
-  function shiftWeek(direction: -1 | 1) {
-    const center = new Date(`${anchorDate}T12:00:00Z`)
-    center.setUTCDate(center.getUTCDate() + direction * 7)
-    const nextAnchor = center.toLocaleDateString('en-CA', { timeZone: timezone })
-    setAnchorDate(nextAnchor)
-    // If today is in the new week, prefer it; else first day.
-    const newWeek = buildWeek(nextAnchor, timezone)
-    setSelectedDay(newWeek.includes(todayKey) ? todayKey : newWeek[0])
-  }
+  const puedeAtras = ancla > hoy
+  const puedeAdelante = !(ultimoDia && !onNecesitaMasDias && sumarDias(ancla, 7) > ultimoDia)
 
-  // Month label from the first day of the visible week
-  const monthLabel = useMemo(() => {
-    const d = new Date(`${week[0]}T12:00:00Z`)
-    const ml = d.toLocaleDateString(locale === 'es' ? 'es-MX' : 'en-US', { month: 'long', year: 'numeric', timeZone: timezone })
-    return ml.charAt(0).toUpperCase() + ml.slice(1)
-  }, [week, timezone, locale])
+  const mes = useMemo(() => {
+    const [y, m, d] = semana[0].split('-').map(Number)
+    const texto = new Date(Date.UTC(y, m - 1, d, 12)).toLocaleDateString(idioma === 'en' ? 'en-US' : 'es-MX', {
+      month: 'long', year: 'numeric', timeZone: 'UTC',
+    })
+    return texto.charAt(0).toLocaleUpperCase() + texto.slice(1)
+  }, [semana, idioma])
 
   return (
-    <div class="avq-animate-in">
-      {/* Month + week shifters — Square style: month label centered between
-       * two minimal chevron buttons, no extra borders, no chunky pills. */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px', gap: '8px' }}>
+    <div class="avq-semana avq-animate-in">
+      <div class="avq-semana-nav">
         <button
           type="button"
-          onClick={() => shiftWeek(-1)}
-          aria-label={t('actions.goBack')}
-          style={navBtnStyle()}
+          class="avq-semana-flecha"
+          aria-label={t('reservaClases.horario.semanaAnterior')}
+          disabled={!puedeAtras}
+          onClick={() => setAncla(a => (a > hoy ? sumarDias(a, -7) : a))}
         >
-          <ChevronIcon dir="left" />
+          <Icono nombre="anterior" size={18} />
         </button>
-        <div style={{
-          fontSize: '17px',
-          fontWeight: '700',
-          color: 'var(--avq-fg, #111827)',
-          letterSpacing: '-0.01em',
-        }}>
-          {monthLabel}
-        </div>
+        <div class="avq-semana-mes">{mes}</div>
         <button
           type="button"
-          onClick={() => shiftWeek(1)}
-          aria-label={t('classList.loadMore')}
-          style={navBtnStyle()}
+          class="avq-semana-flecha"
+          aria-label={t('reservaClases.horario.semanaSiguiente')}
+          disabled={!puedeAdelante}
+          onClick={() => setAncla(a => sumarDias(a, 7))}
         >
-          <ChevronIcon dir="right" />
+          <Icono nombre="siguiente" size={18} />
         </button>
       </div>
 
-      {/* DESKTOP: 7-col week grid. Scroll horizontally if container is too narrow
-          to fit 7 × ~130px columns (e.g. when calendar opens inside the 560px
-          shell on a screen that hasn't gotten the wider class-flow layout yet). */}
-      <div class="avq-week-desktop" style={{
-        display: 'grid',
-        gridTemplateColumns: 'repeat(7, minmax(130px, 1fr))',
-        gap: '10px',
-        overflowX: 'auto',
-        WebkitOverflowScrolling: 'touch',
-        paddingBottom: '8px',
-      }}>
-        {week.map((dayKey, idx) => {
-          const isToday = dayKey === todayKey
-          const daySlots = byDate.get(dayKey) ?? []
-          const dayDate = new Date(`${dayKey}T12:00:00Z`).toLocaleDateString(locale === 'es' ? 'es-MX' : 'en-US', { day: 'numeric', timeZone: timezone })
+      <div class="avq-semana-dias">
+        {semana.map(dia => {
+          const esHoy = dia === hoy
+          const sesiones = porDia.get(dia) ?? []
+          const traido = !ultimoDia || dia <= ultimoDia
+          const encabezado = encabezadoDeDia(dia, now, timezone, idioma, t)
+          const corto = `${diaCorto(dia, idioma)} ${numeroDelDia(dia)}`
           return (
-            <div key={dayKey} style={{ display: 'flex', flexDirection: 'column', gap: '10px', minWidth: 0 }}>
-              <div style={{
-                padding: '0 2px 12px',
-                borderBottom: '1px solid var(--avq-border, #f1f3f5)',
-                textAlign: 'left',
-              }}>
-                <div style={{
-                  fontSize: '12px', fontWeight: '500',
-                  color: 'var(--avq-muted-fg, #6b7280)',
-                  textTransform: 'capitalize',
-                }}>
-                  {isToday ? (locale === 'es' ? 'Hoy' : 'Today') : dayNames[idx]}
-                </div>
-                <div style={{
-                  marginTop: '4px',
-                  display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                  minWidth: '34px', height: '34px',
-                  borderRadius: isToday ? '50%' : 0,
-                  background: isToday ? 'var(--avq-accent, #2563eb)' : 'transparent',
-                  color: isToday ? '#ffffff' : 'var(--avq-fg, #111827)',
-                  fontSize: '20px', fontWeight: '700',
-                  letterSpacing: '-0.02em',
-                  lineHeight: 1,
-                }}>{dayDate}</div>
+            <div key={dia} class="avq-semana-dia" role="group" aria-label={encabezado}>
+              <div class={`avq-semana-cabeza${esHoy ? ' avq-semana-cabeza--hoy' : ''}`}>
+                {esHoy ? `${t('reservaClases.hoy').toLocaleUpperCase()} · ${corto}` : corto}
               </div>
-
-              {daySlots.length === 0 ? (
-                <div style={{ padding: '20px 8px', textAlign: 'center', fontSize: '11px', color: 'var(--avq-muted-fg, #cbd1d8)' }}>—</div>
-              ) : daySlots.map(s => <SessionBlock key={s.classSessionId ?? s.startsAt} slot={s} timezone={timezone} locale={locale} t={t} onSelect={onSelect} />)}
+              {sesiones.length > 0
+                ? sesiones.map(s => (
+                  <TarjetaDeClase
+                    key={s.classSessionId ?? s.startsAt}
+                    slot={s}
+                    dia={encabezado}
+                    hora={horaDeLaSesion(s.startsAt, timezone, idioma)}
+                    reserva={miReserva ? miReserva(s) : null}
+                    mostrarDuracion={mostrarDuracion}
+                    onSelect={onSelect}
+                    t={t}
+                  />
+                ))
+                : traido && <div class="avq-semana-vacio">{t('reservaClases.horario.sinClases')}</div>}
             </div>
           )
         })}
       </div>
-
-      {/* MOBILE: date strip + day list */}
-      <div class="avq-week-mobile" style={{ display: 'none' }}>
-        <div
-          style={{
-            margin: '0 -16px 16px',
-            position: 'sticky',
-            top: '64px',
-            background: 'var(--avq-bg, #ffffff)',
-            zIndex: 5,
-            padding: '8px 0',
-            borderBottom: '1px solid var(--avq-border, #e8eaed)',
-          }}
-        >
-          <div style={{ display: 'flex', gap: '8px', overflowX: 'auto', padding: '0 16px 4px', WebkitOverflowScrolling: 'touch' }}>
-            {week.map((dayKey, idx) => {
-              const isActive = dayKey === selectedDay
-              const isToday = dayKey === todayKey
-              const hasClasses = (byDate.get(dayKey)?.length ?? 0) > 0
-              const dayDate = new Date(`${dayKey}T12:00:00Z`).toLocaleDateString(locale === 'es' ? 'es-MX' : 'en-US', { day: 'numeric', timeZone: timezone })
-              return (
-                <button
-                  type="button"
-                  key={dayKey}
-                  onClick={() => setSelectedDay(dayKey)}
-                  style={{
-                    flexShrink: 0,
-                    minWidth: '56px',
-                    padding: '10px 8px',
-                    borderRadius: '12px',
-                    background: isActive ? 'var(--avq-fg, #111827)' : 'var(--avq-bg, #ffffff)',
-                    border: '1px solid ' + (isActive ? 'var(--avq-fg, #111827)' : 'var(--avq-border, #e8eaed)'),
-                    color: isActive ? '#ffffff' : 'var(--avq-fg, #111827)',
-                    cursor: 'pointer',
-                    textAlign: 'center',
-                    position: 'relative',
-                  }}
-                >
-                  <div style={{
-                    fontSize: '10px', fontWeight: '600', letterSpacing: '0.5px', textTransform: 'uppercase',
-                    color: isActive ? 'rgba(255,255,255,0.75)' : 'var(--avq-muted-fg, #6b7280)',
-                  }}>{isToday ? (locale === 'es' ? 'Hoy' : 'Today') : dayNames[idx]}</div>
-                  <div style={{ fontSize: '17px', fontWeight: '700', marginTop: '4px' }}>{dayDate}</div>
-                  {hasClasses && (
-                    <span style={{
-                      position: 'absolute', bottom: '4px', left: '50%', transform: 'translateX(-50%)',
-                      width: '4px', height: '4px', borderRadius: '50%',
-                      background: isActive ? '#ffffff' : 'var(--avq-accent, #6366f1)',
-                    }} />
-                  )}
-                </button>
-              )
-            })}
-          </div>
-        </div>
-
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-          {(byDate.get(selectedDay) ?? []).length === 0 ? (
-            <div style={{ padding: '32px 8px', textAlign: 'center', fontSize: '13px', color: 'var(--avq-muted-fg, #9ca3af)' }}>
-              {t('classList.empty')}
-            </div>
-          ) : (
-            (byDate.get(selectedDay) ?? []).map(s => <SessionRow key={s.classSessionId ?? s.startsAt} slot={s} timezone={timezone} locale={locale} t={t} onSelect={onSelect} />)
-          )}
-        </div>
-      </div>
-
-      <style>{`
-        @media (max-width: 700px) {
-          .avq-week-desktop { display: none !important; }
-          .avq-week-mobile { display: block !important; }
-        }
-      `}</style>
+      <style>{ESTILOS}</style>
     </div>
   )
 }
 
-// ─── Subcomponents ────────────────────────────────────────────────────
-
-function SessionBlock({
-  slot,
-  timezone,
-  locale,
-  t,
-  onSelect,
-}: {
+function TarjetaDeClase({ slot, dia, hora, reserva, mostrarDuracion, onSelect, t }: {
   slot: PublicClassSessionSlot
-  timezone: string
-  locale: 'en' | 'es'
+  dia: string
+  hora: string
+  reserva: { lugar: string | null } | null
+  mostrarDuracion: boolean
+  onSelect: (slot: PublicClassSessionSlot) => void
   t: TFunction
-  onSelect: (s: PublicClassSessionSlot) => void
 }) {
-  const isFull = !slot.available || (slot.remaining ?? 0) === 0
-  const remaining = slot.remaining ?? 0
-  const lowStock = !isFull && remaining > 0 && remaining <= 3
-  // Capacity dot — single visual cue instead of full-width colored card.
-  // Open (green) → low (amber) → full (red). Subtle, top-right of the block.
-  const dotColor = isFull ? '#ef4444' : lowStock ? '#f59e0b' : '#10b981'
-  const instructorName = slot.instructor
-    ? `${slot.instructor.firstName} ${slot.instructor.lastName}`.trim()
-    : null
-
+  const lugares = lugaresDeLaSesion(slot)
+  const tocable = sePuedeTocar(slot, reserva)
+  const dur = mostrarDuracion ? duracion(minutosDeLaSesion(slot)) : ''
+  const coach = nombreDeCoach(slot, true)
+  const coachLargo = nombreDeCoach(slot)
+  const textoReserva = reserva ? textoDeReserva(t, reserva) : null
   return (
     <button
       type="button"
-      onClick={() => { if (!isFull) onSelect(slot) }}
-      disabled={isFull}
-      style={{
-        position: 'relative',
-        textAlign: 'left',
-        padding: '10px 12px',
-        background: 'var(--avq-bg, #ffffff)',
-        border: '1px solid var(--avq-border, #e8eaed)',
-        borderRadius: '10px',
-        cursor: isFull ? 'not-allowed' : 'pointer',
-        opacity: isFull ? 0.5 : 1,
-        transition: 'background 0.15s ease, border-color 0.15s ease',
-      }}
-      onMouseEnter={e => {
-        if (!isFull) {
-          (e.currentTarget as HTMLButtonElement).style.background = 'var(--avq-muted, #f8f9fb)'
-          ;(e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--avq-fg, #111827)'
-        }
-      }}
-      onMouseLeave={e => {
-        (e.currentTarget as HTMLButtonElement).style.background = 'var(--avq-bg, #ffffff)'
-        ;(e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--avq-border, #e8eaed)'
-      }}
+      class="avq-tarjeta"
+      data-estado={reserva ? 'reservada' : lugares.estado}
+      aria-label={nombreDeLaSesion([
+        slot.productName, dia, hora, dur, coachLargo && t('classList.withInstructor', { name: coachLargo }),
+        textoDeLugares(t, lugares), textoReserva,
+      ])}
+      disabled={!tocable}
+      onClick={() => { if (tocable) onSelect(slot) }}
     >
-      {/* Capacity dot top-right */}
-      <span
-        aria-hidden="true"
-        title={isFull ? t('classList.fullClass') : t('classList.spotsLeftBadge', { count: remaining })}
-        style={{
-          position: 'absolute', top: '8px', right: '8px',
-          width: '6px', height: '6px', borderRadius: '50%',
-          background: dotColor,
-        }}
-      />
-      <div style={{
-        fontSize: '12px', fontWeight: '700',
-        color: 'var(--avq-fg, #111827)',
-        fontVariantNumeric: 'tabular-nums',
-        paddingRight: '12px',
-      }}>
-        {formatTimeOfDay(slot.startsAt, timezone, locale)}
-      </div>
-      <div style={{
-        fontSize: '13px', fontWeight: '600',
-        color: 'var(--avq-fg, #111827)',
-        marginTop: '4px', lineHeight: 1.3,
-        overflow: 'hidden', textOverflow: 'ellipsis',
-        display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' as any,
-      }}>
-        {slot.productName}
-      </div>
-      {instructorName && (
-        <div style={{
-          display: 'flex', alignItems: 'center', gap: '5px',
-          marginTop: '6px',
-          fontSize: '11px', color: 'var(--avq-muted-fg, #6b7280)',
-        }}>
-          <InstructorAvatar instructor={slot.instructor} size={16} />
-          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {instructorName}
+      <span class="avq-tarjeta-hora">{hora}</span>
+      {dur && <span class="avq-tarjeta-dur">{dur}</span>}
+      <span class="avq-tarjeta-clase">{slot.productName}</span>
+      {coach && <span class="avq-tarjeta-coach">{coach}</span>}
+      <span class="avq-tarjeta-lugares">
+        {textoReserva ? (
+          <span class="avq-tarjeta-reservada">
+            <Icono nombre="check" size={13} />
+            <span>{textoReserva}</span>
           </span>
-        </div>
-      )}
-    </button>
-  )
-}
-
-function SessionRow({
-  slot,
-  timezone,
-  locale,
-  t,
-  onSelect,
-}: {
-  slot: PublicClassSessionSlot
-  timezone: string
-  locale: 'en' | 'es'
-  t: TFunction
-  onSelect: (s: PublicClassSessionSlot) => void
-}) {
-  const isFull = !slot.available || (slot.remaining ?? 0) === 0
-  const remaining = slot.remaining ?? 0
-  return (
-    <button
-      type="button"
-      onClick={() => { if (!isFull) onSelect(slot) }}
-      disabled={isFull}
-      style={{
-        display: 'grid',
-        gridTemplateColumns: '56px 1fr auto',
-        gap: '12px',
-        alignItems: 'center',
-        padding: '12px 14px',
-        borderRadius: '12px',
-        background: 'var(--avq-bg, #ffffff)',
-        border: '1px solid var(--avq-border, #e8eaed)',
-        cursor: isFull ? 'not-allowed' : 'pointer',
-        opacity: isFull ? 0.55 : 1,
-        textAlign: 'left',
-        width: '100%',
-      }}
-    >
-      <div style={{ fontSize: '14px', fontWeight: '700', color: 'var(--avq-fg, #111827)', fontVariantNumeric: 'tabular-nums' }}>
-        {formatTimeOfDay(slot.startsAt, timezone, locale)}
-      </div>
-      <div style={{ minWidth: 0 }}>
-        <div style={{ fontSize: '14px', fontWeight: '600', color: 'var(--avq-fg, #111827)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          {slot.productName}
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '5px', marginTop: '3px', fontSize: '11px', color: 'var(--avq-muted-fg, #6b7280)' }}>
-          <InstructorAvatar instructor={slot.instructor} size={18} />
-          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {slot.instructor ? `${slot.instructor.firstName} ${slot.instructor.lastName}`.trim() : t('classList.noInstructor')}
-          </span>
-        </div>
-      </div>
-      <span style={{
-        padding: '4px 10px', borderRadius: '999px', fontSize: '11px', fontWeight: '600', whiteSpace: 'nowrap',
-        background: isFull ? '#fee2e2' : '#dcfce7',
-        color: isFull ? '#b91c1c' : '#166534',
-      }}>
-        {isFull ? t('classList.fullClass') : t('classList.spotsLeftBadge', { count: remaining })}
+        ) : <Lugares slot={slot} t={t} conIcono />}
       </span>
     </button>
   )
 }
 
-function navBtnStyle(): h.JSX.CSSProperties {
-  return {
-    width: '36px',
-    height: '36px',
-    borderRadius: '50%',
-    border: '1px solid var(--avq-border, #e8eaed)',
-    background: 'var(--avq-bg, #ffffff)',
-    cursor: 'pointer',
-    display: 'inline-flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    color: 'var(--avq-fg, #111827)',
-  }
-}
-
-function ChevronIcon({ dir }: { dir: 'left' | 'right' }) {
-  return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      {dir === 'left' ? <polyline points="15 18 9 12 15 6" /> : <polyline points="9 18 15 12 9 6" />}
-    </svg>
-  )
-}
+const ESTILOS = `
+  ${ESTILOS_LUGARES}
+  .avq-semana-nav { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 16px; }
+  .avq-semana-mes { font-size: 16px; font-weight: 700; color: var(--avq-fg, #111827); letter-spacing: -0.01em; }
+  .avq-semana-flecha { width: 40px; height: 40px; border-radius: 50%; border: 1px solid var(--avq-border, #e8eaed);
+    background: var(--avq-bg, #ffffff); color: var(--avq-fg, #111827); display: inline-flex; align-items: center;
+    justify-content: center; cursor: pointer; }
+  .avq-semana-flecha:disabled { opacity: 0.35; cursor: default; }
+  .avq-semana-dias { display: grid; grid-template-columns: repeat(7, minmax(112px, 1fr)); gap: 8px; overflow-x: auto;
+    -webkit-overflow-scrolling: touch; padding-bottom: 8px; }
+  .avq-semana-dia { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+  .avq-semana-cabeza { font-size: 11px; font-weight: 700; letter-spacing: 0.05em; color: var(--avq-muted-fg, #78716c);
+    text-align: center; padding-bottom: 6px; border-bottom: 1px solid var(--avq-border, #ece9e6); white-space: nowrap; }
+  .avq-semana-cabeza--hoy { color: var(--avq-accent, #3b2a4a); }
+  .avq-semana-vacio { padding: 16px 4px; text-align: center; font-size: 12px; color: var(--avq-muted-fg, #a8a29e); }
+  .avq-tarjeta { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; width: 100%; padding: 8px 10px;
+    text-align: left; border: 1px solid var(--avq-border, #ece9e6); border-radius: 10px; background: var(--avq-bg, #ffffff);
+    color: var(--avq-fg, #111827); font: inherit; cursor: pointer; transition: border-color 0.15s ease, background 0.15s ease; }
+  .avq-tarjeta:hover:not(:disabled) { border-color: var(--avq-fg, #111827); }
+  .avq-tarjeta:disabled { background: var(--avq-muted, #fafaf9); color: var(--avq-muted-fg, #a8a29e); cursor: not-allowed; }
+  .avq-tarjeta-hora { font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .avq-tarjeta-dur, .avq-tarjeta-coach { font-size: 11px; color: var(--avq-muted-fg, #78716c); }
+  .avq-tarjeta-clase { margin-top: 3px; font-size: 13px; font-weight: 600; line-height: 1.3; overflow: hidden;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+  .avq-tarjeta-lugares { margin-top: 5px; font-size: 11px; }
+  .avq-tarjeta-reservada { display: inline-flex; align-items: center; gap: 4px; font-weight: 600; color: var(--avq-success-fg, #15803d); }
+`

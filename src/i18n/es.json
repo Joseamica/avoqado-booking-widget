@@ -263,24 +263,16 @@
   },
   "classList": {
     "title": "Próximas clases",
-    "subtitle": "Selecciona una clase para reservar",
     "today": "Hoy",
-    "tomorrow": "Mañana",
     "loading": "Cargando clases…",
-    "empty": "No hay clases programadas en los próximos días",
     "emptyTitle": "Aún no hay clases programadas",
     "emptySubtitle": "Vuelve pronto o contacta al estudio para confirmar próximas fechas.",
     "emptyContact": "Contactar al estudio",
     "emptyBuyPack": "Comprar paquete",
-    "loadMore": "Cargar más clases",
     "fullClass": "Lleno",
     "spotsLeftBadge": "{{count}} disponibles",
     "spotsLeftBadge_one": "{{count}} disponible",
     "withInstructor": "con {{name}}",
-    "noInstructor": "Sin instructor asignado",
-    "viewLabel": "Mostrar",
-    "viewList": "Lista",
-    "viewCalendar": "Calendario",
     "filterClasses": "Todas las clases",
     "filterInstructors": "Todos los instructores",
     "filterRooms": "Todas las salas"
@@ -589,6 +581,23 @@
       "ayudaClases": "Clases en grupo con horario fijo",
       "ayudaCitas": "Sesiones sólo para ti: eliges el servicio, el día y la hora",
       "escribenos": "Escríbenos"
+    },
+    "horario": {
+      "vista": "Vista del horario",
+      "semana": "Semana",
+      "lista": "Lista",
+      "dias": "Días con clases",
+      "masFechas": "Más fechas",
+      "semanaAnterior": "Semana anterior",
+      "semanaSiguiente": "Semana siguiente",
+      "sinClases": "Sin clases",
+      "sinResultados": "No hay clases con estos filtros",
+      "lugar": "1 lugar",
+      "lugares": "{{n}} lugares",
+      "llena": "Llena",
+      "reservar": "Reservar",
+      "reservada": "Reservada",
+      "reservadaLugar": "Reservada · lugar {{lugar}}"
     }
   }
 }
