@@ -550,5 +550,15 @@
     "reentrar": "Sign in again to change your number",
     "reentrarAyuda": "For your security, first confirm your WhatsApp or email with a code.",
     "noCambio": "Your number didn't change."
+  },
+  "reservaClases": {
+    "incluida": "Included in your pack",
+    "claseSuelta": "{{precio}} · drop-in class",
+    "sesionDe": "{{clase}} session",
+    "sesionesDe": "{{clase}} sessions",
+    "credito": "credit",
+    "creditos": "credits",
+    "hoy": "Today",
+    "manana": "Tomorrow"
   }
 }

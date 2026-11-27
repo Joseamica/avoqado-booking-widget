@@ -313,6 +313,9 @@ export interface CreditPackPublic {
   price: number
   currency: string
   validityDays?: number
+  /** Etiqueta opcional del paquete (un SERVIDOR viejo no la manda). */
+  badgeText?: string | null
+  badgeIcon?: string | null
   items: {
     id: string
     productId: string

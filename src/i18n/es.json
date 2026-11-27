@@ -550,5 +550,15 @@
     "reentrar": "Entra otra vez para cambiar tu número",
     "reentrarAyuda": "Por seguridad, primero confirma tu WhatsApp o tu correo con un código.",
     "noCambio": "Tu número no cambió."
+  },
+  "reservaClases": {
+    "incluida": "Incluida en tu paquete",
+    "claseSuelta": "{{precio}} · clase suelta",
+    "sesionDe": "sesión de {{clase}}",
+    "sesionesDe": "sesiones de {{clase}}",
+    "credito": "crédito",
+    "creditos": "créditos",
+    "hoy": "Hoy",
+    "manana": "Mañana"
   }
 }
