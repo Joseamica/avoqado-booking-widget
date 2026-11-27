@@ -317,6 +317,18 @@ export interface PublicBookingResult {
    * what the customer owes when they arrive. Show a "pay at venue" banner.
    */
   owesAtVenue?: boolean
+  /**
+   * Task 1b: sólo con canje, el saldo del paquete canjeado DESPUÉS de canjear (leído en la misma transacción; `remaining: 0` si usó
+   * la última). Un SERVIDOR viejo no lo manda. En un Ilimitado `remaining`/`original` son internos (≈99,998/99,999): nunca se enseñan.
+   */
+  creditBalance?: {
+    balanceId: string
+    packName: string
+    remaining: number
+    original: number
+    unlimited: boolean
+    expiresAt: string | null
+  }
 }
 
 // Credit Pack types for public widget
@@ -407,6 +419,10 @@ export interface PublicReservationDetail {
     quantity: number
     price: number
   }[]
+  /** Task 1b, sólo en una reserva de clase: el nombre de la clase, su coach y los lugares GUARDADOS (nunca re-buscados en el mapa). */
+  className?: string
+  instructorName?: string | null
+  spotIds?: string[]
 }
 
 /**

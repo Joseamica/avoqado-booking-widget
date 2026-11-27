@@ -706,6 +706,37 @@
       "invitadaAviso": "Si te llega la confirmación por correo o WhatsApp, tu lugar ya está apartado; si no te llega en unos minutos, intenta de nuevo.",
       "invitadaEscribe": "Escríbele al estudio antes de intentar de nuevo, para no apartar dos lugares.",
       "escribir": "Escribir al estudio"
+    },
+    "listo": {
+      "titulo": "¡Tu lugar está apartado!",
+      "teEsperamos": "Te esperamos, {{nombre}}",
+      "lugar": "Lugar {{lugar}}",
+      "lugares": "Lugares {{lugares}}",
+      "tuPaquete": "Tu paquete · {{paquete}}",
+      "sesion": "sesión",
+      "sesiones": "sesiones",
+      "usaste": "Usaste {{n}} {{unidad}}",
+      "teQuedan": "te quedan {{n}} de {{total}}",
+      "teQueda": "te queda {{n}} de {{total}}",
+      "vencenParen": "(vencen el {{fecha}})",
+      "venceParen": "(vence el {{fecha}})",
+      "ultima": "Usaste tu última sesión de este paquete",
+      "ultimas": "Usaste tus últimas {{n}} sesiones de este paquete",
+      "ultimoCredito": "Usaste tu último crédito de este paquete",
+      "ultimosCreditos": "Usaste tus últimos {{n}} créditos de este paquete",
+      "ilimitado": "Usaste tu Ilimitado",
+      "verPaquetes": "Ver paquetes",
+      "pagaste": "Pagaste {{monto}} con tarjeta",
+      "pagasteSinMonto": "Pagaste con tarjeta",
+      "enElEstudio": "Pagas {{monto}} en el estudio",
+      "codigo": "Código de reserva",
+      "calendario": "Agregar a mi calendario",
+      "google": "Google Calendar",
+      "ics": "Apple u Outlook (.ics)",
+      "verMisReservas": "Ver mis reservas",
+      "verMiReserva": "Ver mi reserva",
+      "dudas": "¿Dudas? Escríbenos",
+      "otraClase": "Reservar otra clase"
     }
   }
 }

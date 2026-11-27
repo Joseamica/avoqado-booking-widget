@@ -10,6 +10,19 @@ import type { TFunction } from '../i18n'
 
 const DAY_MAP = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'] as const
 
+/**
+ * «Octubre de 2026» («October 2026») en el idioma del widget, sólo con la primera letra en mayúscula (Task 14): `format` sin
+ * idioma lo dejaba en inglés, y `text-transform: capitalize` habría escrito «Octubre De 2026».
+ */
+function nombreDelMes(mes: Date, intl: string): string {
+  try {
+    const s = new Intl.DateTimeFormat(intl, { month: 'long', year: 'numeric' }).format(mes)
+    return s.charAt(0).toLocaleUpperCase() + s.slice(1)
+  } catch {
+    return format(mes, 'MMMM yyyy')
+  }
+}
+
 interface DatePickerProps {
   selectedDate: string | null
   onSelect: (date: string) => void
@@ -81,8 +94,8 @@ export function DatePicker({ selectedDate, onSelect, maxAdvanceDays = 30, timezo
             <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
           </button>
 
-          <span style={{ fontSize: '15px', fontWeight: '600', color: 'var(--avq-fg, #111827)', textTransform: 'capitalize' }}>
-            {format(viewMonth, 'MMMM yyyy')}
+          <span style={{ fontSize: '15px', fontWeight: '600', color: 'var(--avq-fg, #111827)' }}>
+            {nombreDelMes(viewMonth, t('cuenta.intl'))}
           </span>
 
           <button

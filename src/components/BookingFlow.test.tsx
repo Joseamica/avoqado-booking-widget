@@ -691,7 +691,7 @@ afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.useRealTimers(); resetSign
 
 describe('BookingFlow deposit return through mounted components', () => {
   it.each([
-    ['es', 'jueves, 8 de octubre de 2026', '10:00 a.m. - 11:00 a.m.'],
+    ['es', 'Jueves, 8 de octubre de 2026', '10:00 a.m. - 11:00 a.m.'],
     ['en', 'Thursday, October 8, 2026', '10:00 AM - 11:00 AM'],
   ] as const)('passes widget %s locale into the managed reservation', async (locale, date, time) => {
     window.history.replaceState({}, '', '?manage=url-secret')
@@ -2632,7 +2632,9 @@ describe('Task 13: «Confirma tu reserva» — nada se reserva sin el botón, y 
     expect(screen.getByRole('heading', { name: '¡Tu lugar está apartado!' })).toBeTruthy()
     expect(texto()).toContain('Lagree')
     expect(texto()).toContain('Jueves 8 de octubre · 15:00')
-    expect(texto()).toContain('Con Fer · Lugar 3')
+    // Task 14: la misma pantalla que una reserva que respondió (la coach con su nombre y el lugar aparte).
+    expect(screen.getByText('Fer Ruiz')).toBeTruthy()
+    expect(screen.getByText('Lugar 3')).toBeTruthy()
     expect(api.createReservation).toHaveBeenCalledTimes(1)
     // La página se entera, como con una reserva que respondió.
     expect(confirmada).toHaveBeenCalledTimes(1)
@@ -2641,8 +2643,9 @@ describe('Task 13: «Confirma tu reserva» — nada se reserva sin el botón, y 
     expect(ultima(vi.mocked(api.getReservation).mock.calls)?.slice(0, 2)).toEqual(['studio-a', 'sec-nueva'])
     // La misma ventana del horario, con el token de su estudio.
     expect(ultima(vi.mocked(api.getMisReservasDeClase).mock.calls)).toEqual(['studio-a', VENTANA, 'tok-ana'])
-    fireEvent.click(boton('Ver mi reserva')); await flush()
-    expect(state.manageSecret.value).toBe('sec-nueva')
+    // Task 14: con cuenta, «Ver mis reservas» abre «Mi cuenta» (la invitada ve «Ver mi reserva»).
+    fireEvent.click(boton('Ver mis reservas')); await flush()
+    expect(state.showPortal.value).toBe(true)
   })
 
   it.each([
@@ -3129,5 +3132,132 @@ describe('Task 13: «Confirma tu reserva» — nada se reserva sin el botón, y 
     expect(screen.getByText('Usa 1 de tus 4 sesiones de Lagree')).toBeTruthy()
     await advance(60_000); await flush()
     expect(api.createReservation).not.toHaveBeenCalled()
+  })
+
+  describe('Task 14: «¡Tu lugar está apartado!» dice qué clase, con quién, en qué lugar y cuántas sesiones le quedan', () => {
+    const CON_SALDO = {
+      ...CONFIRMADA, creditRedeemed: true, creditsUsed: 1,
+      creditBalance: { balanceId: 'b5', packName: 'Paquete de 5', remaining: 3, original: 5, unlimited: false, expiresAt: '2026-12-11T18:00:00Z' },
+    }
+
+    it('con sesión y paquete: la clase, cuándo, la coach y el saldo que regresó el SERVIDOR; «Ver mis reservas» abre «Mi cuenta»', async () => {
+      entrar()
+      vi.mocked(api.createReservation).mockResolvedValueOnce(CON_SALDO)
+      await aConfirmar(enEstudio)
+      fireEvent.click(boton('Confirmar reserva')); await flush()
+      expect(screen.getByRole('heading', { name: '¡Tu lugar está apartado!' })).toBeTruthy()
+      expect(screen.getByText('Te esperamos, Ana')).toBeTruthy()
+      expect(screen.getByText('Lagree')).toBeTruthy()
+      expect(screen.getByText('Jueves 8 de octubre · 15:00 – 15:50')).toBeTruthy()
+      expect(screen.getByText('Fer Ruiz')).toBeTruthy()
+      expect(screen.getByText('Usaste 1 sesión · te quedan 3 de 5 (vencen el 11 dic)')).toBeTruthy()
+      expect(texto()).not.toMatch(/Reservación Confirmada|Gestionar Reservación| De /)
+      fireEvent.click(boton('Ver mis reservas')); await flush()
+      expect(state.showPortal.value).toBe(true)
+    })
+
+    it('con mapa y 2 lugares, SERVIDOR viejo (sin `creditBalance`): «Usaste 2 sesiones» y «Lugares 1, 3», sin saldo', async () => {
+      entrar()
+      vi.mocked(api.createReservation).mockResolvedValueOnce({ ...CONFIRMADA, creditRedeemed: true, creditsUsed: 2 })
+      await aConfirmar({ ...enEstudio, layoutConfig: DADO }, {}, ['1', '3'])
+      fireEvent.click(boton('Confirmar reserva')); await flush()
+      expect(screen.getByText('Usaste 2 sesiones')).toBeTruthy()
+      expect(screen.getByText('Lugares 1, 3')).toBeTruthy()
+      expect(texto()).not.toMatch(/te quedan|te queda/)
+    })
+
+    it('al gastar la última: «Usaste tu última sesión de este paquete» y «Ver paquetes» abre los paquetes del estudio', async () => {
+      entrar()
+      vi.mocked(api.getCreditPacks).mockResolvedValue([PAQ_LAGREE] as any)
+      vi.mocked(api.createReservation).mockResolvedValueOnce({ ...CON_SALDO, creditBalance: { ...CON_SALDO.creditBalance, remaining: 0 } })
+      await aConfirmar(enEstudio)
+      fireEvent.click(boton('Confirmar reserva')); await flush()
+      expect(screen.getByText('Usaste tu última sesión de este paquete')).toBeTruthy()
+      fireEvent.click(boton('Ver paquetes')); await flush()
+      expect(screen.getByRole('dialog')).toBeTruthy()
+    })
+
+    it('con su Ilimitado: «Usaste tu Ilimitado», nunca sus números internos', async () => {
+      entrar()
+      vi.mocked(api.getCustomerCredits).mockResolvedValue(saldo({ id: 'u1', restante: 0, original: 0, vence: '2026-12-20T18:00:00Z', ilimitado: true }))
+      vi.mocked(api.createReservation).mockResolvedValueOnce({
+        ...CONFIRMADA, creditRedeemed: true, creditsUsed: 1,
+        creditBalance: { balanceId: 'u1', packName: 'Mensual Ilimitado', remaining: 99998, original: 99999, unlimited: true, expiresAt: '2026-12-20T18:00:00Z' },
+      })
+      await aConfirmar(enEstudio)
+      fireEvent.click(boton('Confirmar reserva')); await flush()
+      expect(screen.getByText('Usaste tu Ilimitado (vence el 20 dic)')).toBeTruthy()
+      expect(texto()).not.toMatch(/9999/)
+    })
+
+    it('invitada en una clase que se paga en el estudio: «Pagas $325 en el estudio» y «Ver mi reserva» abre «Gestionar»', async () => {
+      await aConfirmar(enEstudio)
+      datosDeInvitada()
+      fireEvent.click(boton('Confirmar reserva')); await flush()
+      expect(screen.getByRole('heading', { name: '¡Tu lugar está apartado!' })).toBeTruthy()
+      expect(screen.getByText('Te esperamos, Ana')).toBeTruthy()
+      expect(screen.getByText('Pagas $325 en el estudio')).toBeTruthy()
+      expect(screen.queryByText(/Usaste/)).toBeNull()
+      expect(screen.queryByRole('button', { name: 'Ver mis reservas' })).toBeNull()
+      fireEvent.click(boton('Ver mi reserva')); await flush()
+      expect(state.manageSecret.value).toBe('sec-ok')
+    })
+
+    it('con la reserva a la vista entra otra cuenta del estudio ⇒ «No pudimos confirmar tu reserva», sin un dato de la de Ana', async () => {
+      entrar()
+      vi.mocked(api.createReservation).mockResolvedValueOnce(CON_SALDO)
+      await aConfirmar(enEstudio)
+      fireEvent.click(boton('Confirmar reserva')); await flush()
+      expect(screen.getByRole('heading', { name: '¡Tu lugar está apartado!' })).toBeTruthy()
+      await act(async () => { entrar(SES_BEA) }); await flush()
+      expect(screen.getByText('No pudimos confirmar tu reserva')).toBeTruthy()
+      expect(texto()).not.toMatch(/apartado|Usaste|Fer Ruiz|Te esperamos/)
+    })
+
+    it('«sí quedó» (Task 13) enseña la misma pantalla: sin saldo del SERVIDOR, «Usaste 1 sesión»', async () => {
+      entrar()
+      respuestaPerdida()
+      await aConfirmar(enEstudio)
+      fireEvent.click(boton('Confirmar reserva')); await flush()
+      await advance(2000); await flush()
+      expect(screen.getByRole('heading', { name: '¡Tu lugar está apartado!' })).toBeTruthy()
+      expect(screen.getByText('Usaste 1 sesión')).toBeTruthy()
+      expect(screen.getByText('Te esperamos, Ana')).toBeTruthy()
+      expect(document.querySelector('.avq-listo')).toBeTruthy()
+    })
+
+    describe('al volver de Stripe', () => {
+      const pagada = {
+        ...detail, confirmationCode: 'OK-9', startsAt: '2026-10-08T21:00:00Z', endsAt: '2026-10-08T21:50:00Z', duration: 50,
+        depositAmount: 325, depositStatus: 'PAID', status: 'CONFIRMED', className: 'Lagree', instructorName: 'Fer Ruiz', spotIds: ['3'],
+      }
+      async function volverDeStripe(reserva: object) {
+        sessionStorage.setItem('avq:pendingReservation:studio-a', JSON.stringify({ venue: 'studio-a', cancelSecret: 'sec-9', confirmationCode: 'OK-9', ref: 'r9' }))
+        window.history.replaceState({}, '', '/studio-a/classes?avq_payment=success&avq_ref=r9')
+        vi.mocked(api.getVenueInfo).mockResolvedValue({ ...venue, canCharge: true, products: [enLinea as any] })
+        vi.mocked(api.getClassSessionsRange).mockResolvedValue({ ...VENTANA, slots: [s15()] } as any)
+        vi.mocked(api.getReservation).mockResolvedValue(reserva as PublicReservationDetail)
+        render(<BookingFlow props={{ ...props(), flowType: 'classes' }} />); await flush(); await flush()
+      }
+
+      it('CONFIRMED y pagada: la misma pantalla, con la clase, la coach y el lugar guardados (del GET)', async () => {
+        await volverDeStripe(pagada)
+        expect(screen.getByRole('heading', { name: '¡Tu lugar está apartado!' })).toBeTruthy()
+        expect(screen.getByText('Jueves 8 de octubre · 15:00 – 15:50')).toBeTruthy()
+        expect(screen.getByText('Fer Ruiz')).toBeTruthy()
+        expect(screen.getByText('Lugar 3')).toBeTruthy()
+        expect(screen.getByText('Pagaste $325 con tarjeta')).toBeTruthy()
+        expect(screen.queryByText('Tu Reservación')).toBeNull()
+        fireEvent.click(boton('Ver mi reserva')); await flush()
+        expect(screen.getByText('Tu Reservación')).toBeTruthy()
+      })
+
+      it('el depósito todavía pendiente: «Gestionar» como hoy, con «Estamos confirmando el depósito»', async () => {
+        await volverDeStripe({ ...pagada, status: 'PENDING', depositStatus: 'PENDING' })
+        expect(screen.getByText('Tu Reservación')).toBeTruthy()
+        expect(screen.getByRole('status').textContent).toContain('Estamos confirmando el depósito')
+        expect(texto()).not.toContain('apartado')
+      })
+    })
   })
 })

@@ -1,4 +1,5 @@
 import { h } from 'preact'
+import type { ComponentChildren } from 'preact'
 import { useState, useEffect, useRef } from 'preact/hooks'
 import type { PublicReservationDetail, PublicVenueInfo } from '../types'
 import type { TFunction } from '../i18n'
@@ -23,6 +24,12 @@ interface ManageBookingProps {
   paymentUnfinished?: boolean
   /** D681: regresó por la liga «atrás» de Stripe (`cancel_url`). Sólo cambia el texto: el lugar lo suelta el aviso de Stripe. */
   paymentCancelled?: boolean
+  /**
+   * Task 14: al volver de Stripe, una reserva de CLASE ya `CONFIRMED` y con el depósito `PAID` enseña «¡Tu lugar está apartado!»
+   * (lo que pinta esta función) en vez de «Gestionar». Pendiente, fallida, vencida o reembolsada: «Gestionar» como hoy, con su espera
+   * y sus avisos. `verGestion` deja ver «Gestionar» de esta reserva.
+   */
+  confirmacionDeClase?: (reservation: PublicReservationDetail, verGestion: () => void) => ComponentChildren
 }
 
 const statusConfig: Record<string, { bg: string; text: string }> = {
@@ -34,8 +41,9 @@ const statusConfig: Record<string, { bg: string; text: string }> = {
   NO_SHOW: { bg: '#ffedd5', text: '#9a3412' },
 }
 
-export function ManageBooking({ venueSlug, cancelSecret, timezone, locale = 'es', venueInfo, t, onBack, depositReturn = false, paymentUnfinished = false, paymentCancelled = false }: ManageBookingProps) {
+export function ManageBooking({ venueSlug, cancelSecret, timezone, locale = 'es', venueInfo, t, onBack, depositReturn = false, paymentUnfinished = false, paymentCancelled = false, confirmacionDeClase }: ManageBookingProps) {
   const [reservation, setReservation] = useState<PublicReservationDetail | null>(null)
+  const [verGestion, setVerGestion] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [showCancel, setShowCancel] = useState(false)
@@ -110,6 +118,7 @@ export function ManageBooking({ venueSlug, cancelSecret, timezone, locale = 'es'
 
   useEffect(() => {
     setReservation(null)
+    setVerGestion(false)
     setShowCancel(false)
     setShowReschedule(false)
     setCancelReason('')
@@ -177,13 +186,22 @@ export function ManageBooking({ venueSlug, cancelSecret, timezone, locale = 'es'
     )
   }
 
+  if (
+    confirmacionDeClase && depositReturn && !verGestion && reservation.className
+    && reservation.status === 'CONFIRMED' && reservation.depositStatus === 'PAID'
+  ) {
+    return <>{confirmacionDeClase(reservation, () => setVerGestion(true))}</>
+  }
+
   const isCancelled = reservation.status === 'CANCELLED'
   const startDate = new Date(reservation.startsAt)
   const endDate = new Date(reservation.endsAt)
   const dateLocale = locale === 'en' ? 'en-US' : 'es-MX'
-  const dateStr = startDate.toLocaleDateString(dateLocale, {
+  // Sólo la primera letra en mayúscula: con `text-transform: capitalize` salía «Jueves, 8 De Octubre De 2026» (Task 14).
+  const fecha = startDate.toLocaleDateString(dateLocale, {
     weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', timeZone: timezone,
   })
+  const dateStr = fecha.charAt(0).toLocaleUpperCase() + fecha.slice(1)
   const timeStr = `${startDate.toLocaleTimeString(dateLocale, { hour: '2-digit', minute: '2-digit', timeZone: timezone })} - ${endDate.toLocaleTimeString(dateLocale, { hour: '2-digit', minute: '2-digit', timeZone: timezone })}`
 
   const sc = statusConfig[reservation.status] ?? statusConfig.COMPLETED
@@ -259,7 +277,7 @@ export function ManageBooking({ venueSlug, cancelSecret, timezone, locale = 'es'
             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--avq-muted-fg, #6b7280)" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
           </div>
           <div>
-            <p style={{ margin: 0, fontSize: '14px', fontWeight: '500', color: 'var(--avq-fg, #111827)', textTransform: 'capitalize' }}>{dateStr}</p>
+            <p style={{ margin: 0, fontSize: '14px', fontWeight: '500', color: 'var(--avq-fg, #111827)' }}>{dateStr}</p>
             <p style={{ margin: '2px 0 0', fontSize: '13px', color: 'var(--avq-muted-fg, #6b7280)' }}>{timeStr}</p>
           </div>
         </div>

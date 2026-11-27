@@ -60,9 +60,11 @@ export function AppointmentConfirmation({
   const startDate = new Date(booking.startsAt)
   const endDate = new Date(booking.endsAt)
 
-  const dateHeading = startDate.toLocaleDateString(locale === 'en' ? 'en-US' : 'es-MX', {
+  // Sólo la primera letra en mayúscula: con `text-transform: capitalize` salía «Jueves, 8 De Oct» (Task 14).
+  const fechaDeLaCita = startDate.toLocaleDateString(locale === 'en' ? 'en-US' : 'es-MX', {
     weekday: 'long', month: 'short', day: 'numeric', timeZone: venueInfo.timezone,
   })
+  const dateHeading = fechaDeLaCita.charAt(0).toLocaleUpperCase() + fechaDeLaCita.slice(1)
   const timeRange = `${formatTime(startDate, venueInfo.timezone)}–${formatTime(endDate, venueInfo.timezone)}`
 
   // Compute per-service timeslots from selectedProducts durations. When backend
@@ -162,7 +164,6 @@ export function AppointmentConfirmation({
           <h2 style={{
             margin: '0 0 4px', fontSize: '17px', fontWeight: '700',
             color: 'var(--avq-fg, #111827)',
-            textTransform: 'capitalize',
           }}>
             {dateHeading}
           </h2>

@@ -706,6 +706,37 @@
       "invitadaAviso": "If you get the confirmation by email or WhatsApp, your spot is reserved; if it doesn't arrive in a few minutes, try again.",
       "invitadaEscribe": "Message the studio before trying again, so you don't reserve two spots.",
       "escribir": "Message the studio"
+    },
+    "listo": {
+      "titulo": "Your spot is reserved!",
+      "teEsperamos": "See you soon, {{nombre}}",
+      "lugar": "Spot {{lugar}}",
+      "lugares": "Spots {{lugares}}",
+      "tuPaquete": "Your package · {{paquete}}",
+      "sesion": "session",
+      "sesiones": "sessions",
+      "usaste": "You used {{n}} {{unidad}}",
+      "teQuedan": "{{n}} of {{total}} left",
+      "teQueda": "{{n}} of {{total}} left",
+      "vencenParen": "(expiring {{fecha}})",
+      "venceParen": "(expiring {{fecha}})",
+      "ultima": "You used the last session of this package",
+      "ultimas": "You used the last {{n}} sessions of this package",
+      "ultimoCredito": "You used the last credit of this package",
+      "ultimosCreditos": "You used the last {{n}} credits of this package",
+      "ilimitado": "You used your Unlimited",
+      "verPaquetes": "See packages",
+      "pagaste": "You paid {{monto}} by card",
+      "pagasteSinMonto": "You paid by card",
+      "enElEstudio": "You pay {{monto}} at the studio",
+      "codigo": "Booking code",
+      "calendario": "Add to my calendar",
+      "google": "Google Calendar",
+      "ics": "Apple or Outlook (.ics)",
+      "verMisReservas": "View my bookings",
+      "verMiReserva": "View my booking",
+      "dudas": "Questions? Message us",
+      "otraClase": "Book another class"
     }
   }
 }

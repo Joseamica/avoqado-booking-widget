@@ -37,7 +37,7 @@ import { TimeSlotPicker } from './TimeSlotPicker'
 import { SeatPicker } from './SeatPicker'
 import { GuestInfoForm } from './GuestInfoForm'
 import { DepositStep } from './DepositStep'
-import { Confirmation } from './Confirmation'
+import { Confirmation, ConfirmacionDeClase, type CanjeDeLaReserva, type PagoDeLaClaseLista } from './Confirmation'
 import { ManageBooking } from './ManageBooking'
 import { Spinner } from './ui/Spinner'
 import { CreditPackBanner } from './CreditPackBanner'
@@ -98,6 +98,28 @@ interface PedidoDeClase {
   lugares: string[]
   /** Invitada: le llega un aviso de su reserva (se confirma al momento, sin pago en línea, y dio correo o teléfono). */
   leLlegaAviso: boolean
+  /** Task 14: cómo se pagó, fijado al tocar, para «¡Tu lugar está apartado!» (también tras «sí quedó», sin saldo del SERVIDOR). */
+  comoSePago: ComoSePago
+}
+type PagaCon = 'paquete' | 'ilimitado' | 'tarjeta' | 'estudio' | 'gratis'
+interface ComoSePago {
+  pagaCon: PagaCon
+  /** Los lugares: las sesiones que se descuentan (1 por lugar). */
+  sesiones: number
+  /** El paquete elegido es sólo de esta clase («sesión») o de varias («crédito»); `null` sin paquete. */
+  soloEstaClase: boolean | null
+  /** Lo que cuesta sin paquete (precio × lugares); `null` sin precio o con los precios apagados. */
+  precio: number | null
+}
+/** Task 14: la reserva de clase que respondió bien (en el estado de ESTA instancia, como la revisión), para su pantalla de «Listo». */
+interface ClaseLista {
+  slug: string
+  confirmationCode: string
+  pedido: PedidoDeClase
+  clase: string
+  coach: string | null
+  startsAt: string
+  endsAt: string
 }
 interface RevisionDeClase {
   estado: EstadoDeLaRevision
@@ -125,6 +147,12 @@ interface PlanDeLaConfirmacion {
   lugares: string[]
   otroLugar: boolean
   tz: string
+}
+
+/** «Fer Ruiz», la coach de la clase; `null` sin coach. */
+function nombreDelCoach(slot: Pick<PublicClassSessionSlot, 'instructor'> | null | undefined): string | null {
+  const i = slot?.instructor
+  return i ? `${i.firstName ?? ''} ${i.lastName ?? ''}`.trim() || null : null
 }
 
 /** Los códigos que ya tenía en ESA clase según la última lectura BUENA del horario (`null` si no la hubo). */
@@ -340,6 +368,7 @@ export function BookingFlow({ props }: BookingFlowProps) {
   const [revision, setRevision] = useState<RevisionDeClase | null>(null)
   const revisionRef = useRef<RevisionDeClase | null>(null)
   revisionRef.current = revision
+  const [claseLista, setClaseLista] = useState<ClaseLista | null>(null)
   /** El candado del toque en «Confirmar reserva»: un doble toque es UNA reserva (se suelta en `finally`). */
   const confirmandoRef = useRef(false)
   const entrarAbierto = useRef(false)
@@ -1447,6 +1476,62 @@ export function BookingFlow({ props }: BookingFlowProps) {
   const info = venueInfo.value
   if (!info) return null
 
+  /**
+   * Task 14: «¡Tu lugar está apartado!» de una clase. La misma pantalla tras una reserva que respondió, tras «sí quedó» (Task 13) y
+   * al volver de Stripe ya pagada; cada camino da lo suyo (el saldo sólo lo da el SERVIDOR; sin él, «Usaste N sesiones»).
+   */
+  const pantallaDeClaseLista = (x: {
+    clase: string; coach: string | null; startsAt: string; endsAt: string; lugares: string[]
+    confirmationCode: string; nombre: string | null; canje: CanjeDeLaReserva | null; pago: PagoDeLaClaseLista | null
+    pagaCon: PagaCon; sesiones: number
+    /** Sin cuenta, «Ver mi reserva»: «Gestionar» de esta reserva. */
+    verGestion: () => void
+    otraClase: () => void
+    cambioDeCuenta?: boolean
+  }) => {
+    const tz = resolveDisplayTz(info.timezone)
+    let politica: string | null = null
+    try {
+      politica = lineaDePolitica(t, info.cancellationPolicy, {
+        startsAt: x.startsAt, timeZone: tz, pagaCon: x.pagaCon, sesiones: x.sesiones, locale: props.locale, ahora: Date.now(),
+      })
+    } catch {
+      politica = null // una fecha o zona que no se lee: sin línea antes que una línea equivocada
+    }
+    const conCuenta = !!customerToken.value
+    return (
+      <ConfirmacionDeClase
+        clase={x.clase}
+        startsAt={x.startsAt}
+        endsAt={x.endsAt}
+        timeZone={tz}
+        coach={x.coach}
+        lugares={x.lugares}
+        confirmationCode={x.confirmationCode}
+        nombre={x.nombre}
+        canje={x.canje}
+        pago={x.pago}
+        politica={politica}
+        negocio={info.name}
+        direccion={info.address}
+        puedeEscribir={info.chat?.canMessage !== false}
+        conCuenta={conCuenta}
+        onVerMisReservas={conCuenta ? () => { showPortal.value = true } : x.verGestion}
+        onVerPaquetes={creditPacks.value.length > 0 ? () => setShowCreditPacksModal(true) : undefined}
+        onOtraClase={x.otraClase}
+        cambioDeCuenta={x.cambioDeCuenta}
+        onVerMiCuenta={() => { showPortal.value = true }}
+        t={t}
+      />
+    )
+  }
+  /** El monto sólo con los precios a la vista (fix r1 #1 de Task 13: nunca una cantidad que el estudio esconde). */
+  const montoVisible = (monto: number | null | undefined) => (monto != null && branding.value.showPrices !== false ? Number(monto) : null)
+  /** Lo que se usó del paquete según el pedido (tras «sí quedó» no hay saldo del SERVIDOR: como uno viejo). */
+  const canjeDelPedido = (c: ComoSePago, saldo?: CanjeDeLaReserva['saldo'], usadas?: number): CanjeDeLaReserva => ({
+    usadas: usadas || c.sesiones, saldo: saldo ?? null, ilimitado: c.pagaCon === 'ilimitado', soloEstaClase: c.soloEstaClase,
+  })
+
   if (!info.publicBooking.enabled) {
     return (
       <div class="avq-animate-in" style={{ padding: '48px 0', textAlign: 'center' }}>
@@ -1540,6 +1625,15 @@ export function BookingFlow({ props }: BookingFlowProps) {
           depositReturn={Boolean(recovery.saved)}
           paymentUnfinished={recovery.paymentUnfinished && recovery.saved?.cancelSecret === manageSecret.value}
           paymentCancelled={recovery.saved?.outcome === 'cancelled' && recovery.saved?.cancelSecret === manageSecret.value}
+          // Task 14: de vuelta de Stripe, la clase ya CONFIRMED y pagada enseña «¡Tu lugar está apartado!» con lo GUARDADO (clase,
+          // coach y lugares del GET); si sigue pendiente, falló o venció, «Gestionar» como hoy.
+          confirmacionDeClase={(r, verGestion) => pantallaDeClaseLista({
+            clase: r.className ?? r.product?.name ?? '', coach: r.instructorName ?? null, startsAt: r.startsAt, endsAt: r.endsAt,
+            lugares: r.spotIds ?? [], confirmationCode: r.confirmationCode, nombre: r.guestName, canje: null,
+            pago: { forma: 'tarjeta', monto: montoVisible(r.depositAmount) }, pagaCon: 'tarjeta',
+            sesiones: Math.max(r.spotIds?.length ?? 0, r.partySize ?? 0, 1),
+            verGestion, otraClase: () => closeManage(info),
+          })}
         />
         {!props.hideVenueHeader && (
           <div style={{ marginTop: '32px', textAlign: 'center', paddingBottom: '4px' }}>
@@ -1991,7 +2085,15 @@ export function BookingFlow({ props }: BookingFlowProps) {
       setHoldReleaseFailed(false)
       pendingHoldReleaseActionRef.current = null
       setGuestDraft(null)
-      if (clase) setNotaDeClase('')
+      if (clase) {
+        setNotaDeClase('')
+        const s = slot as PublicClassSessionSlot
+        setClaseLista({
+          slug: props.venue, confirmationCode: result.confirmationCode, pedido: clase,
+          clase: s.productName || selectedProduct.value?.name || '', coach: nombreDelCoach(s),
+          startsAt: result.startsAt || s.startsAt, endsAt: result.endsAt || s.endsAt,
+        })
+      }
       bookingResult.value = result
       step.value = config.confirmStep
       setShowCreditSelector(false)
@@ -2415,6 +2517,9 @@ export function BookingFlow({ props }: BookingFlowProps) {
   }
   const plan = claseAConfirmar ? planDeLaClase(claseAConfirmar.slot, claseAConfirmar.producto) : null
   planDeConfirmacion.current = plan
+  // Task 14: la reserva de clase que respondió es la que se enseña (de este negocio y con el mismo código); si no, la de siempre.
+  const claseListaVisible = claseLista && claseLista.slug === props.venue
+    && claseLista.confirmationCode === bookingResult.value?.confirmationCode ? claseLista : null
 
   /** El toque en «Confirmar reserva» (o «Pagar $X»): el formulario valida sus datos y, si están bien, `confirmarClase`. */
   const alConfirmarLaClase = () => {
@@ -2435,6 +2540,7 @@ export function BookingFlow({ props }: BookingFlowProps) {
       return
     }
     const datos: GuestFormData = { ...data, specialRequests: notaDeClase.trim() || undefined }
+    const opcion = p.opciones.find(o => o.balanceId === p.elegida) ?? null
     const conCuenta = !!customerToken.value
     const cuenta = conCuenta ? cuentaDelEstudio(props.venue) : null
     const pr = misClases.paraRevisar
@@ -2457,6 +2563,12 @@ export function BookingFlow({ props }: BookingFlowProps) {
       leer: intento && cuenta && pr && pr.identidad === cuenta.identidad ? pr.leer : null,
       lugares: p.lugares,
       leLlegaAviso: venueInfo.value?.scheduling?.autoConfirm === true && p.pago !== 'tarjeta' && !!(datos.guestEmail || datos.guestPhone),
+      comoSePago: {
+        pagaCon: opcion ? (opcion.ilimitado ? 'ilimitado' : 'paquete') : p.pago,
+        sesiones: Math.max(selectedSpotIds.value.length, 1),
+        soloEstaClase: opcion ? opcion.soloEstaClase : null,
+        precio: p.precio,
+      },
     }
     confirmandoRef.current = true
     try {
@@ -3056,6 +3168,20 @@ export function BookingFlow({ props }: BookingFlowProps) {
               const estado: EstadoDeLaRevision = quedo && !(r.pedido.intento && sigueSiendoEl(r.pedido.intento)) ? 'cambio-de-cuenta' : r.estado
               const slot = claseAConfirmar.slot
               const idioma = idiomaDe(t)
+              // Task 14 (controlador): «sí quedó» enseña la misma pantalla que una reserva que respondió.
+              if (estado === 'quedo' && r.reserva) {
+                const reserva = r.reserva
+                const c = r.pedido.comoSePago
+                return pantallaDeClaseLista({
+                  clase: slot.productName || claseAConfirmar.producto.name, coach: nombreDelCoach(slot),
+                  startsAt: slot.startsAt, endsAt: slot.endsAt, lugares: r.pedido.lugares,
+                  confirmationCode: reserva.confirmationCode, nombre: r.pedido.datos.guestName ?? null,
+                  canje: r.pedido.balanceId ? canjeDelPedido(c) : null,
+                  pago: !r.pedido.balanceId && c.pagaCon === 'estudio' ? { forma: 'estudio', monto: montoVisible(c.precio) } : null,
+                  pagaCon: c.pagaCon, sesiones: c.sesiones,
+                  verGestion: () => openManage(reserva.cancelSecret), otraClase: () => resetBooking(info),
+                })
+              }
               return (
                 <RevisionDeLaReserva
                   estado={estado}
@@ -3580,7 +3706,30 @@ export function BookingFlow({ props }: BookingFlowProps) {
           />
         )}
 
-        {step.value === config.confirmStep && bookingResult.value && !bookingResult.value.depositRequired && flowType.value !== 'appointments' && (
+        {step.value === config.confirmStep && bookingResult.value && !bookingResult.value.depositRequired && flowType.value !== 'appointments'
+          && claseListaVisible && (() => {
+          // Task 14: la reserva de clase que respondió. r5 #5 (como la revisión): si la cuenta del estudio ya no es la que reservó, no se
+          // enseña ni un dato de esa reserva.
+          const r = bookingResult.value!
+          const l = claseListaVisible
+          const c = l.pedido.comoSePago
+          const canjeo = !!r.creditRedeemed || !!r.creditBalance
+          return pantallaDeClaseLista({
+            clase: l.clase, coach: l.coach, startsAt: l.startsAt, endsAt: l.endsAt, lugares: l.pedido.lugares,
+            confirmationCode: r.confirmationCode, nombre: l.pedido.datos.guestName ?? null,
+            canje: canjeo ? canjeDelPedido(c, r.creditBalance ?? null, r.creditsUsed) : null,
+            pago: r.owesAtVenue && r.depositAmount != null
+              ? { forma: 'estudio', monto: montoVisible(r.depositAmount) }
+              : !canjeo && c.pagaCon === 'estudio' ? { forma: 'estudio', monto: montoVisible(c.precio) } : null,
+            pagaCon: r.creditBalance?.unlimited ? 'ilimitado' : canjeo && c.pagaCon !== 'ilimitado' ? 'paquete' : c.pagaCon,
+            sesiones: c.sesiones,
+            verGestion: () => openManage(r.cancelSecret), otraClase: () => resetBooking(info),
+            cambioDeCuenta: !!l.pedido.intento && !sigueSiendoEl(l.pedido.intento),
+          })
+        })()}
+
+        {step.value === config.confirmStep && bookingResult.value && !bookingResult.value.depositRequired && flowType.value !== 'appointments'
+          && !claseListaVisible && (
           <Confirmation
             booking={bookingResult.value}
             venueInfo={info}

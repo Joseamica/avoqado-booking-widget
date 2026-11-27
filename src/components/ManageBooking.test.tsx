@@ -32,7 +32,7 @@ afterEach(() => { cleanup(); vi.useRealTimers(); vi.unstubAllGlobals() })
 
 describe('reservation language matches the widget', () => {
   it.each([
-    ['es', 'jueves, 8 de octubre de 2026', '10:00 a.m. - 11:00 a.m.'],
+    ['es', 'Jueves, 8 de octubre de 2026', '10:00 a.m. - 11:00 a.m.'],
     ['en', 'Thursday, October 8, 2026', '10:00 AM - 11:00 AM'],
   ] as const)('formats the date and venue time in %s', async (locale, date, time) => {
     render(<ManageBooking {...props} locale={locale} t={createT(locale)} />); await flush()
