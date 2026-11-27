@@ -261,15 +261,16 @@ const CSS = `
   .avq-sp-btn:focus-visible { outline: 2px solid var(--avq-accent, #6366f1); outline-offset: 2px; }
   .avq-sp-btn:disabled { background: var(--avq-muted-fg, #9ca3af); cursor: not-allowed; }
   /* Celular (≤ 640 px): casillas de al menos 72 px (con muchas columnas, el mapa se desliza de lado). En la reserva de una clase
-     el mapa está fuera de \`.avq-classes-main\`: suma 12 px a los 12 px de la página (24 px), y «Continuar» va fijo abajo, encima
-     de la barra de la página (su alto llega en \`--avq-toast-offset\`; el área segura sólo cuenta cuando no hay barra). */
+     el margen lo ponen la página (12 px) y el widget (16 px), 28 px; el mapa ya no suma 12 px más (W2). «Continuar» va fijo abajo,
+     alineado con el contenido (28 px), encima de la barra de la página (su alto llega en \`--avq-toast-offset\`; el área segura
+     sólo cuenta cuando no hay barra). */
   @media (max-width: 640px) {
     .avq-sp-titulo { font-size: 28px; }
     .avq-sp-mapa { --avq-sp-c: var(--avq-sp-celda-movil); gap: var(--avq-sp-hueco-movil); }
-    .avq-sp--fija { padding-inline: 12px; padding-bottom: 96px; }
+    .avq-sp--fija { padding-bottom: 96px; }
     .avq-sp--fija .avq-sp-accion {
       position: fixed; left: 0; right: 0; bottom: var(--avq-toast-offset, 0px); z-index: 40; margin: 0;
-      padding: 16px 24px max(16px, calc(16px + env(safe-area-inset-bottom, 0px) - var(--avq-toast-offset, 0px)));
+      padding: 16px 28px max(16px, calc(16px + env(safe-area-inset-bottom, 0px) - var(--avq-toast-offset, 0px)));
       background: var(--avq-bg, #ffffff); border-top: 1px solid var(--avq-border, #e8eaed);
     }
     .avq-sp--fija .avq-sp-btn { max-width: none; min-height: 56px; font-size: 17px; }

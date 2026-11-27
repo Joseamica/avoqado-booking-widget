@@ -438,7 +438,9 @@
         background: var(--bg-elev); border-top: 1px solid var(--border);
       }
       body.con-bottombar .page { padding-bottom: calc(96px + env(safe-area-inset-bottom)); }
-      body.con-bottombar .textus-fab { bottom: calc(80px + env(safe-area-inset-bottom)); }
+      /* W1 (banco, 27-nov): a 390 px la burbuja tapaba el «Reservar» de una fila del horario. Con la barra, la burbuja se
+         esconde y el chat se abre desde «Escríbenos» de la barra (sólo si el negocio recibe mensajes). */
+      body.con-bottombar .textus-fab { display: none; }
     }
     /* Diseño 27-nov (detalle de la clase y su mapa de lugares): en el celular el widget fija «Reservar» (o «Continuar con el
        lugar N») abajo, encima de la barra, y avisa en el elemento (`data-detalle-de-clase`). El botón flotante del chat lo
@@ -663,6 +665,11 @@
       <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8 12 3 3 8v8l9 5 9-5V8Z"/><path d="M3 8l9 5 9-5"/><path d="M12 13v8"/></svg>
       <span>Paquetes</span>
     </a>
+    <!-- W1: abre el chat; sale sólo con el aviso de que el negocio recibe mensajes (avoqado:chat-availability). -->
+    <button class="bottombar-item" id="bottombar-chat" type="button" hidden>
+      <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+      <span>Escríbenos</span>
+    </button>
     <button class="bottombar-item" id="bottombar-account" type="button">
       <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4a4 4 0 1 0 0 8 4 4 0 0 0 0-8Z"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>
       <span>Mi cuenta</span>
@@ -1261,6 +1268,9 @@
       if (textusFab) textusFab.addEventListener('click', openVenueChat)
       var drawerTextus = document.getElementById('drawer-textus-row')
       if (drawerTextus) drawerTextus.addEventListener('click', openVenueChat)
+      // W1: en el celular la burbuja se esconde y «Escríbenos» de la barra de abajo abre el chat.
+      var bottombarChat = document.getElementById('bottombar-chat')
+      if (bottombarChat) bottombarChat.addEventListener('click', openVenueChat)
 
       // Hide the "message us" pill + drawer row when the venue can't actually be
       // reached (server says no relay and no phone → the chat form would just
@@ -1273,6 +1283,8 @@
         var canMessage = !e || !e.detail || e.detail.canMessage !== false
         if (textusFab) textusFab.style.display = canMessage ? '' : 'none'
         if (drawerTextus) drawerTextus.style.display = canMessage ? '' : 'none'
+        // «Escríbenos» de la barra sale sólo con el «sí» explícito: sin el dato, la barra queda como antes.
+        if (bottombarChat) bottombarChat.hidden = !(e && e.detail && e.detail.canMessage === true)
       })
 
       // ----- Body flow class sync on client-side navigation ----------------

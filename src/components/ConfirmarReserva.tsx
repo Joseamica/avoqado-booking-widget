@@ -484,17 +484,18 @@ const ESTILOS = `
   @media (min-width: 641px) {
     .avq-rv-accion { max-width: 360px; margin-inline: auto; }
   }
-  /* Celular (≤ 640 px): fuera de \`.avq-classes-main\`, se suman 12 px a los 12 px de la página (24 px). El botón va fijo abajo,
-     encima de la barra de la página (\`--avq-toast-offset\`; el área segura sólo cuando no hay barra), como el detalle y el mapa. */
+  /* Celular (≤ 640 px): el margen lo ponen la página (12 px) y el widget (16 px), 28 px; aquí ya no se suman 12 px más (W2). El
+     botón va fijo abajo, alineado con el contenido (28 px), encima de la barra de la página (\`--avq-toast-offset\`; el área segura
+     sólo cuando no hay barra), como el detalle y el mapa. */
   @media (max-width: 640px) {
-    .avq-confirmar { padding-inline: 12px; padding-bottom: 96px; }
-    .avq-revisar { padding-inline: 12px; padding-bottom: 180px; }
+    .avq-confirmar { padding-bottom: 96px; }
+    .avq-revisar { padding-bottom: 180px; }
     .avq-cf-titulo { font-size: 28px; }
     .avq-rv-titulo { font-size: 26px; }
     .avq-cf-fila, .avq-cf-agregar { font-size: 17px; }
     .avq-cf-accion, .avq-rv-accion {
       position: fixed; left: 0; right: 0; bottom: var(--avq-toast-offset, 0px); z-index: 40; margin: 0;
-      padding: 16px 24px max(16px, calc(16px + env(safe-area-inset-bottom, 0px) - var(--avq-toast-offset, 0px)));
+      padding: 16px 28px max(16px, calc(16px + env(safe-area-inset-bottom, 0px) - var(--avq-toast-offset, 0px)));
       background: var(--avq-bg, #ffffff); border-top: 1px solid var(--avq-border, #e8eaed);
     }
     .avq-cf-btn { min-height: 56px; font-size: 17px; }

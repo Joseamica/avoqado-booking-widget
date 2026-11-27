@@ -255,11 +255,11 @@ describe('«¡Tu lugar está apartado!» (Task 14)', () => {
     expect(screen.getByRole('button', { name: 'View my bookings' })).toBeTruthy()
   })
 
-  it('celular (≤ 640 px): fuera de `.avq-classes-main` suma 12 px por lado; título de 28 px, texto de 17 px y botones de 56 px', () => {
+  it('celular (≤ 640 px): sin margen propio (28 px en total, W2); título de 28 px, texto de 17 px y botones de 56 px', () => {
     const { container } = pinta()
     const css = container.querySelector('style')?.textContent ?? ''
     const celular = css.slice(css.indexOf('@media (max-width: 640px)'))
-    expect(celular).toMatch(/\.avq-listo \{[^}]*padding-inline: 12px/)
+    expect(celular).not.toMatch(/\.avq-listo \{[^}]*padding-inline/)
     expect(celular).toMatch(/\.avq-ls-titulo \{[^}]*font-size: 28px/)
     expect(celular).toMatch(/\.avq-ls-cuando[^{]*\{[^}]*font-size: 17px/)
     expect(celular).toMatch(/\.avq-ls-btn[^{]*\{[^}]*min-height: 56px/)

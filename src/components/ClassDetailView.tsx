@@ -361,18 +361,18 @@ const ESTILOS = `
       background: var(--avq-bg, #ffffff); border: 1px solid var(--avq-border, #e8eaed);
     }
   }
-  /* Celular (≤ 640 px): la página deja 12 px por lado y el detalle suma 12 px (24 px en total; está fuera de
-     \`.avq-classes-main\`). El botón va fijo abajo, encima de la barra de la página: su alto llega en \`--avq-toast-offset\`
-     (sin barra, 0); el área segura del celular sólo se suma cuando no hay barra que ya la cubra. Abajo se deja el espacio
-     del botón para que no tape el final del detalle. */
+  /* Celular (≤ 640 px): el margen lo ponen la página (12 px) y el widget (16 px), 28 px; el detalle ya no suma 12 px más (W2,
+     banco 27-nov). El botón va fijo abajo, alineado con el contenido (28 px), encima de la barra de la página: su alto llega
+     en \`--avq-toast-offset\` (sin barra, 0); el área segura del celular sólo se suma cuando no hay barra que ya la cubra. Abajo
+     se deja el espacio del botón para que no tape el final del detalle. */
   @media (max-width: 640px) {
-    .avq-classdetail { padding-inline: 12px; padding-bottom: 96px; }
+    .avq-classdetail { padding-bottom: 96px; }
     .avq-classdetail.avq-cd--dos { padding-bottom: 162px; }
     .avq-cd-titulo { font-size: 28px; }
     .avq-cd-cuando { font-size: 17px; }
     .avq-cd-accion {
       position: fixed; left: 0; right: 0; bottom: var(--avq-toast-offset, 0px); z-index: 40; margin: 0;
-      padding: 16px 24px max(16px, calc(16px + env(safe-area-inset-bottom, 0px) - var(--avq-toast-offset, 0px)));
+      padding: 16px 28px max(16px, calc(16px + env(safe-area-inset-bottom, 0px) - var(--avq-toast-offset, 0px)));
       background: var(--avq-bg, #ffffff); border-top: 1px solid var(--avq-border, #e8eaed);
     }
     .avq-cd-btn { min-height: 56px; font-size: 17px; }

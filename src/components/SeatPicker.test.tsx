@@ -119,7 +119,7 @@ describe('SeatPicker: el mapa de lugares (pasos-con-aire-v7, paso 3)', () => {
     expect(screen.getByText('Lagree · jueves 26 · 18:15')).toBeTruthy()
   })
 
-  it('celular (390 px): casillas de al menos 72 px, 24 px de margen y el botón fijo abajo, de 56 px, encima de la barra', () => {
+  it('celular (390 px): casillas de al menos 72 px, sin margen propio (28 px, W2) y el botón fijo abajo, de 56 px, encima de la barra', () => {
     const r = pintar({ accionFija: true })
     const mapa = () => document.querySelector('.avq-sp-mapa') as HTMLElement
     const movil = () => parseInt(mapa().style.getPropertyValue('--avq-sp-celda-movil'), 10)
@@ -132,8 +132,9 @@ describe('SeatPicker: el mapa de lugares (pasos-con-aire-v7, paso 3)', () => {
     // Cada casilla mide lo que diga su variable: en el celular, la de al menos 72 px.
     expect(css()).toMatch(/\.avq-sp-celda\s*\{[^}]*width:\s*var\(--avq-sp-c\)[^}]*height:\s*var\(--avq-sp-c\)/)
     expect(celular).toMatch(/\.avq-sp-mapa\s*\{[^}]*--avq-sp-c:\s*var\(--avq-sp-celda-movil\)/)
-    // El mapa está fuera de `.avq-classes-main`: suma 12 px a los 12 px de la página.
-    expect(celular).toMatch(/\.avq-sp--fija\s*\{[^}]*padding-inline:\s*12px/)
+    // W2: el mapa ya no suma 12 px a los de la página y el widget (28 px en total), y «Continuar» queda alineado con él.
+    expect(celular).not.toMatch(/\.avq-sp--fija\s*\{[^}]*padding-inline/)
+    expect(celular).toMatch(/\.avq-sp--fija \.avq-sp-accion\s*\{[^}]*padding:\s*16px 28px/)
     expect(celular).toMatch(/\.avq-sp--fija \.avq-sp-accion\s*\{[^}]*position:\s*fixed/)
     expect(celular).toMatch(/\.avq-sp--fija \.avq-sp-accion\s*\{[^}]*bottom:\s*var\(--avq-toast-offset,\s*0px\)/)
     expect(celular).toMatch(/\.avq-sp--fija \.avq-sp-btn\s*\{[^}]*min-height:\s*56px/)

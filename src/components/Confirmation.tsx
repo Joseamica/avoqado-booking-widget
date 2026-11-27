@@ -559,9 +559,8 @@ const ESTILOS_LISTO = `
   .avq-ls-btn:focus-visible, .avq-ls-link:focus-visible, .avq-ls-otra:focus-visible {
     outline: 2px solid var(--avq-accent, #2563eb); outline-offset: 2px;
   }
-  /* Celular (≤ 640 px): fuera de \`.avq-classes-main\`, se suman 12 px a los 12 px de la página (24 px por lado). */
+  /* Celular (≤ 640 px): el margen lo ponen la página (12 px) y el widget (16 px), 28 px por lado; «Listo» ya no suma 12 px más (W2). */
   @media (max-width: 640px) {
-    .avq-listo { padding-inline: 12px; }
     .avq-ls-titulo { font-size: 28px; }
     .avq-ls-sub, .avq-ls-cuando, .avq-ls-uso, .avq-ls-coach strong { font-size: 17px; }
     .avq-ls-paga, .avq-ls-pol { font-size: 16px; }

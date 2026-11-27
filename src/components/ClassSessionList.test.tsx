@@ -5,6 +5,7 @@ import { ClassSessionList } from './ClassSessionList'
 import * as api from '../api/booking'
 import { branding, DEFAULT_BRANDING } from '../state/booking'
 import { createT } from '../i18n'
+import { SHARED_CSS } from '../shared-styles'
 import type { Product, PublicClassSessionSlot } from '../types'
 
 vi.mock('../api/booking', () => ({ getClassSessionsRange: vi.fn() }))
@@ -411,5 +412,110 @@ describe('Horario: una clase suya no enseña precio', () => {
   it('tampoco «Incluida en tu paquete» en la suya', async () => {
     await pintar([s11], { miReserva: () => ({ lugar: null, estado: 'porAprobar' as const }), cubreSesion: () => true })
     expect(fila(/Lagree.*11:00/).textContent).not.toContain('Incluida')
+  })
+})
+
+// W3 (banco, 27-nov): a 1440 px la semana medía 832 px en un contenedor de 784 (siete columnas de al menos 112 px): la séptima
+// quedaba cortada y salía una barra para deslizar de lado. Ahora la semana enseña los días que CABEN en su contenedor (de 4 a 7
+// columnas, ninguna cortada, sin deslizar de lado) y las flechas avanzan esa misma cantidad de días.
+describe('W3: la semana enseña los días que caben en su contenedor', () => {
+  const COLUMNA = 112
+  const HUECO = 8
+  let ancho = 0
+  let observadores: Array<() => void> = []
+  beforeEach(() => {
+    pantalla(1440)
+    Object.defineProperty(HTMLElement.prototype, 'clientWidth', {
+      configurable: true,
+      get() { return (this as HTMLElement).classList.contains('avq-semana') ? ancho : 0 },
+    })
+    ;(globalThis as unknown as { ResizeObserver: unknown }).ResizeObserver = class {
+      cb: () => void
+      constructor(cb: () => void) { this.cb = cb }
+      observe() { observadores.push(this.cb) }
+      unobserve() {}
+      disconnect() { observadores = observadores.filter(f => f !== this.cb) }
+    }
+  })
+  afterEach(() => {
+    delete (HTMLElement.prototype as unknown as { clientWidth?: number }).clientWidth
+    delete (globalThis as unknown as { ResizeObserver?: unknown }).ResizeObserver
+    observadores = []
+  })
+
+  const columnas = () => Array.from(document.querySelectorAll<HTMLElement>('.avq-semana-dia'))
+  const rejilla = () => document.querySelector<HTMLElement>('.avq-semana-dias')!
+  const primerDia = () => columnas()[0].getAttribute('aria-label')
+
+  it.each([
+    [784, 6],
+    [1024, 7],
+    [1280, 7],
+  ])('contenedor de %i px: %i columnas que caben enteras, sin deslizar de lado', async (medida, dias) => {
+    ancho = medida
+    await pintar([s11])
+    expect(columnas()).toHaveLength(dias)
+    // Las columnas reparten el ancho: ninguna pasa del contenedor ni queda más angosta que 112 px.
+    expect(rejilla().style.gridTemplateColumns).toBe(`repeat(${dias}, minmax(0, 1fr))`)
+    expect(dias * COLUMNA + (dias - 1) * HUECO).toBeLessThanOrEqual(medida)
+    expect(rejilla().style.overflowX).toBe('hidden')
+  })
+
+  it('a 784 px las flechas avanzan y regresan los 6 días que se ven', async () => {
+    ancho = 784
+    await pintar([s11])
+    expect(primerDia()).toBe('Hoy')
+    fireEvent.click(screen.getByRole('button', { name: 'Semana siguiente' }))
+    // Jueves 26 + 6 = miércoles 2 de diciembre.
+    expect(primerDia()).toBe('Miércoles, 2 de diciembre')
+    expect(columnas()).toHaveLength(6)
+    fireEvent.click(screen.getByRole('button', { name: 'Semana anterior' }))
+    expect(primerDia()).toBe('Hoy')
+  })
+
+  it('si el contenedor cambia de ancho, cambia cuántos días se ven (y la flecha de regreso nunca pasa de hoy)', async () => {
+    ancho = 1280
+    await pintar([s11])
+    expect(columnas()).toHaveLength(7)
+    fireEvent.click(screen.getByRole('button', { name: 'Semana siguiente' }))
+    expect(primerDia()).toBe('Jueves, 3 de diciembre')
+    ancho = 600
+    await act(async () => { observadores.forEach(f => f()) })
+    // 600 px: (600 + 8) / (112 + 8) = 5 columnas.
+    expect(columnas()).toHaveLength(5)
+    fireEvent.click(screen.getByRole('button', { name: 'Semana anterior' }))
+    // Del 3 de diciembre, 5 días atrás sería el 28 de noviembre; luego, hoy otra vez.
+    expect(primerDia()).toBe('Sábado, 28 de noviembre')
+    fireEvent.click(screen.getByRole('button', { name: 'Semana anterior' }))
+    expect(primerDia()).toBe('Hoy')
+    expect((screen.getByRole('button', { name: 'Semana anterior' }) as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  it('en un contenedor angosto nunca menos de 4 columnas, y sin medida (antes de pintarse) las siete de siempre', async () => {
+    ancho = 360
+    await pintar([s11])
+    expect(columnas()).toHaveLength(4)
+    expect(rejilla().style.gridTemplateColumns).toBe('repeat(4, minmax(0, 1fr))')
+    cleanup()
+    ancho = 0
+    await pintar([s11])
+    expect(columnas()).toHaveLength(7)
+  })
+})
+
+// W1 (banco, 27-nov): pegado en otro sitio (sin la barra de abajo de la página propia) el widget enseña su propia burbuja del chat,
+// fija a 24 px del borde de abajo. El horario deja abajo al menos el alto de la burbuja + 16 px para que su última fila se pueda
+// tocar. En la página propia el widget no pinta su burbuja (`hide-chat-fab`) y el horario no suma nada.
+describe('W1: la burbuja del chat del widget no tapa la última fila del horario', () => {
+  it('con la burbuja a la vista, el horario deja abajo su alto + 16 px', async () => {
+    await pintar([s11])
+    expect(document.querySelector('.avq-horario')).not.toBeNull()
+    const css = Array.from(document.querySelectorAll('style')).map(x => x.textContent ?? '').join('\n')
+    const regla = /\.avq-root:has\(\.avq-chat-fab\) \.avq-horario\s*\{[^}]*padding-bottom:\s*(\d+)px/.exec(css)
+    expect(regla).not.toBeNull()
+    // La burbuja: 24 px del borde de abajo y 46 px de alto (12 + 12 de relleno, 20 del renglón, 2 del borde).
+    expect(SHARED_CSS).toMatch(/\.avq-chat-root\s*\{[^}]*bottom:\s*24px/)
+    expect(SHARED_CSS).toMatch(/\.avq-chat-fab\s*\{[^}]*padding:\s*12px 18px/)
+    expect(Number(regla![1])).toBeGreaterThanOrEqual(24 + 46 + 16)
   })
 })

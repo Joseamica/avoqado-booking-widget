@@ -218,14 +218,16 @@ describe('ClassDetailView: el detalle de la clase (Task 11)', () => {
     })
   })
 
-  it('celular (390 px): margen de 24 px en total y «Reservar» fijo abajo, de 56 px, encima de la barra de la página', () => {
+  it('celular (390 px): sin margen propio (28 px en total, W2) y «Reservar» fijo abajo, de 56 px, alineado y encima de la barra', () => {
     pintar()
     const accion = document.querySelector('.avq-cd-accion') as HTMLElement
     expect(accion.contains(boton('Reservar'))).toBe(true)
     const estilos = css()
     const celular = estilos.match(/@media \(max-width: 640px\)\s*\{([\s\S]*)\}/)?.[1] ?? ''
-    // La página deja 12 px por lado; el detalle suma 12 px (está fuera de `.avq-classes-main`).
-    expect(celular).toMatch(/\.avq-classdetail\s*\{[^}]*padding-inline:\s*12px/)
+    // W2: la página deja 12 px y el widget 16 px; el detalle ya no suma 12 px más (eran 40 px del borde).
+    expect(celular).not.toMatch(/\.avq-classdetail\s*\{[^}]*padding-inline/)
+    // El botón fijo queda alineado con el contenido: 28 px por lado.
+    expect(celular).toMatch(/\.avq-cd-accion\s*\{[^}]*padding:\s*16px 28px/)
     // Fijo abajo, encima de la barra de abajo de la página (su alto llega en `--avq-toast-offset`).
     expect(celular).toMatch(/\.avq-cd-accion\s*\{[^}]*position:\s*fixed/)
     expect(celular).toMatch(/\.avq-cd-accion\s*\{[^}]*bottom:\s*var\(--avq-toast-offset,\s*0px\)/)

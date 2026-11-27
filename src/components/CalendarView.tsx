@@ -1,5 +1,5 @@
 import { h } from 'preact'
-import { useEffect, useMemo, useState } from 'preact/hooks'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'preact/hooks'
 import type { PublicClassSessionSlot } from '../types'
 import type { TFunction } from '../i18n'
 import { encabezadoDeDia } from '../lib/fechas'
@@ -34,9 +34,22 @@ interface CalendarViewProps {
   t: TFunction
 }
 
+/** Una columna de la semana mide al menos esto, con este hueco entre columnas (los mismos del CSS de abajo). */
+const COLUMNA_MIN = 112
+const HUECO = 8
+
 /**
- * Semana tipo calendario (diseño 27-nov, `portada-v3`): siete columnas desde hoy, cada una con su día («HOY · JUE 26»)
- * y sus clases: hora, duración de la sesión, clase, coach y lugares. Las flechas mueven una semana.
+ * W3 (banco, 27-nov): cuántos días caben enteros en el ancho del contenedor (de 4 a 7). A 1440 px la semana medía 832 px en
+ * 784: la séptima columna quedaba cortada y salía una barra para deslizar de lado. Sin medida (antes de pintarse), los 7 de siempre.
+ */
+export function diasQueCaben(ancho: number): number {
+  if (!(ancho > 0)) return 7
+  return Math.max(4, Math.min(7, Math.floor((ancho + HUECO) / (COLUMNA_MIN + HUECO))))
+}
+
+/**
+ * Semana tipo calendario (diseño 27-nov, `portada-v3`): desde hoy, los días que caben en el contenedor (de 4 a 7), cada uno con su
+ * día («HOY · JUE 26») y sus clases: hora, duración de la sesión, clase, coach y lugares. Las flechas mueven esos mismos días.
  */
 export function CalendarView({
   slots, timezone, onSelect, nowMs, miReserva, mostrarDuracion = true, ultimoDia, pedidoHasta, cargando = false,
@@ -46,21 +59,39 @@ export function CalendarView({
   const idioma = idiomaDe(t)
   const hoy = diaDeLaSesion(new Date(now).toISOString(), timezone)
 
+  // W3: el ancho del contenedor decide cuántos días se ven; se vuelve a medir si cambia (ResizeObserver, o el tamaño de la ventana).
+  const caja = useRef<HTMLDivElement>(null)
+  const [ancho, setAncho] = useState(0)
+  useLayoutEffect(() => {
+    const el = caja.current
+    if (!el) return
+    const medir = () => setAncho(el.clientWidth)
+    medir()
+    if (typeof ResizeObserver !== 'undefined') {
+      const observador = new ResizeObserver(medir)
+      observador.observe(el)
+      return () => observador.disconnect()
+    }
+    window.addEventListener('resize', medir)
+    return () => window.removeEventListener('resize', medir)
+  }, [])
+  const dias = diasQueCaben(ancho)
+
   // La semana empieza hoy (no el domingo pasado): no se gastan columnas en días que ya pasaron.
   const [ancla, setAncla] = useState<string>(hoy)
-  const semana = useMemo(() => Array.from({ length: 7 }, (_, i) => sumarDias(ancla, i)), [ancla])
+  const semana = useMemo(() => Array.from({ length: dias }, (_, i) => sumarDias(ancla, i)), [ancla, dias])
 
   const porDia = useMemo(() => agruparPorDia(slots, timezone), [slots, timezone])
 
   // Una semana que pasa de lo ya pedido pide los días que faltan (el horario trae 30 días y llega hasta 60).
   const pedido = pedidoHasta ?? ultimoDia
-  const ultimoVisible = semana[6]
+  const ultimoVisible = semana[dias - 1]
   useEffect(() => {
     if (pedido && onNecesitaMasDias && ultimoVisible > pedido) onNecesitaMasDias()
   }, [ultimoVisible, pedido])
 
   const puedeAtras = ancla > hoy
-  const puedeAdelante = !(pedido && !onNecesitaMasDias && sumarDias(ancla, 7) > pedido)
+  const puedeAdelante = !(pedido && !onNecesitaMasDias && sumarDias(ancla, dias) > pedido)
 
   const mes = useMemo(() => {
     const [y, m, d] = semana[0].split('-').map(Number)
@@ -71,14 +102,18 @@ export function CalendarView({
   }, [semana, idioma])
 
   return (
-    <div class="avq-semana avq-animate-in">
+    <div class="avq-semana avq-animate-in" ref={caja}>
       <div class="avq-semana-nav">
         <button
           type="button"
           class="avq-semana-flecha"
           aria-label={t('reservaClases.horario.semanaAnterior')}
           disabled={!puedeAtras}
-          onClick={() => setAncla(a => (a > hoy ? sumarDias(a, -7) : a))}
+          onClick={() => setAncla(a => {
+            if (a <= hoy) return a
+            const atras = sumarDias(a, -dias)
+            return atras < hoy ? hoy : atras
+          })}
         >
           <Icono nombre="anterior" size={18} />
         </button>
@@ -88,13 +123,17 @@ export function CalendarView({
           class="avq-semana-flecha"
           aria-label={t('reservaClases.horario.semanaSiguiente')}
           disabled={!puedeAdelante}
-          onClick={() => setAncla(a => sumarDias(a, 7))}
+          onClick={() => setAncla(a => sumarDias(a, dias))}
         >
           <Icono nombre="siguiente" size={18} />
         </button>
       </div>
 
-      <div class="avq-semana-dias">
+      {/* Medida: las columnas reparten el ancho (ninguna pasa del contenedor); sin medida, las 7 de 112 px del CSS. */}
+      <div
+        class="avq-semana-dias"
+        style={ancho > 0 ? { gridTemplateColumns: `repeat(${dias}, minmax(0, 1fr))`, overflowX: 'hidden' } : undefined}
+      >
         {semana.map(dia => {
           const esHoy = dia === hoy
           const sesiones = porDia.get(dia) ?? []

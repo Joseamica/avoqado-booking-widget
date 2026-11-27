@@ -1738,13 +1738,14 @@ describe('Portada: identidad del negocio, horario directo y «Clases | Citas»',
     expect(screen.queryByRole('button', { name: 'Escríbenos' })).toBeNull()
   })
 
-  it('celular (≤ 640 px): el horario suma 12 px por lado a los 12 px de la página, 24 px en total (sin tocar citas)', async () => {
+  // W2 (banco, 27-nov): a 390 px el horario iba a 40 px del borde (12 de la página + 16 del widget + 12 de aquí). Ya no suma nada:
+  // queda en 28 px, como la identidad; citas no cambia.
+  it('celular (≤ 640 px): el horario no suma margen propio a los de la página y el widget (28 px en total; sin tocar citas)', async () => {
     window.history.replaceState({}, '', '/studio-a')
     montar(soloClases); await flush()
     expect(document.querySelector('.avq-classes-main .avq-horario')).not.toBeNull()
     const css = Array.from(document.querySelectorAll('style')).map(x => x.textContent ?? '').join('\n')
-    expect(css).toMatch(/@media \(max-width: 640px\)\s*\{[^@]*\.avq-classes-main\s*\{[^}]*padding-inline:\s*12px/)
-    // Sólo una vez: si el horario también lo pusiera, serían 36 px.
+    expect(css).not.toMatch(/\.avq-classes-main\s*\{[^}]*padding-inline/)
     expect(css).not.toMatch(/\.avq-horario\s*\{[^}]*padding-inline/)
     expect(css).not.toMatch(/\.avq-appts-main\s*\{[^}]*padding-inline/)
   })
@@ -1956,6 +1957,37 @@ describe('Task 10: lo que la clienta ya tiene, en el horario', () => {
     for (const [slug, , token] of [...vi.mocked(api.getCustomerCredits).mock.calls, ...vi.mocked(api.getMisReservasDeClase).mock.calls]) {
       expect(token).toBe(slug === 'studio-a' ? 'tok-ana' : 'tok-bea')
     }
+  })
+
+  // W4 (banco, 27-nov): con dos estudios DISTINTOS en la página (sus clases no son las mismas), el primero perdía la franja
+  // «Hola, Ana · tienes …» al montarse el segundo: la franja buscaba la clase que paga su saldo entre los productos de la señal
+  // compartida `venueInfo`, que es del último estudio que cargó. Cada widget la busca entre los productos de SU estudio.
+  it('dos estudios con clases distintas: al montarse el segundo, el primero conserva su franja (y el segundo no pinta la de Ana)', async () => {
+    const yoga = { ...lagree, id: 'class-y', name: 'Yoga', price: 280 }
+    entrar('studio-a', SES_ANA)
+    vi.mocked(api.getVenueInfo).mockImplementation(async slug => slug === 'studio-a'
+      ? { ...estudio, slug, name: 'Studio A', products: [lagree] }
+      : { ...estudio, slug, name: 'Studio B', products: [yoga] })
+    vi.mocked(api.getClassSessionsRange).mockImplementation(async slug => ({
+      ...VENTANA,
+      slots: [slug === 'studio-a' ? clase('sa-11', '2026-10-08T17:00:00Z') : { ...clase('sb-11', '2026-10-08T17:00:00Z'), productId: 'class-y', productName: 'Yoga' }],
+    }))
+    vi.mocked(api.getMisReservasDeClase).mockResolvedValue(pagina([mia('sa-11', { spotIds: ['3'] })]))
+    window.history.replaceState({}, '', '/pagina-con-dos-estudios')
+    const a = render(<BookingFlow props={{ ...props('studio-a'), flowType: 'classes' }} />)
+    await flush(); await flush()
+    const enA = a.container as HTMLElement
+    expect(franja(enA)).toBe('Hola, Ana · tienes 4 sesiones de Lagree · vencen el 11 dic')
+
+    const b = render(<BookingFlow props={{ ...props('studio-b'), flowType: 'classes' }} />)
+    await flush(); await flush()
+    const enB = b.container as HTMLElement
+    expect(franja(enA)).toBe('Hola, Ana · tienes 4 sesiones de Lagree · vencen el 11 dic')
+    expect(within(fila(/Lagree.*11:00/, enA)).getByText('Reservada · lugar 3')).toBeTruthy()
+    // El segundo estudio no tiene sesión de Ana: ni franja ni nada de ella.
+    expect(franja(enB)).toBeNull()
+    expect(enB.textContent).not.toMatch(/Ana|Reservada|Tu paquete|sesiones de Lagree|lugar 3/)
+    expect(api.getCustomerCredits).not.toHaveBeenCalledWith('studio-b', expect.anything(), expect.anything())
   })
 
   it('fix r1: con un Ilimitado, la clase que ya reservó (donde ya lo usó) no enseña precio junto a «Reservada»', async () => {

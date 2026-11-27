@@ -200,11 +200,13 @@ describe('ConfirmarReserva', () => {
     expect(texto()).not.toContain('$')
   })
 
-  it('celular: fuera de `.avq-classes-main` suma 12 px por lado, botón fijo encima de la barra (`--avq-toast-offset`), 56 px', () => {
+  it('celular: sin margen propio (28 px en total, W2), botón fijo alineado y encima de la barra (`--avq-toast-offset`), 56 px', () => {
     const { container } = pinta()
     const css = container.querySelector('style')?.textContent ?? ''
     const celular = css.slice(css.indexOf('@media (max-width: 640px)'))
-    expect(celular).toMatch(/\.avq-confirmar \{[^}]*padding-inline: 12px/)
+    expect(celular).not.toMatch(/\.avq-confirmar \{[^}]*padding-inline/)
+    expect(celular).not.toMatch(/\.avq-revisar \{[^}]*padding-inline/)
+    expect(celular).toMatch(/\.avq-cf-accion, \.avq-rv-accion \{[^}]*padding: 16px 28px/)
     expect(celular).toMatch(/\.avq-cf-accion[^{]*\{[^}]*position: fixed[^}]*bottom: var\(--avq-toast-offset, 0px\)/)
     expect(celular).toMatch(/\.avq-cf-btn \{[^}]*min-height: 56px/)
     expect(celular).toMatch(/\.avq-cf-titulo \{[^}]*font-size: 28px/)

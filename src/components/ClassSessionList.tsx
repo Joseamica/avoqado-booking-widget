@@ -436,6 +436,10 @@ export function ClassSessionList({
           border: 1px solid var(--avq-warning-border, #fde68a); background: var(--avq-warning-bg, #fffbeb); color: var(--avq-warning-fg, #92400e); }
         .avq-horario-error button { min-height: 40px; padding: 0 14px; border-radius: 999px; border: 1px solid currentColor;
           background: transparent; color: inherit; font: inherit; font-weight: 600; cursor: pointer; }
+        /* W1 (banco, 27-nov): pegado en otro sitio, el widget enseña su burbuja del chat fija abajo (24 px del borde, ~46 px de
+           alto) y tapaba el «Reservar» de la última fila. Con la burbuja a la vista el horario deja abajo su alto + 16 px. En la
+           página propia no hay burbuja del widget (\`hide-chat-fab\`; «Escríbenos» va en su barra de abajo) y no se suma nada. */
+        .avq-root:has(.avq-chat-fab) .avq-horario { padding-bottom: 88px; }
         /* Celular (≤ 640 px): título de 26 px, controles de 52 px y bloques separados 24 px. */
         @media (max-width: 640px) {
           .avq-horario-cabeza { margin-bottom: 16px; }

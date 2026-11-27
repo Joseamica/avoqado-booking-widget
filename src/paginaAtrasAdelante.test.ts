@@ -264,7 +264,7 @@ describe('barra fija de abajo en el celular (diseño 27-nov): Horario · Paquete
     await esperar()
     const barra = document.getElementById('bottombar')!
     expect(barra.hidden).toBe(false)
-    expect(Array.from(barra.querySelectorAll('a, button')).map(x => x.textContent!.trim())).toEqual(['Horario', 'Paquetes', 'Mi cuenta'])
+    expect(Array.from(barra.querySelectorAll('a, button')).map(x => x.textContent!.trim())).toEqual(['Horario', 'Paquetes', 'Escríbenos', 'Mi cuenta'])
     const paquetes = barra.querySelector<HTMLAnchorElement>('a[data-route="packs"]')!
     expect(paquetes.hidden).toBe(true)
     widget().dispatchEvent(new CustomEvent('avoqado:credit-packs-loaded', { detail: { count: 3 } }))
@@ -319,5 +319,55 @@ describe('el aviso del widget sube encima de la barra de abajo', () => {
 
   it('la barra queda bajo el aviso (z-index 45 < 50)', () => {
     expect(paginaHospedada).toMatch(/\.bottombar:not\(\[hidden\]\)\s*\{[^}]*z-index:\s*45;/)
+  })
+})
+
+// W1 (banco, 27-nov): a 390 px la burbuja del chat («Envíanos un mensaje», 52 px) quedaba encima del «Reservar» de una fila del
+// horario. En la página propia, con su barra de abajo, la burbuja se esconde y la barra gana «Escríbenos», que abre el chat. Sale
+// sólo si el negocio recibe mensajes (el mismo aviso que decide la burbuja, `avoqado:chat-availability`); sin ese dato, la barra
+// queda como antes.
+describe('W1: en el celular, «Escríbenos» va en la barra de abajo y la burbuja no tapa el horario', () => {
+  const avisarChat = (detail?: Record<string, unknown>) =>
+    window.dispatchEvent(new CustomEvent('avoqado:chat-availability', detail === undefined ? {} : { detail }))
+  const escribenos = () => document.getElementById('bottombar-chat') as HTMLButtonElement
+
+  it('con la barra de abajo (< 640 px) la burbuja flotante se esconde', () => {
+    const celular = paginaHospedada.match(/@media \(max-width: 639px\)\s*\{([\s\S]*?)\n    \}/)?.[1] ?? ''
+    expect(celular).toMatch(/body\.con-bottombar \.textus-fab\s*\{[^}]*display:\s*none/)
+  })
+
+  it('«Escríbenos» espera el aviso: sale si el negocio recibe mensajes y abre el chat; con «no» no sale', async () => {
+    new Function(scriptDeLaPagina())()
+    await esperar()
+    const boton = escribenos()
+    expect(boton.closest('#bottombar')).not.toBeNull()
+    expect(boton.textContent!.trim()).toBe('Escríbenos')
+    // El mismo ícono de chat que la burbuja, del trazo de la barra.
+    expect(boton.querySelector('svg path')!.getAttribute('d')).toBe(
+      document.querySelector('#textus-fab svg path')!.getAttribute('d'),
+    )
+    expect(boton.querySelector('svg')!.getAttribute('stroke-width')).toBe('1.75')
+    expect(boton.hidden).toBe(true)
+
+    avisarChat({ canMessage: true })
+    expect(boton.hidden).toBe(false)
+    const abrir = vi.fn()
+    window.addEventListener('avoqado:open-chat', abrir)
+    boton.click()
+    window.removeEventListener('avoqado:open-chat', abrir)
+    expect(abrir).toHaveBeenCalledTimes(1)
+
+    avisarChat({ canMessage: false })
+    expect(boton.hidden).toBe(true)
+  })
+
+  it('sin el dato (aviso sin detalle o que nunca llega) la barra queda como antes: Horario · Paquetes · Mi cuenta', async () => {
+    new Function(scriptDeLaPagina())()
+    await esperar()
+    expect(escribenos().hidden).toBe(true)
+    avisarChat()
+    expect(escribenos().hidden).toBe(true)
+    avisarChat({ otraCosa: 1 })
+    expect(escribenos().hidden).toBe(true)
   })
 })

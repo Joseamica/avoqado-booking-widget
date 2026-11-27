@@ -251,6 +251,10 @@ export function BookingFlow({ props }: BookingFlowProps) {
   const recovery = recoveryRef.current
   const manageOwnerRef = useRef<{ venue: string; secret: string } | null>(null)
   const [returnNoticeClosed, setReturnNoticeClosed] = useState(false)
+  // W4 (banco, 27-nov): `venueInfo` es una señal compartida por todos los <avoqado-booking> de la página (queda la del ÚLTIMO
+  // estudio que cargó). Lo que esta instancia cargó de SU estudio se guarda aquí: la franja «Hola, Ana · tienes …» busca entre
+  // estos productos, no entre los del otro estudio (con dos widgets, el primero la perdía al montarse el segundo).
+  const venueDeEsteEstudio = useRef<PublicVenueInfo | null>(null)
 
   function openManage(secret: string) {
     manageOwnerRef.current = { venue: props.venue, secret }
@@ -725,6 +729,7 @@ export function BookingFlow({ props }: BookingFlowProps) {
     apiError.value = null
     api.getVenueInfo(props.venue)
       .then(info => {
+        venueDeEsteEstudio.current = info
         venueInfo.value = info
         branding.value = info.branding ?? DEFAULT_BRANDING
         // Skip the initial booking-state reset when a manage deep-link is active
@@ -1165,6 +1170,7 @@ export function BookingFlow({ props }: BookingFlowProps) {
 
         if (slotHoldToken.value && !(await releaseHoldBefore(refreshStaleVenue))) return
 
+        venueDeEsteEstudio.current = fresh
         venueInfo.value = fresh
         branding.value = fresh.branding ?? DEFAULT_BRANDING
 
@@ -1279,6 +1285,7 @@ export function BookingFlow({ props }: BookingFlowProps) {
           : (selectedProduct.value ? [selectedProduct.value] : [])
         const reconciled = reconcileAppointmentSelection(previousProducts, selectedModifiers.value, fresh)
 
+        venueDeEsteEstudio.current = fresh
         venueInfo.value = fresh
         branding.value = fresh.branding ?? DEFAULT_BRANDING
         selectedProducts.value = reconciled.products
@@ -1403,7 +1410,7 @@ export function BookingFlow({ props }: BookingFlowProps) {
     activo: (!!venueInfo.value && !showLanding && flowType.value === 'classes' && step.value < config.formStep
       && !seatPickerActive && !classDetailActive && !showPortal.value) || enConfirmacionDeClase,
     ventana: ventanaDelHorario,
-    productos: venueInfo.value?.products ?? [],
+    productos: venueDeEsteEstudio.current?.products ?? [],
   })
   refrescarMisClases.current = misClases.refrescar
   // Ola final W1: de la confirmación (o de la revisión y «Listo», que salen en ese mismo paso) al horario, `activo` sigue verdadero y
@@ -2901,10 +2908,8 @@ export function BookingFlow({ props }: BookingFlowProps) {
               .avq-classes-main { min-width: 0; }
               .avq-classes-main > * { min-width: 0; }
               .avq-classes-sidebar { display: none; }
-              /* Celular: la página deja 12 px por lado; el horario suma 12 px para llegar a los 24 px del diseño (citas no cambia). */
-              @media (max-width: 640px) {
-                .avq-classes-main { padding-inline: 12px; }
-              }
+              /* Celular: el margen lo ponen la página (12 px) y el widget (16 px): 28 px. El horario ya no suma 12 px más (W2, banco
+                 27-nov: iba a 40 px del borde). Citas no cambia. */
               @media (min-width: 960px) {
                 .avq-classes-layout {
                   grid-template-columns: minmax(0, 1fr) 260px;
