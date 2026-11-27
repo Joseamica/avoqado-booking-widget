@@ -296,6 +296,8 @@ interface ConfirmacionDeClaseProps {
   /** Con cuenta, «Ver mis reservas» (su «Mi cuenta»); sin cuenta, «Ver mi reserva» (esta, en «Gestionar»). */
   conCuenta: boolean
   onVerMisReservas: () => void
+  /** Con cuenta, «Ver o cambiar esta reserva»: «Gestionar» de ESTA reserva (sin cuenta ya lo hace «Ver mi reserva»). */
+  onVerEstaReserva?: () => void
   /** Con la última sesión gastada, invita a ver paquetes (sólo si el estudio vende alguno). */
   onVerPaquetes?: () => void
   /** «Reservar otra clase» (de vuelta al horario). */
@@ -319,7 +321,7 @@ const ics = (s: string) => s.replace(/\\/g, '\\\\').replace(/[,;]/g, m => `\\${m
  */
 export function ConfirmacionDeClase({
   clase, startsAt, endsAt, timeZone, coach, lugares, confirmationCode, nombre, canje, pago, politica, negocio, direccion,
-  puedeEscribir, conCuenta, onVerMisReservas, onVerPaquetes, onOtraClase, cambioDeCuenta = false, onVerMiCuenta, t,
+  puedeEscribir, conCuenta, onVerMisReservas, onVerEstaReserva, onVerPaquetes, onOtraClase, cambioDeCuenta = false, onVerMiCuenta, t,
 }: ConfirmacionDeClaseProps) {
   const [conCalendario, setConCalendario] = useState(false)
   const idCalendario = useId()
@@ -349,12 +351,14 @@ export function ConfirmacionDeClase({
   let usoDelPaquete: string | null = null
   let ultima = false
   const saldo = canje?.saldo ?? null
+  // Regla global: un Ilimitado nunca enseña su ≈99,999, aunque el SERVIDOR y el pedido no coincidan en la marca (fix r1 #3).
+  const esIlimitado = !!(saldo?.unlimited || canje?.ilimitado)
   if (canje) {
     const creditos = canje.soloEstaClase === false
     const u = (n: number) => t(creditos ? (n === 1 ? 'reservaClases.credito' : 'reservaClases.creditos') : (n === 1 ? `${L}.sesion` : `${L}.sesiones`))
     const usadas = Math.max(1, canje.usadas)
     const vence = saldo?.expiresAt ? fechaCorta(t, saldo.expiresAt, timeZone) : null
-    if (saldo?.unlimited || (!saldo && canje.ilimitado)) {
+    if (esIlimitado) {
       usoDelPaquete = vence ? `${t(`${L}.ilimitado`)} ${t(`${L}.venceParen`, { fecha: vence })}` : t(`${L}.ilimitado`)
     } else if (saldo && saldo.remaining <= 0) {
       ultima = true
@@ -369,7 +373,7 @@ export function ConfirmacionDeClase({
       usoDelPaquete = t(`${L}.usaste`, { n: usadas, unidad: u(usadas) })
     }
   }
-  const barra = saldo && !saldo.unlimited && saldo.original > 0
+  const barra = saldo && !esIlimitado && saldo.original > 0
     ? Math.max(0, Math.min(100, Math.round((saldo.remaining / saldo.original) * 100)))
     : null
   const comoPaga = !canje && pago
@@ -435,7 +439,7 @@ export function ConfirmacionDeClase({
           <>
             <div class="avq-ls-corte" />
             <div class="avq-ls-t2">
-              {saldo && !saldo.unlimited && <p class="avq-ls-lbl">{t(`${L}.tuPaquete`, { paquete: saldo.packName })}</p>}
+              {saldo && !esIlimitado && <p class="avq-ls-lbl">{t(`${L}.tuPaquete`, { paquete: saldo.packName })}</p>}
               {usoDelPaquete && <p class="avq-ls-uso">{usoDelPaquete}</p>}
               {barra != null && <div class="avq-ls-barra" aria-hidden="true"><i style={{ width: `${barra}%` }} /></div>}
               {ultima && onVerPaquetes && (
@@ -472,6 +476,9 @@ export function ConfirmacionDeClase({
         <button type="button" class="avq-ls-link" onClick={onVerMisReservas}>
           {t(conCuenta ? `${L}.verMisReservas` : `${L}.verMiReserva`)}
         </button>
+        {conCuenta && onVerEstaReserva && (
+          <button type="button" class="avq-ls-link avq-ls-link--sec" onClick={onVerEstaReserva}>{t(`${L}.verEstaReserva`)}</button>
+        )}
         {puedeEscribir && (
           <button type="button" class="avq-ls-link" onClick={() => window.dispatchEvent(new CustomEvent('avoqado:open-chat'))}>
             <Icono nombre="chat" size={20} />{t(`${L}.dudas`)}
@@ -543,6 +550,7 @@ const ESTILOS_LISTO = `
     display: flex; align-items: center; justify-content: center; gap: 10px; min-height: 48px; padding: 0 8px; background: none;
     border: 0; border-radius: 10px; font: inherit; font-size: 16px; font-weight: 600; color: var(--avq-accent, #2563eb); cursor: pointer;
   }
+  .avq-ls-link--sec { color: var(--avq-fg, #111827); font-weight: 500; }
   .avq-ls-paquetes { justify-content: flex-start; min-height: 44px; margin-top: 6px; padding: 0; }
   .avq-ls-otra {
     min-height: 44px; background: none; border: 0; border-radius: 10px; font: inherit; font-size: 15px; font-weight: 500;

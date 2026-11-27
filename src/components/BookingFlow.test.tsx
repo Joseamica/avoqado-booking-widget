@@ -3214,6 +3214,31 @@ describe('Task 13: «Confirma tu reserva» — nada se reserva sin el botón, y 
       expect(texto()).not.toMatch(/apartado|Usaste|Fer Ruiz|Te esperamos/)
     })
 
+    it.each([
+      ['con sesión', true],
+      ['invitada', false],
+    ])('fix r1 #2: %s, la reserva espera la aprobación del estudio (`PENDING` sin depósito) ⇒ «…espera la aprobación del estudio», nunca «apartado»', async (_caso, conSesion) => {
+      if (conSesion) entrar()
+      vi.mocked(api.createReservation).mockResolvedValueOnce({ ...CONFIRMADA, status: 'PENDING' })
+      await aConfirmar(enEstudio)
+      if (!conSesion) datosDeInvitada()
+      fireEvent.click(boton('Confirmar reserva')); await flush()
+      expect(screen.getByRole('heading', { name: 'Tu reserva quedó y espera la aprobación del estudio' })).toBeTruthy()
+      expect(texto()).not.toMatch(/apartado|Te esperamos/)
+      fireEvent.click(boton('Ver mi reserva')); await flush()
+      expect(state.manageSecret.value).toBe('sec-ok')
+    })
+
+    it('fix r1 #2: `PENDING` por aprobar y entra otra cuenta ⇒ «No pudimos confirmar tu reserva»', async () => {
+      entrar()
+      vi.mocked(api.createReservation).mockResolvedValueOnce({ ...CONFIRMADA, status: 'PENDING' })
+      await aConfirmar(enEstudio)
+      fireEvent.click(boton('Confirmar reserva')); await flush()
+      await act(async () => { entrar(SES_BEA) }); await flush()
+      expect(screen.getByText('No pudimos confirmar tu reserva')).toBeTruthy()
+      expect(texto()).not.toMatch(/espera la aprobación|Lagree/)
+    })
+
     it('«sí quedó» (Task 13) enseña la misma pantalla: sin saldo del SERVIDOR, «Usaste 1 sesión»', async () => {
       entrar()
       respuestaPerdida()
@@ -3250,6 +3275,50 @@ describe('Task 13: «Confirma tu reserva» — nada se reserva sin el botón, y 
         expect(screen.queryByText('Tu Reservación')).toBeNull()
         fireEvent.click(boton('Ver mi reserva')); await flush()
         expect(screen.getByText('Tu Reservación')).toBeTruthy()
+      })
+
+      const portalCon = (upcoming: object[]) => ({
+        customer: { ...ANA, loyaltyPoints: 0, totalVisits: 0 }, credits: { purchases: [] }, reservations: { upcoming, past: [] },
+        invitadaRequiereEntrar: false, descuentos: { items: [], total: 0, nextCursor: null }, tarjetas: { items: [], total: 0, nextCursor: null },
+        pedidos: { items: [], total: 0, nextCursor: null }, otraFicha: null,
+      }) as any
+
+      it('fix r1 #1: con sesión, «Ver mis reservas» y de vuelta ⇒ «Gestionar» (la pantalla no vuelve a salir)', async () => {
+        entrar()
+        vi.mocked(api.getCustomerPortal).mockResolvedValue(portalCon([]))
+        await volverDeStripe(pagada)
+        expect(screen.getByRole('heading', { name: '¡Tu lugar está apartado!' })).toBeTruthy()
+        fireEvent.click(boton('Ver mis reservas')); await flush()
+        expect(state.showPortal.value).toBe(true)
+        await act(async () => { state.showPortal.value = false }); await flush()
+        expect(screen.getByText('Tu Reservación')).toBeTruthy()
+        expect(texto()).not.toContain('apartado')
+      })
+
+      it('fix r1 #1: con sesión también llega a «Gestionar» de ESTA reserva con «Ver o cambiar esta reserva»', async () => {
+        entrar()
+        await volverDeStripe(pagada)
+        fireEvent.click(boton('Ver o cambiar esta reserva')); await flush()
+        expect(screen.getByText('Tu Reservación')).toBeTruthy()
+        expect(screen.getByText('OK-9')).toBeTruthy()
+      })
+
+      it('fix r1 #1: otra clase pagada abierta desde «Mi cuenta» ⇒ «Gestionar», no esta pantalla', async () => {
+        entrar()
+        vi.mocked(api.getCustomerPortal).mockResolvedValue(portalCon([{
+          confirmationCode: 'OTRA-1', cancelSecret: 'sec-otra', status: 'CONFIRMED', startsAt: '2026-10-09T21:00:00Z',
+          endsAt: '2026-10-09T21:50:00Z', product: { id: 'class-a', name: 'Lagree' },
+        }]))
+        await volverDeStripe(pagada)
+        vi.mocked(api.getReservation).mockImplementation(async (_slug: string, secret: string) => (
+          secret === 'sec-otra' ? { ...pagada, confirmationCode: 'OTRA-1', startsAt: '2026-10-09T21:00:00Z', endsAt: '2026-10-09T21:50:00Z' } : pagada
+        ) as PublicReservationDetail)
+        fireEvent.click(boton('Ver mis reservas')); await flush(); await flush()
+        fireEvent.click(boton('Gestionar')); await flush(); await flush()
+        expect(state.manageSecret.value).toBe('sec-otra')
+        expect(screen.getByText('Tu Reservación')).toBeTruthy()
+        expect(screen.getByText('OTRA-1')).toBeTruthy()
+        expect(texto()).not.toContain('apartado')
       })
 
       it('el depósito todavía pendiente: «Gestionar» como hoy, con «Estamos confirmando el depósito»', async () => {

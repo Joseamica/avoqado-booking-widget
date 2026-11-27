@@ -133,6 +133,25 @@ describe('«¡Tu lugar está apartado!» (Task 14)', () => {
     expect(screen.getByText('Usaste tu Ilimitado')).toBeTruthy()
   })
 
+  it('fix r1 #3: el pedido dice Ilimitado aunque el saldo del SERVIDOR no lo marque ⇒ nunca sus números', () => {
+    const { container } = pinta({
+      canje: { usadas: 1, saldo: saldo({ packName: 'Mensual Ilimitado', remaining: 99998, original: 99999, unlimited: false }), ilimitado: true },
+    })
+    expect(screen.getByText('Usaste tu Ilimitado (vence el 11 dic)')).toBeTruthy()
+    expect(texto()).not.toMatch(/9999|Tu paquete ·/)
+    expect(container.querySelector('.avq-ls-barra')).toBeNull()
+  })
+
+  it('«Ver o cambiar esta reserva» sólo con cuenta (la invitada ya tiene «Ver mi reserva»)', () => {
+    const onVerEstaReserva = vi.fn()
+    pinta({ onVerEstaReserva })
+    fireEvent.click(screen.getByRole('button', { name: 'Ver o cambiar esta reserva' }))
+    expect(onVerEstaReserva).toHaveBeenCalledTimes(1)
+    cleanup()
+    pinta({ onVerEstaReserva, conCuenta: false })
+    expect(screen.queryByRole('button', { name: 'Ver o cambiar esta reserva' })).toBeNull()
+  })
+
   it('con tarjeta o en el estudio lo dice; sin monto (precios apagados) no enseña cantidades', () => {
     pinta({ pago: { forma: 'tarjeta', monto: 325 } })
     expect(screen.getByText('Pagaste $325 con tarjeta')).toBeTruthy()

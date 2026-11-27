@@ -369,6 +369,8 @@ export function BookingFlow({ props }: BookingFlowProps) {
   const revisionRef = useRef<RevisionDeClase | null>(null)
   revisionRef.current = revision
   const [claseLista, setClaseLista] = useState<ClaseLista | null>(null)
+  /** Fix r1 #1: las reservas (por `cancelSecret`) cuya pantalla de «Listo» al volver de Stripe ya se vio: al regresar de «Mi cuenta», «Gestionar». */
+  const [listoVistoDe, setListoVistoDe] = useState<readonly string[]>([])
   /** El candado del toque en «Confirmar reserva»: un doble toque es UNA reserva (se suelta en `finally`). */
   const confirmandoRef = useRef(false)
   const entrarAbierto = useRef(false)
@@ -1517,6 +1519,7 @@ export function BookingFlow({ props }: BookingFlowProps) {
         puedeEscribir={info.chat?.canMessage !== false}
         conCuenta={conCuenta}
         onVerMisReservas={conCuenta ? () => { showPortal.value = true } : x.verGestion}
+        onVerEstaReserva={x.verGestion}
         onVerPaquetes={creditPacks.value.length > 0 ? () => setShowCreditPacksModal(true) : undefined}
         onOtraClase={x.otraClase}
         cambioDeCuenta={x.cambioDeCuenta}
@@ -1626,8 +1629,14 @@ export function BookingFlow({ props }: BookingFlowProps) {
           paymentUnfinished={recovery.paymentUnfinished && recovery.saved?.cancelSecret === manageSecret.value}
           paymentCancelled={recovery.saved?.outcome === 'cancelled' && recovery.saved?.cancelSecret === manageSecret.value}
           // Task 14: de vuelta de Stripe, la clase ya CONFIRMED y pagada enseña «¡Tu lugar está apartado!» con lo GUARDADO (clase,
-          // coach y lugares del GET); si sigue pendiente, falló o venció, «Gestionar» como hoy.
-          confirmacionDeClase={(r, verGestion) => pantallaDeClaseLista({
+          // coach y lugares del GET); si sigue pendiente, falló o venció, «Gestionar» como hoy. Fix r1 #1: sólo para la reserva de ESA
+          // vuelta (otra abierta desde «Mi cuenta» abre «Gestionar») y una sola vez (al regresar de «Mi cuenta», «Gestionar»).
+          confirmacionYaVista={listoVistoDe.includes(manageSecret.value!)}
+          onConfirmacionVista={() => {
+            const secreto = manageSecret.value
+            if (secreto) setListoVistoDe(v => (v.includes(secreto) ? v : [...v, secreto]))
+          }}
+          confirmacionDeClase={recovery.saved?.cancelSecret !== manageSecret.value ? undefined : (r, verGestion) => pantallaDeClaseLista({
             clase: r.className ?? r.product?.name ?? '', coach: r.instructorName ?? null, startsAt: r.startsAt, endsAt: r.endsAt,
             lugares: r.spotIds ?? [], confirmationCode: r.confirmationCode, nombre: r.guestName, canje: null,
             pago: { forma: 'tarjeta', monto: montoVisible(r.depositAmount) }, pagaCon: 'tarjeta',
@@ -3713,6 +3722,31 @@ export function BookingFlow({ props }: BookingFlowProps) {
           const r = bookingResult.value!
           const l = claseListaVisible
           const c = l.pedido.comoSePago
+          const cambioDeCuenta = !!l.pedido.intento && !sigueSiendoEl(l.pedido.intento)
+          // Fix r1 #2: el estudio aprueba las reservas (`autoConfirm` apagado): nunca «¡Tu lugar está apartado!», sino lo mismo que dice
+          // la revisión de Task 13 de una reserva por aprobar. (Una `PENDING` que se paga en línea se fue a Stripe y no llega aquí.)
+          if (r.status === 'PENDING') {
+            const idioma = idiomaDe(t)
+            const tz = resolveDisplayTz(info.timezone)
+            const nada = () => {}
+            return (
+              <RevisionDeLaReserva
+                estado={cambioDeCuenta ? 'cambio-de-cuenta' : 'quedo-por-aprobar'}
+                clase={l.clase}
+                dia={fechaDeLaClase(l.startsAt, tz, idioma)}
+                hora={horaDeLaClase(l.startsAt, tz, idioma)}
+                coach={l.coach}
+                lugares={l.pedido.lugares}
+                puedeEscribir={info.chat?.canMessage !== false}
+                onIntentar={nada}
+                onRevisar={nada}
+                onVerMiReserva={() => openManage(r.cancelSecret)}
+                onVerMiCuenta={() => { showPortal.value = true }}
+                onEscribir={() => window.dispatchEvent(new CustomEvent('avoqado:open-chat'))}
+                t={t}
+              />
+            )
+          }
           const canjeo = !!r.creditRedeemed || !!r.creditBalance
           return pantallaDeClaseLista({
             clase: l.clase, coach: l.coach, startsAt: l.startsAt, endsAt: l.endsAt, lugares: l.pedido.lugares,
@@ -3724,7 +3758,7 @@ export function BookingFlow({ props }: BookingFlowProps) {
             pagaCon: r.creditBalance?.unlimited ? 'ilimitado' : canjeo && c.pagaCon !== 'ilimitado' ? 'paquete' : c.pagaCon,
             sesiones: c.sesiones,
             verGestion: () => openManage(r.cancelSecret), otraClase: () => resetBooking(info),
-            cambioDeCuenta: !!l.pedido.intento && !sigueSiendoEl(l.pedido.intento),
+            cambioDeCuenta,
           })
         })()}
 
