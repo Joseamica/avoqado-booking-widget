@@ -69,12 +69,18 @@ export function miLugarEn(reservas: MiReservaDeClase[]): MiLugarEnLaClase | null
   return { lugar: lugares[0] ?? null, ...(lugares.length > 1 ? { lugares } : {}), estado, principal, reservas }
 }
 
-/** Sólo evita un ciclo sin fin si el SERVIDOR repitiera el cursor: 20 páginas de 100 son mucho más que 60 días de una clienta. */
+/** 20 páginas de 100 son mucho más que 60 días de una clienta: más que eso (o un cursor repetido) es una lectura que no terminó. */
 const TOPE_DE_PAGINAS = 20
+
+/** Ruling del controlador (fix r1): una lectura a medias nunca pasa por completa. Sin `status`: quien revisa lo toma como «no se sabe». */
+const lecturaIncompleta = () =>
+  Object.assign(new Error('No pudimos leer todas tus reservas de esta ventana.'), { code: 'LECTURA_INCOMPLETA' as const })
 
 /**
  * TODAS las páginas de sus reservas de clase en la ventana. Lanza el error de la lectura tal cual (con su `status`: 401, 404 de un
- * SERVIDOR viejo, 5xx…) para que quien llame decida.
+ * SERVIDOR viejo, 5xx…) para que quien llame decida. Si el SERVIDOR repite un cursor o pasa del tope de páginas, lanza
+ * `LECTURA_INCOMPLETA` (sin `status`) en lugar de devolver lo que alcanzó: Task 13 compara «antes» y «después», y una lista recortada
+ * diría «no quedó» de una reserva que sí quedó.
  */
 export async function leerMisReservasDeClase(
   slug: string,
@@ -94,10 +100,11 @@ export async function leerMisReservasDeClase(
     for (const r of pagina?.reservations ?? []) reservas.push(r)
     for (const id of pagina?.unlimitedUsedSessionIds ?? []) usados.add(id)
     cursor = pagina?.nextCursor ?? null
-    if (!cursor || vistos.has(cursor)) break
+    if (!cursor) return { reservas, ilimitadoUsadoEn: [...usados] }
+    if (vistos.has(cursor)) throw lecturaIncompleta()
     vistos.add(cursor)
   }
-  return { reservas, ilimitadoUsadoEn: [...usados] }
+  throw lecturaIncompleta()
 }
 
 /**
@@ -110,11 +117,15 @@ export interface ParaRevisarSiQuedo {
   /** Distinta en cada `<avoqado-booking>` de la página. */
   instancia: string
   ventana: VentanaDelHorario
-  /** Las reservas de la última lectura de ESTA ventana; `null` si todavía no la hubo (o falló). */
+  /**
+   * Las reservas de la última lectura BUENA (completa) de ESTA ventana; `null` si todavía no hubo ninguna (o la ventana creció y su
+   * lectura no ha llegado). Una relectura que falla no la toca: se queda la anterior.
+   */
   ultima: readonly MiReservaDeClase[] | null
   /**
    * Vuelve a leer TODAS las páginas de la misma ventana con el token de este estudio y devuelve las filas (con la forma de
-   * `ReservaPropia`). Lanza el error de la lectura con su `status`. Si sigue siendo la misma cuenta, también refresca las marcas.
+   * `ReservaPropia`). Lanza el error de la lectura con su `status`, o `LECTURA_INCOMPLETA` (sin `status`) si no pudo leerlas todas:
+   * nunca devuelve una lista a medias. Si sigue siendo la misma cuenta, también refresca las marcas y `ultima`.
    */
   leer: () => Promise<MiReservaDeClase[]>
 }
@@ -137,6 +148,12 @@ export interface MisClases {
   /** La franja de arriba del horario: el paquete de la primera clase del negocio que su saldo paga. */
   franja: { opciones: OpcionDePaquete[]; nombreClase: string } | null
   paraRevisar: ParaRevisarSiQuedo | null
+  /**
+   * Fix r1: vuelve a leer el saldo y, si hay ventana, sus reservas (tras comprar un paquete o al volver a la pestaña), con la cuenta
+   * de AHORA de este estudio y las mismas guardas (lo que llega de otra cuenta o de otro estudio no se pinta). No hace nada si este
+   * widget nunca las leyó (otro flujo) o ya no hay sesión.
+   */
+  refrescar: () => void
 }
 
 interface Leido<T> {
@@ -168,6 +185,8 @@ export function useMisClases(
   const [leidas, setLeidas] = useState<Leido<ReservasLeidas> | null>(null)
   const turnoCreditos = useRef(0)
   const turnoReservas = useRef(0)
+  /** Este widget ya leyó lo de la clienta (estuvo en el horario): sólo entonces `refrescar` vuelve a leer. */
+  const yaLeyo = useRef(false)
   const slugVivo = useRef(slug)
   slugVivo.current = slug
 
@@ -205,28 +224,45 @@ export function useMisClases(
     return r.reservas
   }
 
+  async function leerSaldo(c: CuentaDelEstudio): Promise<void> {
+    const n = ++turnoCreditos.current
+    const pedida = { slug: c.slug, identidad: c.identidad }
+    try {
+      const saldo = await api.getCustomerCredits(c.slug, {}, c.token)
+      if (saldo && n === turnoCreditos.current && sigue(pedida)) setCreditos({ ...pedida, datos: saldo })
+    } catch {
+      /* sin el saldo: el horario se ve igual, sin franja ni «Incluida» */
+    }
+  }
+  const leerReservas = (c: CuentaDelEstudio, ventana: VentanaDelHorario) =>
+    leerYGuardar(c, ventana).catch(() => {
+      /* sin sus reservas (o un SERVIDOR viejo, 404, o a medias): el horario se ve igual, sin marcas nuevas ni aviso */
+    })
+
   useEffect(() => {
     if (!o.activo || !cuenta) return
-    const n = ++turnoCreditos.current
-    const pedida = { slug, identidad: cuenta.identidad }
-    void (async () => {
-      try {
-        const c = await api.getCustomerCredits(slug, {}, cuenta.token)
-        if (c && n === turnoCreditos.current && sigue(pedida)) setCreditos({ ...pedida, datos: c })
-      } catch {
-        /* sin el saldo: el horario se ve igual, sin franja ni «Incluida» */
-      }
-    })()
+    yaLeyo.current = true
+    void leerSaldo(cuenta)
   }, [slug, identidad, o.activo])
 
   const desde = o.ventana?.dateFrom ?? null
   const hasta = o.ventana?.dateTo ?? null
+  const ventanaViva = useRef<VentanaDelHorario | null>(null)
+  ventanaViva.current = desde && hasta ? { dateFrom: desde, dateTo: hasta } : null
   useEffect(() => {
     if (!o.activo || !cuenta || !desde || !hasta) return
-    leerYGuardar(cuenta, { dateFrom: desde, dateTo: hasta }).catch(() => {
-      /* sin sus reservas (o un SERVIDOR viejo, 404): el horario se ve igual, sin marcas ni aviso */
-    })
+    yaLeyo.current = true
+    void leerReservas(cuenta, { dateFrom: desde, dateTo: hasta })
   }, [slug, identidad, o.activo, desde, hasta])
+
+  const refrescar = () => {
+    if (!yaLeyo.current) return
+    const c = cuentaDelEstudio(slugVivo.current)
+    if (!c) return
+    void leerSaldo(c)
+    const v = ventanaViva.current
+    if (v) void leerReservas(c, v)
+  }
 
   const deEstaCuenta = <T,>(l: Leido<T> | null): T | null =>
     l && cuenta && l.slug === slug && l.identidad === cuenta.identidad ? l.datos : null
@@ -290,5 +326,6 @@ export function useMisClases(
     reservaDe,
     franja,
     paraRevisar,
+    refrescar,
   }
 }

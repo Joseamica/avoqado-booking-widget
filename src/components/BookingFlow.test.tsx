@@ -1973,6 +1973,67 @@ describe('Task 10: lo que la clienta ya tiene, en el horario', () => {
     }
   })
 
+  it('fix r1: con un Ilimitado, la clase que ya reservó (donde ya lo usó) no enseña precio junto a «Reservada»', async () => {
+    entrar('studio-a', SES_ANA)
+    vi.mocked(api.getCustomerCredits).mockResolvedValue(saldo({ id: 'u1', restante: 0, original: 0, ilimitado: true, vence: '2026-12-20T18:00:00Z' }))
+    vi.mocked(api.getMisReservasDeClase).mockResolvedValue(pagina([mia('s-11', { spotIds: ['3'], usedUnlimited: true })], {
+      unlimitedUsedSessionIds: ['s-11'],
+    }))
+    await horario()
+    const suya = fila(/Lagree.*11:00/)
+    expect(within(suya).getByText('Reservada · lugar 3')).toBeTruthy()
+    expect(suya.textContent).not.toMatch(/\$|clase suelta|Incluida/)
+    // Las demás: su Ilimitado las paga.
+    expect(within(fila(/Lagree.*15:00/)).getByText('Incluida en tu paquete')).toBeTruthy()
+  })
+
+  it('fix r1: vuelve de Stripe y el paquete llega en el sondeo ⇒ la franja y «Incluida» se ponen al día sin recargar', async () => {
+    entrar('studio-a', SES_ANA)
+    let comprado = false
+    vi.mocked(api.getCustomerCredits).mockImplementation(async () => (comprado
+      ? saldo({ id: 'b5', restante: 5, original: 5, vence: '2026-12-11T18:00:00Z' })
+      : { customer: null, purchases: [] }))
+    sessionStorage.setItem('avq:compraDe', JSON.stringify({ venue: 'studio-a', cliente: ANA.id }))
+    vi.mocked(api.getVenueInfo).mockResolvedValue(estudio)
+    vi.mocked(api.getClassSessionsRange).mockResolvedValue({ ...VENTANA, slots: [s11, s13, s15] })
+    window.history.replaceState({}, '', '/studio-a/classes?avq_credits=success')
+    render(<BookingFlow props={{ ...props(), flowType: 'classes' }} />)
+    await flush(); await flush()
+    expect(franja()).toBeNull()
+    expect(within(fila(/Lagree.*11:00/)).getByText('$325 · clase suelta')).toBeTruthy()
+    comprado = true // el aviso de Stripe acreditó el paquete
+    await advance(1500); await flush()
+    expect(franja()).toBe('Hola, Ana · tienes 5 sesiones de Lagree · vencen el 11 dic')
+    expect(within(fila(/Lagree.*11:00/)).getByText('Incluida en tu paquete')).toBeTruthy()
+  })
+
+  describe('fix r1: al volver a la pestaña', () => {
+    let visible = true
+    beforeEach(() => {
+      visible = true
+      Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => (visible ? 'visible' : 'hidden') })
+    })
+    afterEach(() => { delete (document as any).visibilityState })
+
+    it('después de un rato fuera, vuelve a leer su saldo y sus reservas (compró o reservó en otra pestaña)', async () => {
+      entrar('studio-a', SES_ANA)
+      vi.mocked(api.getCustomerCredits).mockResolvedValue({ customer: null, purchases: [] })
+      await horario()
+      expect(franja()).toBeNull()
+      const lecturas = vi.mocked(api.getMisReservasDeClase).mock.calls.length
+      visible = false
+      await act(async () => { document.dispatchEvent(new Event('visibilitychange')) })
+      await advance(6 * 60 * 1000)
+      vi.mocked(api.getCustomerCredits).mockResolvedValue(saldo({ id: 'b5', restante: 4, original: 5, vence: '2026-12-11T18:00:00Z' }))
+      vi.mocked(api.getMisReservasDeClase).mockResolvedValue(pagina([mia('s-15', { spotIds: ['8'] })]))
+      visible = true
+      await act(async () => { document.dispatchEvent(new Event('visibilitychange')) }); await flush(); await flush()
+      expect(vi.mocked(api.getMisReservasDeClase).mock.calls.length).toBe(lecturas + 1)
+      expect(franja()).toBe('Hola, Ana · tienes 4 sesiones de Lagree · vencen el 11 dic')
+      expect(within(fila(/Lagree.*15:00/)).getByText('Reservada · lugar 8')).toBeTruthy()
+    })
+  })
+
   it('cambia de cuenta en el mismo estudio: lo de Ana se borra al instante y su respuesta tardía no se pinta', async () => {
     let reservasDeAna!: (p: ReturnType<typeof pagina>) => void
     vi.mocked(api.getCustomerCredits).mockImplementation((_s: string, _p: unknown, token: string) =>

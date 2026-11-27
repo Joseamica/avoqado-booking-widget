@@ -375,3 +375,21 @@ describe('Horario: lo que la clienta ya tiene', () => {
     expect(within(screen.getByRole('button', { name: /Lagree.*11:00/ })).getByText('Falta pagar')).toBeTruthy()
   })
 })
+
+// Fix r1 (Task 10): en una clase que ya reservó no se enseña precio (ni «Incluida»): ya es suya, como no se enseña «Reservar».
+describe('Horario: una clase suya no enseña precio', () => {
+  it('con «Reservada · lugar 3» no sale «$325 · clase suelta» (tampoco en lo que se lee en voz alta)', async () => {
+    await pintar([s11, s13], { miReserva: slot => (slot.classSessionId === 's-11' ? { lugar: '3' } : null) })
+    const suya = fila(/Lagree.*11:00/)
+    expect(within(suya).getByText('Reservada · lugar 3')).toBeTruthy()
+    expect(suya.textContent).not.toMatch(/\$|clase suelta/)
+    expect(suya.getAttribute('aria-label')).not.toMatch(/\$|clase suelta/)
+    // Las demás siguen con su precio.
+    expect(within(fila(/Lagree.*13:00/)).getByText('$325 · clase suelta')).toBeTruthy()
+  })
+
+  it('tampoco «Incluida en tu paquete» en la suya', async () => {
+    await pintar([s11], { miReserva: () => ({ lugar: null, estado: 'porAprobar' as const }), cubreSesion: () => true })
+    expect(fila(/Lagree.*11:00/).textContent).not.toContain('Incluida')
+  })
+})

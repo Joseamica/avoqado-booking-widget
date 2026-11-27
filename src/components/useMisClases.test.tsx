@@ -146,3 +146,61 @@ describe('su reserva en una clase', () => {
     expect(miLugarEn([])).toBeNull()
   })
 })
+
+// Fix r1 (Ruling del controlador): `leer` nunca hace pasar una lectura a medias por completa. Con un cursor repetido o al llegar al tope
+// de páginas LANZA (sin `status`: Task 13 lo toma como «no se sabe», nunca como «no quedó»); `ultima` se queda con la última buena.
+describe('Task 10 → Task 13: una lectura a medias no cuenta como completa', () => {
+  async function conUnaLecturaBuena() {
+    entrar('un-estudio')
+    vi.mocked(api.getMisReservasDeClase).mockResolvedValueOnce(pagina([mia('s-1')]))
+    const salida: { actual?: MisClases } = {}
+    render(<Sonda slug="un-estudio" ventana={VENTANA} salida={salida} />)
+    await flush()
+    expect(salida.actual!.paraRevisar!.ultima!.map(x => x.confirmationCode)).toEqual(['C-s-1'])
+    return salida
+  }
+
+  it('cursor repetido ⇒ `leer` falla (sin status) y `ultima` sigue siendo la última lectura buena', async () => {
+    const salida = await conUnaLecturaBuena()
+    vi.mocked(api.getMisReservasDeClase)
+      .mockResolvedValueOnce(pagina([mia('s-1')], 'p2'))
+      .mockResolvedValueOnce(pagina([mia('s-2')], 'p2'))
+    let error: any = null
+    await act(async () => { await salida.actual!.paraRevisar!.leer().catch(e => { error = e }) })
+    expect(error).toBeInstanceOf(Error)
+    expect(error.status).toBeUndefined()
+    expect(error.code).toBe('LECTURA_INCOMPLETA')
+    expect(salida.actual!.paraRevisar!.ultima!.map(x => x.confirmationCode)).toEqual(['C-s-1'])
+  })
+
+  it('más páginas que el tope ⇒ `leer` falla en lugar de devolver lo que alcanzó', async () => {
+    const salida = await conUnaLecturaBuena()
+    let n = 0
+    vi.mocked(api.getMisReservasDeClase).mockImplementation(async () => pagina([mia(`s-${++n}`)], `p${n + 1}`))
+    await expect(salida.actual!.paraRevisar!.leer()).rejects.toMatchObject({ code: 'LECTURA_INCOMPLETA' })
+    expect(n).toBe(20)
+  })
+})
+
+describe('Task 10: refrescar', () => {
+  it('vuelve a leer el saldo y sus reservas de la ventana con la cuenta de ahora; nada si este widget nunca las leyó', async () => {
+    entrar('un-estudio')
+    vi.mocked(api.getMisReservasDeClase).mockResolvedValue(pagina([]))
+    const fuera: { actual?: MisClases } = {}
+    const v = render(<Sonda slug="un-estudio" ventana={VENTANA} activo={false} salida={fuera} />)
+    await flush()
+    fuera.actual!.refrescar(); await flush()
+    expect(api.getCustomerCredits).not.toHaveBeenCalled()
+    v.unmount()
+    const salida: { actual?: MisClases } = {}
+    render(<Sonda slug="un-estudio" ventana={VENTANA} salida={salida} />)
+    await flush()
+    expect(api.getCustomerCredits).toHaveBeenCalledTimes(1)
+    expect(api.getMisReservasDeClase).toHaveBeenCalledTimes(1)
+    vi.mocked(api.getMisReservasDeClase).mockResolvedValue(pagina([mia('s-9', { spotIds: ['4'] })]))
+    await act(async () => { salida.actual!.refrescar() }); await flush()
+    expect(api.getCustomerCredits).toHaveBeenLastCalledWith('un-estudio', {}, 'tok-ana')
+    expect(api.getMisReservasDeClase).toHaveBeenCalledTimes(2)
+    expect(salida.actual!.reservaDe({ classSessionId: 's-9' })!.lugar).toBe('4')
+  })
+})

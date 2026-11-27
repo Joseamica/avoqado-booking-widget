@@ -210,6 +210,8 @@ export function BookingFlow({ props }: BookingFlowProps) {
   const [ventanaDelHorario, setVentanaDelHorario] = useState<VentanaDelHorario | null>(null)
   const alAvisarVentana = (v: VentanaDelHorario) =>
     setVentanaDelHorario(antes => (antes && antes.dateFrom === v.dateFrom && antes.dateTo === v.dateTo ? antes : { ...v }))
+  // Fix r1: el sondeo al volver de Stripe y el regreso a la pestaña también ponen al día la franja, «Incluida» y las marcas.
+  const refrescarMisClases = useRef<() => void>(() => {})
   const [buyingPackId, setBuyingPackId] = useState<string | null>(null)
   // El paquete que espera a que la clienta entre a su cuenta (sin sesión, «Comprar» abre «Entra a tu cuenta»), y su número de intento.
   const [checkoutPackId, setCheckoutPackId] = useState<string | null>(null)
@@ -789,6 +791,7 @@ export function BookingFlow({ props }: BookingFlowProps) {
         const newCount = fresh.purchases.length
         if (newCount > baselineCount || attempts >= maxAttempts) {
           customerCredits.value = fresh
+          refrescarMisClases.current()
           return
         }
       } catch (err: any) {
@@ -1131,6 +1134,7 @@ export function BookingFlow({ props }: BookingFlowProps) {
       if (!hiddenAt) return
       const hiddenFor = Date.now() - hiddenAt
       if (hiddenFor < 5 * 60 * 1000) return // <5 min — don't bother
+      refrescarMisClases.current() // Task 10: su saldo y sus reservas (pudo comprar o reservar en otra pestaña)
       refreshStaleVenue()
     }
 
@@ -1279,6 +1283,7 @@ export function BookingFlow({ props }: BookingFlowProps) {
     ventana: ventanaDelHorario,
     productos: venueInfo.value?.products ?? [],
   })
+  refrescarMisClases.current = misClases.refrescar
 
   if (isLoading.value && !reservationSubmittingRef.current) {
     return (

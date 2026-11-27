@@ -252,6 +252,8 @@ function FilaDeClase({ slot, dia, hora, precio, reserva, mostrarDuracion, onSele
   const dur = mostrarDuracion ? duracion(minutosDeLaSesion(slot)) : ''
   const textoLugares = textoDeLugares(t, lugares)
   const textoReserva = reserva ? textoDeReserva(t, reserva) : null
+  // Ya es suya: ni precio ni «Incluida» (como tampoco «Reservar»). Con un Ilimitado, la clase donde ya lo usó decía «$325».
+  const precioVisible = reserva ? null : precio
   return (
     <button
       type="button"
@@ -259,7 +261,7 @@ function FilaDeClase({ slot, dia, hora, precio, reserva, mostrarDuracion, onSele
       data-estado={reserva ? 'reservada' : lugares.estado}
       aria-label={nombreDeLaSesion([
         slot.productName, dia, hora, dur, coach && t('classList.withInstructor', { name: coach }),
-        textoLugares, textoReserva, precio?.texto,
+        textoLugares, textoReserva, precioVisible?.texto,
       ])}
       disabled={!tocable}
       onClick={() => { if (tocable) onSelect(slot) }}
@@ -281,7 +283,9 @@ function FilaDeClase({ slot, dia, hora, precio, reserva, mostrarDuracion, onSele
             <span>{textoReserva}</span>
           </span>
         )}
-        {precio && <span class={`avq-fila-precio${precio.incluida ? ' avq-fila-precio--incluida' : ''}`}>{precio.texto}</span>}
+        {precioVisible && (
+          <span class={`avq-fila-precio${precioVisible.incluida ? ' avq-fila-precio--incluida' : ''}`}>{precioVisible.texto}</span>
+        )}
       </span>
       {/* Ya reservada: la marca de arriba lo dice; tocarla abre su clase, sin botón de «Reservar». */}
       {!reserva && (
