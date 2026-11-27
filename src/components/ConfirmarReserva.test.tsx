@@ -78,6 +78,20 @@ describe('ConfirmarReserva', () => {
     expect(props.onElegir).toHaveBeenCalledWith(null)
   })
 
+  it('fix r1 #3: clase que se paga en el estudio: «Cambiar» también ofrece «Pagar en el estudio» (elegida = null)', () => {
+    const { props } = pinta({ aceptaEstudio: true })
+    fireEvent.click(screen.getByRole('button', { name: 'Cambiar' }))
+    expect(screen.getAllByRole('radio')).toHaveLength(2)
+    fireEvent.click(screen.getByRole('radio', { name: /Pagar en el estudio/ }))
+    expect(props.onElegir).toHaveBeenCalledWith(null)
+    cleanup()
+    // Ya elegido: la caja lo dice y «Cambiar» deja regresar al paquete.
+    pinta({ aceptaEstudio: true, elegida: null, pago: 'estudio' })
+    expect(screen.getByText('Pagas en el estudio')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Cambiar' }))
+    expect(screen.getByRole('radio', { name: /Pagar en el estudio/ }).getAttribute('aria-checked')).toBe('true')
+  })
+
   it('sin paquete y con pago en línea: «Pagar $325», y «A pagar hoy $325»', () => {
     const { props } = pinta({ opciones: [], elegida: null, pago: 'tarjeta', aceptaTarjeta: true })
     expect(screen.getByText('Pagar $325 con tarjeta')).toBeTruthy()

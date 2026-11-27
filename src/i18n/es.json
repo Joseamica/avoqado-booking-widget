@@ -669,6 +669,7 @@
       "conTarjeta": "Pagar {{precio}} con tarjeta",
       "conTarjetaSinPrecio": "Pagar con tarjeta",
       "enElEstudio": "Pagas en el estudio",
+      "enElEstudioOpcion": "Pagar en el estudio",
       "gratis": "Clase sin costo",
       "aPagarHoy": "A pagar hoy",
       "aPagarEnElEstudio": "A pagar en el estudio",

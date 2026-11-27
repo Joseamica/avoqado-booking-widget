@@ -3041,6 +3041,84 @@ describe('Task 13: «Confirma tu reserva» — nada se reserva sin el botón, y 
     expect(vi.mocked(api.createReservation).mock.calls[0][1].creditItemBalanceId).toBe('b5')
   })
 
+  describe('fix r1', () => {
+    it('#1: con `showPrices` apagado, el resumen lateral de una clase que se paga en línea no enseña montos ni un «$0» que no es real', async () => {
+      await aConfirmar(enLinea, { branding: { ...state.DEFAULT_BRANDING, showPrices: false } })
+      const lateral = document.querySelector('.avq-confirmacion-lateral') as HTMLElement
+      expect(lateral).toBeTruthy()
+      expect(lateral.textContent).not.toMatch(/\$|A pagar|Variable/)
+      expect(boton('Pagar con tarjeta')).toBeTruthy()
+      expect(document.querySelector('.avq-confirmar')!.textContent).not.toContain('$')
+    })
+
+    it('#2: con sesión, «Confirmar reserva» espera también la lectura de sus reservas (sin ella, «antes» saldría vacío)', async () => {
+      ;(globalThis as any).__entradaDePrueba = SES_ANA
+      let darReservas!: (p: ReturnType<typeof pagina>) => void
+      vi.mocked(api.getMisReservasDeClase).mockImplementationOnce(() => new Promise(ok => { darReservas = ok }))
+      await abrirClase(soloPaquete)
+      fireEvent.click(boton('Reservar')); await flush()
+      fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Simular entrar' })); await flush(); await flush()
+      // El saldo ya llegó; sus reservas no.
+      expect(screen.getByText('Cargando tu paquete…')).toBeTruthy()
+      expect(elBoton().disabled).toBe(true)
+      fireEvent.click(elBoton()); await flush()
+      expect(api.createReservation).not.toHaveBeenCalled()
+      await act(async () => darReservas(pagina([]))); await flush()
+      expect(boton('Confirmar reserva').disabled).toBe(false)
+      expect(screen.getByText('Usa 1 de tus 4 sesiones de Lagree')).toBeTruthy()
+    })
+
+    it('#2: si la lectura de sus reservas FALLÓ, deja confirmar; tras un error de red sin lugares la revisión dice «no disponible», nunca «quedó» por una reserva vieja', async () => {
+      ;(globalThis as any).__entradaDePrueba = SES_ANA
+      // Ya tenía una reserva en esa clase (sin lugar), que la lectura fallida no dejó ver.
+      guardadas = [mia({ confirmationCode: 'VIEJA', cancelSecret: 'sec-vieja' })]
+      vi.mocked(api.getMisReservasDeClase).mockImplementationOnce(async () => { throw Object.assign(new Error('x'), { status: 500 }) })
+      vi.mocked(api.createReservation).mockRejectedValueOnce(sinRed())
+      await abrirClase(soloPaquete)
+      fireEvent.click(boton('Reservar')); await flush()
+      fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Simular entrar' })); await flush(); await flush()
+      expect(boton('Confirmar reserva').disabled).toBe(false)
+      const lecturas = vi.mocked(api.getMisReservasDeClase).mock.calls.length
+      fireEvent.click(boton('Confirmar reserva')); await flush()
+      await revisar()
+      expect(screen.getByText('No pudimos revisar si tu reserva quedó')).toBeTruthy()
+      expect(texto()).not.toContain('¡Tu lugar está apartado!')
+      expect(vi.mocked(api.getMisReservasDeClase).mock.calls.length).toBe(lecturas)
+      expect(api.createReservation).toHaveBeenCalledTimes(1)
+    })
+
+    it('#3: clase que se paga en el estudio, con paquete: «Cambiar» también ofrece «Pagar en el estudio»; elegirlo manda sin paquete y el resumen dice lo que se paga ahí', async () => {
+      entrar()
+      await aConfirmar(enEstudio)
+      // Por default, el paquete que vence primero.
+      expect(screen.getByText('Usa 1 de tus 4 sesiones de Lagree')).toBeTruthy()
+      fireEvent.click(boton('Cambiar'))
+      const grupo = screen.getByRole('radiogroup', { name: 'Cómo quieres pagar' })
+      expect(within(grupo).getAllByRole('radio').map(r => r.textContent)).toEqual([
+        'Usa 1 de tus 4 sesiones de LagreePaquete de 5 · vence el 11 dic',
+        'Pagar en el estudio$325 · clase suelta',
+      ])
+      fireEvent.click(within(grupo).getByRole('radio', { name: /Pagar en el estudio/ })); await flush()
+      expect(screen.getByText('Pagas en el estudio')).toBeTruthy()
+      const confirmar = document.querySelector('.avq-confirmar') as HTMLElement
+      expect(within(confirmar).getByText('A pagar en el estudio').nextElementSibling?.textContent).toBe('$325')
+      const lateral = document.querySelector('.avq-confirmacion-lateral') as HTMLElement
+      expect(within(lateral).getByText('A pagar en el estudio').nextElementSibling?.textContent).toBe('$325')
+      expect(within(lateral).getByText('A pagar hoy').nextElementSibling?.textContent).toBe('$0')
+      fireEvent.click(boton('Confirmar reserva')); await flush()
+      expect(vi.mocked(api.createReservation).mock.calls[0][1].creditItemBalanceId).toBeUndefined()
+    })
+
+    it('#3: sin precios, «Pagar en el estudio» se ofrece sin monto y el resumen no enseña cantidades', async () => {
+      entrar()
+      await aConfirmar(enEstudio, { branding: { ...state.DEFAULT_BRANDING, showPrices: false } })
+      fireEvent.click(boton('Cambiar'))
+      fireEvent.click(screen.getByRole('radio', { name: 'Pagar en el estudio' })); await flush()
+      expect(document.querySelector('.avq-confirmacion-lateral')!.textContent).not.toMatch(/\$|A pagar/)
+      expect(document.querySelector('.avq-confirmar')!.textContent).not.toMatch(/\$325|A pagar en el estudio/)
+    })
+  })
+
   it('«¿Ya tienes paquete? Entra para usarlo» ⇒ al entrar, la confirmación ofrece su paquete y no reserva sola', async () => {
     ;(globalThis as any).__entradaDePrueba = SES_ANA
     vi.mocked(api.getCreditPacks).mockResolvedValue([PAQ_LAGREE] as any)

@@ -113,7 +113,9 @@ interface PlanDeLaConfirmacion {
   elegida: string | null
   pago: PagoDeLaReserva
   aceptaTarjeta: boolean
-  /** Con cuenta, su saldo todavía no se lee: no se deja confirmar. */
+  /** Fix r1 #3: con paquete, «Cambiar» también ofrece «Pagar en el estudio» (la clase se paga ahí). */
+  aceptaEstudio: boolean
+  /** Con cuenta, su saldo o sus reservas de la ventana todavía no se leen: no se deja confirmar. */
   cargando: boolean
   /** La clase sólo se paga con paquete y no tiene uno que la pague. */
   sinComoPagar: boolean
@@ -2072,6 +2074,9 @@ export function BookingFlow({ props }: BookingFlowProps) {
     if (!p.intento) return ponerRevision(p, p.leLlegaAviso ? 'invitada-aviso' : 'invitada-escribe')
     if (!sigueSiendoEl(p.intento)) return ponerRevision(p, 'cambio-de-cuenta')
     if (!p.leer) return ponerRevision(p, 'no-disponible')
+    // Fix r1 #2: sin saber qué tenía antes en la clase (su lectura falló) y sin lugares que la distingan, cualquier reserva suya de esa
+    // clase pasaría por «la nueva»: nunca un «¡Tu lugar está apartado!» que puede ser de una reserva vieja.
+    if (p.intento.antes === null && p.intento.spotIds.length === 0) return ponerRevision(p, 'no-disponible')
     ponerRevision(p, 'revisando')
     await revisarElPedido(p)
   }
@@ -2360,13 +2365,18 @@ export function BookingFlow({ props }: BookingFlowProps) {
     const todas = usaPaquetes ? misClases.opcionesDe(slot, n) : []
     const opciones = otroLugar ? todas.filter(o => !o.ilimitado) : todas
     const sinPaquete = exigePaquete ? null : pagoDeLaClase(producto, info.canCharge)
-    const aceptaTarjeta = sinPaquete === 'tarjeta'
+    // Sin paquete, la clase se paga con tarjeta en línea o en el estudio: con paquete, «Cambiar» ofrece esa otra forma (fix r1 #3,
+    // como hoy `PaymentSelector`). El default sigue siendo el paquete que vence primero.
+    const pagaSinPaquete = sinPaquete === 'tarjeta' || sinPaquete === 'estudio'
     const suya = eleccion && eleccion.classSessionId === slot.classSessionId ? eleccion.balanceId : undefined
     // Lo que eligió con «Cambiar» sólo vale si sigue siendo una forma de pagar ESTA reserva; si no, el default.
-    const valeLaSuya = suya !== undefined && (suya === null ? aceptaTarjeta : opciones.some(o => o.balanceId === suya))
+    const valeLaSuya = suya !== undefined && (suya === null ? pagaSinPaquete : opciones.some(o => o.balanceId === suya))
     const elegida: string | null = valeLaSuya ? (suya as string | null) : (opciones[0]?.balanceId ?? null)
     const opcion = opciones.find(o => o.balanceId === elegida) ?? null
-    const cargando = !!cuenta && !misClases.saldoListo
+    // Fix r1 #2: también espera la lectura de sus reservas de la ventana. Sin ella `antes` saldría vacío (una respuesta perdida
+    // podría «encontrar» una reserva que ya tenía) y se ofrecería un Ilimitado ya usado en esa clase. Si la lectura FALLÓ, se deja
+    // confirmar (la revisión se cuida sola, ver `trasUnResultadoIncierto`).
+    const cargando = !!cuenta && (!misClases.saldoListo || misClases.reservasLeidas === 'esperando')
     const unitario = producto.price != null ? Number(producto.price) : null
     // Cuando el Ilimitado no se ofrece (vence antes, ya lo usó en esta clase, o es otro lugar), se dice por qué, como hoy.
     let avisoIlimitado: string | null = null
@@ -2390,7 +2400,8 @@ export function BookingFlow({ props }: BookingFlowProps) {
       opciones,
       elegida,
       pago: opcion ? 'paquete' : (sinPaquete ?? 'paquete'),
-      aceptaTarjeta: aceptaTarjeta && opciones.length > 0,
+      aceptaTarjeta: sinPaquete === 'tarjeta' && opciones.length > 0,
+      aceptaEstudio: sinPaquete === 'estudio' && opciones.length > 0,
       cargando,
       sinComoPagar: !opcion && sinPaquete === null,
       precio: unitario != null && branding.value.showPrices !== false ? unitario * n : null,
@@ -3102,6 +3113,7 @@ export function BookingFlow({ props }: BookingFlowProps) {
                 onConfirmar={alConfirmarLaClase}
                 timeZone={info.timezone}
                 aceptaTarjeta={plan.aceptaTarjeta}
+                aceptaEstudio={plan.aceptaEstudio}
                 otroLugar={plan.otroLugar}
                 avisoIlimitado={plan.avisoIlimitado}
                 cargando={plan.cargando}
@@ -3422,7 +3434,9 @@ export function BookingFlow({ props }: BookingFlowProps) {
                       totalDuration={totalDuration.value}
                       selectedDate={selectedDate.value}
                       selectedSlot={selectedSlot.value}
-                      showTotals
+                      // Fix r1 #1: sin un precio de verdad (`showPrices` apagado o sin precio), ningún monto: nunca un «$0» falso.
+                      showTotals={plan?.precio != null}
+                      sinPrecios={plan?.precio == null}
                       subtotal={plan?.precio ?? undefined}
                       taxes={0}
                       dueToday={plan?.pago === 'tarjeta' ? (plan.precio ?? 0) : 0}

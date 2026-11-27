@@ -156,6 +156,12 @@ export interface MisClases {
    */
   saldoListo: boolean
   /**
+   * Task 13 (fix r1 #2): la lectura de sus reservas de la ventana de AHORA. `esperando` mientras no llega (la confirmación no deja
+   * confirmar: sin ella `antes` saldría vacío y el Ilimitado ya usado en la clase se ofrecería); `listas` con una lectura buena
+   * (`paraRevisar.ultima`); `fallaron` si la última falló o no hay ventana (se deja confirmar, pero no se puede revisar a ciegas).
+   */
+  reservasLeidas: 'esperando' | 'listas' | 'fallaron'
+  /**
    * Fix r1: vuelve a leer el saldo y, si hay ventana, sus reservas (tras comprar un paquete o al volver a la pestaña), con la cuenta
    * de AHORA de este estudio y las mismas guardas (lo que llega de otra cuenta o de otro estudio no se pinta). No hace nada si este
    * widget nunca las leyó (otro flujo) o ya no hay sesión.
@@ -190,6 +196,8 @@ export function useMisClases(
   const [vuelta, setVuelta] = useState(0)
   const [creditos, setCreditos] = useState<Leido<CustomerCreditBalance> | null>(null)
   const [saldoIntentado, setSaldoIntentado] = useState<Leido<true> | null>(null)
+  /** La ventana cuya última lectura de reservas FALLÓ (con su cuenta); una buena la borra. */
+  const [falloReservas, setFalloReservas] = useState<Leido<VentanaDelHorario> | null>(null)
   const [leidas, setLeidas] = useState<Leido<ReservasLeidas> | null>(null)
   const turnoCreditos = useRef(0)
   const turnoReservas = useRef(0)
@@ -210,6 +218,7 @@ export function useMisClases(
           setCreditos(null)
           setSaldoIntentado(null)
           setLeidas(null)
+          setFalloReservas(null)
         }
         setVuelta(v => v + 1)
       }),
@@ -226,9 +235,16 @@ export function useMisClases(
   async function leerYGuardar(c: CuentaDelEstudio, ventana: VentanaDelHorario): Promise<MiReservaDeClase[]> {
     const n = ++turnoReservas.current
     const pedida = { slug: c.slug, identidad: c.identidad }
-    const r = await leerMisReservasDeClase(c.slug, ventana, c.token)
+    let r: Awaited<ReturnType<typeof leerMisReservasDeClase>>
+    try {
+      r = await leerMisReservasDeClase(c.slug, ventana, c.token)
+    } catch (err) {
+      if (n === turnoReservas.current && sigue(pedida)) setFalloReservas({ ...pedida, datos: ventana })
+      throw err
+    }
     if (n === turnoReservas.current && sigue(pedida)) {
       setLeidas({ ...pedida, datos: { ventana, reservas: r.reservas, ilimitadoUsadoEn: new Set(r.ilimitadoUsadoEn) } })
+      setFalloReservas(null)
     }
     return r.reservas
   }
@@ -328,10 +344,20 @@ export function useMisClases(
         }
       : null
 
+  const fallo = deEstaCuenta(falloReservas)
+  const reservasLeidas: MisClases['reservasLeidas'] = !ventana
+    ? 'fallaron'
+    : paraRevisar?.ultima
+      ? 'listas'
+      : fallo && fallo.dateFrom === ventana.dateFrom && fallo.dateTo === ventana.dateTo
+        ? 'fallaron'
+        : 'esperando'
+
   return {
     cuenta,
     instancia: instancia.current,
     saldoListo: deEstaCuenta(saldoIntentado) === true,
+    reservasLeidas,
     creditos: misCreditos,
     ilimitadoUsadoEn: usados,
     opcionesDe,

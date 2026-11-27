@@ -26,3 +26,17 @@ describe('«Impuestos» en el resumen de reservas (en México el precio ya inclu
     expect(screen.getByText('$580')).toBeTruthy()
   })
 })
+
+describe('Task 13 fix r1 #1: `sinPrecios` (una clase con `showPrices` apagado)', () => {
+  it('no enseña precio, «Variable», totales ni «$0»', () => {
+    const clase = [{ id: 'c1', name: 'Lagree', price: 325, duration: 50 } as Product]
+    const { container } = render(<AppointmentSummarySidebar products={clase} totalPrice={null} totalDuration={50} sinPrecios t={createT('es')} />)
+    expect(container.textContent).toContain('Lagree')
+    expect(container.textContent).not.toMatch(/\$|Variable|A pagar|Total/)
+  })
+  it('sin la marca, citas sigue igual', () => {
+    show(0)
+    expect(screen.getByText('A pagar hoy')).toBeTruthy()
+    expect(screen.getAllByText('$500').length).toBeGreaterThan(0)
+  })
+})

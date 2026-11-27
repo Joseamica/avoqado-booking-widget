@@ -76,6 +76,8 @@ interface ConfirmarReservaProps {
   timeZone?: string
   /** La clase también se paga con tarjeta en línea: «Cambiar» ofrece «Pagar $325 con tarjeta». */
   aceptaTarjeta?: boolean
+  /** La clase también se paga en el estudio (fix r1 #3, como hoy `PaymentSelector`): «Cambiar» ofrece «Pagar en el estudio». */
+  aceptaEstudio?: boolean
   /** Se llegó desde «Reservar otro lugar para alguien» (Task 11). */
   otroLugar?: boolean
   /** Por qué su Ilimitado no paga esta reserva (`avisoDelIlimitado`), cuando no se ofrece. */
@@ -93,7 +95,8 @@ interface ConfirmarReservaProps {
  */
 export function ConfirmarReserva({
   clase, cuando, coach, lugares, opciones, elegida, onElegir, pago, precio, politica, nota, onNota, enviando, onConfirmar, t,
-  timeZone = 'America/Mexico_City', aceptaTarjeta = false, otroLugar = false, avisoIlimitado = null, cargando = false, children,
+  timeZone = 'America/Mexico_City', aceptaTarjeta = false, aceptaEstudio = false, otroLugar = false, avisoIlimitado = null, cargando = false,
+  children,
 }: ConfirmarReservaProps) {
   const raiz = useSinChatEncima()
   const [cambiando, setCambiando] = useState(false)
@@ -104,7 +107,9 @@ export function ConfirmarReserva({
   const plata = (monto: number) => formatoDePrecio(monto, 'MXN', t('cuenta.intl').startsWith('en') ? 'en' : 'es')
 
   const opcion = opciones.find(o => o.balanceId === elegida) ?? null
-  const formas = opciones.length + (aceptaTarjeta ? 1 : 0)
+  // Sin paquete hay a lo más una forma (la de la clase): con tarjeta en línea, o en el estudio.
+  const sinPaquete = aceptaTarjeta ? 'tarjeta' : aceptaEstudio ? 'estudio' : null
+  const formas = opciones.length + (sinPaquete ? 1 : 0)
 
   const queUsa = (o: OpcionDePaquete): string => {
     if (o.ilimitado) return t(`${K}.usaIlimitado`)
@@ -201,9 +206,15 @@ export function ConfirmarReserva({
               <span>{deQuePaquete(o)}</span>
             </button>
           ))}
-          {aceptaTarjeta && (
+          {sinPaquete === 'tarjeta' && (
             <button type="button" role="radio" aria-checked={elegida === null} class="avq-cf-forma" onClick={() => elegir(null)}>
               <strong>{conTarjeta}</strong>
+            </button>
+          )}
+          {sinPaquete === 'estudio' && (
+            <button type="button" role="radio" aria-checked={elegida === null} class="avq-cf-forma" onClick={() => elegir(null)}>
+              <strong>{t(`${K}.enElEstudioOpcion`)}</strong>
+              {precio != null && <span>{t('reservaClases.claseSuelta', { precio: plata(precio) })}</span>}
             </button>
           )}
         </div>

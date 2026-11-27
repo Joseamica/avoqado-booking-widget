@@ -56,6 +56,11 @@ interface AppointmentSummarySidebarProps {
    *  precio variable. El precio se determinará en la cita y no se incluye en el
    *  total."). Optional — omit when no variable-priced product is selected. */
   totalsNote?: string
+  /**
+   * Task 13 (fix r1): una clase con `showPrices` apagado (o sin precio): ni el precio del renglón, ni «Variable», ni los totales.
+   * Nunca un «$0» que no es real. Citas no lo usa.
+   */
+  sinPrecios?: boolean
   t: TFunction
 }
 
@@ -79,13 +84,14 @@ export function AppointmentSummarySidebar({
   dueToday,
   dueAtVenue,
   totalsNote,
+  sinPrecios = false,
   t,
 }: AppointmentSummarySidebarProps) {
   const [expanded, setExpanded] = useState(true)
   const isEmpty = products.length === 0
 
   const hasVariable = products.some(p => p.price == null)
-  const priceLabel = isEmpty
+  const priceLabel = isEmpty || sinPrecios
     ? null
     : totalPrice != null && totalPrice > 0
       ? `${hasVariable ? '+' : ''}${formatPriceMXN(totalPrice)}`
@@ -224,6 +230,7 @@ export function AppointmentSummarySidebar({
                     product={product}
                     isLast={idx === products.length - 1}
                     onEdit={onEditProduct ? () => onEditProduct(product) : undefined}
+                    sinPrecio={sinPrecios}
                     t={t}
                   />
                 ))}
@@ -234,7 +241,7 @@ export function AppointmentSummarySidebar({
       </div>
 
       {/* Totals block — only on the payment step */}
-      {showTotals && (
+      {showTotals && !sinPrecios && (
         <div style={{
           border: '1px solid var(--avq-border, #e8eaed)',
           borderRadius: '12px',
@@ -300,11 +307,13 @@ function SummaryRow({
   product,
   isLast,
   onEdit,
+  sinPrecio = false,
   t,
 }: {
   product: Product
   isLast: boolean
   onEdit?: () => void
+  sinPrecio?: boolean
   t: TFunction
 }) {
   const priceLabel = product.price == null
@@ -345,13 +354,15 @@ function SummaryRow({
             {product.name}
           </div>
         </div>
-        <span style={{
-          fontSize: '13px',
-          color: product.price == null ? 'var(--avq-muted-fg, #6b7280)' : 'var(--avq-fg, #111827)',
-          whiteSpace: 'nowrap',
-        }}>
-          {priceLabel}
-        </span>
+        {!sinPrecio && (
+          <span style={{
+            fontSize: '13px',
+            color: product.price == null ? 'var(--avq-muted-fg, #6b7280)' : 'var(--avq-fg, #111827)',
+            whiteSpace: 'nowrap',
+          }}>
+            {priceLabel}
+          </span>
+        )}
         {onEdit && (
           <button
             type="button"

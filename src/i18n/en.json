@@ -669,6 +669,7 @@
       "conTarjeta": "Pay {{precio}} by card",
       "conTarjetaSinPrecio": "Pay by card",
       "enElEstudio": "You pay at the studio",
+      "enElEstudioOpcion": "Pay at the studio",
       "gratis": "Free class",
       "aPagarHoy": "Due today",
       "aPagarEnElEstudio": "Due at the studio",

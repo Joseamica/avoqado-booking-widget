@@ -249,3 +249,30 @@ describe('Task 13: `saldoListo` (la confirmación no deja confirmar hasta leer s
     expect(salida.actual!.saldoListo).toBe(false)
   })
 })
+
+describe('Task 13 fix r1 #2: `reservasLeidas` (la confirmación espera la lectura de sus reservas)', () => {
+  it('«esperando» mientras llega; «listas» con la lectura buena; «fallaron» si falló', async () => {
+    entrar('un-estudio')
+    let dar!: (v: any) => void
+    vi.mocked(api.getMisReservasDeClase).mockImplementationOnce(() => new Promise(ok => { dar = ok }))
+    const salida: { actual?: MisClases } = {}
+    render(<Sonda slug="un-estudio" ventana={VENTANA} salida={salida} />)
+    await flush()
+    expect(salida.actual!.reservasLeidas).toBe('esperando')
+    await act(async () => dar(pagina([]))); await flush()
+    expect(salida.actual!.reservasLeidas).toBe('listas')
+    cleanup()
+    vi.mocked(api.getMisReservasDeClase).mockRejectedValueOnce(Object.assign(new Error('x'), { status: 500 }))
+    render(<Sonda slug="un-estudio" ventana={VENTANA} salida={salida} />)
+    await flush()
+    expect(salida.actual!.reservasLeidas).toBe('fallaron')
+  })
+
+  it('sin ventana no hay qué leer: «fallaron» (no se puede revisar)', async () => {
+    entrar('un-estudio')
+    const salida: { actual?: MisClases } = {}
+    render(<Sonda slug="un-estudio" ventana={null} salida={salida} />)
+    await flush()
+    expect(salida.actual!.reservasLeidas).toBe('fallaron')
+  })
+})
