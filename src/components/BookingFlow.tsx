@@ -44,6 +44,8 @@ import { leerCuenta } from '../state/miCuenta'
 import { ClassSessionList } from './ClassSessionList'
 import { ClassDetailView } from './ClassDetailView'
 import { UnifiedLanding } from './UnifiedLanding'
+import { IdentidadDelNegocio } from './IdentidadDelNegocio'
+import { ClasesOCitas } from './ClasesOCitas'
 import { PaymentSelector } from './PaymentSelector'
 import { TimezoneModal, getStoredTzPreference } from './TimezoneModal'
 import { VenueSidebarCard } from './VenueSidebarCard'
@@ -69,6 +71,12 @@ interface BookingFlowProps {
 }
 
 const MANAGE_STEP = 99
+
+/** Cuántos productos de clase y de cita tiene el negocio. La portada abre en lo que tenga más (diseño 27-nov). */
+function contarTipos(info: PublicVenueInfo): { clases: number; citas: number } {
+  const clases = info.products.filter(p => p.type === 'CLASS').length
+  return { clases, citas: info.products.length - clases }
+}
 
 /** Avoqado avocado icon — inline SVG for Shadow DOM */
 function AvoqadoLogo() {
@@ -305,6 +313,40 @@ export function BookingFlow({ props }: BookingFlowProps) {
   // flowType in-memory + rewrites the URL so a refresh keeps the choice.
   const [showLanding, setShowLanding] = useState(props.flowType === undefined || props.flowType === 'unified')
 
+  /** El flujo nuevo empieza limpio: sin el detalle, el mapa o el servicio que quedaron abiertos del otro (r2 B9). */
+  function empezarFlujo() {
+    setClassDetailActive(false)
+    setSeatPickerActive(false)
+    setDetailViewProduct(null)
+    const info = venueInfo.value
+    // Una liga de «Gestionar mi reserva» abierta no se pierde (igual que el salto a citas de siempre).
+    if (info && step.value !== MANAGE_STEP) resetBooking(info)
+  }
+
+  /**
+   * Diseño 27-nov (portada): pasa a clases o a citas. En la página propia (`show-identity`) la página es dueña de su liga:
+   * se le pide con `avoqado:navigate` que la cambie (y con ella el `flow-type`); `replace` cuando la elige la portada sola,
+   * para no dejar la entrada en el historial. Pegado en el sitio de otro negocio, la URL de ese sitio no se toca (codex r1 #9).
+   */
+  function irAlFlujo(flujo: 'classes' | 'appointments', reemplazar = false) {
+    flowType.value = flujo
+    setShowLanding(false)
+    empezarFlujo()
+    if (props.showIdentity) {
+      props.hostElement.dispatchEvent(new CustomEvent('avoqado:navigate', {
+        bubbles: true, composed: true, detail: reemplazar ? { flow: flujo, replace: true } : { flow: flujo },
+      }))
+    }
+  }
+
+  /** «Clases | Citas»: suelta antes un apartado que hubiera (como cualquier otra salida del paso). */
+  async function cambiarDeFlujo(flujo: 'classes' | 'appointments') {
+    if (flujo === flowType.value || reservationSubmittingRef.current || expiryTransition.value) return
+    const cambiar = () => irAlFlujo(flujo)
+    if (slotHoldToken.value && !(await releaseHoldBefore(cambiar))) return
+    cambiar()
+  }
+
   const appointmentProducts = selectedProducts.value.length > 0
     ? selectedProducts.value
     : (selectedProduct.value ? [selectedProduct.value] : [])
@@ -389,7 +431,7 @@ export function BookingFlow({ props }: BookingFlowProps) {
   // When the customer returns from a successful Stripe checkout we open the
   // landing on the 'Comprar paquetes' tab so they immediately see the credits
   // they just bought (and can use them on the next booking).
-  const [landingInitialTab, setLandingInitialTab] = useState<'book' | 'packs'>(() => {
+  const [landingInitialTab] = useState<'book' | 'packs'>(() => {
     if (typeof window === 'undefined') return 'book'
     const url = new URL(window.location.href)
     // 'packs' surfaces when the customer just bought (avq_credits=success) OR when
@@ -494,39 +536,61 @@ export function BookingFlow({ props }: BookingFlowProps) {
 
   // Sync flowType signal with prop. Must run BEFORE the venue load effect so
   // resetBooking() picks up the right product filter.
+  const flujoMontado = useRef(false)
   useEffect(() => {
-    flowType.value = props.flowType ?? 'unified'
-    setShowLanding(props.flowType === undefined || props.flowType === 'unified')
+    const nuevo = props.flowType ?? 'unified'
+    const cambio = flowType.value !== nuevo
+    flowType.value = nuevo
+    setShowLanding(nuevo === 'unified')
+    // r2 B9: la página propia cambió `flow-type` (su liga, o atrás/adelante del navegador) a un flujo que el widget no tenía:
+    // empieza limpio, igual que al tocar «Clases | Citas». Al montar no: la carga del negocio hace su propio reset. Si el
+    // interruptor ya cambió el flujo por dentro, esto llega con el mismo flujo y no vuelve a empezar.
+    if (flujoMontado.current && cambio && nuevo !== 'unified') {
+      const apartado = slotHoldToken.value
+      empezarFlujo()
+      if (apartado) void releaseHold(apartado)
+    }
+    flujoMontado.current = true
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [props.flowType])
 
-  // Auto-skip the picker when the venue only sells appointments — no point
-  // asking "¿Citas o clases?" when there are no classes and no packs. Fires
-  // once both venueInfo + the credit-packs fetch have settled so we don't
-  // race the API. URL is replaced (not pushed) so the back button doesn't
-  // land the customer on a landing that's just going to redirect again.
+  // Diseño 27-nov (portada): con clases, la entrada ES el horario (ya no se pregunta «¿Qué quieres reservar?»); con clases
+  // y citas, «Clases | Citas», abierto en lo que el negocio tenga más. Sin clases, como siempre: a citas cuando no hay
+  // paquetes que enseñar (con paquetes se queda la portada de dos pestañas). Espera a que se sepa si hay paquetes.
+  // Diseño 18-nov: si resulta que no hay clases agendadas en 30 días y el negocio tiene citas, el horario vacío no se
+  // queda como entrada; sólo cuando la eligió la portada o es la página propia (quien pega el widget con `flow-type` manda).
+  const portadaEligio = useRef(false)
   useEffect(() => {
-    if (!showLanding) return
     const info = venueInfo.value
     if (!info) return
-    if (!creditPacksLoaded.value) return
-    const hasClasses = info.products.some(p => p.type === 'CLASS')
-    const hasAppointments = info.products.some(p => p.type !== 'CLASS')
-    const hasPacks = creditPacks.value.length > 0
-    if (hasAppointments && !hasClasses && !hasPacks) {
-      flowType.value = 'appointments'
-      setShowLanding(false)
-      if (typeof window !== 'undefined' && window.history?.replaceState) {
-        const base = window.location.pathname.replace(/\/+$/, '').replace(/\/appointments$|\/classes$/, '')
-        window.history.replaceState({}, '', `${base}/appointments${window.location.search}`)
+    const { clases, citas } = contarTipos(info)
+    if (showLanding) {
+      if (clases > 0) {
+        portadaEligio.current = true
+        irAlFlujo(citas > clases ? 'appointments' : 'classes', true)
+        return
       }
-      // Don't clobber an active manage deep-link (?manage=<secret>). resetBooking
-      // nulls manageSecret and resets step, which would bounce a customer who
-      // arrived via the WhatsApp/email "Gestionar mi cita" link back to the
-      // catalog — the appointment-only-venue variant of the Amaena deep-link bug.
-      if (step.value !== MANAGE_STEP) resetBooking(info)
+      if (!creditPacksLoaded.value) return
+      if (citas > 0 && creditPacks.value.length === 0) irAlFlujo('appointments', true)
+      return
+    }
+    if (hayClasesProximas.value === false && citas > 0 && flowType.value === 'classes'
+      && (portadaEligio.current || props.showIdentity)
+      && step.value < config.formStep && !classDetailActive && !seatPickerActive) {
+      irAlFlujo('appointments', true)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showLanding, venueInfo.value, creditPacksLoaded.value])
+  }, [showLanding, venueInfo.value, creditPacksLoaded.value, hayClasesProximas.value])
+
+  // Una liga vieja a los paquetes (`/<negocio>#packs`): con clases ya no hay pestaña de paquetes en la portada, así que la
+  // lista se abre encima del horario en cuanto se sabe qué paquetes hay. Sin clases sigue la pestaña de siempre.
+  const paquetesDeLaLiga = useRef(typeof window !== 'undefined' && window.location.hash === '#packs')
+  useEffect(() => {
+    const info = venueInfo.value
+    if (!paquetesDeLaLiga.current || !info || !creditPacksLoaded.value) return
+    paquetesDeLaLiga.current = false
+    if (contarTipos(info).clases > 0 && creditPacks.value.length > 0) setShowCreditPacksModal(true)
+  }, [venueInfo.value, creditPacksLoaded.value])
 
   // Load venue info on mount
   useEffect(() => {
@@ -815,8 +879,9 @@ export function BookingFlow({ props }: BookingFlowProps) {
   // créditos" question doesn't have to be answered post-submit. The existing
   // handleFormSubmit flow still consumes customerCredits.value to drive the
   // credit/payment selectors after the customer clicks Reserva cita.
+  // La señal del flujo y no `props.flowType`: incrustado, «Clases | Citas» cambia el flujo sin tocar el atributo (codex r1 #9).
   useEffect(() => {
-    if (props.flowType !== 'appointments') return
+    if (flowType.value !== 'appointments') return
     if (step.value !== config.formStep) return
     const token = customerToken.value
     const product = selectedProduct.value
@@ -832,7 +897,7 @@ export function BookingFlow({ props }: BookingFlowProps) {
       .then(credits => { customerCredits.value = credits })
       .catch(() => { /* silent — picker just won't render */ })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [step.value, customerToken.value, selectedProduct.value?.id, selectedProducts.value.length, props.flowType, props.venue])
+  }, [step.value, customerToken.value, selectedProduct.value?.id, selectedProducts.value.length, flowType.value, props.venue])
 
   // Slot hold: when the Square /appointments wizard reaches the payment step
   // with a slot picked, ask the server to hold that window for 10 min and
@@ -841,7 +906,7 @@ export function BookingFlow({ props }: BookingFlowProps) {
   // yet (404) the existing visual-only fallback inside the header keeps the
   // UX intact — backend optionality on purpose.
   useEffect(() => {
-    if (props.flowType !== 'appointments') return
+    if (flowType.value !== 'appointments') return // la señal, como la precarga de arriba
     if (step.value !== config.formStep) return
     // Fase 1 — no pidas un apartado que el server ya sabe que va a rechazar. El gate de
     // aprobación vive también en la ruta del hold, así que esto salía 403 sin remedio: un
@@ -911,7 +976,7 @@ export function BookingFlow({ props }: BookingFlowProps) {
         // visual countdown and let authoritative create enforce availability.
       })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [step.value, selectedSlot.value?.startsAt, props.flowType, props.venue])
+  }, [step.value, selectedSlot.value?.startsAt, flowType.value, props.venue])
 
   // Release the slot hold when the page unloads (tab close, browser back,
   // navigation away from book.avoqado.io). The React/Preact effect cleanup
@@ -919,7 +984,7 @@ export function BookingFlow({ props }: BookingFlowProps) {
   // the same configured API origin as every other booking call. Without this,
   // an abandoned hold sits for the full 10-min TTL.
   useEffect(() => {
-    if (props.flowType !== 'appointments') return
+    if (flowType.value !== 'appointments') return // la señal, como el apartado
     const handler = () => {
       const token = slotHoldToken.value
       if (!token) return
@@ -941,7 +1006,7 @@ export function BookingFlow({ props }: BookingFlowProps) {
       window.removeEventListener('beforeunload', handler)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [props.flowType, props.venue])
+  }, [flowType.value, props.venue])
 
   // Visibility-based freshness refresh. Square's pattern: when the customer
   // returns to a tab that has been hidden long enough that the catalog could
@@ -976,7 +1041,7 @@ export function BookingFlow({ props }: BookingFlowProps) {
         venueInfo.value = fresh
         branding.value = fresh.branding ?? DEFAULT_BRANDING
 
-        if (props.flowType !== 'appointments') {
+        if (flowType.value !== 'appointments') {
           const freshById = new Map(fresh.products.map(product => [product.id, product]))
           const refreshedProducts = selectedProducts.value.flatMap(product => {
             const replacement = freshById.get(product.id)
@@ -1868,6 +1933,25 @@ export function BookingFlow({ props }: BookingFlowProps) {
     ? { ['--avq-accent' as any]: venueAccent }
     : undefined
 
+  // Diseño 27-nov (portada): la identidad del negocio (sólo en la página propia) y «Clases | Citas» van arriba de la ENTRADA
+  // de cada flujo: el horario de clases, o el primer paso de citas (servicio, profesional, o día y hora si hay un servicio).
+  const puedeEscribir = info.chat?.canMessage !== false // como el botón flotante: sin el dato (SERVIDOR viejo), se enseña
+  const tipos = contarTipos(info)
+  // El interruptor sólo existe si hay las dos cosas (y clases agendadas, diseño 18-nov). Quien pega el widget con un
+  // `flow-type` fijo ya eligió: ahí no se ofrece el otro lado.
+  const ofreceLasDos = tipos.clases > 0 && tipos.citas > 0 && hayClasesProximas.value !== false
+    && (props.showIdentity || props.flowType === undefined || props.flowType === 'unified')
+  const flujoDeLaPortada = flowType.value === 'classes' || flowType.value === 'appointments' ? flowType.value : null
+  const primerPasoDeCitas = config.serviceStep || config.staffStep || config.dateStep
+  const enLaEntrada = !showLanding && (
+    (flujoDeLaPortada === 'classes' && step.value < config.formStep && !seatPickerActive && !classDetailActive)
+    || (flujoDeLaPortada === 'appointments' && !detailViewProduct && !seatPickerActive && (
+      step.value === primerPasoDeCitas
+      // Con un solo servicio, el día y la hora son la misma pantalla.
+      || (primerPasoDeCitas === config.dateStep && step.value === config.timeStep)
+    ))
+  )
+
   return (
     <div style={accentOverride}>
       {/* Venue header — suppressed when the host page already shows the brand
@@ -2012,11 +2096,18 @@ export function BookingFlow({ props }: BookingFlowProps) {
 
       {/* Steps */}
       <div class="avq-animate-in" key={`${step.value}-${showLanding}`}>
+        {enLaEntrada && props.showIdentity && (
+          <IdentidadDelNegocio info={info} puedeEscribir={puedeEscribir} t={t} />
+        )}
+        {enLaEntrada && ofreceLasDos && flujoDeLaPortada && (
+          <ClasesOCitas activo={flujoDeLaPortada} onCambiar={flujo => { void cambiarDeFlujo(flujo) }} t={t} />
+        )}
         {/* Reservation hero — wide cover photo above the appointments service
             step, gated by branding.showHeroImage + a configured heroImageUrl. */}
         {/* Diseño 18-nov: no en el detalle de un servicio (repetía la misma foto encima de una sola línea). */}
+        {/* En la página propia la foto ya va en la identidad del negocio. */}
         {!showLanding && flowType.value === 'appointments' && step.value === config.serviceStep && !detailViewProduct &&
-          branding.value.showHeroImage && info.heroImageUrl && (
+          !props.showIdentity && branding.value.showHeroImage && info.heroImageUrl && (
           <ReservationHero imageUrl={info.heroImageUrl} alt={info.name} />
         )}
         {/* Unified landing: two-CTA picker shown only when entering via /<slug>. */}
@@ -2029,24 +2120,9 @@ export function BookingFlow({ props }: BookingFlowProps) {
             heroImageUrl={info.heroImageUrl ?? null}
             venueName={info.name}
             onBuyPack={handleBuyPack}
-            onPickAppointments={() => {
-              flowType.value = 'appointments'
-              setShowLanding(false)
-              if (typeof window !== 'undefined' && window.history?.pushState) {
-                const base = window.location.pathname.replace(/\/+$/, '')
-                window.history.pushState({}, '', `${base}/appointments${window.location.search}`)
-              }
-              resetBooking(info)
-            }}
-            onPickClasses={() => {
-              flowType.value = 'classes'
-              setShowLanding(false)
-              if (typeof window !== 'undefined' && window.history?.pushState) {
-                const base = window.location.pathname.replace(/\/+$/, '')
-                window.history.pushState({}, '', `${base}/classes${window.location.search}`)
-              }
-              resetBooking(info)
-            }}
+            // La liga la cambia la página propia (`avoqado:navigate`); incrustado no se toca la del sitio (codex r1 #9).
+            onPickAppointments={() => irAlFlujo('appointments')}
+            onPickClasses={() => irAlFlujo('classes')}
             t={t}
           />
         )}
@@ -2089,18 +2165,9 @@ export function BookingFlow({ props }: BookingFlowProps) {
                 timezone={resolveDisplayTz(info.timezone)}
                 venuePhone={info.phone ?? null}
                 products={info.products}
-                onBuyPack={creditPacks.value.length > 0 ? () => {
-                  // No classes scheduled, but customer can pre-buy a pack so
-                  // they're ready when sessions appear. Routes to the unified
-                  // landing's packs tab.
-                  flowType.value = 'unified'
-                  setLandingInitialTab('packs')
-                  setShowLanding(true)
-                  if (typeof window !== 'undefined' && window.history?.replaceState) {
-                    const path = window.location.pathname.replace(/\/classes\/?$/, '/')
-                    window.history.replaceState({}, '', path + window.location.search)
-                  }
-                } : undefined}
+                // No classes scheduled, but customer can pre-buy a pack so they're ready when sessions appear. Con la
+                // portada nueva el horario ES la entrada (ya no hay pestaña de paquetes a la cual volver): se abre la lista.
+                onBuyPack={creditPacks.value.length > 0 ? () => setShowCreditPacksModal(true) : undefined}
                 onSelect={(slot: PublicClassSessionSlot) => {
                   // Phase 10: route the tap into the intermediate detail view
                   // instead of jumping straight to seat/form. Detail's "Reservar"
@@ -2111,14 +2178,9 @@ export function BookingFlow({ props }: BookingFlowProps) {
                   selectedSpotIds.value = []
                   setClassDetailActive(true)
                 }}
-                onExit={() => {
-                  flowType.value = 'unified'
-                  if (typeof window !== 'undefined' && window.history?.replaceState) {
-                    const path = window.location.pathname.replace(/\/classes\/?$/, '/')
-                    window.history.replaceState({}, '', path + window.location.search)
-                  }
-                  resetBooking(info)
-                }}
+                // Con clases, el horario es la portada: no hay a dónde «volver» (y si hay citas, está «Clases | Citas»).
+                // Sólo un negocio sin clases (una liga /classes vieja) sale a lo que sí tiene.
+                onExit={tipos.clases === 0 ? () => irAlFlujo('appointments') : undefined}
                 t={t}
               />
             </div>

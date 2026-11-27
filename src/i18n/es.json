@@ -581,6 +581,14 @@
       "ahoraRegresa": "Si cancelas, regresa {{n}} de tus {{total}} sesiones.",
       "ahoraRegresan": "Si cancelas, regresan {{n}} de tus {{total}} sesiones.",
       "ilimitadoYaTarde": "Puedes cancelar hasta {{fecha}}; tu Ilimitado sigue igual, pero cuenta como cancelación tardía."
+    },
+    "portada": {
+      "tipo": "Tipo de reserva",
+      "clases": "Clases",
+      "citas": "Citas",
+      "ayudaClases": "Clases en grupo con horario fijo",
+      "ayudaCitas": "Sesiones sólo para ti: eliges el servicio, el día y la hora",
+      "escribenos": "Escríbenos"
     }
   }
 }

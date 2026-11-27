@@ -1373,7 +1373,9 @@ describe('diseño 18-nov: «Clases» se esconde si no hay clases agendadas en 30
     vi.mocked(api.getClassSessionsRange).mockResolvedValue({ dateFrom: '2026-10-06', dateTo: '2026-11-05', slots: [] })
     const avisos = await portada()
     expect(screen.queryByRole('button', { name: /Clases/ })).toBeNull()
-    expect(screen.getByRole('button', { name: /Citas/ })).toBeTruthy()
+    // Diseño 27-nov: sin la pantalla «¿Qué quieres reservar?», la portada va directo a lo que sí hay (citas).
+    expect(state.flowType.value).toBe('appointments')
+    expect(screen.getByRole('button', { name: '8 de octubre de 2026' })).toBeTruthy()
     expect(avisos).toEqual([{ hayClases: false }])
   })
   it('con clases agendadas: «Clases» sigue', async () => {
@@ -1612,5 +1614,150 @@ describe('D679 · pagar una cita con un Ilimitado (Codex pantallas r1 #1 y #2)',
     const opcion = screen.getByRole('button', { name: /Pagar con créditos/ })
     expect(opcion.textContent).toContain('Paquete 5')
     expect(opcion.textContent).not.toContain('Mensual Ilimitado')
+  })
+})
+
+// Diseño 27-nov (portada): la entrada a reservar es el horario con la identidad del negocio; con clases y citas, «Clases | Citas».
+describe('Portada: identidad del negocio, horario directo y «Clases | Citas»', () => {
+  const lagree = { ...venue.products[0], id: 'class-a', name: 'Lagree', price: 325, duration: 50, type: 'CLASS' as const }
+  const barre = { ...venue.products[0], id: 'class-b', name: 'Barre', price: 325, duration: 50, type: 'CLASS' as const }
+  const sesiones = { dateFrom: '2026-10-06', dateTo: '2026-11-05', slots: [{
+    startsAt: '2026-10-08T17:00:00Z', endsAt: '2026-10-08T17:50:00Z', available: true,
+    classSessionId: 'session-lagree', productId: 'class-a', productName: 'Lagree', remaining: 8, capacity: 10, enrolled: 2,
+  }] }
+  const soloClases: PublicVenueInfo = { ...venue, address: 'Calle Uno 10', products: [lagree] }
+  // Un estudio con 2 clases y UN servicio de citas.
+  const lasDos: PublicVenueInfo = { ...venue, address: 'Calle Uno 10', products: [lagree, barre, venue.products[0]] }
+  afterEach(() => { cleanup(); state.hayClasesProximas.value = null; state.clearCustomerSession('studio-a') })
+
+  function montar(info: PublicVenueInfo, extra: Partial<WidgetProps> = {}) {
+    vi.mocked(api.getVenueInfo).mockResolvedValue(info)
+    vi.mocked(api.getClassSessionsRange).mockResolvedValue(sesiones)
+    const p: WidgetProps = { ...props(), flowType: 'unified', ...extra }
+    const navegaciones: unknown[] = []
+    p.hostElement.addEventListener('avoqado:navigate', e => navegaciones.push((e as CustomEvent).detail))
+    return { p, navegaciones, ...render(<BookingFlow props={p} />) }
+  }
+
+  it('negocio con clases y sin citas: no pregunta «¿Qué quieres reservar?»; la portada ES el horario', async () => {
+    window.history.replaceState({}, '', '/studio-a')
+    montar(soloClases); await flush()
+    expect(screen.queryByText('¿Qué quieres reservar?')).toBeNull()
+    expect(screen.getByRole('button', { name: /Lagree.*11:00/ })).toBeTruthy()
+    expect(state.flowType.value).toBe('classes')
+    // Sin citas no hay interruptor.
+    expect(screen.queryByRole('button', { name: 'Citas' })).toBeNull()
+  })
+
+  it('las dos, en la página propia: abre en lo que tiene más y tocar «Citas» pide a la página cambiar su liga', async () => {
+    window.history.replaceState({}, '', '/studio-a')
+    const push = vi.spyOn(window.history, 'pushState')
+    const { navegaciones } = montar(lasDos, { showIdentity: true }); await flush()
+    expect(screen.queryByText('¿Qué quieres reservar?')).toBeNull()
+    expect(screen.getByRole('button', { name: 'Clases' }).getAttribute('aria-pressed')).toBe('true')
+    expect(screen.getByText('Clases en grupo con horario fijo')).toBeTruthy()
+    // La entrada reemplaza la liga de la portada (no deja /studio-a en el historial).
+    expect(navegaciones).toEqual([{ flow: 'classes', replace: true }])
+    fireEvent.click(screen.getByRole('button', { name: 'Citas' })); await flush()
+    expect(navegaciones).toEqual([{ flow: 'classes', replace: true }, { flow: 'appointments' }])
+    // El `pushState` y el `flow-type` los hace la página (index.html), no el widget.
+    expect(push).not.toHaveBeenCalled()
+    expect(screen.getByRole('button', { name: 'Citas' }).getAttribute('aria-pressed')).toBe('true')
+    expect(screen.getByText('Sesiones sólo para ti: eliges el servicio, el día y la hora')).toBeTruthy()
+  })
+
+  it('incrustado en otro sitio: tocar «Citas» no cambia la URL del sitio; cambia el flujo por dentro con su servicio elegido', async () => {
+    window.history.replaceState({}, '', '/pagina-del-estudio')
+    const push = vi.spyOn(window.history, 'pushState')
+    const replace = vi.spyOn(window.history, 'replaceState')
+    const { navegaciones } = montar(lasDos); await flush()
+    fireEvent.click(screen.getByRole('button', { name: 'Citas' })); await flush()
+    expect(push).not.toHaveBeenCalled()
+    expect(replace).not.toHaveBeenCalled()
+    expect(window.location.pathname).toBe('/pagina-del-estudio')
+    expect(navegaciones).toEqual([])
+    expect(state.flowType.value).toBe('appointments')
+    expect(state.selectedProducts.value.map(x => x.id)).toEqual(['service-a'])
+    expect(screen.getByRole('button', { name: '8 de octubre de 2026' })).toBeTruthy()
+  })
+
+  it('el apartado de la cita y la precarga de sus créditos siguen la señal del flujo (incrustado, sin cambiar el atributo)', async () => {
+    guardarSesion('studio-a', {
+      token: 'tok-ana', customer: { id: 'c1', firstName: 'Ana', lastName: null, email: null, phone: '5512345678' },
+      contactos: [{ tipo: 'PHONE', valor: '+525512345678', metodo: 'WHATSAPP', probadoEn: 1 }], guardadaEn: Date.now(),
+    })
+    state.bindCustomerSessionToVenue('studio-a')
+    state.entroAqui('studio-a', leerSesion('studio-a')!)
+    vi.mocked(api.getCustomerCredits).mockResolvedValue({ purchases: [] } as any)
+    vi.mocked(api.getCustomerPortal).mockReturnValue(new Promise(() => {}))
+    vi.mocked(api.createHold).mockResolvedValue({ holdId: 'hold-cita', expiresAt: new Date(Date.now() + 600000).toISOString(), ttlSeconds: 600 })
+    window.history.replaceState({}, '', '/pagina-del-estudio')
+    montar(lasDos); await flush()
+    fireEvent.click(screen.getByRole('button', { name: 'Citas' })); await flush()
+    fireEvent.click(screen.getByRole('button', { name: '8 de octubre de 2026' })); await flush()
+    fireEvent.click(screen.getByRole('button', { name: /10:00/ })); await flush()
+    expect(api.createHold).toHaveBeenCalledTimes(1)
+    expect(vi.mocked(api.createHold).mock.calls[0][1]).toMatchObject({ productIds: ['service-a'] })
+    expect(api.getCustomerCredits).toHaveBeenCalledWith('studio-a', { seats: 1, productIds: ['service-a'] }, 'tok-ana')
+  })
+
+  it('r2 B9: la página propia cambia `flow-type` (atrás, adelante o su liga) ⇒ el flujo nuevo empieza limpio', async () => {
+    window.history.replaceState({}, '', '/studio-a/classes')
+    const { p, rerender } = montar(lasDos, { showIdentity: true, flowType: 'classes' }); await flush()
+    fireEvent.click(screen.getByRole('button', { name: /Lagree.*11:00/ })); await flush()
+    expect(screen.getByRole('button', { name: 'Reservar lugar' })).toBeTruthy()
+    window.history.replaceState({}, '', '/studio-a/appointments')
+    rerender(<BookingFlow props={{ ...p, flowType: 'appointments' }} />); await flush()
+    // Un estudio con 2 clases y UN servicio llega a citas con ese servicio ya elegido, como hoy.
+    expect(state.selectedProducts.value.map(x => x.id)).toEqual(['service-a'])
+    expect(screen.getByRole('button', { name: '8 de octubre de 2026' })).toBeTruthy()
+    // De regreso a clases: el horario, no el detalle que quedó abierto.
+    window.history.replaceState({}, '', '/studio-a/classes')
+    rerender(<BookingFlow props={{ ...p, flowType: 'classes' }} />); await flush()
+    expect(screen.getByRole('button', { name: /Lagree.*11:00/ })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Reservar lugar' })).toBeNull()
+  })
+
+  it('negocio sin clases: igual que hoy, va a citas; incrustado no toca la URL del sitio', async () => {
+    window.history.replaceState({}, '', '/pagina-del-estudio')
+    const replace = vi.spyOn(window.history, 'replaceState')
+    const { navegaciones } = montar(venue); await flush()
+    expect(screen.queryByText('¿Qué quieres reservar?')).toBeNull()
+    expect(state.flowType.value).toBe('appointments')
+    expect(screen.getByRole('button', { name: '8 de octubre de 2026' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Clases' })).toBeNull()
+    expect(replace).not.toHaveBeenCalled()
+    expect(navegaciones).toEqual([])
+  })
+
+  it('negocio sin clases, en la página propia: va a citas y le pide a la página reemplazar su liga', async () => {
+    window.history.replaceState({}, '', '/studio-a')
+    const { navegaciones } = montar(venue, { showIdentity: true }); await flush()
+    expect(state.flowType.value).toBe('appointments')
+    expect(navegaciones).toEqual([{ flow: 'appointments', replace: true }])
+  })
+
+  it('la identidad del negocio sólo se pinta en la página propia (show-identity), con «Escríbenos» si puede recibir mensajes', async () => {
+    window.history.replaceState({}, '', '/pagina-del-estudio')
+    const incrustado = montar(soloClases); await flush()
+    expect(document.querySelector('.avq-identidad')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Escríbenos' })).toBeNull()
+    incrustado.unmount(); resetSignals()
+    window.history.replaceState({}, '', '/studio-a')
+    const propia = montar(soloClases, { showIdentity: true }); await flush()
+    expect(document.querySelector('.avq-identidad-nombre')?.textContent).toBe('Studio A')
+    expect(screen.getByRole('button', { name: 'Escríbenos' })).toBeTruthy()
+    propia.unmount(); resetSignals()
+    montar({ ...soloClases, chat: { mode: 'DISABLED', canMessage: false } }, { showIdentity: true }); await flush()
+    expect(document.querySelector('.avq-identidad')).not.toBeNull()
+    expect(screen.queryByRole('button', { name: 'Escríbenos' })).toBeNull()
+  })
+
+  it('una liga vieja a los paquetes (/<negocio>#packs) abre la lista de paquetes encima del horario', async () => {
+    vi.mocked(api.getCreditPacks).mockResolvedValue([{ ...PAQUETE, items: [{ ...PAQUETE.items[0], productId: 'class-a' }] }] as any)
+    window.history.replaceState({}, '', '/studio-a#packs')
+    montar({ ...soloClases, canCharge: true }, { showIdentity: true }); await flush()
+    expect(screen.getByRole('dialog', { name: 'Comprar créditos' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: /Lagree.*11:00/ })).toBeTruthy()
   })
 })

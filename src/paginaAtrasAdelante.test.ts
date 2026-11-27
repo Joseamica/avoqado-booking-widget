@@ -111,15 +111,32 @@ describe('una sola cabecera (diseño 18-nov): «Comprar paquetes» dentro de la 
     expect(window.location.pathname).toBe('/mindform/appointments')
   })
 
-  it('en la portada el enlace sigue llevando a la pestaña de paquetes (no se intercepta)', async () => {
+  // Diseño 27-nov: con clases ya no hay pestaña de paquetes en la portada (la portada es el horario), y en /<negocio> el
+  // enlace `#packs` sólo cambiaba el «#» sin recargar: «Paquetes» (arriba, en el menú y en la barra de abajo) abre la lista
+  // ahí mismo en cualquier pantalla.
+  it('en la portada «Paquetes» también abre la lista ahí mismo, también desde la barra de abajo', async () => {
     new Function(scriptDeLaPagina())()
     await esperar()
     const abrir = vi.fn()
     ;(widget() as unknown as { showCreditPacks: () => void }).showCreditPacks = abrir
-    const evento = new MouseEvent('click', { bubbles: true, cancelable: true })
+    for (const sel of ['#topnav a[data-route="packs"]', '#bottombar a[data-route="packs"]']) {
+      const evento = new MouseEvent('click', { bubbles: true, cancelable: true })
+      document.querySelector<HTMLAnchorElement>(sel)!.dispatchEvent(evento)
+      expect(evento.defaultPrevented).toBe(true)
+    }
+    expect(abrir).toHaveBeenCalledTimes(2)
+  })
+  it('⌘ o ctrl en «Paquetes» la deja abrirse en otra pestaña del navegador', async () => {
+    new Function(scriptDeLaPagina())()
+    await esperar()
+    const abrir = vi.fn()
+    ;(widget() as unknown as { showCreditPacks: () => void }).showCreditPacks = abrir
+    const evento = new MouseEvent('click', { bubbles: true, cancelable: true, metaKey: true })
+    const frenar = (e: Event) => e.preventDefault() // jsdom no navega: se frena al final, después de los oyentes de la página
+    window.addEventListener('click', frenar)
     document.querySelector<HTMLAnchorElement>('#topnav a[data-route="packs"]')!.dispatchEvent(evento)
+    window.removeEventListener('click', frenar)
     expect(abrir).not.toHaveBeenCalled()
-    expect(evento.defaultPrevented).toBe(false)
   })
 })
 
@@ -140,8 +157,8 @@ describe('D684: la cabecera desde «Tu Reservación», y «Citas» sólo si el n
     await esperar()
     const salir = vi.fn()
     ;(widget() as unknown as { leaveManageBooking: () => void }).leaveManageBooking = salir
-    for (const sel of ['#topnav a[data-route="classes"]', '#topnav a[data-route="packs"]', '#drawer a[data-route="appointments"]', '#nav-brand']) tocar(sel)
-    expect(salir).toHaveBeenCalledTimes(4)
+    for (const sel of ['#topnav a[data-route="book"]', '#topnav a[data-route="packs"]', '#drawer a[data-route="book"]', '#bottombar a[data-route="book"]', '#nav-brand']) tocar(sel)
+    expect(salir).toHaveBeenCalledTimes(5)
   })
 
   it('abrirla en otra pestaña del navegador (⌘ o ctrl) no cierra la que está viendo', async () => {
@@ -149,50 +166,112 @@ describe('D684: la cabecera desde «Tu Reservación», y «Citas» sólo si el n
     await esperar()
     const salir = vi.fn()
     ;(widget() as unknown as { leaveManageBooking: () => void }).leaveManageBooking = salir
-    tocar('#topnav a[data-route="classes"]', { metaKey: true })
-    tocar('#topnav a[data-route="classes"]', { ctrlKey: true })
+    tocar('#topnav a[data-route="book"]', { metaKey: true })
+    tocar('#topnav a[data-route="book"]', { ctrlKey: true })
     expect(salir).not.toHaveBeenCalled()
   })
 
-  const citas = () => Array.from(document.querySelectorAll('a[data-route="appointments"]'))
+  // Diseño 27-nov: la cabecera ya no lleva «Citas» ni «Clases» (se eligen dentro, con «Clases | Citas»), así que un estudio
+  // que sólo da clases nunca ve «Citas» (D684b). La portada se llama «Horario» si sólo da clases y «Reservar» si da citas.
+  const portada = () => Array.from(document.querySelectorAll<HTMLElement>('#topnav a[data-route="book"], #drawer a[data-route="book"], #bottombar a[data-route="book"] span'))
   const avisar = (tipo: string, detail: Record<string, unknown>) => widget().dispatchEvent(new CustomEvent(tipo, { detail }))
 
-  it('🔴 estudio que sólo da clases (hasAppointments false): «Citas» se esconde de la cabecera y del menú; con servicios (o sin el dato) se ve', async () => {
+  it('🔴 la cabecera, el menú y la barra no tienen «Citas» ni «Clases»: «Horario · Paquetes»', async () => {
     new Function(scriptDeLaPagina())()
     await esperar()
-    expect(citas()).toHaveLength(2)
-    citas().forEach(x => expect(x.hasAttribute('hidden')).toBe(false)) // antes del aviso, como en main
-    avisar('avoqado:venue-loaded', { venue: { name: 'Mindform', hasClasses: true, hasAppointments: false } })
-    citas().forEach(x => expect(x.hasAttribute('hidden')).toBe(true))
-    avisar('avoqado:venue-loaded', { venue: { name: 'Mindform', hasClasses: true, hasAppointments: true } })
-    citas().forEach(x => expect(x.hasAttribute('hidden')).toBe(false))
+    expect(document.querySelectorAll('a[data-route="appointments"], a[data-route="classes"]')).toHaveLength(0)
+    expect(portada().map(x => x.textContent!.trim())).toEqual(['Horario', 'Horario', 'Horario'])
+  })
+
+  it('estudio que sólo da clases: «Horario»; con servicios, sin productos o sin el dato: «Reservar»', async () => {
+    new Function(scriptDeLaPagina())()
+    await esperar()
+    avisar('avoqado:venue-loaded', { venue: { name: 'Un estudio', hasClasses: true, hasAppointments: false } })
+    portada().forEach(x => expect(x.textContent!.trim()).toBe('Horario'))
+    avisar('avoqado:venue-loaded', { venue: { name: 'Un estudio', hasClasses: true, hasAppointments: true } })
+    portada().forEach(x => expect(x.textContent!.trim()).toBe('Reservar'))
+    avisar('avoqado:venue-loaded', { venue: { name: 'Un restaurante', hasClasses: false, hasAppointments: true } })
+    portada().forEach(x => expect(x.textContent!.trim()).toBe('Reservar'))
     avisar('avoqado:venue-loaded', { venue: { name: 'Widget viejo', hasClasses: true } })
-    citas().forEach(x => expect(x.hasAttribute('hidden')).toBe(false))
-  })
-
-  it('sin productos (un restaurante): el widget avisa hasAppointments true y «Citas» se ve', async () => {
-    new Function(scriptDeLaPagina())()
-    await esperar()
-    avisar('avoqado:venue-loaded', { venue: { name: 'Restaurante', hasClasses: false, hasAppointments: true } })
-    citas().forEach(x => expect(x.hasAttribute('hidden')).toBe(false))
-  })
-
-  it('clases sin sesiones en 30 días: sólo se esconde «Clases»; «Citas» queda como en main', async () => {
-    new Function(scriptDeLaPagina())()
-    await esperar()
-    avisar('avoqado:venue-loaded', { venue: { name: 'Estudio', hasClasses: true, hasAppointments: true } })
-    avisar('avoqado:classes-availability', { hayClases: false })
-    citas().forEach(x => expect(x.hasAttribute('hidden')).toBe(false))
-    document.querySelectorAll('a[data-route="classes"]').forEach(x => expect(x.hasAttribute('hidden')).toBe(true))
+    portada().forEach(x => expect(x.textContent!.trim()).toBe('Reservar'))
   })
 })
 
 describe('diseño 18-nov: sin clases agendadas, la cabecera no ofrece «Clases»', () => {
-  it('el aviso del widget esconde «Clases» de la cabecera y del menú', async () => {
+  // Diseño 27-nov: la cabecera ya no tiene «Clases»; sin clases agendadas, el widget no ofrece «Clases | Citas» y va a citas.
+  it('ni antes ni después del aviso del widget hay un «Clases» en la cabecera, el menú o la barra', async () => {
     new Function(scriptDeLaPagina())()
     await esperar()
-    document.querySelectorAll('[data-requires="classes"]').forEach(x => x.removeAttribute('hidden'))
     widget().dispatchEvent(new CustomEvent('avoqado:classes-availability', { detail: { hayClases: false } }))
-    document.querySelectorAll('[data-requires="classes"]').forEach(x => expect(x.hasAttribute('hidden')).toBe(true))
+    expect(Array.from(document.querySelectorAll('#topnav a, #drawer a, #bottombar a')).map(a => a.textContent!.trim())).not.toContain('Clases')
+  })
+})
+
+// Diseño 27-nov: la página propia es dueña de su liga. El widget (con `show-identity`) pide el cambio con `avoqado:navigate`;
+// la página cambia la dirección y, con ella, el `flow-type` del widget. Atrás y adelante siguen funcionando.
+describe('«Clases | Citas» en la página propia: la página cambia su liga y el flow-type', () => {
+  const navegar = (detail: Record<string, unknown>) =>
+    widget().dispatchEvent(new CustomEvent('avoqado:navigate', { bubbles: true, composed: true, detail }))
+
+  it('el widget se monta con show-identity', async () => {
+    new Function(scriptDeLaPagina())()
+    await esperar()
+    expect(widget().getAttribute('show-identity')).toBe('true')
+  })
+
+  it('la portada elige clases sola (replace) y luego «Citas» (push): liga, flow-type y atrás', async () => {
+    window.history.replaceState({}, '', '/un-estudio')
+    new Function(scriptDeLaPagina())()
+    await esperar()
+    const largo = window.history.length
+    navegar({ flow: 'classes', replace: true })
+    await esperar()
+    expect(window.location.pathname).toBe('/un-estudio/classes')
+    expect(window.history.length).toBe(largo) // reemplazó: /un-estudio no queda en el historial
+    expect(widget().getAttribute('flow-type')).toBe('classes')
+    expect(document.body.classList.contains('flow-classes')).toBe(true)
+
+    navegar({ flow: 'appointments' })
+    await esperar()
+    expect(window.location.pathname).toBe('/un-estudio/appointments')
+    expect(widget().getAttribute('flow-type')).toBe('appointments')
+    expect(document.body.classList.contains('flow-appointments')).toBe(true)
+
+    await irAtras()
+    expect(window.location.pathname).toBe('/un-estudio/classes')
+    expect(widget().getAttribute('flow-type')).toBe('classes')
+  })
+
+  it('conserva la búsqueda (?manage=…, ?locale=…) y no hace nada con un flujo que no conoce o el mismo', async () => {
+    window.history.replaceState({}, '', '/un-estudio/classes?locale=es')
+    new Function(scriptDeLaPagina())()
+    await esperar()
+    const largo = window.history.length
+    navegar({ flow: 'otra-cosa' })
+    navegar({ flow: 'classes' })
+    await esperar()
+    expect(window.location.pathname).toBe('/un-estudio/classes')
+    expect(window.history.length).toBe(largo)
+    navegar({ flow: 'appointments' })
+    await esperar()
+    expect(window.location.pathname + window.location.search).toBe('/un-estudio/appointments?locale=es')
+  })
+})
+
+describe('barra fija de abajo en el celular (diseño 27-nov): Horario · Paquetes · Mi cuenta', () => {
+  it('se muestra en la reserva; «Paquetes» espera a que el negocio tenga paquetes; «Mi cuenta» abre la cuenta', async () => {
+    new Function(scriptDeLaPagina())()
+    await esperar()
+    const barra = document.getElementById('bottombar')!
+    expect(barra.hidden).toBe(false)
+    expect(Array.from(barra.querySelectorAll('a, button')).map(x => x.textContent!.trim())).toEqual(['Horario', 'Paquetes', 'Mi cuenta'])
+    const paquetes = barra.querySelector<HTMLAnchorElement>('a[data-route="packs"]')!
+    expect(paquetes.hidden).toBe(true)
+    widget().dispatchEvent(new CustomEvent('avoqado:credit-packs-loaded', { detail: { count: 3 } }))
+    expect(paquetes.hidden).toBe(false)
+    const cuenta = vi.fn()
+    ;(widget() as unknown as { showAccount: () => void }).showAccount = cuenta
+    document.getElementById('bottombar-account')!.click()
+    expect(cuenta).toHaveBeenCalledTimes(1)
   })
 })

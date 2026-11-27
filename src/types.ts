@@ -439,6 +439,10 @@ export interface WidgetProps {
    *  modal via the `avoqado:open-chat` window event; third-party embeds keep
    *  the shadow-DOM FAB so chat works without a host-page button. */
   hideChatFab?: boolean
+  /** Diseño 27-nov: la página propia de reservas (book.avoqado.io) pinta arriba la identidad del negocio (portada, logo,
+   *  nombre, dirección y «Escríbenos») y es dueña de su liga: «Clases | Citas» le pide cambiarla con `avoqado:navigate`.
+   *  Pegado en el sitio de otro negocio (sin el atributo) no se pinta la identidad ni se toca la URL de ese sitio. */
+  showIdentity?: boolean
   hostElement: HTMLElement
 }
 

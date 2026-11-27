@@ -581,6 +581,14 @@
       "ahoraRegresa": "If you cancel, {{n}} of your {{total}} sessions goes back.",
       "ahoraRegresan": "If you cancel, {{n}} of your {{total}} sessions go back.",
       "ilimitadoYaTarde": "You can cancel until {{fecha}}; your unlimited pass stays the same, but it counts as a late cancellation."
+    },
+    "portada": {
+      "tipo": "Booking type",
+      "clases": "Classes",
+      "citas": "Appointments",
+      "ayudaClases": "Group classes on a fixed schedule",
+      "ayudaCitas": "Sessions just for you: you pick the service, the day and the time",
+      "escribenos": "Message us"
     }
   }
 }

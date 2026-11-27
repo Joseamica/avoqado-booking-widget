@@ -425,6 +425,28 @@
       .page { padding-bottom: 88px; }
     }
 
+    /* Diseño 27-nov: barra fija abajo en el celular (Horario · Paquetes · Mi cuenta). `hidden` la deja fuera de los
+       carriles que no son reservas (tienda, tarjeta, check-in); el script la muestra con la cabecera. */
+    .bottombar { display: none; }
+    @media (max-width: 639px) {
+      .bottombar:not([hidden]) {
+        position: fixed; left: 0; right: 0; bottom: 0; z-index: 55;
+        display: flex; justify-content: space-around;
+        padding: 6px 8px calc(6px + env(safe-area-inset-bottom));
+        background: var(--bg-elev); border-top: 1px solid var(--border);
+      }
+      body.con-bottombar .page { padding-bottom: calc(96px + env(safe-area-inset-bottom)); }
+      body.con-bottombar .textus-fab { bottom: calc(80px + env(safe-area-inset-bottom)); }
+    }
+    .bottombar-item {
+      flex: 1; min-height: 56px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;
+      background: transparent; border: 0; color: var(--fg-muted); text-decoration: none;
+      font: inherit; font-size: 12px; font-weight: 600; cursor: pointer;
+    }
+    .bottombar-item[hidden] { display: none; }
+    .bottombar-item svg { width: 22px; height: 22px; }
+    .bottombar-item.is-active { color: var(--accent); }
+
     .textus-modal-overlay {
       position: fixed; inset: 0;
       background: rgba(15,15,16,0.45);
@@ -532,10 +554,10 @@
       <span class="topnav-logo" id="nav-logo">·</span>
       <span id="nav-venue-name">Reservas</span>
     </a>
+    <!-- Diseño 27-nov: «Horario · Paquetes». Clases y citas se eligen dentro de la portada («Clases | Citas»). -->
     <nav class="topnav-links" id="nav-links" aria-label="Secciones del sitio">
-      <a href="" data-route="appointments" data-requires="appointments">Citas</a>
-      <a href="" data-route="classes" data-requires="classes" hidden>Clases</a>
-      <a href="" data-route="packs" data-requires="packs" hidden>Comprar paquetes</a>
+      <a href="" data-route="book">Horario</a>
+      <a href="" data-route="packs" data-requires="packs" hidden>Paquetes</a>
     </nav>
     <button class="topnav-cta" id="nav-account" type="button">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
@@ -561,9 +583,8 @@
 
       <!-- Default drawer (landing, classes, packs) — site navigation. -->
       <div class="drawer-default">
-        <a class="drawer-link" href="" data-route="appointments" data-requires="appointments">Citas</a>
-        <a class="drawer-link" href="" data-route="classes" data-requires="classes" hidden>Clases</a>
-        <a class="drawer-link" href="" data-route="packs" data-requires="packs" hidden>Comprar paquetes</a>
+        <a class="drawer-link" href="" data-route="book">Horario</a>
+        <a class="drawer-link" href="" data-route="packs" data-requires="packs" hidden>Paquetes</a>
         <button class="drawer-link is-cta" id="drawer-account" type="button">Mi cuenta</button>
       </div>
 
@@ -622,6 +643,22 @@
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
     <span>Envíanos un mensaje</span>
   </button>
+
+  <!-- Diseño 27-nov: en el celular (< 640 px) una barra fija abajo, como una app: Horario · Paquetes · Mi cuenta. -->
+  <nav class="bottombar" id="bottombar" aria-label="Accesos rápidos" hidden>
+    <a class="bottombar-item" href="" data-route="book">
+      <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M5 5h14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2Z"/><path d="M16 3v4M8 3v4M3 10h18"/></svg>
+      <span>Horario</span>
+    </a>
+    <a class="bottombar-item" href="" data-route="packs" data-requires="packs" hidden>
+      <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8 12 3 3 8v8l9 5 9-5V8Z"/><path d="M3 8l9 5 9-5"/><path d="M12 13v8"/></svg>
+      <span>Paquetes</span>
+    </a>
+    <button class="bottombar-item" id="bottombar-account" type="button">
+      <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4a4 4 0 1 0 0 8 4 4 0 0 0 0-8Z"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>
+      <span>Mi cuenta</span>
+    </button>
+  </nav>
 
 <div class="page">
     <div class="shell">
@@ -807,17 +844,15 @@
       var drawerVenueName = document.getElementById('drawer-venue-name')
       if (drawerVenueName) drawerVenueName.textContent = displayName
 
+      // Diseño 27-nov: «Horario» es la portada (clases o citas se eligen dentro, con «Clases | Citas»); «Paquetes» abre la
+      // lista encima de lo que la clienta esté viendo (ver el oyente de abajo). `#packs` queda para las ligas viejas.
       function buildHref(route) {
-        if (route === 'appointments') return '/' + slug + '/appointments'
-        if (route === 'classes') return '/' + slug + '/classes'
         if (route === 'packs') return '/' + slug + '#packs'
         return '/' + slug
       }
       function activeRoute() {
-        if (flowType === 'appointments') return 'appointments'
-        if (flowType === 'classes') return 'classes'
         if (window.location.hash === '#packs') return 'packs'
-        return null // landing
+        return 'book'
       }
       var activeNow = activeRoute()
       function applyActive(scope) {
@@ -827,9 +862,13 @@
           a.classList.toggle('is-active', route === activeNow)
         })
       }
+      var bottombar = document.getElementById('bottombar')
       applyActive(nav)
       applyActive(document.getElementById('drawer'))
+      applyActive(bottombar)
       nav.hidden = false
+      bottombar.hidden = false
+      document.body.classList.add('con-bottombar')
 
       // ===== Check-in del kiosco =========================================
 
@@ -1242,6 +1281,7 @@
         activeNow = activeRoute()
         applyActive(nav)
         applyActive(drawer)
+        applyActive(bottombar)
         // The widget follows the URL too. Its `flow-type` used to be set only at first paint, so after «Citas» and the
         // browser's back button the page went back to the narrow landing while the widget kept the booking wizard
         // (founder, 18-nov). Deferred so the widget never re-renders inside its own click handler (it pushState'd).
@@ -1279,6 +1319,9 @@
       // `avoqado:open-chat`); the widget's internal shadow-DOM FAB would be
       // a visual duplicate, so we suppress it here.
       el.setAttribute('hide-chat-fab', 'true')
+      // Diseño 27-nov: ésta es la página propia del negocio: el widget pinta arriba su identidad (portada, logo, nombre,
+      // dirección, «Escríbenos») y deja la liga en manos de la página (`avoqado:navigate`, abajo).
+      el.setAttribute('show-identity', 'true')
       // Square-style /appointments forces light theme regardless of system
       // preference; everything else honors auto. We set this BEFORE attaching
       // the element so the first paint is already light.
@@ -1331,6 +1374,22 @@
       }
       document.getElementById('nav-account').addEventListener('click', callShowAccount)
       document.getElementById('drawer-account').addEventListener('click', callShowAccount)
+      document.getElementById('bottombar-account').addEventListener('click', callShowAccount)
+
+      // Diseño 27-nov: «Clases | Citas» (o la portada al abrir) pide cambiar de flujo. La página es dueña de su liga: la cambia
+      // aquí (`replace` cuando la eligió la portada sola, para no dejar /<negocio> en el historial) y, con el oyente de
+      // `avq:locationchange` de arriba, el `flow-type` del widget, que empieza ese flujo limpio. Un widget pegado en otro
+      // sitio no lleva `show-identity` y nunca pide esto: la URL de ese sitio no se toca.
+      el.addEventListener('avoqado:navigate', function (e) {
+        var d = e && e.detail
+        var flow = d && d.flow
+        if (flow !== 'appointments' && flow !== 'classes') return
+        var path = '/' + slug + '/' + flow
+        if (window.location.pathname.replace(/\/+$/, '') === path) return
+        try {
+          history[d.replace ? 'replaceState' : 'pushState']({}, '', path + window.location.search)
+        } catch (err) { /* sin historial: el widget ya cambió de flujo por dentro */ }
+      })
       var drawerSigninAppts = document.getElementById('drawer-signin-appointments')
       if (drawerSigninAppts) drawerSigninAppts.addEventListener('click', callShowAccount)
 
@@ -1396,9 +1455,10 @@
       })
       // Diseño 18-nov: con una sola cabecera, «Comprar paquetes» (arriba y en el menú) dentro de la reserva abre la lista de
       // paquetes AHÍ MISMO, como hacía el botón «Comprar créditos»: ir a la portada perdía lo que llevaba elegido.
+      // Diseño 27-nov: «Paquetes» (arriba, en el menú y en la barra de abajo) abre la lista en cualquier pantalla de la reserva.
       document.addEventListener('click', function (e) {
         var a = e.target && e.target.closest ? e.target.closest('a[data-route="packs"]') : null
-        if (!a || flowType !== 'appointments') return
+        if (!a || e.button > 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return
         e.preventDefault()
         if (drawer.classList.contains('open')) closeDrawer()
         if (typeof el.showCreditPacks === 'function') el.showCreditPacks()
@@ -1439,31 +1499,18 @@
       // its host element with { name, address, phone, hours }. We read it here
       // and populate the drawer rows. If the event never fires (offline, error),
       // the drawer still renders with the slug-derived name + static defaults.
-      // Diseño 18-nov: el widget avisa si no hay clases agendadas en 30 días; entonces «Clases» se esconde de la cabecera y el menú.
-      el.addEventListener('avoqado:classes-availability', function (e) {
-        if (!e || !e.detail || e.detail.hayClases !== false) return
-        document.querySelectorAll('[data-requires="classes"]').forEach(function (x) { x.setAttribute('hidden', '') })
-      })
       el.addEventListener('avoqado:venue-loaded', function (e) {
         var info = e && e.detail && e.detail.venue
         if (!info) return
         if (drawerVenueName && info.name) drawerVenueName.textContent = info.name
         if (navVenue && info.name) navVenue.textContent = info.name
 
-        // Hide "Clases" nav link (header + drawer) when the venue has no
-        // class-type products. Capability flag comes from the widget when it
-        // resolves venueInfo. Defensive default: keep hidden if missing.
-        var hasClasses = info.hasClasses === true
-        document.querySelectorAll('[data-requires="classes"]').forEach(function (el) {
-          if (hasClasses) el.removeAttribute('hidden')
-          else el.setAttribute('hidden', '')
-        })
-        // D684b: el widget avisa `hasAppointments: false` sólo cuando el negocio da clases y nada más; sin el dato (widget viejo) o con
-        // `true`, «Citas» se ve como antes.
-        var hasAppointments = info.hasAppointments !== false
-        document.querySelectorAll('[data-requires="appointments"]').forEach(function (el) {
-          if (hasAppointments) el.removeAttribute('hidden')
-          else el.setAttribute('hidden', '')
+        // Diseño 27-nov: la portada se llama «Horario» en un negocio que sólo da clases y «Reservar» si también (o sólo) da
+        // citas, como las maquetas. Ya no hay ligas «Citas» y «Clases»: se eligen dentro, con «Clases | Citas». Sin el dato,
+        // «Reservar», que sirve para todo.
+        var soloClases = info.hasClasses === true && info.hasAppointments === false
+        document.querySelectorAll('a[data-route="book"] span, #nav-links a[data-route="book"], .drawer-default a[data-route="book"]').forEach(function (x) {
+          x.textContent = soloClases ? 'Horario' : 'Reservar'
         })
 
         // Apply the venue brand color to the host page chrome (topnav "Mi
