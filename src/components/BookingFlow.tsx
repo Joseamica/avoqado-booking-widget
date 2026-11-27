@@ -59,7 +59,7 @@ import { ClasesOCitas } from './ClasesOCitas'
 import { PaymentSelector } from './PaymentSelector'
 import { TimezoneModal, getStoredTzPreference } from './TimezoneModal'
 import { VenueSidebarCard } from './VenueSidebarCard'
-import { AppointmentSummarySidebar } from './AppointmentSummarySidebar'
+import { AppointmentSummarySidebar, duracionDeSesion } from './AppointmentSummarySidebar'
 import { ServiceDetailView } from './ServiceDetailView'
 import { StaffSelector } from './StaffSelector'
 import { DateTimePickerSquare } from './DateTimePickerSquare'
@@ -3566,7 +3566,7 @@ export function BookingFlow({ props }: BookingFlowProps) {
                     <AppointmentSummarySidebar
                       products={claseLateral}
                       totalPrice={plan?.precio ?? null}
-                      totalDuration={totalDuration.value}
+                      totalDuration={duracionDeSesion(selectedSlot.value, totalDuration.value)}
                       selectedDate={selectedDate.value}
                       selectedSlot={selectedSlot.value}
                       // Fix r1 #1: sin un precio de verdad (`showPrices` apagado o sin precio), ningún monto: nunca un «$0» falso.

@@ -1,7 +1,7 @@
 import { h } from 'preact'
 import { cleanup, render, screen } from '@testing-library/preact'
 import { afterEach, describe, expect, it } from 'vitest'
-import { AppointmentSummarySidebar } from './AppointmentSummarySidebar'
+import { AppointmentSummarySidebar, duracionDeSesion } from './AppointmentSummarySidebar'
 import { createT } from '../i18n'
 import type { Product } from '../types'
 
@@ -38,5 +38,20 @@ describe('Task 13 fix r1 #1: `sinPrecios` (una clase con `showPrices` apagado)',
     show(0)
     expect(screen.getByText('A pagar hoy')).toBeTruthy()
     expect(screen.getAllByText('$500').length).toBeGreaterThan(0)
+  })
+})
+
+describe('Task 16: duración real de la sesión de una clase', () => {
+  const slot = { startsAt: '2026-12-01T18:15:00.000Z', endsAt: '2026-12-01T19:05:00.000Z' }
+  it('18:15–19:05 ⇒ 50 min, aunque el producto diga 60', () => {
+    expect(duracionDeSesion(slot, 60)).toBe(50)
+    const { container } = render(<AppointmentSummarySidebar products={products} totalPrice={null} totalDuration={duracionDeSesion(slot, 60)} sinPrecios t={createT('es')} />)
+    expect(container.textContent).toContain('50 min')
+    expect(container.textContent).not.toContain('1 h')
+  })
+  it('sin sesión o con fechas inválidas, cae a la duración de siempre', () => {
+    expect(duracionDeSesion(null, 60)).toBe(60)
+    expect(duracionDeSesion({ startsAt: 'x', endsAt: slot.endsAt }, 60)).toBe(60)
+    expect(duracionDeSesion({ startsAt: slot.endsAt, endsAt: slot.startsAt }, 60)).toBe(60)
   })
 })

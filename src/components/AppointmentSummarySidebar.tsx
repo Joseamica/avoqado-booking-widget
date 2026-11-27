@@ -64,6 +64,13 @@ interface AppointmentSummarySidebarProps {
   t: TFunction
 }
 
+/** Task 16: minutos reales de una sesión de clase (`endsAt − startsAt`); si falta o no es válida, `fallback` (lo de siempre). */
+export function duracionDeSesion(slot: { startsAt?: string; endsAt?: string } | null | undefined, fallback: number): number {
+  if (!slot?.startsAt || !slot?.endsAt) return fallback
+  const min = (new Date(slot.endsAt).getTime() - new Date(slot.startsAt).getTime()) / 60000
+  return Number.isFinite(min) && min > 0 ? Math.round(min) : fallback
+}
+
 export function AppointmentSummarySidebar({
   products,
   totalPrice,
