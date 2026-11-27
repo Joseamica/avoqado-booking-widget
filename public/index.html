@@ -1040,10 +1040,23 @@
         if (nav) nav.style.display = 'none'
         document.body.classList.add('flow-checkin')
 
+        // Íconos de trazo (los mismos 24×24, 1.75 y puntas redondas que Icono.tsx del widget); nada de emojis.
+        var ICONOS = {
+          enlace: '<path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/>',
+          check: '<path d="M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18Z"/><path d="M8 12.5l3 3 5-6"/>',
+          persona: '<path d="M12 4a4 4 0 1 0 0 8 4 4 0 0 0 0-8Z"/><path d="M4 21a8 8 0 0 1 16 0"/>',
+          reloj: '<path d="M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18Z"/><path d="M12 7v5l3 2"/>',
+          alerta: '<path d="M10.3 4 2.7 17.5A2 2 0 0 0 4.4 20.5h15.2a2 2 0 0 0 1.7-3L13.7 4a2 2 0 0 0-3.4 0Z"/><path d="M12 9.5v4"/><path d="M12 17h.01"/>',
+          globo: '<path d="M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18Z"/><path d="M3 12h18"/><path d="M12 3c2.5 2.6 3.8 5.6 3.8 9s-1.3 6.4-3.8 9c-2.5-2.6-3.8-5.6-3.8-9S9.5 5.6 12 3Z"/>'
+        }
+        function ico(nombre) {
+          return '<svg aria-hidden="true" width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">' + ICONOS[nombre] + '</svg>'
+        }
+
         function screen(icon, title, body, extraHtml) {
           mount.innerHTML =
             '<div class="empty" style="padding:48px 24px;text-align:center">' +
-              '<div style="font-size:44px;line-height:1;margin-bottom:16px">' + icon + '</div>' +
+              '<div style="line-height:1;margin-bottom:16px">' + ico(icon) + '</div>' +
               '<p class="empty-title">' + title + '</p>' +
               '<p>' + body + '</p>' +
               (extraHtml || '') +
@@ -1051,7 +1064,7 @@
         }
 
         if (!qr && (!challengeId || !secret)) {
-          screen('🔗', 'Este enlace está incompleto',
+          screen('enlace', 'Este enlace está incompleto',
             'Vuelve a escanear el código de la pantalla. Si sigue igual, pide ayuda en el mostrador.')
           return
         }
@@ -1097,7 +1110,7 @@
         }
 
         function send(token) {
-          screen('⏳', 'Un momento…', 'Estamos registrando tu llegada.')
+          screen('reloj', 'Un momento…', 'Estamos registrando tu llegada.')
           // En local se apunta al server de desarrollo; publicado, a producción.
           var host = window.location.hostname
           var isLocal = host === 'localhost' || host === '127.0.0.1'
@@ -1116,7 +1129,7 @@
               var code = (out.body && (out.body.code || (out.body.error && out.body.error.code))) || ''
               if (out.status >= 200 && out.status < 300) {
                 var again = out.body && out.body.outcome === 'ALREADY_CHECKED_IN'
-                screen('✅', again ? 'Ya estabas registrado' : '¡Listo, llegaste!',
+                screen('check', again ? 'Ya estabas registrado' : '¡Listo, llegaste!',
                   again ? 'Tu llegada ya estaba anotada. Puedes pasar.' : 'Anotamos tu llegada. Que disfrutes tu clase.')
                 return
               }
@@ -1126,34 +1139,34 @@
                 // Su sesión no probó su celular (contraseña vieja): que entre con el código. El portal ofrece salir y volver.
                 askLogin('Para registrar tu llegada, entra con el código que te mandamos por WhatsApp o a tu correo.')
               } else if (code === 'CHECK_IN_NOT_FOUND' && qr) {
-                screen('🙋', 'No encontramos una reservación tuya para ahora',
+                screen('persona', 'No encontramos una reservación tuya para ahora',
                   'El registro se abre 20 minutos antes de tu clase. Si te apuntó recepción o reservaste con otro número, teclea tu teléfono en la pantalla.')
               } else if (code === 'CHECK_IN_CHALLENGE_EXPIRED') {
-                screen('⌛', 'Este código ya venció', 'Vuelve a escanear el de la pantalla: se renueva solo cada pocos minutos.')
+                screen('reloj', 'Este código ya venció', 'Vuelve a escanear el de la pantalla: se renueva solo cada pocos minutos.')
               } else if (code === 'CHECK_IN_ALREADY_CLAIMED') {
-                screen('🙋', 'Ese código ya lo usó alguien más', 'Pide uno nuevo en la pantalla y vuelve a escanear.')
+                screen('persona', 'Ese código ya lo usó alguien más', 'Pide uno nuevo en la pantalla y vuelve a escanear.')
               } else if (code === 'CHECK_IN_OUTSIDE_WINDOW') {
-                screen('🕒', 'Todavía es temprano', 'El check-in se abre 20 minutos antes de tu clase. Vuelve a intentarlo en un rato.')
+                screen('reloj', 'Todavía es temprano', 'El check-in se abre 20 minutos antes de tu clase. Vuelve a intentarlo en un rato.')
               } else if (code === 'CUSTOMER_APPROVAL_PENDING') {
-                screen('⏳', 'Tu cuenta está en revisión', 'El negocio todavía no la aprueba. Pregunta en el mostrador.')
+                screen('reloj', 'Tu cuenta está en revisión', 'El negocio todavía no la aprueba. Pregunta en el mostrador.')
               } else if (code === 'CUSTOMER_APPROVAL_REJECTED' || code === 'CUSTOMER_TOKEN_VENUE_MISMATCH') {
-                screen('🙋', 'Necesitamos ayuda del mostrador', 'Muestra esta pantalla a alguien del equipo.')
+                screen('persona', 'Necesitamos ayuda del mostrador', 'Muestra esta pantalla a alguien del equipo.')
               } else if (out.status === 401) {
                 askLogin()
               } else if (out.status === 429) {
-                screen('🐢', 'Demasiados intentos', 'Espera un minuto y vuelve a escanear.')
+                screen('alerta', 'Demasiados intentos', 'Espera un minuto y vuelve a escanear.')
               } else {
-                screen('🙋', 'No pudimos registrarte', 'Pide ayuda en el mostrador: te anotan en un segundo.')
+                screen('persona', 'No pudimos registrarte', 'Pide ayuda en el mostrador: te anotan en un segundo.')
               }
             })
             .catch(function () {
-              screen('📶', 'Sin conexión', 'Revisa tu señal y vuelve a escanear el código.')
+              screen('globo', 'Sin conexión', 'Revisa tu señal y vuelve a escanear el código.')
             })
         }
 
         function askLogin(texto) {
           var antes = readToken()
-          screen('👋', 'Identifícate para continuar', texto || 'Entra con tu teléfono o correo y seguimos con tu check-in.',
+          screen('persona', 'Identifícate para continuar', texto || 'Entra con tu teléfono o correo y seguimos con tu check-in.',
             '<div id="checkin-portal" style="margin-top:20px"></div>')
           var host = document.createElement('avoqado-portal')
           host.setAttribute('venue', venueSlug)
