@@ -559,6 +559,22 @@
     "credito": "credit",
     "creditos": "credits",
     "hoy": "Today",
-    "manana": "Tomorrow"
+    "manana": "Tomorrow",
+    "politica": {
+      "escribele": "To cancel, message the studio.",
+      "fecha": "{{dia}} at {{hora}}",
+      "fechaALa": "{{dia}} at {{hora}}",
+      "enLinea": "You can cancel online until {{fecha}}.",
+      "gratis": "Cancel for free until {{fecha}} and the session goes back to your pack.",
+      "gratisVarias": "Cancel for free until {{fecha}} and the sessions go back to your pack.",
+      "tardeNoRegresa": "Until {{fecha}} you can still cancel, but it no longer goes back.",
+      "tardeNoRegresan": "Until {{fecha}} you can still cancel, but they no longer go back.",
+      "tardeRegresa": "Until {{fecha}} you can still cancel and {{n}} of your {{total}} sessions goes back.",
+      "tardeRegresan": "Until {{fecha}} you can still cancel and {{n}} of your {{total}} sessions go back.",
+      "nunca": "If you cancel, the session does not go back to your pack.",
+      "nuncaVarias": "If you cancel, the sessions do not go back to your pack.",
+      "ilimitado": "You can cancel until {{fecha}}; your unlimited pass stays the same.",
+      "ilimitadoTarde": "Cancelling by {{fecha}} is on time; after that it counts as a late cancellation."
+    }
   }
 }

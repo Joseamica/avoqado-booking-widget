@@ -559,6 +559,22 @@
     "credito": "crédito",
     "creditos": "créditos",
     "hoy": "Hoy",
-    "manana": "Mañana"
+    "manana": "Mañana",
+    "politica": {
+      "escribele": "Para cancelar, escríbele al estudio.",
+      "fecha": "el {{dia}} a las {{hora}}",
+      "fechaALa": "el {{dia}} a la {{hora}}",
+      "enLinea": "Puedes cancelar en línea hasta {{fecha}}.",
+      "gratis": "Cancela gratis hasta {{fecha}} y la sesión regresa a tu paquete.",
+      "gratisVarias": "Cancela gratis hasta {{fecha}} y las sesiones regresan a tu paquete.",
+      "tardeNoRegresa": "Hasta {{fecha}} puedes cancelar, pero ya no regresa.",
+      "tardeNoRegresan": "Hasta {{fecha}} puedes cancelar, pero ya no regresan.",
+      "tardeRegresa": "Hasta {{fecha}} puedes cancelar y regresa {{n}} de tus {{total}} sesiones.",
+      "tardeRegresan": "Hasta {{fecha}} puedes cancelar y regresan {{n}} de tus {{total}} sesiones.",
+      "nunca": "Si cancelas, la sesión no regresa a tu paquete.",
+      "nuncaVarias": "Si cancelas, las sesiones no regresan a tu paquete.",
+      "ilimitado": "Puedes cancelar hasta {{fecha}}; tu Ilimitado sigue igual.",
+      "ilimitadoTarde": "Hasta {{fecha}} es a tiempo; después cuenta como cancelación tardía."
+    }
   }
 }

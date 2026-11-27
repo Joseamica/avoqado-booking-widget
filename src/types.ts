@@ -93,6 +93,18 @@ export interface ReservationBranding {
   showPrices: boolean
 }
 
+/**
+ * Política de cancelación pública del negocio (la misma lista blanca que manda el SERVIDOR en
+ * `GET /public/venues/:slug/info`). Con ella se escribe la línea de política; sin ella no se enseña ninguna.
+ */
+export type PublicCancellationPolicy = {
+  allowCustomerCancel: boolean
+  minHoursBeforeStart: number | null
+  creditRefundMode: 'NEVER' | 'ALWAYS' | 'TIME_BASED'
+  creditFreeRefundHoursBefore: number
+  creditLateRefundPercent: number
+}
+
 export interface PublicVenueInfo {
   name: string
   slug: string
@@ -151,6 +163,8 @@ export interface PublicVenueInfo {
    * the widget treats the venue as chargeable (previous behavior).
    */
   canCharge?: boolean
+  /** Política de cancelación real. Un SERVIDOR viejo no la manda; `null` si sus datos no están completos. */
+  cancellationPolicy?: PublicCancellationPolicy | null
   /**
    * Scheduling window the venue admin configured. Optional so older/cached
    * payloads still type-check (fall back to sane defaults when absent).
