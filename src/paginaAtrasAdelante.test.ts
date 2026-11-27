@@ -275,3 +275,49 @@ describe('barra fija de abajo en el celular (diseño 27-nov): Horario · Paquete
     expect(cuenta).toHaveBeenCalledTimes(1)
   })
 })
+
+// Fix round 1 (Task 8): el aviso del widget (Toast, `position: fixed; bottom: 16px`) quedaba DEBAJO de la barra de abajo en el
+// celular. La barra baja a z-index 45 (bajo el aviso, 50; sobre ella las ventanas, 100+) y la página le pasa su alto al widget
+// en `--avq-toast-offset` para que el aviso suba encima; sin barra (computadora, widget pegado en otro sitio) no hay variable.
+describe('el aviso del widget sube encima de la barra de abajo', () => {
+  let cambiar: (celular: boolean) => void = () => {}
+  function pantalla(celular: boolean) {
+    const oyentes: Array<(e: { matches: boolean }) => void> = []
+    const consulta = {
+      matches: celular, media: '(max-width: 639px)',
+      addEventListener: (_tipo: string, f: (e: { matches: boolean }) => void) => oyentes.push(f),
+      removeEventListener: () => {},
+    }
+    ;(window as unknown as { matchMedia: unknown }).matchMedia = vi.fn(() => consulta)
+    cambiar = (c: boolean) => { consulta.matches = c; oyentes.forEach(f => f({ matches: c })) }
+  }
+  function medirBarra(alto: number) {
+    Object.defineProperty(document.getElementById('bottombar')!, 'offsetHeight', { configurable: true, get: () => alto })
+  }
+  const desplazamiento = () => (widget() as HTMLElement).style.getPropertyValue('--avq-toast-offset')
+  afterEach(() => { delete (window as unknown as { matchMedia?: unknown }).matchMedia })
+
+  it('en el celular, con la barra visible, el widget recibe el alto de la barra; en computadora se quita y vuelve', async () => {
+    pantalla(true)
+    medirBarra(74)
+    new Function(scriptDeLaPagina())()
+    await esperar()
+    expect(desplazamiento()).toBe('74px')
+    cambiar(false)
+    expect(desplazamiento()).toBe('')
+    cambiar(true)
+    expect(desplazamiento()).toBe('74px')
+  })
+
+  it('en computadora desde el principio no hay variable: el aviso queda donde siempre', async () => {
+    pantalla(false)
+    medirBarra(74)
+    new Function(scriptDeLaPagina())()
+    await esperar()
+    expect(desplazamiento()).toBe('')
+  })
+
+  it('la barra queda bajo el aviso (z-index 45 < 50)', () => {
+    expect(paginaHospedada).toMatch(/\.bottombar:not\(\[hidden\]\)\s*\{[^}]*z-index:\s*45;/)
+  })
+})

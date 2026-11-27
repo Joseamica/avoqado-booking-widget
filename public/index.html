@@ -426,11 +426,13 @@
     }
 
     /* Diseño 27-nov: barra fija abajo en el celular (Horario · Paquetes · Mi cuenta). `hidden` la deja fuera de los
-       carriles que no son reservas (tienda, tarjeta, check-in); el script la muestra con la cabecera. */
+       carriles que no son reservas (tienda, tarjeta, check-in); el script la muestra con la cabecera.
+       z-index 45: bajo el aviso del widget (Toast, 50), que además sube encima de ella con `--avq-toast-offset` (ver el
+       script); sobre ella quedan el menú (200) y las ventanas del widget y de la página (100 en adelante). */
     .bottombar { display: none; }
     @media (max-width: 639px) {
       .bottombar:not([hidden]) {
-        position: fixed; left: 0; right: 0; bottom: 0; z-index: 55;
+        position: fixed; left: 0; right: 0; bottom: 0; z-index: 45;
         display: flex; justify-content: space-around;
         padding: 6px 8px calc(6px + env(safe-area-inset-bottom));
         background: var(--bg-elev); border-top: 1px solid var(--border);
@@ -1375,6 +1377,25 @@
       document.getElementById('nav-account').addEventListener('click', callShowAccount)
       document.getElementById('drawer-account').addEventListener('click', callShowAccount)
       document.getElementById('bottombar-account').addEventListener('click', callShowAccount)
+
+      // La barra de abajo sólo se ve en el celular (< 640 px, la misma regla que su CSS). Mientras se ve, el widget recibe su
+      // alto en `--avq-toast-offset` (las variables de CSS entran a su sombra) y su aviso (Toast) sube encima de ella; sin
+      // barra se quita y el aviso queda a 16 px, como siempre. Sin `matchMedia` (navegador muy viejo) no se toca nada.
+      var barraEnCelular = window.matchMedia ? window.matchMedia('(max-width: 639px)') : null
+      function avisoSobreLaBarra() {
+        if (barraEnCelular && barraEnCelular.matches && !bottombar.hidden) {
+          el.style.setProperty('--avq-toast-offset', (bottombar.offsetHeight || 68) + 'px')
+        } else {
+          el.style.removeProperty('--avq-toast-offset')
+        }
+      }
+      if (barraEnCelular) {
+        if (barraEnCelular.addEventListener) barraEnCelular.addEventListener('change', avisoSobreLaBarra)
+        else if (barraEnCelular.addListener) barraEnCelular.addListener(avisoSobreLaBarra)
+        // Girar el celular o un área segura distinta cambian el alto de la barra.
+        window.addEventListener('resize', avisoSobreLaBarra)
+      }
+      avisoSobreLaBarra()
 
       // Diseño 27-nov: «Clases | Citas» (o la portada al abrir) pide cambiar de flujo. La página es dueña de su liga: la cambia
       // aquí (`replace` cuando la eligió la portada sola, para no dejar /<negocio> en el historial) y, con el oyente de

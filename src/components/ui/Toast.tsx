@@ -18,11 +18,13 @@ export function Toast() {
   const { text, type } = toastMessage.value
   const isError = type === 'error'
 
+  // `--avq-toast-offset` lo pone la página propia (book.avoqado.io) con el alto de su barra fija de abajo en el celular, para
+  // que el aviso no quede debajo de ella; sin la variable (computadora, widget pegado en otro sitio) queda a 16 px como siempre.
   return (
     <div
       class="avq-animate-in"
       style={{
-        position: 'fixed', bottom: '16px', left: '50%', transform: 'translateX(-50%)',
+        position: 'fixed', bottom: 'calc(16px + var(--avq-toast-offset, 0px))', left: '50%', transform: 'translateX(-50%)',
         zIndex: 50, maxWidth: '90vw',
         borderRadius: '12px', padding: '12px 20px',
         fontSize: '13px', fontWeight: '500', color: '#ffffff',
