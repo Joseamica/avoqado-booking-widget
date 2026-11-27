@@ -161,6 +161,12 @@ describe('Horario: lista con tira de días (celular)', () => {
     expect(onSelect).toHaveBeenCalledWith(s11)
   })
 
+  it('una sesión sin fecha válida se salta y no tumba el horario', async () => {
+    await pintar([{ ...s11, classSessionId: 'rota', startsAt: 'no-es-fecha' }, s11])
+    expect(fila(/Lagree.*11:00/)).toBeTruthy()
+    expect(screen.getAllByRole('button', { name: /Lagree/ })).toHaveLength(1)
+  })
+
   it('las medidas del celular: filas de al menos 56 px y texto para leer de 16–17 px', async () => {
     await pintar([s11])
     const css = Array.from(document.querySelectorAll('style')).map(s => s.textContent).join('\n')
@@ -239,5 +245,93 @@ describe('Horario: semana tipo calendario (pantallas anchas)', () => {
     // La quinta semana (24 al 30 de diciembre) pasa del 26: se piden 60 días.
     expect(api.getClassSessionsRange).toHaveBeenCalledTimes(2)
     expect(vi.mocked(api.getClassSessionsRange).mock.calls[1][1]).toEqual({ dateFrom: '2026-11-26', dateTo: '2027-01-25' })
+  })
+
+  // Fix r1: «Sin clases» sólo en días que ya llegaron. Lo pedido y aún no recibido dice «Cargando…»; si falla, aviso y reintento.
+  const lunes28 = sesion('l-28', '2026-12-28T17:00:00Z', '2026-12-28T17:50:00Z')
+  const columna = (nombre: string) => screen.getByRole('group', { name: nombre })
+  function pendiente() {
+    let resolver!: (r: { dateFrom: string; dateTo: string; slots: PublicClassSessionSlot[] }) => void
+    let rechazar!: (e: unknown) => void
+    const promesa = new Promise<{ dateFrom: string; dateTo: string; slots: PublicClassSessionSlot[] }>((ok, mal) => {
+      resolver = ok; rechazar = mal
+    })
+    return { promesa, resolver, rechazar }
+  }
+  async function hastaLaQuintaSemana() {
+    for (let i = 0; i < 4; i++) fireEvent.click(screen.getByRole('button', { name: 'Semana siguiente' }))
+    await flush()
+  }
+
+  it('al cruzar el día 30, los días 31 en adelante dicen «Cargando…» (no «Sin clases») hasta que llega la respuesta', async () => {
+    pantalla(1024)
+    const segunda = pendiente()
+    vi.mocked(api.getClassSessionsRange)
+      .mockResolvedValueOnce({ dateFrom: '2026-11-26', dateTo: '2026-12-26', slots: [s11] })
+      .mockReturnValueOnce(segunda.promesa)
+    const onSelect = vi.fn()
+    render(<ClassSessionList venueSlug="un-estudio" timezone={TZ} onSelect={onSelect} products={[lagree]} t={createT('es')} />)
+    await flush()
+    await hastaLaQuintaSemana()
+    expect(api.getClassSessionsRange).toHaveBeenCalledTimes(2)
+    // El 26 ya llegó (vacío); del 27 al 30 todavía no.
+    expect(columna('Sábado, 26 de diciembre').textContent).toContain('Sin clases')
+    for (const dia of ['Domingo, 27 de diciembre', 'Lunes, 28 de diciembre', 'Miércoles, 30 de diciembre']) {
+      expect(columna(dia).textContent).toContain('Cargando…')
+      expect(columna(dia).textContent).not.toContain('Sin clases')
+    }
+    await act(async () => { segunda.resolver({ dateFrom: '2026-11-26', dateTo: '2027-01-25', slots: [s11, lunes28] }) })
+    await flush()
+    expect(within(columna('Lunes, 28 de diciembre')).getByRole('button', { name: /Lagree.*11:00/ })).toBeTruthy()
+    expect(columna('Domingo, 27 de diciembre').textContent).toContain('Sin clases')
+    expect(document.body.textContent).not.toContain('Cargando…')
+  })
+
+  it('si falla la segunda página: aviso con «Intentar de Nuevo» y sin «Sin clases» falsos; reintentar la trae', async () => {
+    pantalla(1024)
+    const tercera = pendiente()
+    vi.mocked(api.getClassSessionsRange)
+      .mockResolvedValueOnce({ dateFrom: '2026-11-26', dateTo: '2026-12-26', slots: [s11] })
+      .mockRejectedValueOnce(new Error('sin red'))
+      .mockReturnValueOnce(tercera.promesa)
+    render(<ClassSessionList venueSlug="un-estudio" timezone={TZ} onSelect={vi.fn()} products={[lagree]} t={createT('es')} />)
+    await flush()
+    await hastaLaQuintaSemana()
+    const aviso = screen.getByRole('alert')
+    expect(aviso.textContent).toContain('No pudimos cargar más fechas.')
+    expect(columna('Domingo, 27 de diciembre').textContent).not.toContain('Sin clases')
+    expect(columna('Domingo, 27 de diciembre').textContent).not.toContain('Cargando…')
+    // Lo que ya estaba se sigue viendo.
+    fireEvent.click(screen.getByRole('button', { name: 'Semana anterior' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Semana anterior' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Semana anterior' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Semana anterior' }))
+    expect(screen.getByRole('button', { name: /Lagree.*11:00/ })).toBeTruthy()
+    await hastaLaQuintaSemana()
+    fireEvent.click(within(screen.getByRole('alert')).getByRole('button', { name: 'Intentar de Nuevo' }))
+    await flush()
+    expect(api.getClassSessionsRange).toHaveBeenCalledTimes(3)
+    expect(vi.mocked(api.getClassSessionsRange).mock.calls[2][1]).toEqual({ dateFrom: '2026-11-26', dateTo: '2027-01-25' })
+    expect(screen.queryByRole('alert')).toBeNull()
+    await act(async () => { tercera.resolver({ dateFrom: '2026-11-26', dateTo: '2027-01-25', slots: [s11, lunes28] }) })
+    await flush()
+    expect(within(columna('Lunes, 28 de diciembre')).getByRole('button', { name: /Lagree.*11:00/ })).toBeTruthy()
+    expect(columna('Domingo, 27 de diciembre').textContent).toContain('Sin clases')
+  })
+
+  it('en la lista, si fallan las fechas de más: el mismo aviso con reintento', async () => {
+    vi.mocked(api.getClassSessionsRange)
+      .mockResolvedValueOnce({ dateFrom: '2026-11-26', dateTo: '2026-12-26', slots: [s11] })
+      .mockRejectedValueOnce(new Error('sin red'))
+      .mockResolvedValueOnce({ dateFrom: '2026-11-26', dateTo: '2027-01-25', slots: [s11, lunes28] })
+    render(<ClassSessionList venueSlug="un-estudio" timezone={TZ} onSelect={vi.fn()} products={[lagree]} t={createT('es')} />)
+    await flush()
+    fireEvent.click(screen.getByRole('button', { name: 'Más fechas' }))
+    await flush()
+    expect(screen.getByRole('alert').textContent).toContain('No pudimos cargar más fechas.')
+    fireEvent.click(within(screen.getByRole('alert')).getByRole('button', { name: 'Intentar de Nuevo' }))
+    await flush()
+    expect(screen.queryByRole('alert')).toBeNull()
+    expect(screen.getByRole('button', { name: 'Lunes, 28 de diciembre' })).toBeTruthy()
   })
 })

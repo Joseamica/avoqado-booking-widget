@@ -100,6 +100,8 @@ export function ClassSessionList({
   const [error, setError] = useState<string | null>(null)
   const [windowDays, setWindowDays] = useState(INITIAL_DAYS)
   const [refetchKey, setRefetchKey] = useState(0)
+  /** Último día que de verdad llegó (no el pedido): sólo hasta ahí un día vacío es «Sin clases». */
+  const [cargadoHasta, setCargadoHasta] = useState<string | null>(null)
   const [view, setView] = useState<ClassesView>(vistaInicial)
   function pickView(v: ClassesView) { setView(v); setStoredView(v) }
   const celular = useConsulta(CELULAR)
@@ -131,6 +133,8 @@ export function ClassSessionList({
       .then(res => {
         if (cancelled) return
         setSlots(res.slots)
+        // Si el SERVIDOR recortó el rango, cuenta lo que dice que mandó.
+        setCargadoHasta(res.dateTo && res.dateTo < dateTo ? res.dateTo : dateTo)
       })
       .catch(err => {
         if (cancelled) return
@@ -366,6 +370,14 @@ export function ClassSessionList({
         </div>
       </div>
 
+      {/* Las fechas de más no llegaron (sin red, error): lo que ya estaba se sigue viendo, y se puede reintentar. */}
+      {error && slots.length > 0 && (
+        <div class="avq-horario-error" role="alert">
+          <span>{t('reservaClases.horario.noSeCargaron')}</span>
+          <button type="button" onClick={() => setRefetchKey(k => k + 1)}>{t('actions.retry')}</button>
+        </div>
+      )}
+
       {vista === 'calendar' ? (
         <CalendarView
           slots={filteredSlots}
@@ -374,7 +386,9 @@ export function ClassSessionList({
           nowMs={nowMs}
           miReserva={miReserva}
           mostrarDuracion={branding.value.showDuration}
-          ultimoDia={dateTo}
+          ultimoDia={cargadoHasta ?? undefined}
+          pedidoHasta={dateTo}
+          cargando={loading}
           onNecesitaMasDias={masDias}
           t={t}
         />
@@ -401,12 +415,19 @@ export function ClassSessionList({
           transition: background 0.15s ease, color 0.15s ease; }
         .avq-horario-vista[aria-pressed="true"] { background: var(--avq-fg, #1c1917); color: var(--avq-bg, #ffffff); }
         .avq-horario-filtros { margin: 0 0 18px; }
+        .avq-horario-error { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+          margin: 0 0 16px; padding: 12px 14px; border-radius: 12px; font-size: 14px;
+          border: 1px solid var(--avq-warning-border, #fde68a); background: var(--avq-warning-bg, #fffbeb); color: var(--avq-warning-fg, #92400e); }
+        .avq-horario-error button { min-height: 40px; padding: 0 14px; border-radius: 999px; border: 1px solid currentColor;
+          background: transparent; color: inherit; font: inherit; font-weight: 600; cursor: pointer; }
         /* Celular (≤ 640 px): título de 26 px, controles de 52 px y bloques separados 24 px. */
         @media (max-width: 640px) {
           .avq-horario-cabeza { margin-bottom: 16px; }
           .avq-horario-titulo { font-size: 26px; }
           .avq-horario-filtros { margin-bottom: 24px; }
           .avq-horario-filtros .avq-filtro { min-height: 52px !important; font-size: 16px !important; padding: 0 16px !important; }
+          .avq-horario-error { margin-bottom: 24px; font-size: 16px; }
+          .avq-horario-error button { min-height: 52px; }
         }
       `}</style>
     </div>

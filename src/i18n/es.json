@@ -591,6 +591,8 @@
       "semanaAnterior": "Semana anterior",
       "semanaSiguiente": "Semana siguiente",
       "sinClases": "Sin clases",
+      "cargando": "Cargando…",
+      "noSeCargaron": "No pudimos cargar más fechas.",
       "sinResultados": "No hay clases con estos filtros",
       "lugar": "1 lugar",
       "lugares": "{{n}} lugares",

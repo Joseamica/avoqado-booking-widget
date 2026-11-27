@@ -591,6 +591,8 @@
       "semanaAnterior": "Previous week",
       "semanaSiguiente": "Next week",
       "sinClases": "No classes",
+      "cargando": "Loading…",
+      "noSeCargaron": "We couldn't load more dates.",
       "sinResultados": "No classes match these filters",
       "lugar": "1 spot",
       "lugares": "{{n}} spots",

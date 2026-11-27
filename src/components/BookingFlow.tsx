@@ -2198,6 +2198,10 @@ export function BookingFlow({ props }: BookingFlowProps) {
               .avq-classes-main { min-width: 0; }
               .avq-classes-main > * { min-width: 0; }
               .avq-classes-sidebar { display: none; }
+              /* Celular: la página deja 12 px por lado; el horario suma 12 px para llegar a los 24 px del diseño (citas no cambia). */
+              @media (max-width: 640px) {
+                .avq-classes-main { padding-inline: 12px; }
+              }
               @media (min-width: 960px) {
                 .avq-classes-layout {
                   grid-template-columns: minmax(0, 1fr) 260px;

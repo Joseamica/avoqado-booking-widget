@@ -23,6 +23,22 @@ export function diaDeLaSesion(iso: string, timeZone: string): string {
   return new Date(iso).toLocaleDateString('en-CA', { timeZone })
 }
 
+/**
+ * Sesiones por día del negocio, en el orden en que llegan. Una sesión sin fecha válida se salta: no debe tumbar el horario
+ * entero (los formateadores de fecha lanzan `RangeError` con una fecha inválida).
+ */
+export function agruparPorDia(slots: PublicClassSessionSlot[], timeZone: string): Map<string, PublicClassSessionSlot[]> {
+  const m = new Map<string, PublicClassSessionSlot[]>()
+  for (const s of slots) {
+    if (!Number.isFinite(new Date(s.startsAt).getTime())) continue
+    const k = diaDeLaSesion(s.startsAt, timeZone)
+    const lista = m.get(k)
+    if (lista) lista.push(s)
+    else m.set(k, [s])
+  }
+  return m
+}
+
 /** Suma días a un «YYYY-MM-DD». Es un día de calendario: no depende de la zona. */
 export function sumarDias(ymd: string, n: number): string {
   const [y, m, d] = ymd.split('-').map(Number)
@@ -143,16 +159,7 @@ export function ListaDelHorario({
 }: ListaDelHorarioProps) {
   const idioma = idiomaDe(t)
   const hoy = diaDeLaSesion(new Date(nowMs).toISOString(), timezone)
-  const porDia = useMemo(() => {
-    const m = new Map<string, PublicClassSessionSlot[]>()
-    for (const s of slots) {
-      const k = diaDeLaSesion(s.startsAt, timezone)
-      const lista = m.get(k)
-      if (lista) lista.push(s)
-      else m.set(k, [s])
-    }
-    return m
-  }, [slots, timezone])
+  const porDia = useMemo(() => agruparPorDia(slots, timezone), [slots, timezone])
   const dias = useMemo(() => Array.from(porDia.keys()).sort(), [porDia])
   const [elegido, setElegido] = useState<string | null>(null)
   // Si un filtro deja fuera el día elegido, se vuelve al primero que tiene clases.

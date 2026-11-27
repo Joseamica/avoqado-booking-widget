@@ -1753,6 +1753,17 @@ describe('Portada: identidad del negocio, horario directo y «Clases | Citas»',
     expect(screen.queryByRole('button', { name: 'Escríbenos' })).toBeNull()
   })
 
+  it('celular (≤ 640 px): el horario suma 12 px por lado a los 12 px de la página, 24 px en total (sin tocar citas)', async () => {
+    window.history.replaceState({}, '', '/studio-a')
+    montar(soloClases); await flush()
+    expect(document.querySelector('.avq-classes-main .avq-horario')).not.toBeNull()
+    const css = Array.from(document.querySelectorAll('style')).map(x => x.textContent ?? '').join('\n')
+    expect(css).toMatch(/@media \(max-width: 640px\)\s*\{[^@]*\.avq-classes-main\s*\{[^}]*padding-inline:\s*12px/)
+    // Sólo una vez: si el horario también lo pusiera, serían 36 px.
+    expect(css).not.toMatch(/\.avq-horario\s*\{[^}]*padding-inline/)
+    expect(css).not.toMatch(/\.avq-appts-main\s*\{[^}]*padding-inline/)
+  })
+
   it('una liga vieja a los paquetes (/<negocio>#packs) abre la lista de paquetes encima del horario', async () => {
     vi.mocked(api.getCreditPacks).mockResolvedValue([{ ...PAQUETE, items: [{ ...PAQUETE.items[0], productId: 'class-a' }] }] as any)
     window.history.replaceState({}, '', '/studio-a#packs')

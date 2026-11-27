@@ -5,8 +5,8 @@ import type { TFunction } from '../i18n'
 import { encabezadoDeDia } from '../lib/fechas'
 import { Icono } from './ui/Icono'
 import {
-  ESTILOS_LUGARES, Lugares, diaCorto, diaDeLaSesion, duracion, horaDeLaSesion, idiomaDe, minutosDeLaSesion, nombreDeCoach,
-  nombreDeLaSesion, numeroDelDia, sePuedeTocar, sumarDias, textoDeLugares, lugaresDeLaSesion, textoDeReserva,
+  ESTILOS_LUGARES, Lugares, agruparPorDia, diaCorto, diaDeLaSesion, duracion, horaDeLaSesion, idiomaDe, lugaresDeLaSesion,
+  minutosDeLaSesion, nombreDeCoach, nombreDeLaSesion, numeroDelDia, sePuedeTocar, sumarDias, textoDeLugares, textoDeReserva,
 } from './ListaDelHorario'
 import type { MiReserva } from './ListaDelHorario'
 
@@ -22,9 +22,13 @@ interface CalendarViewProps {
   /** Su reserva en la sesión: la tarjeta dice «Reservada · lugar N» y, aunque la clase esté llena, se puede tocar. */
   miReserva?: MiReserva
   mostrarDuracion?: boolean
-  /** Último día (YYYY-MM-DD, incluido) que ya trajo el horario. */
+  /** Último día (YYYY-MM-DD, incluido) que YA LLEGÓ: sólo hasta aquí un día vacío puede decir «Sin clases». */
   ultimoDia?: string
-  /** Si quedan días por traer: se piden al llegar a una semana que pasa de `ultimoDia`. */
+  /** Último día pedido (puede no haber llegado todavía). Sin él, se toma `ultimoDia`. */
+  pedidoHasta?: string
+  /** Hay una lectura en camino: los días pedidos que no han llegado dicen «Cargando…». */
+  cargando?: boolean
+  /** Si quedan días por pedir: se piden al llegar a una semana que pasa de lo pedido. */
   onNecesitaMasDias?: () => void
   t: TFunction
 }
@@ -34,7 +38,8 @@ interface CalendarViewProps {
  * y sus clases: hora, duración de la sesión, clase, coach y lugares. Las flechas mueven una semana.
  */
 export function CalendarView({
-  slots, timezone, onSelect, nowMs, miReserva, mostrarDuracion = true, ultimoDia, onNecesitaMasDias, t,
+  slots, timezone, onSelect, nowMs, miReserva, mostrarDuracion = true, ultimoDia, pedidoHasta, cargando = false,
+  onNecesitaMasDias, t,
 }: CalendarViewProps) {
   const now = nowMs ?? Date.now()
   const idioma = idiomaDe(t)
@@ -44,25 +49,17 @@ export function CalendarView({
   const [ancla, setAncla] = useState<string>(hoy)
   const semana = useMemo(() => Array.from({ length: 7 }, (_, i) => sumarDias(ancla, i)), [ancla])
 
-  const porDia = useMemo(() => {
-    const m = new Map<string, PublicClassSessionSlot[]>()
-    for (const s of slots) {
-      const k = diaDeLaSesion(s.startsAt, timezone)
-      const lista = m.get(k)
-      if (lista) lista.push(s)
-      else m.set(k, [s])
-    }
-    return m
-  }, [slots, timezone])
+  const porDia = useMemo(() => agruparPorDia(slots, timezone), [slots, timezone])
 
-  // Una semana que pasa de lo ya traído pide los días que faltan (el horario trae 30 días y llega hasta 60).
+  // Una semana que pasa de lo ya pedido pide los días que faltan (el horario trae 30 días y llega hasta 60).
+  const pedido = pedidoHasta ?? ultimoDia
   const ultimoVisible = semana[6]
   useEffect(() => {
-    if (ultimoDia && onNecesitaMasDias && ultimoVisible > ultimoDia) onNecesitaMasDias()
-  }, [ultimoVisible, ultimoDia])
+    if (pedido && onNecesitaMasDias && ultimoVisible > pedido) onNecesitaMasDias()
+  }, [ultimoVisible, pedido])
 
   const puedeAtras = ancla > hoy
-  const puedeAdelante = !(ultimoDia && !onNecesitaMasDias && sumarDias(ancla, 7) > ultimoDia)
+  const puedeAdelante = !(pedido && !onNecesitaMasDias && sumarDias(ancla, 7) > pedido)
 
   const mes = useMemo(() => {
     const [y, m, d] = semana[0].split('-').map(Number)
@@ -100,7 +97,9 @@ export function CalendarView({
         {semana.map(dia => {
           const esHoy = dia === hoy
           const sesiones = porDia.get(dia) ?? []
-          const traido = !ultimoDia || dia <= ultimoDia
+          // «Sin clases» sólo en un día que ya llegó; uno pedido que no ha llegado dice «Cargando…»; si la lectura
+          // falló, queda vacío (el aviso con «Intentar de Nuevo» va arriba, en el horario).
+          const llego = !ultimoDia || dia <= ultimoDia
           const encabezado = encabezadoDeDia(dia, now, timezone, idioma, t)
           const corto = `${diaCorto(dia, idioma)} ${numeroDelDia(dia)}`
           return (
@@ -121,7 +120,9 @@ export function CalendarView({
                     t={t}
                   />
                 ))
-                : traido && <div class="avq-semana-vacio">{t('reservaClases.horario.sinClases')}</div>}
+                : llego
+                  ? <div class="avq-semana-vacio">{t('reservaClases.horario.sinClases')}</div>
+                  : cargando && <div class="avq-semana-vacio avq-semana-cargando" aria-busy="true">{t('reservaClases.horario.cargando')}</div>}
             </div>
           )
         })}
