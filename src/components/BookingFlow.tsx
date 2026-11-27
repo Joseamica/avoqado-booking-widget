@@ -15,15 +15,16 @@ import {
   flowType, visibleProducts,
   selectedProducts, selectedStaffId, totalDuration, totalPrice, selectedModifiers,
   addSelectedProduct, removeSelectedProduct,
-  slotHoldToken, slotHoldExpiresAt, otroLugarEnLaClase,
+  slotHoldToken, slotHoldExpiresAt, otroLugarEnLaClase, esOtroLugarEnLaClase,
   branding, DEFAULT_BRANDING,
 } from '../state/booking'
 import { resolveDepositReturn, savePendingReservation, clearPendingReservation, depositCheckoutUrl, newReturnRef } from '../lib/depositReturn'
 import { leerSesion, type SesionEmitida } from '../lib/sesionDeCliente'
-import { cubreLugares } from '../lib/credits'
+import { avisoDelIlimitado, cubreLugares } from '../lib/credits'
 import { lineaDePolitica } from '../lib/politica'
 import { pagoDeLaClase, type OpcionDePaquete } from '../lib/eleccionDePaquete'
 import { decidirConflicto } from '../lib/conflictoDeClase'
+import { esResultadoIncierto, revisarSiQuedo, type Intento, type ReservaPropia } from '../lib/revisarSiQuedo'
 
 /** Quién compró el paquete en esta pestaña (para el regreso de Stripe). */
 const COMPRA_DE = 'avq:compraDe'
@@ -48,9 +49,10 @@ import { ClassSessionList, ventanaDesdeHoy } from './ClassSessionList'
 import { EntrarModal, contextoDeLaClase } from './EntrarModal'
 import { idiomaDe } from './ListaDelHorario'
 import { Icono } from './ui/Icono'
-import { ClassDetailView, cubreDe } from './ClassDetailView'
+import { ClassDetailView, cubreDe, fechaDeLaClase, horaDeLaClase } from './ClassDetailView'
+import { ConfirmarReserva, RevisionDeLaReserva, cuandoCorto, type EstadoDeLaRevision, type PagoDeLaReserva } from './ConfirmarReserva'
 import { TuPaqueteFranja } from './TuPaqueteFranja'
-import { useMisClases, type VentanaDelHorario } from './useMisClases'
+import { cuentaDelEstudio, useMisClases, type ParaRevisarSiQuedo, type VentanaDelHorario } from './useMisClases'
 import { UnifiedLanding } from './UnifiedLanding'
 import { IdentidadDelNegocio } from './IdentidadDelNegocio'
 import { ClasesOCitas } from './ClasesOCitas'
@@ -66,7 +68,7 @@ import { PaymentChoiceInline, type InlineChoice } from './PaymentChoiceInline'
 import { CreditPacksModal } from './CreditPacksModal'
 import { AppointmentConfirmation } from './AppointmentConfirmation'
 import type { GuestFormData } from './GuestInfoForm'
-import type { Product } from '../types'
+import type { Product, PublicReservationDetail } from '../types'
 import {
   baseWindowForSlot,
   intersectEligibleStaff,
@@ -79,6 +81,55 @@ interface BookingFlowProps {
 }
 
 const MANAGE_STEP = 99
+
+/**
+ * Task 13: lo que se mandó al tocar «Confirmar reserva» (o «Pagar $X»), para revisar si quedó y para «Intentar de nuevo» con el
+ * MISMO pedido. `intento` es `null` para la invitada (no hay cuenta que leer).
+ */
+interface PedidoDeClase {
+  slug: string
+  classSessionId: string
+  datos: GuestFormData
+  balanceId: string | null
+  intento: Intento | null
+  /** Vuelve a leer sus reservas de la ventana del horario (Task 10); `null` si no se puede (sin cuenta de este estudio o sin ventana). */
+  leer: (() => Promise<ReservaPropia[]>) | null
+  /** Las etiquetas de los lugares tal como se eligieron («3»). */
+  lugares: string[]
+  /** Invitada: le llega un aviso de su reserva (se confirma al momento, sin pago en línea, y dio correo o teléfono). */
+  leLlegaAviso: boolean
+}
+interface RevisionDeClase {
+  estado: EstadoDeLaRevision
+  pedido: PedidoDeClase
+  /** La que la revisión encontró («Ver mi reserva» abre «Gestionar» con su `cancelSecret`). */
+  reserva?: ReservaPropia
+}
+
+/** Lo que enseña «Confirma tu reserva» y lo que su botón manda. */
+interface PlanDeLaConfirmacion {
+  opciones: OpcionDePaquete[]
+  /** El `balanceId` que se manda (por default el paquete que vence primero); `null` = sin paquete. */
+  elegida: string | null
+  pago: PagoDeLaReserva
+  aceptaTarjeta: boolean
+  /** Con cuenta, su saldo todavía no se lee: no se deja confirmar. */
+  cargando: boolean
+  /** La clase sólo se paga con paquete y no tiene uno que la pague. */
+  sinComoPagar: boolean
+  precio: number | null
+  avisoIlimitado: string | null
+  politica: string | null
+  lugares: string[]
+  otroLugar: boolean
+  tz: string
+}
+
+/** Los códigos que ya tenía en ESA clase según la última lectura BUENA del horario (`null` si no la hubo). */
+function codigosAntes(pr: ParaRevisarSiQuedo | null, classSessionId: string): ReadonlySet<string> | null {
+  if (!pr?.ultima) return null
+  return new Set(pr.ultima.filter(r => r.classSessionId === classSessionId).map(r => r.confirmationCode))
+}
 
 /** Cuántos productos de clase y de cita tiene el negocio. La portada abre en lo que tenga más (diseño 27-nov). */
 function contarTipos(info: PublicVenueInfo): { clases: number; citas: number } {
@@ -239,6 +290,8 @@ export function BookingFlow({ props }: BookingFlowProps) {
   // Cuántas veces cambió de negocio el widget, y si sigue en la página: una compra en vuelo de un negocio que se dejó (aunque ya se
   // haya vuelto a él) o de un widget retirado no abre su pago (codex r1 #3, r2 #3, r3 #3).
   const cambiosDeNegocio = useRef(0)
+  /** Task 13: cada revisión es un turno: salir de la confirmación o cambiar de negocio deja atrás la que estaba en vuelo. */
+  const turnoRevision = useRef(0)
   const montado = useRef(true)
   useEffect(() => () => { montado.current = false }, [])
   // Se cuenta AL PINTAR, no en un efecto: una liga que responde justo después del cambio, antes de que corran los efectos, ya lo ve
@@ -248,6 +301,7 @@ export function BookingFlow({ props }: BookingFlowProps) {
     negocioVisto.current = props.venue
     cambiosDeNegocio.current++
     intentoDeCompra.current++
+    turnoRevision.current++
   }
   // Abrir «Mi cuenta» también deja atrás la ventana de compra (la tapa): su entrada en vuelo ya no cuenta, y al volver no reaparece una
   // confirmación vieja (codex r5 #1). Al pintar, como el negocio.
@@ -277,6 +331,18 @@ export function BookingFlow({ props }: BookingFlowProps) {
   const [holdReleaseFailed, setHoldReleaseFailed] = useState(false)
   const [guestDraft, setGuestDraft] = useState<GuestFormData | null>(null)
   const reservationSubmittingRef = useRef(false)
+  // Task 13: «Confirma tu reserva». La nota para su coach, la forma de pago que eligió con «Cambiar» (de ESA clase; si ya no vale,
+  // se vuelve al default) y la revisión tras un error de red. Todo en el estado de ESTA instancia, nunca en las señales compartidas.
+  const [notaDeClase, setNotaDeClase] = useState('')
+  const [eleccion, setEleccion] = useState<{ classSessionId: string; balanceId: string | null } | null>(null)
+  const [revision, setRevision] = useState<RevisionDeClase | null>(null)
+  const revisionRef = useRef<RevisionDeClase | null>(null)
+  revisionRef.current = revision
+  /** El candado del toque en «Confirmar reserva»: un doble toque es UNA reserva (se suelta en `finally`). */
+  const confirmandoRef = useRef(false)
+  const entrarAbierto = useRef(false)
+  /** La forma de pago que se ve en «Confirma tu reserva» (se calcula al pintar; el toque manda exactamente ésa). */
+  const planDeConfirmacion = useRef<PlanDeLaConfirmacion | null>(null)
   const expiryTransition = useSignal<Promise<void> | null>(null)
   const [submissionError, setSubmissionError] = useState<string | null>(null)
   // D687: el rechazo sale UNA vez, en el aviso que se queda (sin el toast repetido); si quedó fuera de la vista, se lleva a ella.
@@ -1294,13 +1360,51 @@ export function BookingFlow({ props }: BookingFlowProps) {
   // Task 10: lo que la clienta ya tiene en ESTE estudio (saldo sin productId y sus clases reservadas en la ventana del horario), en el
   // estado de esta instancia, nunca en las señales compartidas. Se vuelve a leer cada vez que el horario queda a la vista.
   // Para Task 13: `misClases.paraRevisar` ({ slug, identidad, instancia, ventana, ultima, leer }).
+  // Task 13: también al llegar a «Confirma tu reserva» (quien entró en la ventanita no tenía saldo leído, y el Ilimitado ya usado en
+  // esa clase sale de sus reservas). Lo que ya se leyó para la misma cuenta se queda mientras llega lo nuevo.
+  const enConfirmacionDeClase = !!venueInfo.value && !showLanding && flowType.value === 'classes' && step.value === config.formStep
+    && !showPortal.value
   const misClases = useMisClases(props.venue, {
-    activo: !!venueInfo.value && !showLanding && flowType.value === 'classes' && step.value < config.formStep
-      && !seatPickerActive && !classDetailActive && !showPortal.value,
+    activo: (!!venueInfo.value && !showLanding && flowType.value === 'classes' && step.value < config.formStep
+      && !seatPickerActive && !classDetailActive && !showPortal.value) || enConfirmacionDeClase,
     ventana: ventanaDelHorario,
     productos: venueInfo.value?.products ?? [],
   })
   refrescarMisClases.current = misClases.refrescar
+  const instanciaViva = useRef('')
+  instanciaViva.current = misClases.instancia
+
+  // La revisión es de ESA clase en ESTE negocio y en este paso: si la clienta salió (o el negocio cambió), se deja atrás.
+  useEffect(() => {
+    const r = revision
+    if (!r) return
+    const vigente = step.value === config.formStep && props.venue === r.pedido.slug
+      && selectedSlot.value?.classSessionId === r.pedido.classSessionId
+    if (!vigente) {
+      turnoRevision.current++
+      setRevision(null)
+    }
+  }, [step.value, selectedSlot.value?.classSessionId, props.venue, revision])
+
+  // Lo que eligió con «Cambiar» es de ESTA visita a la confirmación: al volver a la clase se ofrece otra vez el default.
+  useEffect(() => { if (!enConfirmacionDeClase) setEleccion(null) }, [enConfirmacionDeClase])
+
+  // Task 12 con Task 13: si en «Confirma tu reserva» la sesión se cierra (un 401 al leer su paquete, o salió en otra pestaña), se le
+  // dice en la ventanita encima de la clase, como un 401 al confirmar. No mientras se envía o se revisa (esos ya dicen lo suyo).
+  const cuentaEnConfirmacion = enConfirmacionDeClase ? (misClases.cuenta?.identidad ?? null) : null
+  const cuentaPrevia = useRef<string | null>(null)
+  useEffect(() => {
+    const antes = cuentaPrevia.current
+    cuentaPrevia.current = cuentaEnConfirmacion
+    if (!antes || cuentaEnConfirmacion || !enConfirmacionDeClase) return
+    // Tampoco encima de «Entra a tu cuenta» de un paquete (p. ej. «Usar otra cuenta» acaba de cerrar la que entró ahí).
+    if (reservationSubmittingRef.current || confirmandoRef.current || entrarAbierto.current || revisionRef.current
+      || checkoutPackId || showCreditPacksModal) return
+    abrirEntrar({
+      aviso: t(selectedProduct.value?.requireCreditForBooking ? 'entrar.sesionCerrada' : 'entrar.sesionCerradaSigue'),
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cuentaEnConfirmacion, enConfirmacionDeClase])
 
   if (isLoading.value && !reservationSubmittingRef.current) {
     return (
@@ -1462,9 +1566,11 @@ export function BookingFlow({ props }: BookingFlowProps) {
   // Mindbody) where the form never re-appears once the account is known.
   // EXCEPT on the Square /appointments wizard — there the customer expects
   // a review screen with "Reserva cita" before the booking actually creates.
+  // Task 13: en clases ya no: nada se reserva sin tocar «Confirmar reserva» (o «Pagar $X»). Sólo queda para el flujo viejo sin
+  // portada (ni citas ni clases).
   useEffect(() => {
     if (step.value !== config.formStep) return
-    if (flowType.value === 'appointments') return
+    if (flowType.value === 'appointments' || flowType.value === 'classes') return
     if (showCreditSelector || showNoCreditsBuyPrompt || showPaymentSelector) return
     // 🔴 Fase 1 — un cliente en espera de aprobación con el perfil completo caía justo aquí:
     // este efecto reservaba POR ÉL, sin mostrarle nada, y el 403 del server salía como un
@@ -1631,11 +1737,13 @@ export function BookingFlow({ props }: BookingFlowProps) {
    */
   function abrirEntrar(o: { aviso?: string | null; seguir?: () => void } = {}) {
     intentoDeEntrar.current++
+    entrarAbierto.current = true
     alEntrarSigue.current = o.seguir ?? null
     setEntrarPara({ intento: intentoDeEntrar.current, classSessionId: selectedSlot.value?.classSessionId ?? null, aviso: o.aviso ?? null })
   }
   function cerrarEntrar() {
     intentoDeEntrar.current++
+    entrarAbierto.current = false
     alEntrarSigue.current = null
     setEntrarPara(null)
   }
@@ -1778,11 +1886,14 @@ export function BookingFlow({ props }: BookingFlowProps) {
   async function submitReservation(
     data: GuestFormData,
     creditPayload?: string | string[],
+    /** Task 13: el pedido de una clase (de «Confirma tu reserva»), para revisar si quedó tras un error de red. */
+    clase?: PedidoDeClase,
   ) {
     const slot = selectedSlot.value
     if (!slot || reservationSubmittingRef.current) return
     setGuestDraft(data)
-    if (holdHasExpired()) {
+    // Una clase no se aparta (Task 13): no hay apartado que pueda vencer.
+    if (!clase && holdHasExpired()) {
       await expireSelectedSlot()
       return
     }
@@ -1855,6 +1966,12 @@ export function BookingFlow({ props }: BookingFlowProps) {
         successUrl,
         cancelUrl,
       }, customerToken.value ?? undefined /* Bearer token stamps customerId server-side */)
+      // Task 13 (r5 #5): la cuenta del estudio cambió entre el toque y la respuesta: esa reserva no se enseña ni se manda a pagar
+      // a quien está ahora frente a la página.
+      if (clase?.intento && !sigueSiendoEl(clase.intento)) {
+        ponerRevision(clase, 'cambio-de-cuenta')
+        return
+      }
       // Upfront-payment-required path: server pre-created the reservation in PENDING
       // and minted a Stripe Checkout session. Hand off to Stripe; the webhook will
       // flip the reservation to CONFIRMED on payment success.
@@ -1872,6 +1989,7 @@ export function BookingFlow({ props }: BookingFlowProps) {
       setHoldReleaseFailed(false)
       pendingHoldReleaseActionRef.current = null
       setGuestDraft(null)
+      if (clase) setNotaDeClase('')
       bookingResult.value = result
       step.value = config.confirmStep
       setShowCreditSelector(false)
@@ -1921,6 +2039,10 @@ export function BookingFlow({ props }: BookingFlowProps) {
         }
         if (!(await releaseHoldBefore(continueAfterSlotConflict))) return
         continueAfterSlotConflict()
+      } else if (clase && esResultadoIncierto(err)) {
+        // Task 13: sin red, tope o 5xx al confirmar: la reserva (y el canje) pudo quedar. Primero se revisa; mientras, el candado
+        // sigue puesto y no hay botones.
+        await trasUnResultadoIncierto(clase)
       } else {
         setSubmissionError(err.data?.message ?? t('errors.generic'))
         expireAfterError = holdHasExpired()
@@ -1929,6 +2051,105 @@ export function BookingFlow({ props }: BookingFlowProps) {
       reservationSubmittingRef.current = false
       isLoading.value = false
       if (expireAfterError) await expireSelectedSlot()
+    }
+  }
+
+  /** ¿La revisión (o la respuesta) sigue siendo de este estudio, esta cuenta y este `<avoqado-booking>`? (r5 #5) */
+  function sigueSiendoEl(i: Intento): boolean {
+    return montado.current && negocioVisto.current === i.slug && instanciaViva.current === i.instancia
+      && cuentaDelEstudio(i.slug)?.identidad === i.identidad
+  }
+
+  function ponerRevision(pedido: PedidoDeClase, estado: EstadoDeLaRevision, reserva?: ReservaPropia) {
+    if (!montado.current) return
+    const r: RevisionDeClase = reserva ? { estado, pedido, reserva } : { estado, pedido }
+    revisionRef.current = r
+    setRevision(r)
+  }
+
+  /** Error de red o 5xx al confirmar una clase: la invitada no tiene cuenta que leer; con cuenta, se revisa si quedó. */
+  async function trasUnResultadoIncierto(p: PedidoDeClase) {
+    if (!p.intento) return ponerRevision(p, p.leLlegaAviso ? 'invitada-aviso' : 'invitada-escribe')
+    if (!sigueSiendoEl(p.intento)) return ponerRevision(p, 'cambio-de-cuenta')
+    if (!p.leer) return ponerRevision(p, 'no-disponible')
+    ponerRevision(p, 'revisando')
+    await revisarElPedido(p)
+  }
+
+  /**
+   * Dos lecturas de sus reservas en esa clase (`revisarSiQuedo`). Si apareció, se lee la reserva para saber cómo quedó (pagada,
+   * por pagar o por aprobar); si la cuenta cambió en cualquier punto, no se enseña nada.
+   */
+  async function revisarElPedido(p: PedidoDeClase) {
+    const intento = p.intento!
+    const turno = turnoRevision.current
+    const r = await revisarSiQuedo({ intento, leer: p.leer!, sigueSiendoEl: () => sigueSiendoEl(intento) })
+    if (turno !== turnoRevision.current) return
+    if (r.estado !== 'quedo') return ponerRevision(p, r.estado)
+    let detalle: PublicReservationDetail | null = null
+    try {
+      detalle = await api.getReservation(intento.slug, r.reserva.cancelSecret)
+    } catch {
+      /* sin el detalle se enseña con lo de la lista, que ya dice cómo quedó */
+    }
+    if (turno !== turnoRevision.current) return
+    if (!sigueSiendoEl(intento)) return ponerRevision(p, 'cambio-de-cuenta')
+    const vivo = (x: string | undefined): x is 'PENDING' | 'CONFIRMED' | 'CHECKED_IN' =>
+      x === 'PENDING' || x === 'CONFIRMED' || x === 'CHECKED_IN'
+    const status = vivo(detalle?.status) ? detalle!.status : r.reserva.status
+    const deposito = detalle && vivo(detalle.status) ? detalle.depositStatus : r.reserva.depositStatus
+    const estado: EstadoDeLaRevision = status !== 'PENDING' ? 'quedo' : deposito === 'PENDING' ? 'quedo-falta-pagar' : 'quedo-por-aprobar'
+    ponerRevision(p, estado, r.reserva)
+    setNotaDeClase('')
+    // Como una reserva que respondió: la página se entera (salvo la que falta pagar, que es como irse a Stripe).
+    if (estado !== 'quedo-falta-pagar') {
+      dispatchEvent('avoqado:confirmed', {
+        confirmationCode: r.reserva.confirmationCode,
+        startsAt: detalle?.startsAt ?? selectedSlot.value?.startsAt,
+        endsAt: detalle?.endsAt ?? selectedSlot.value?.endsAt,
+        productName: selectedProduct.value?.name,
+      })
+    }
+  }
+
+  /** «Revisar de nuevo» (sin red): pregunta otra vez con el MISMO intento; nunca vuelve a reservar. */
+  async function revisarDeNuevo() {
+    const p = revisionRef.current?.pedido
+    if (!p?.intento || !p.leer || reservationSubmittingRef.current || confirmandoRef.current) return
+    reservationSubmittingRef.current = true
+    isLoading.value = true
+    try {
+      if (!sigueSiendoEl(p.intento)) return ponerRevision(p, 'cambio-de-cuenta')
+      ponerRevision(p, 'revisando')
+      await revisarElPedido(p)
+    } finally {
+      reservationSubmittingRef.current = false
+      isLoading.value = false
+    }
+  }
+
+  /** «Intentar de nuevo»: manda otra vez el MISMO pedido, sólo con su toque. Si ya es otra cuenta, no. */
+  async function intentarDeNuevo() {
+    const p = revisionRef.current?.pedido
+    if (!p || reservationSubmittingRef.current || confirmandoRef.current) return
+    if (p.intento && !sigueSiendoEl(p.intento)) return ponerRevision(p, 'cambio-de-cuenta')
+    const pr = misClases.paraRevisar
+    const nuevo: PedidoDeClase = p.intento
+      ? {
+        ...p,
+        // Lo que ya tiene ahora (las revisiones lo releyeron): una reserva que aparezca después es de este intento.
+        intento: { ...p.intento, antes: codigosAntes(pr, p.classSessionId) },
+        leer: pr && pr.identidad === p.intento.identidad ? pr.leer : null,
+      }
+      : p
+    confirmandoRef.current = true
+    try {
+      turnoRevision.current++
+      revisionRef.current = null
+      setRevision(null)
+      await submitReservation(p.datos, p.balanceId ?? undefined, nuevo)
+    } finally {
+      confirmandoRef.current = false
     }
   }
 
@@ -2122,6 +2343,118 @@ export function BookingFlow({ props }: BookingFlowProps) {
     productoDeLaClase && !customerToken.value && !productoDeLaClase.requireCreditForBooking && (productoDeLaClase.price ?? 0) > 0
       && creditPacks.value.some(pack => pack.items?.some(item => item.productId === productoDeLaClase.id)),
   )
+  // Task 13: «Confirma tu reserva» de la clase elegida.
+  const claseAConfirmar = enConfirmacionDeClase && selectedSlot.value?.classSessionId && selectedProduct.value
+    ? { slot: selectedSlot.value as PublicClassSessionSlot, producto: selectedProduct.value }
+    : null
+  const planDeLaClase = (slot: PublicClassSessionSlot, producto: Product): PlanDeLaConfirmacion => {
+    const tz = resolveDisplayTz(info.timezone)
+    const n = Math.max(selectedSpotIds.value.length, 1)
+    const cuenta = misClases.cuenta
+    // Controlador (Task 11): «Otro lugar en esta clase» sólo si la cuenta de AHORA tiene reserva en ESA clase (la marca no sabe de
+    // quién es). El Ilimitado es personal: ese otro lugar no lo paga.
+    const otroLugar = esOtroLugarEnLaClase() && !!misClases.reservaDe(slot)
+    const exigePaquete = producto.requireCreditForBooking === true
+    // Una clase gratis no gasta una sesión del paquete (salvo que el estudio la haya puesto «sólo con paquete»).
+    const usaPaquetes = !!cuenta && (exigePaquete || Number(producto.price ?? 0) > 0)
+    const todas = usaPaquetes ? misClases.opcionesDe(slot, n) : []
+    const opciones = otroLugar ? todas.filter(o => !o.ilimitado) : todas
+    const sinPaquete = exigePaquete ? null : pagoDeLaClase(producto, info.canCharge)
+    const aceptaTarjeta = sinPaquete === 'tarjeta'
+    const suya = eleccion && eleccion.classSessionId === slot.classSessionId ? eleccion.balanceId : undefined
+    // Lo que eligió con «Cambiar» sólo vale si sigue siendo una forma de pagar ESTA reserva; si no, el default.
+    const valeLaSuya = suya !== undefined && (suya === null ? aceptaTarjeta : opciones.some(o => o.balanceId === suya))
+    const elegida: string | null = valeLaSuya ? (suya as string | null) : (opciones[0]?.balanceId ?? null)
+    const opcion = opciones.find(o => o.balanceId === elegida) ?? null
+    const cargando = !!cuenta && !misClases.saldoListo
+    const unitario = producto.price != null ? Number(producto.price) : null
+    // Cuando el Ilimitado no se ofrece (vence antes, ya lo usó en esta clase, o es otro lugar), se dice por qué, como hoy.
+    let avisoIlimitado: string | null = null
+    if (usaPaquetes && !cargando && opciones.length === 0) {
+      for (const compra of misClases.creditos?.purchases ?? []) {
+        if (compra.status !== 'ACTIVE') continue
+        const b = compra.itemBalances.find(x => x.productId === slot.productId && x.unlimited && x.remainingQuantity > 0)
+        if (b) { avisoIlimitado = avisoDelIlimitado(t, { ...b, expiresAt: compra.expiresAt ?? null }, slot.startsAt, info.timezone); break }
+      }
+    }
+    const pagaCon = opcion ? (opcion.ilimitado ? 'ilimitado' : 'paquete') : (sinPaquete ?? 'paquete')
+    let politica: string | null = null
+    try {
+      politica = lineaDePolitica(t, info.cancellationPolicy, {
+        startsAt: slot.startsAt, timeZone: tz, pagaCon, sesiones: n, locale: props.locale, ahora: Date.now(),
+      })
+    } catch {
+      politica = null // una fecha o zona que no se lee: sin línea antes que una línea equivocada
+    }
+    return {
+      opciones,
+      elegida,
+      pago: opcion ? 'paquete' : (sinPaquete ?? 'paquete'),
+      aceptaTarjeta: aceptaTarjeta && opciones.length > 0,
+      cargando,
+      sinComoPagar: !opcion && sinPaquete === null,
+      precio: unitario != null && branding.value.showPrices !== false ? unitario * n : null,
+      avisoIlimitado,
+      politica,
+      // El número que se enseña es la etiqueta del lugar en el mapa de ESTA clase.
+      lugares: selectedSpotIds.value.map(id => producto.layoutConfig?.spots.find(sp => sp.id === id)?.label ?? id),
+      otroLugar,
+      tz,
+    }
+  }
+  const plan = claseAConfirmar ? planDeLaClase(claseAConfirmar.slot, claseAConfirmar.producto) : null
+  planDeConfirmacion.current = plan
+
+  /** El toque en «Confirmar reserva» (o «Pagar $X»): el formulario valida sus datos y, si están bien, `confirmarClase`. */
+  const alConfirmarLaClase = () => {
+    if (confirmandoRef.current || reservationSubmittingRef.current) return
+    formSubmitFn?.()
+  }
+  /**
+   * Manda la reserva de la clase con la forma de pago que se ve (el paquete elegido o ninguno). El intento se fija aquí, ANTES del
+   * POST (r5 #5): cuenta, estudio, instancia, clase, lugares y lo que ya tenía en esa clase. Sin lectura extra: sale al tocar.
+   */
+  async function confirmarClase(data: GuestFormData) {
+    const p = planDeConfirmacion.current
+    const slot = selectedSlot.value
+    if (!p || !slot?.classSessionId || p.cargando || confirmandoRef.current || reservationSubmittingRef.current) return
+    if (p.sinComoPagar) {
+      // Sólo se paga con paquete y no tiene: sin sesión, que entre (Task 12); con sesión ya se le enseña la compra de paquete.
+      if (!customerToken.value) abrirEntrar()
+      return
+    }
+    const datos: GuestFormData = { ...data, specialRequests: notaDeClase.trim() || undefined }
+    const conCuenta = !!customerToken.value
+    const cuenta = conCuenta ? cuentaDelEstudio(props.venue) : null
+    const pr = misClases.paraRevisar
+    const intento: Intento | null = conCuenta
+      ? {
+        slug: props.venue,
+        identidad: cuenta?.identidad ?? '',
+        instancia: misClases.instancia,
+        classSessionId: slot.classSessionId,
+        spotIds: [...selectedSpotIds.value],
+        antes: codigosAntes(pr, slot.classSessionId),
+      }
+      : null
+    const pedido: PedidoDeClase = {
+      slug: props.venue,
+      classSessionId: slot.classSessionId,
+      datos,
+      balanceId: p.elegida,
+      intento,
+      leer: intento && cuenta && pr && pr.identidad === cuenta.identidad ? pr.leer : null,
+      lugares: p.lugares,
+      leLlegaAviso: venueInfo.value?.scheduling?.autoConfirm === true && p.pago !== 'tarjeta' && !!(datos.guestEmail || datos.guestPhone),
+    }
+    confirmandoRef.current = true
+    try {
+      await submitReservation(datos, p.elegida ?? undefined, pedido)
+    } finally {
+      confirmandoRef.current = false
+    }
+  }
+
   /** «Lagree · jueves 8 · 15:00» de la clase elegida (la ventanita y el mapa). */
   const contextoDeLaElegida = (): string => {
     const slot = selectedSlot.value as PublicClassSessionSlot | null
@@ -2253,7 +2586,8 @@ export function BookingFlow({ props }: BookingFlowProps) {
       )}
 
       {submissionError && <p ref={submissionErrorRef} role="alert">{submissionError}</p>}
-      {reservationSubmittingRef.current && <p role="status">{t('form.submitting')}</p>}
+      {/* En clases, el botón de «Confirma tu reserva» y la revisión ya dicen lo que pasa. */}
+      {reservationSubmittingRef.current && flowType.value !== 'classes' && <p role="status">{t('form.submitting')}</p>}
 
       {/* Step indicator — hidden for:
           - the class flow (the list IS the selector)
@@ -2700,6 +3034,114 @@ export function BookingFlow({ props }: BookingFlowProps) {
         )}
 
         {step.value === config.formStep && (() => {
+          // Task 13: en clases el paso es «Confirma tu reserva» (o, tras un error de red, la revisión de si quedó).
+          const revisionVisible = !!(revision && claseAConfirmar && revision.pedido.slug === props.venue
+            && revision.pedido.classSessionId === claseAConfirmar.slot.classSessionId)
+          const cuerpoDeLaConfirmacion = claseAConfirmar && plan ? (
+            revisionVisible ? (() => {
+              const r = revision!
+              const quedo = r.estado === 'quedo' || r.estado === 'quedo-falta-pagar' || r.estado === 'quedo-por-aprobar'
+              // r5 #5: «Listo» sólo se pinta si el estudio, la cuenta y la instancia siguen siendo las del intento.
+              const estado: EstadoDeLaRevision = quedo && !(r.pedido.intento && sigueSiendoEl(r.pedido.intento)) ? 'cambio-de-cuenta' : r.estado
+              const slot = claseAConfirmar.slot
+              const idioma = idiomaDe(t)
+              return (
+                <RevisionDeLaReserva
+                  estado={estado}
+                  clase={slot.productName || claseAConfirmar.producto.name}
+                  dia={fechaDeLaClase(slot.startsAt, plan.tz, idioma)}
+                  hora={horaDeLaClase(slot.startsAt, plan.tz, idioma)}
+                  coach={slot.instructor?.firstName ?? null}
+                  lugares={r.pedido.lugares}
+                  puedeEscribir={puedeEscribir}
+                  onIntentar={() => { void intentarDeNuevo() }}
+                  onRevisar={() => { void revisarDeNuevo() }}
+                  onVerMiReserva={() => { if (r.reserva) openManage(r.reserva.cancelSecret) }}
+                  onVerMiCuenta={() => { showPortal.value = true }}
+                  onEscribir={() => window.dispatchEvent(new CustomEvent('avoqado:open-chat'))}
+                  t={t}
+                />
+              )
+            })() : plan.sinComoPagar && !plan.cargando && misClases.cuenta ? (
+              // Sólo se paga con paquete y no tiene uno que la pague: lo dice (con el porqué del Ilimitado) y le ofrece comprar, como hoy.
+              <div class="avq-animate-in" style={{ padding: '4px 0' }}>
+                <div
+                  role="status"
+                  aria-live="polite"
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: '10px', padding: '12px 14px', borderRadius: '12px',
+                    background: 'var(--avq-warning-bg)', border: '1px solid var(--avq-warning-border)', marginBottom: '20px',
+                  }}
+                >
+                  <Icono nombre="alerta" size={18} />
+                  <span style={{ fontSize: '15px', fontWeight: '500', color: 'var(--avq-warning-fg)' }}>
+                    {plan.avisoIlimitado ?? t('creditPacks.requiredNoCredits')}
+                  </span>
+                </div>
+                {creditPacks.value.length > 0 && (
+                  <CreditPackBanner packs={creditPacks.value} onBuy={handleBuyPack} buyingPackId={buyingPackId} t={t} />
+                )}
+              </div>
+            ) : (
+              <ConfirmarReserva
+                clase={claseAConfirmar.slot.productName || claseAConfirmar.producto.name}
+                cuando={cuandoCorto(claseAConfirmar.slot.startsAt, plan.tz, idiomaDe(t))}
+                coach={claseAConfirmar.slot.instructor
+                  ? `${claseAConfirmar.slot.instructor.firstName} ${claseAConfirmar.slot.instructor.lastName ?? ''}`.trim()
+                  : null}
+                lugares={plan.lugares}
+                opciones={plan.opciones}
+                elegida={plan.elegida}
+                onElegir={balanceId => setEleccion({ classSessionId: claseAConfirmar.slot.classSessionId!, balanceId })}
+                pago={plan.pago}
+                precio={plan.precio}
+                politica={plan.politica}
+                nota={notaDeClase}
+                onNota={setNotaDeClase}
+                enviando={isLoading.value}
+                onConfirmar={alConfirmarLaClase}
+                timeZone={info.timezone}
+                aceptaTarjeta={plan.aceptaTarjeta}
+                otroLugar={plan.otroLugar}
+                avisoIlimitado={plan.avisoIlimitado}
+                cargando={plan.cargando}
+                t={t}
+              >
+                {ofreceEntrarConPaquete && (
+                  <button
+                    type="button"
+                    onClick={() => abrirEntrar()}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: '10px', width: '100%', minHeight: '52px', margin: '0 0 20px',
+                      padding: '12px 16px', borderRadius: '12px', textAlign: 'left', cursor: 'pointer', font: 'inherit',
+                      fontSize: '16px', fontWeight: '600', color: 'var(--avq-accent, #6366f1)',
+                      background: 'color-mix(in srgb, var(--avq-accent, #6366f1) 6%, var(--avq-bg, #ffffff))',
+                      border: '1px solid color-mix(in srgb, var(--avq-accent, #6366f1) 22%, transparent)',
+                    }}
+                  >
+                    <Icono nombre="paquete" />
+                    <span>{t('reservaClases.entrar.yaTienesPaquete')}</span>
+                  </button>
+                )}
+                <GuestInfoForm
+                  venueInfo={info}
+                  selectedSlot={selectedSlot.value}
+                  selectedSpotCount={selectedSpotIds.value.length}
+                  onSubmit={data => { void confirmarClase(data) }}
+                  isSubmitting={isLoading.value}
+                  t={t}
+                  initialData={guestDraft}
+                  registerDraft={read => { guestDraftReader.current = read }}
+                  loggedInCustomer={customerInfo.value}
+                  hideSubmitButton
+                  registerSubmit={fn => setFormSubmitFn(() => fn)}
+                  hidePartySize
+                  sinPeticiones
+                  onPartySizeChange={setFormPartySize}
+                />
+              </ConfirmarReserva>
+            )
+          ) : null
           /* Render the four mutually-exclusive form sub-states once, then wrap
              them in the Square 2-col layout when /appointments. Non-appointments
              paths inline the same body without the chrome. The sub-state
@@ -2711,7 +3153,8 @@ export function BookingFlow({ props }: BookingFlowProps) {
                    aprobación YA tiene sesión, así que aquella no lo detiene y le pintaría el
                    formulario de una reserva que el server va a rechazar. Aquí se le explica
                    en qué punto está en vez de dejarlo llenar datos para nada. */
-                approvalBlocked ? (
+                /* Task 13: la revisión de si quedó va antes que todo: una sesión que se cerró al revisar no la tapa con la puerta. */
+                revisionVisible ? cuerpoDeLaConfirmacion : approvalBlocked ? (
                   <div class="avq-animate-in" style={{ padding: '32px 16px', textAlign: 'center' }}>
                     <div style={{
                       width: '56px', height: '56px', borderRadius: '50%',
@@ -2771,6 +3214,8 @@ export function BookingFlow({ props }: BookingFlowProps) {
                       {t('account.signInButton')}
                     </button>
                   </div>
+                ) : flowType.value === 'classes' && cuerpoDeLaConfirmacion ? (
+                  cuerpoDeLaConfirmacion
                 ) : (
                   <>
                     {flowType.value === 'appointments' && selectedProduct.value && (
@@ -2961,13 +3406,49 @@ export function BookingFlow({ props }: BookingFlowProps) {
             return formStepBody
           }
 
-          // Square /appointments + /classes: header + 2-col layout with
-          // Resumen sidebar. Appointment countdown state is hydrated by the
-          // real backend hold endpoint above.
-          //
-          // For /classes the customer picked a single class via the detail
-          // view (sets selectedProduct, not selectedProducts), so derive the
-          // sidebar products array from either source.
+          // Task 13: en clases no hay «Proceso de pago» ni reloj (el SERVIDOR no aparta nada), y el resumen lateral ya no tiene
+          // botón: sólo «Confirmar reserva» reserva. Su «A pagar hoy» sale de la forma de pago elegida en la confirmación. En el
+          // celular se esconde: la confirmación ya trae sus renglones.
+          if (flowType.value === 'classes') {
+            const claseLateral = selectedProduct.value ? [selectedProduct.value] : []
+            return (
+              <div class="avq-appts-layout avq-confirmacion-layout">
+                <div class="avq-appts-main">{formStepBody}</div>
+                {!revisionVisible && (
+                  <aside class="avq-appts-sidebar avq-confirmacion-lateral">
+                    <AppointmentSummarySidebar
+                      products={claseLateral}
+                      totalPrice={plan?.precio ?? null}
+                      totalDuration={totalDuration.value}
+                      selectedDate={selectedDate.value}
+                      selectedSlot={selectedSlot.value}
+                      showTotals
+                      subtotal={plan?.precio ?? undefined}
+                      taxes={0}
+                      dueToday={plan?.pago === 'tarjeta' ? (plan.precio ?? 0) : 0}
+                      dueAtVenue={plan?.pago === 'estudio' ? (plan.precio ?? 0) : 0}
+                      title={props.locale === 'en' ? 'Class summary' : 'Resumen de la clase'}
+                      countLabel={props.locale === 'en' ? '1 class' : '1 clase'}
+                      dueAtVenueLabel={t('reservaClases.confirmar.aPagarEnElEstudio')}
+                      t={t}
+                    />
+                  </aside>
+                )}
+                <style>{`
+                  .avq-confirmacion-layout { display: grid; grid-template-columns: 1fr; gap: 24px; }
+                  .avq-confirmacion-layout .avq-appts-main { min-width: 0; }
+                  .avq-confirmacion-lateral { display: none; }
+                  @media (min-width: 880px) {
+                    .avq-confirmacion-layout { grid-template-columns: minmax(0, 1fr) 340px; gap: 32px; align-items: start; }
+                    .avq-confirmacion-lateral { display: block; position: sticky; top: 24px; }
+                  }
+                `}</style>
+              </div>
+            )
+          }
+
+          // Square /appointments: header + 2-col layout with Resumen sidebar. Appointment countdown state is hydrated by the
+          // real backend hold endpoint above. (Clases ya salieron arriba, Task 13.)
           const sidebarProducts = selectedProducts.value.length > 0
             ? selectedProducts.value
             : (selectedProduct.value ? [selectedProduct.value] : [])
@@ -3005,7 +3486,7 @@ export function BookingFlow({ props }: BookingFlowProps) {
               <div class="avq-appts-main">
                 <PaymentStepHeader
                   locale={props.locale}
-                  kind={flowType.value === 'classes' ? 'class' : 'appointment'}
+                  kind="appointment"
                   onExpired={() => { void expireSelectedSlot() }}
                 />
                 {formStepBody}
@@ -3043,19 +3524,8 @@ export function BookingFlow({ props }: BookingFlowProps) {
                    * If the inline payment picker is visible, the customer
                    * must commit a choice before the button enables. */
                   onNext={formSubmitFn ?? undefined}
-                  nextLabel={flowType.value === 'classes'
-                    ? (props.locale === 'en' ? 'Book class' : 'Reservar clase')
-                    : t('summary.reserveAppointment')}
+                  nextLabel={t('summary.reserveAppointment')}
                   nextDisabled={isLoading.value || holdHasExpired() || !formSubmitFn || (paymentPickerVisible && !inlinePayment)}
-                  title={flowType.value === 'classes'
-                    ? (props.locale === 'en' ? 'Class summary' : 'Resumen de la clase')
-                    : undefined}
-                  countLabel={flowType.value === 'classes' && sidebarProducts.length === 1
-                    ? (props.locale === 'en' ? '1 class' : '1 clase')
-                    : undefined}
-                  dueAtVenueLabel={flowType.value === 'classes'
-                    ? (props.locale === 'en' ? 'Pay at venue' : 'A pagar en el estudio')
-                    : undefined}
                   t={t}
                 />
               </aside>

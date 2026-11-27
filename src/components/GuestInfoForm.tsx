@@ -48,6 +48,11 @@ interface GuestInfoFormProps {
   initialData?: GuestFormData | null
   /** D679: avisa las personas que lleva el formulario (el pago con créditos de una cita sin mapa cuenta personas). */
   onPartySizeChange?: (n: number) => void
+  /**
+   * Task 13: en clases la nota no va aquí sino en «Confirma tu reserva» («Agregar una nota para tu coach» → «Algo que tu coach deba
+   * saber (lesión, embarazo…)»), que la manda en `specialRequests`. Con esto el formulario no pinta su «Peticiones especiales».
+   */
+  sinPeticiones?: boolean
 }
 
 function createSchema(requireEmail: boolean, requirePhone: boolean) {
@@ -64,7 +69,7 @@ function createSchema(requireEmail: boolean, requirePhone: boolean) {
   })
 }
 
-export function GuestInfoForm({ venueInfo, selectedSlot, selectedSpotCount, onSubmit, isSubmitting, t, loggedInCustomer, hideSubmitButton, registerSubmit, registerDraft, hidePartySize, initialData, onPartySizeChange }: GuestInfoFormProps) {
+export function GuestInfoForm({ venueInfo, selectedSlot, selectedSpotCount, onSubmit, isSubmitting, t, loggedInCustomer, hideSubmitButton, registerSubmit, registerDraft, hidePartySize, initialData, onPartySizeChange, sinPeticiones }: GuestInfoFormProps) {
   const [phone, setPhone] = useState(initialData?.guestPhone ?? '')
   const [name, setName] = useState(initialData?.guestName ?? '')
   const [email, setEmail] = useState(initialData?.guestEmail ?? '')
@@ -277,8 +282,8 @@ export function GuestInfoForm({ venueInfo, selectedSlot, selectedSpotCount, onSu
           </div>
         )}
 
-        {/* Special requests */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+        {/* Special requests (en clases la nota vive en «Confirma tu reserva») */}
+        {!sinPeticiones && <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
           <label for="avq-requests" style={{ fontSize: '13px', fontWeight: '500', color: 'var(--avq-fg, #111827)' }}>
             {t('form.specialRequests')}
           </label>
@@ -289,7 +294,7 @@ export function GuestInfoForm({ venueInfo, selectedSlot, selectedSpotCount, onSu
             onInput={(e) => setRequests((e.target as HTMLTextAreaElement).value)}
             rows={3}
           />
-        </div>
+        </div>}
 
         {!hideSubmitButton && (
           <Button type="submit" fullWidth disabled={isSubmitting}>

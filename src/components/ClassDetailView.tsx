@@ -65,7 +65,7 @@ export function textoDeCubre(t: TFunction, c: CubreLaClase, timeZone: string): s
 const mayuscula = (s: string) => s.charAt(0).toLocaleUpperCase() + s.slice(1)
 
 /** «Jueves 26 de noviembre» («Thursday, November 26»), en la zona que se enseña; el año sólo si no es el actual. */
-function fechaDeLaClase(iso: string, timeZone: string, idioma: Idioma): string {
+export function fechaDeLaClase(iso: string, timeZone: string, idioma: Idioma): string {
   const partes = Object.fromEntries(
     new Intl.DateTimeFormat(idioma === 'en' ? 'en-US' : 'es-MX', {
       timeZone, weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
@@ -78,7 +78,7 @@ function fechaDeLaClase(iso: string, timeZone: string, idioma: Idioma): string {
     : `${partes.weekday} ${partes.day} de ${partes.month}${anio ? ` de ${anio}` : ''}`)
 }
 
-function horaDeLaClase(iso: string, timeZone: string, idioma: Idioma): string {
+export function horaDeLaClase(iso: string, timeZone: string, idioma: Idioma): string {
   return new Date(iso).toLocaleTimeString(idioma === 'en' ? 'en-US' : 'es-MX', {
     hour: 'numeric', minute: '2-digit', hour12: idioma === 'en', timeZone,
   })

@@ -148,6 +148,13 @@ export interface MisClases {
   /** La franja de arriba del horario: el paquete de la primera clase del negocio que su saldo paga. */
   franja: { opciones: OpcionDePaquete[]; nombreClase: string } | null
   paraRevisar: ParaRevisarSiQuedo | null
+  /** Distinta en cada `<avoqado-booking>` de la página (la misma que `paraRevisar.instancia`, también sin ventana). */
+  instancia: string
+  /**
+   * Task 13: ya se intentó leer el saldo de la cuenta de AHORA (salió bien o falló). Mientras sea falso con cuenta, «Confirma tu
+   * reserva» no deja confirmar: se cobraría con tarjeta a quien sí tiene paquete.
+   */
+  saldoListo: boolean
   /**
    * Fix r1: vuelve a leer el saldo y, si hay ventana, sus reservas (tras comprar un paquete o al volver a la pestaña), con la cuenta
    * de AHORA de este estudio y las mismas guardas (lo que llega de otra cuenta o de otro estudio no se pinta). No hace nada si este
@@ -182,6 +189,7 @@ export function useMisClases(
   if (!instancia.current) instancia.current = `avq-${++instancias}-${Math.random().toString(36).slice(2, 8)}`
   const [vuelta, setVuelta] = useState(0)
   const [creditos, setCreditos] = useState<Leido<CustomerCreditBalance> | null>(null)
+  const [saldoIntentado, setSaldoIntentado] = useState<Leido<true> | null>(null)
   const [leidas, setLeidas] = useState<Leido<ReservasLeidas> | null>(null)
   const turnoCreditos = useRef(0)
   const turnoReservas = useRef(0)
@@ -200,6 +208,7 @@ export function useMisClases(
           turnoCreditos.current++
           turnoReservas.current++
           setCreditos(null)
+          setSaldoIntentado(null)
           setLeidas(null)
         }
         setVuelta(v => v + 1)
@@ -227,12 +236,15 @@ export function useMisClases(
   async function leerSaldo(c: CuentaDelEstudio): Promise<void> {
     const n = ++turnoCreditos.current
     const pedida = { slug: c.slug, identidad: c.identidad }
+    let saldo: CustomerCreditBalance | null = null
     try {
-      const saldo = await api.getCustomerCredits(c.slug, {}, c.token)
-      if (saldo && n === turnoCreditos.current && sigue(pedida)) setCreditos({ ...pedida, datos: saldo })
+      saldo = await api.getCustomerCredits(c.slug, {}, c.token)
     } catch {
       /* sin el saldo: el horario se ve igual, sin franja ni «Incluida» */
     }
+    if (n !== turnoCreditos.current || !sigue(pedida)) return
+    if (saldo) setCreditos({ ...pedida, datos: saldo })
+    setSaldoIntentado({ ...pedida, datos: true })
   }
   const leerReservas = (c: CuentaDelEstudio, ventana: VentanaDelHorario) =>
     leerYGuardar(c, ventana).catch(() => {
@@ -318,6 +330,8 @@ export function useMisClases(
 
   return {
     cuenta,
+    instancia: instancia.current,
+    saldoListo: deEstaCuenta(saldoIntentado) === true,
     creditos: misCreditos,
     ilimitadoUsadoEn: usados,
     opcionesDe,

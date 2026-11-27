@@ -7,8 +7,8 @@ interface PaymentStepHeaderProps {
   /** Called when the countdown reaches zero. The parent typically routes the
    *  customer back to the time-slot picker with a "slot expired" toast. */
   onExpired?: () => void
-  /** Subject of the hold — "cita" by default, "clase" in /classes flow.
-   *  Drives the "Cita reservada / Clase reservada durante 9:56" copy. */
+  /** Subject of the hold — "cita" by default. Task 13: a class ('class') has no countdown at all — the SERVIDOR holds nothing
+   *  for a class, so "Clase reservada durante 9:56" promised a hold that did not exist (only the title is shown). */
   kind?: 'appointment' | 'class'
 }
 
@@ -26,7 +26,11 @@ interface PaymentStepHeaderProps {
 export function PaymentStepHeader({ locale, onExpired, kind = 'appointment' }: PaymentStepHeaderProps) {
   const [secondsLeft, setSecondsLeft] = useState<number>(0)
 
+  const conReloj = kind !== 'class'
+
   useLayoutEffect(() => {
+    // Task 13: una clase no se aparta (el SERVIDOR no guarda nada al llegar aquí): sin reloj, sin apartado visual y sin vencer.
+    if (!conReloj) return
     let expiresAt = slotHoldExpiresAt.value
     // Visual-only fallback: 10-minute countdown from form-step entry. Real hold
     // tokens come from the (future) backend endpoint.
@@ -53,11 +57,7 @@ export function PaymentStepHeader({ locale, onExpired, kind = 'appointment' }: P
   const ss = String(secondsLeft % 60).padStart(2, '0')
 
   const titleText = locale === 'en' ? 'Checkout' : 'Proceso de pago'
-  const subjectEn = kind === 'class' ? 'Class' : 'Appointment'
-  const subjectEs = kind === 'class' ? 'Clase reservada' : 'Cita reservada'
-  const holdText = locale === 'en'
-    ? `${subjectEn} held for ${mm}:${ss}`
-    : `${subjectEs} durante ${mm}:${ss}`
+  const holdText = locale === 'en' ? `Appointment held for ${mm}:${ss}` : `Cita reservada durante ${mm}:${ss}`
 
   return (
     <div style={{ textAlign: 'center', marginBottom: '24px' }}>
@@ -68,13 +68,15 @@ export function PaymentStepHeader({ locale, onExpired, kind = 'appointment' }: P
       }}>
         {titleText}
       </h1>
-      <p style={{
-        margin: '4px 0 0', fontSize: '13px',
-        color: secondsLeft < 60 ? '#dc2626' : 'var(--avq-muted-fg, #6b7280)',
-        fontVariantNumeric: 'tabular-nums',
-      }}>
-        {holdText}
-      </p>
+      {conReloj && (
+        <p style={{
+          margin: '4px 0 0', fontSize: '13px',
+          color: secondsLeft < 60 ? '#dc2626' : 'var(--avq-muted-fg, #6b7280)',
+          fontVariantNumeric: 'tabular-nums',
+        }}>
+          {holdText}
+        </p>
+      )}
     </div>
   )
 }

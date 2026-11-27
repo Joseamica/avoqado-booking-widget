@@ -28,7 +28,9 @@ export type NombreIcono =
   | "asiento"
   | "anterior"
   | "siguiente"
-  | "cerrar";
+  | "cerrar"
+  | "repetir"
+  | "sinRed";
 
 /** Trazos de 24×24, a mano, en la misma familia (Lucide-like). Cada uno es un conjunto de `d` de path. */
 const TRAZOS: Record<NombreIcono, string[]> = {
@@ -117,6 +119,14 @@ const TRAZOS: Record<NombreIcono, string[]> = {
   anterior: ["M15 18l-6-6 6-6"],
   siguiente: ["M9 18l6-6-6-6"],
   cerrar: ["M18 6 6 18", "M6 6l12 12"],
+  repetir: ["M20 11a8 8 0 1 0-2.3 5.7", "M20 4v7h-7"],
+  sinRed: [
+    "M2 8.5a15 15 0 0 1 20 0",
+    "M5 12a10 10 0 0 1 14 0",
+    "M8.5 15.5a5 5 0 0 1 7 0",
+    "M12 19h.01",
+    "M3 3l18 18",
+  ],
 };
 
 /** Un ícono de trazo (1.75, puntas redondas, `currentColor`); decorativo: el texto lo dice quien lo usa. */

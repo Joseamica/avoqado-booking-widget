@@ -204,3 +204,48 @@ describe('Task 10: refrescar', () => {
     expect(salida.actual!.reservaDe({ classSessionId: 's-9' })!.lugar).toBe('4')
   })
 })
+
+describe('Task 13: `saldoListo` (la confirmación no deja confirmar hasta leer su paquete)', () => {
+  it('falso hasta que llega la lectura del saldo; verdadero también si la lectura falló; la instancia no cambia', async () => {
+    entrar('un-estudio')
+    vi.mocked(api.getMisReservasDeClase).mockResolvedValue(pagina([]))
+    let dar!: (v: any) => void
+    vi.mocked(api.getCustomerCredits).mockImplementationOnce(() => new Promise(ok => { dar = ok }))
+    const salida: { actual?: MisClases } = {}
+    render(<Sonda slug="un-estudio" ventana={VENTANA} salida={salida} />)
+    await flush()
+    const instancia = salida.actual!.instancia
+    expect(instancia).toMatch(/\S/)
+    expect(salida.actual!.saldoListo).toBe(false)
+    await act(async () => dar({ customer: null, purchases: [] })); await flush()
+    expect(salida.actual!.saldoListo).toBe(true)
+    expect(salida.actual!.instancia).toBe(instancia)
+    cleanup()
+    vi.mocked(api.getCustomerCredits).mockRejectedValueOnce(Object.assign(new Error('x'), { status: 500 }))
+    render(<Sonda slug="un-estudio" ventana={VENTANA} salida={salida} />)
+    await flush()
+    expect(salida.actual!.creditos).toBeNull()
+    expect(salida.actual!.saldoListo).toBe(true)
+  })
+
+  it('sin sesión nunca está listo (no hay saldo que leer); al entrar otra cuenta vuelve a falso hasta leer el suyo', async () => {
+    bindCustomerSessionToVenue('otro-estudio')
+    const salida: { actual?: MisClases } = {}
+    render(<Sonda slug="otro-estudio" ventana={VENTANA} salida={salida} />)
+    await flush()
+    expect(salida.actual!.saldoListo).toBe(false)
+    entrar('otro-estudio')
+    vi.mocked(api.getMisReservasDeClase).mockResolvedValue(pagina([]))
+    await flush()
+    expect(salida.actual!.saldoListo).toBe(true)
+    vi.mocked(api.getCustomerCredits).mockImplementationOnce(() => new Promise(() => {}))
+    await act(async () => {
+      const BEA = { ...ANA, token: 'tok-bea', customer: { ...ANA.customer, id: 'c2', firstName: 'Bea' } }
+      guardarSesion('otro-estudio', { ...BEA, guardadaEn: Date.now() })
+      entroAqui('otro-estudio', leerSesion('otro-estudio')!)
+    })
+    await flush()
+    expect(salida.actual!.cuenta?.cliente?.firstName).toBe('Bea')
+    expect(salida.actual!.saldoListo).toBe(false)
+  })
+})
