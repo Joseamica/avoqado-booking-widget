@@ -574,7 +574,13 @@
       "nunca": "Si cancelas, la sesión no regresa a tu paquete.",
       "nuncaVarias": "Si cancelas, las sesiones no regresan a tu paquete.",
       "ilimitado": "Puedes cancelar hasta {{fecha}}; tu Ilimitado sigue igual.",
-      "ilimitadoTarde": "Hasta {{fecha}} es a tiempo; después cuenta como cancelación tardía."
+      "ilimitadoTarde": "Hasta {{fecha}} es a tiempo; después cuenta como cancelación tardía.",
+      "yaNoEnLinea": "Esta clase ya no se puede cancelar en línea. Si necesitas cancelar, escríbele al estudio.",
+      "ahoraNoRegresa": "Si cancelas, la sesión ya no regresa a tu paquete.",
+      "ahoraNoRegresan": "Si cancelas, las sesiones ya no regresan a tu paquete.",
+      "ahoraRegresa": "Si cancelas, regresa {{n}} de tus {{total}} sesiones.",
+      "ahoraRegresan": "Si cancelas, regresan {{n}} de tus {{total}} sesiones.",
+      "ilimitadoYaTarde": "Puedes cancelar hasta {{fecha}}; tu Ilimitado sigue igual, pero cuenta como cancelación tardía."
     }
   }
 }

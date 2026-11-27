@@ -69,6 +69,10 @@ function cuando(
  * `Math.floor(sesiones × % / 100)`). Dos plazos cuando difieren: hasta cuándo regresa todo y hasta cuándo se puede cancelar en
  * línea (`minHoursBeforeStart`; sin plazo, hasta la hora de la clase). Con tarjeta, en el estudio o gratis no promete
  * devolución: sólo dice hasta cuándo se puede cancelar.
+ *
+ * `ahora` (epoch ms) decide qué plazos ya pasaron: llegado el plazo en línea, ya no se puede cancelar en línea; llegado el de
+ * la devolución gratis, la línea dice lo que pasa si cancela ahora. Los dos se cuentan como pasados desde el milisegundo exacto
+ * (el SERVIDOR todavía acepta en ese milisegundo, pero para cuando la clienta toca ya pasó: nunca se promete de más).
  */
 export function lineaDePolitica(
   t: TFunction,
@@ -79,36 +83,37 @@ export function lineaDePolitica(
     pagaCon: PagaCon;
     sesiones: number;
     locale: "es" | "en";
+    ahora: number;
   },
 ): string | null {
   if (!p) return null;
   if (!p.allowCustomerCancel) return t(`${K}.escribele`);
 
   const inicio = new Date(ctx.startsAt).getTime();
-  const fecha = (horasAntes: number) =>
-    cuando(t, inicio - horasAntes * HORA_MS, ctx.timeZone, ctx.locale);
+  const fecha = (ms: number) => cuando(t, ms, ctx.timeZone, ctx.locale);
   // El SERVIDOR deja cancelar mientras falten al menos `minHoursBeforeStart` horas; éste es el último momento.
-  const horasDelUltimo = p.minHoursBeforeStart ?? 0;
-  const hastaCancelar = fecha(horasDelUltimo);
+  const limiteEnLinea = inicio - (p.minHoursBeforeStart ?? 0) * HORA_MS;
+  if (ctx.ahora >= limiteEnLinea) return t(`${K}.yaNoEnLinea`);
+  const hastaCancelar = fecha(limiteEnLinea);
+  const enLinea = t(`${K}.enLinea`, { fecha: hastaCancelar });
 
   if (
     ctx.pagaCon === "tarjeta" ||
     ctx.pagaCon === "estudio" ||
     ctx.pagaCon === "gratis"
   )
-    return t(`${K}.enLinea`, { fecha: hastaCancelar });
+    return enLinea;
 
-  const alUltimo = porcentajeDeDevolucion(
-    p,
-    inicio,
-    inicio - horasDelUltimo * HORA_MS,
-  );
+  const alUltimo = porcentajeDeDevolucion(p, inicio, limiteEnLinea);
+  // Sólo existe un tramo tardío (TIME_BASED) si se puede cancelar en línea después de este momento.
+  const limiteGratis = inicio - p.creditFreeRefundHoursBefore * HORA_MS;
+  const yaEsTarde = ctx.ahora >= limiteGratis;
 
   if (ctx.pagaCon === "ilimitado") {
     // Un Ilimitado regresa siempre; en la ventana tardía, la falta queda anotada.
-    const base = t(`${K}.ilimitado`, { fecha: hastaCancelar });
-    if (!alUltimo.tardia) return base;
-    return `${base} ${t(`${K}.ilimitadoTarde`, { fecha: fecha(p.creditFreeRefundHoursBefore) })}`;
+    if (!alUltimo.tardia) return t(`${K}.ilimitado`, { fecha: hastaCancelar });
+    if (yaEsTarde) return t(`${K}.ilimitadoYaTarde`, { fecha: hastaCancelar });
+    return `${t(`${K}.ilimitado`, { fecha: hastaCancelar })} ${t(`${K}.ilimitadoTarde`, { fecha: fecha(limiteGratis) })}`;
   }
 
   const varias = ctx.sesiones > 1;
@@ -120,9 +125,21 @@ export function lineaDePolitica(
     return t(varias ? `${K}.nuncaVarias` : `${K}.nunca`);
 
   const gratis = varias ? `${K}.gratisVarias` : `${K}.gratis`;
+  // Si hasta el último momento regresa todo (ALWAYS, o un % tardío que alcanza para todas), no hay dos tramos.
   const tarde = regresan(alUltimo.percent);
   if (tarde === regresan(temprano.percent))
     return t(gratis, { fecha: hastaCancelar });
+
+  if (yaEsTarde) {
+    const siCancela =
+      tarde === 0
+        ? t(varias ? `${K}.ahoraNoRegresan` : `${K}.ahoraNoRegresa`)
+        : t(tarde === 1 ? `${K}.ahoraRegresa` : `${K}.ahoraRegresan`, {
+            n: tarde,
+            total: ctx.sesiones,
+          });
+    return `${siCancela} ${enLinea}`;
+  }
 
   const segunda =
     tarde === 0
@@ -134,5 +151,5 @@ export function lineaDePolitica(
           n: tarde,
           total: ctx.sesiones,
         });
-  return `${t(gratis, { fecha: fecha(p.creditFreeRefundHoursBefore) })} ${segunda}`;
+  return `${t(gratis, { fecha: fecha(limiteGratis) })} ${segunda}`;
 }

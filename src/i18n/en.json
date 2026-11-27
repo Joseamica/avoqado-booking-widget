@@ -574,7 +574,13 @@
       "nunca": "If you cancel, the session does not go back to your pack.",
       "nuncaVarias": "If you cancel, the sessions do not go back to your pack.",
       "ilimitado": "You can cancel until {{fecha}}; your unlimited pass stays the same.",
-      "ilimitadoTarde": "Cancelling by {{fecha}} is on time; after that it counts as a late cancellation."
+      "ilimitadoTarde": "Cancelling by {{fecha}} is on time; after that it counts as a late cancellation.",
+      "yaNoEnLinea": "This class can no longer be cancelled online. If you need to cancel, message the studio.",
+      "ahoraNoRegresa": "If you cancel, the session no longer goes back to your pack.",
+      "ahoraNoRegresan": "If you cancel, the sessions no longer go back to your pack.",
+      "ahoraRegresa": "If you cancel, {{n}} of your {{total}} sessions goes back.",
+      "ahoraRegresan": "If you cancel, {{n}} of your {{total}} sessions go back.",
+      "ilimitadoYaTarde": "You can cancel until {{fecha}}; your unlimited pass stays the same, but it counts as a late cancellation."
     }
   }
 }
