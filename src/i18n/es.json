@@ -1,4 +1,8 @@
 {
+  "widget": {
+    "otroNegocioEnLaPagina": "Para reservar en este negocio, abre su página de reservas:",
+    "abrirSuPagina": "Abrir página de reservas"
+  },
   "poweredBy": "Con tecnología de Avoqado",
   "steps": {
     "service": "Servicio",

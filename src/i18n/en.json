@@ -1,4 +1,8 @@
 {
+  "widget": {
+    "otroNegocioEnLaPagina": "To book with this business, open its booking page:",
+    "abrirSuPagina": "Open booking page"
+  },
   "poweredBy": "Powered by Avoqado",
   "steps": {
     "service": "Service",
