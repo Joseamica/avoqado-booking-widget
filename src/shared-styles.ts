@@ -221,7 +221,7 @@ export const SHARED_CSS = `
   }
   @media (max-width: 480px) {
     .avq-chat-overlay { padding: 0; align-items: stretch; justify-content: stretch; }
-    .avq-chat-modal { max-width: 100%; height: 100vh; border-radius: 0; }
+    .avq-chat-modal { max-width: 100%; height: 100vh; height: 100dvh; border-radius: 0; }
   }
   .avq-chat-modal-head {
     display: flex; justify-content: space-between; align-items: center;

@@ -1309,7 +1309,7 @@ export function CustomerPortal({
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <span style={{ fontSize: '11px', color: 'var(--avq-muted-fg, #6b7280)' }}>
                     {pack.validityDays
-                      ? t('portal.packValidity', { days: String(pack.validityDays) })
+                      ? t(pack.validityDays === 1 ? 'portal.packValidityOne' : 'portal.packValidity', { days: String(pack.validityDays) })
                       : t('portal.packNoExpiry')}
                   </span>
                   <button

@@ -277,7 +277,7 @@ function PackCard({
           )}
           {pack.validityDays != null && pack.validityDays > 0 && (
             <div style={{ fontSize: '12px', color: 'var(--avq-muted-fg, #9ca3af)', marginTop: '2px' }}>
-              {t('landing.validity', { days: pack.validityDays })}
+              {t(pack.validityDays === 1 ? 'landing.validityOne' : 'landing.validity', { days: pack.validityDays })}
             </div>
           )}
         </div>

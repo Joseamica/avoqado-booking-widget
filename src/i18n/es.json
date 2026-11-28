@@ -238,6 +238,7 @@
     "packsSubtitle": "Compra créditos para reservar varias clases",
     "packSummary": "{{count}} sesiones incluidas",
     "validity": "Válido por {{days}} días",
+    "validityOne": "Válido por 1 día",
     "buyButton": "Comprar",
     "processing": "Procesando…"
   },
@@ -275,6 +276,7 @@
     "buyMore": "Comprar más créditos",
     "includes": "Incluye",
     "validity": "Válido por {{days}} días",
+    "validityOne": "Válido por 1 día",
     "noExpiry": "Sin expiración",
     "hasCredits": "Tienes créditos disponibles para esta clase",
     "willUseN": "Vas a usar {{count}} créditos en esta reserva",
@@ -346,6 +348,7 @@
     "whatsappMessage": "Hola, me gustaría comprar créditos para reservar clases.",
     "packIncludes": "Incluye",
     "packValidity": "Válido por {{days}} días",
+    "packValidityOne": "Válido por 1 día",
     "packNoExpiry": "Sin expiración",
     "sessions": "sesiones",
     "stampCard": "Tu tarjeta de sellos",

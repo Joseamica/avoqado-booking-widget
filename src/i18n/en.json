@@ -238,6 +238,7 @@
     "packsSubtitle": "Buy credits to book multiple classes",
     "packSummary": "{{count}} sessions included",
     "validity": "Valid for {{days}} days",
+    "validityOne": "Valid for 1 day",
     "buyButton": "Buy",
     "processing": "Processing…"
   },
@@ -275,6 +276,7 @@
     "buyMore": "Buy more credits",
     "includes": "Includes",
     "validity": "Valid for {{days}} days",
+    "validityOne": "Valid for 1 day",
     "noExpiry": "No expiry",
     "hasCredits": "You have credits for this class",
     "willUseN": "You'll use {{count}} credits on this booking",
@@ -346,6 +348,7 @@
     "whatsappMessage": "Hi, I'd like to buy credits to book classes.",
     "packIncludes": "Includes",
     "packValidity": "Valid for {{days}} days",
+    "packValidityOne": "Valid for 1 day",
     "packNoExpiry": "No expiration",
     "sessions": "sessions",
     "stampCard": "Your stamp card",

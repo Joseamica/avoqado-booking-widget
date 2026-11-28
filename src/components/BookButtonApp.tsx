@@ -85,7 +85,7 @@ export function BookButtonApp(props: BookButtonAppProps) {
             class="avq-animate-scale"
             style={{
               position: 'relative', zIndex: 1,
-              width: '100%', maxWidth: '480px', maxHeight: '90vh',
+              width: '100%', maxWidth: '480px', maxHeight: '90dvh',
               margin: '16px',
               borderRadius: '20px',
               background: 'var(--avq-bg, #ffffff)',

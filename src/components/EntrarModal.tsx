@@ -119,7 +119,7 @@ const CSS = `
     background: color-mix(in srgb, #000 45%, transparent); animation: avq-entrar-velo 0.2s ease-out;
   }
   .avq-entrar-hoja {
-    position: relative; box-sizing: border-box; width: 100%; max-width: 420px; max-height: calc(100vh - 32px); overflow-y: auto;
+    position: relative; box-sizing: border-box; width: 100%; max-width: 420px; max-height: calc(100vh - 32px); max-height: calc(100dvh - 32px); overflow-y: auto; overscroll-behavior: contain;
     padding: 28px 24px 24px; border-radius: 20px; background: var(--avq-bg, #ffffff); color: var(--avq-fg, #111827);
     border: 1px solid var(--avq-border, #e8eaed); box-shadow: 0 20px 50px -12px color-mix(in srgb, #000 30%, transparent);
   }
@@ -143,7 +143,7 @@ const CSS = `
   @media (max-width: 640px) {
     .avq-entrar-velo { align-items: flex-end; padding: 0; }
     .avq-entrar-hoja {
-      max-width: none; max-height: 92vh; border: 0; border-radius: 28px 28px 0 0;
+      max-width: none; max-height: 92vh; max-height: 92dvh; border: 0; border-radius: 28px 28px 0 0;
       padding: 14px 24px max(32px, calc(16px + env(safe-area-inset-bottom, 0px)));
       --avq-btn-alto: 56px; --avq-campo-alto: 56px;
       animation: avq-entrar-sube 0.25s var(--avq-ease, ease-out);

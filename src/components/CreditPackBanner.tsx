@@ -103,7 +103,7 @@ export function CreditPackBanner({ packs, onBuy, buyingPackId, t }: CreditPackBa
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <span style={{ fontSize: '11px', color: 'var(--avq-muted-fg, #6b7280)' }}>
                   {pack.validityDays
-                    ? t('creditPacks.validity', { days: pack.validityDays })
+                    ? t(pack.validityDays === 1 ? 'creditPacks.validityOne' : 'creditPacks.validity', { days: pack.validityDays })
                     : t('creditPacks.noExpiry')}
                 </span>
                 <button
