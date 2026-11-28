@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
-  confirmarCambioDeNumero, createPackCheckout, getCustomerPortal, guardarTarjeta, listarMisPedidos, listarMisTarjetas, pedirCambioDeNumero,
+  confirmarCambioDeNumero, createPackCheckout, getCustomerPortal, getMisReservasDeClase, guardarTarjeta, listarMisPedidos, listarMisTarjetas,
+  pedirCambioDeNumero,
 } from './booking'
 import { bindCustomerSessionToVenue, customerToken, tokenParaMandar } from '../state/booking'
 import { abrirPagina, borrarSesion, documentoNuevoParaPruebas, guardarSesion, leerSesion, paginaDe } from '../lib/sesionDeCliente'
@@ -145,5 +146,31 @@ describe('W6: cambiar de número (S8)', () => {
     await vi.advanceTimersByTimeAsync(20_500)
     expect(await p).toMatchObject({ status: 401 })
     expect(leerSesion('m')).toBeNull()
+  })
+})
+
+describe('Task 10: las reservas de clase de la clienta en la ventana del horario', () => {
+  beforeEach(() => documentoNuevoParaPruebas())
+
+  it('va a su ruta con las mismas fechas del horario, el cursor y el token del estudio', async () => {
+    guardarSesion('m', { ...unica, guardadaEn: Date.now() })
+    bindCustomerSessionToVenue('m')
+    const cuerpo = { reservations: [], total: 0, nextCursor: null, unlimitedUsedSessionIds: [] }
+    const fetchMock = vi.fn(async () => ({ ok: true, status: 200, headers: new Headers(), json: async () => cuerpo }) as any)
+    vi.stubGlobal('fetch', fetchMock)
+    await expect(getMisReservasDeClase('m', { dateFrom: '2026-11-26', dateTo: '2026-12-26' }, 'tok-A')).resolves.toEqual(cuerpo)
+    await getMisReservasDeClase('m', { dateFrom: '2026-11-26', dateTo: '2026-12-26', cursor: '2026-12-01T17:00:00.000Z_r1' }, 'tok-A')
+    const [primera, segunda] = fetchMock.mock.calls as any[]
+    expect(primera[0]).toMatch(/\/venues\/m\/customer\/class-reservations\?dateFrom=2026-11-26&dateTo=2026-12-26$/)
+    expect(segunda[0]).toMatch(/\?dateFrom=2026-11-26&dateTo=2026-12-26&cursor=2026-12-01T17%3A00%3A00.000Z_r1$/)
+    expect(primera[1].headers.Authorization).toBe('Bearer tok-A')
+  })
+
+  it('un SERVIDOR viejo sin la ruta responde 404: la lectura falla con su status y la sesión sigue', async () => {
+    guardarSesion('m', { ...unica, guardadaEn: Date.now() })
+    bindCustomerSessionToVenue('m')
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: false, status: 404, headers: new Headers(), json: async () => ({ message: 'No encontrado' }) }) as any))
+    await expect(getMisReservasDeClase('m', { dateFrom: '2026-11-26', dateTo: '2026-12-26' }, 'tok-A')).rejects.toMatchObject({ status: 404 })
+    expect(paginaDe('m', 'reservas')?.token).toBe('tok-A')
   })
 })

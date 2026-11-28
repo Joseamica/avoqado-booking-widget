@@ -14,6 +14,8 @@ import { CreditPackBanner } from './CreditPackBanner'
 import { CreditPacksModal } from './CreditPacksModal'
 import { UnifiedLanding } from './UnifiedLanding'
 import { VenueSidebarCard } from './VenueSidebarCard'
+import { ConfirmarReserva } from './ConfirmarReserva'
+import { opcionesQueCubren } from '../lib/eleccionDePaquete'
 
 const t = createT('es')
 const yoga: Product = { id: 'yoga', name: 'Yoga', price: 200, duration: 60, eventCapacity: null, type: 'CLASS', upfrontPolicy: 'at_venue' }
@@ -71,6 +73,31 @@ describe('D679 · ninguna pantalla enseña 99999 con un Ilimitado', () => {
     const { container } = render(pantallas[3][1]())
     expect(container.textContent).toContain('Tu Ilimitado es personal: cubre 1 lugar a tu nombre')
     expect(container.textContent).not.toMatch(/Usar 1 crédito|Usar mi pase/)
+  })
+})
+
+describe('Task 13 · «Confirma tu reserva» con un Ilimitado', () => {
+  const confirmar = (lugares: string[]) => {
+    const opciones = opcionesQueCubren(credits, 'yoga', Math.max(lugares.length, 1), '2026-12-01T18:00:00Z', { yaUsoIlimitadoEnLaSesion: false })
+    return (
+      <ConfirmarReserva clase="Yoga" cuando="Mar 1 · 12:00" coach={null} lugares={lugares} opciones={opciones}
+        elegida={opciones[0]?.balanceId ?? null} onElegir={fn} pago={opciones[0] ? 'paquete' : 'estudio'} precio={200} politica={null}
+        nota="" onNota={fn} enviando={false} onConfirmar={fn} t={t}
+        avisoIlimitado={opciones[0] ? null : 'Tu Ilimitado es personal: cubre 1 lugar a tu nombre'} />
+    )
+  }
+
+  it('con 1 lugar dice «Usa tu Ilimitado» y nunca su número', () => {
+    const { container } = render(confirmar(['3']))
+    expect(container.textContent).toContain('Usa tu Ilimitado')
+    expect(container.textContent).not.toMatch(/9999/)
+  })
+
+  it('con 2 lugares no lo ofrece y dice por qué, sin su número', () => {
+    const { container } = render(confirmar(['3', '4']))
+    expect(container.textContent).not.toContain('Usa tu Ilimitado')
+    expect(container.textContent).toContain('Tu Ilimitado es personal: cubre 1 lugar a tu nombre')
+    expect(container.textContent).not.toMatch(/9999/)
   })
 })
 

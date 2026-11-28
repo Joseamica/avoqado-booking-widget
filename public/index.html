@@ -425,6 +425,39 @@
       .page { padding-bottom: 88px; }
     }
 
+    /* Diseño 27-nov: barra fija abajo en el celular (Horario · Paquetes · Mi cuenta). `hidden` la deja fuera de los
+       carriles que no son reservas (tienda, tarjeta, check-in); el script la muestra con la cabecera.
+       z-index 45: bajo el aviso del widget (Toast, 50), que además sube encima de ella con `--avq-toast-offset` (ver el
+       script); sobre ella quedan el menú (200) y las ventanas del widget y de la página (100 en adelante). */
+    .bottombar { display: none; }
+    @media (max-width: 639px) {
+      .bottombar:not([hidden]) {
+        position: fixed; left: 0; right: 0; bottom: 0; z-index: 45;
+        display: flex; justify-content: space-around;
+        padding: 6px 8px calc(6px + env(safe-area-inset-bottom));
+        background: var(--bg-elev); border-top: 1px solid var(--border);
+      }
+      body.con-bottombar .page { padding-bottom: calc(96px + env(safe-area-inset-bottom)); }
+      /* W1 (banco, 27-nov): a 390 px la burbuja tapaba el «Reservar» de una fila del horario. Con la barra, la burbuja se
+         esconde y el chat se abre desde «Escríbenos» de la barra (sólo si el negocio recibe mensajes). */
+      body.con-bottombar .textus-fab { display: none; }
+    }
+    /* Diseño 27-nov (detalle de la clase y su mapa de lugares): en el celular el widget fija «Reservar» (o «Continuar con el
+       lugar N») abajo, encima de la barra, y avisa en el elemento (`data-detalle-de-clase`). El botón flotante del chat lo
+       taparía; ahí no hace falta: el detalle trae su «¿Dudas sobre esta clase? Escríbenos». Un navegador sin `:has` lo deja
+       como siempre. */
+    @media (max-width: 640px) {
+      body:has(avoqado-booking[data-detalle-de-clase]) .textus-fab { display: none; }
+    }
+    .bottombar-item {
+      flex: 1; min-height: 56px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;
+      background: transparent; border: 0; color: var(--fg-muted); text-decoration: none;
+      font: inherit; font-size: 12px; font-weight: 600; cursor: pointer;
+    }
+    .bottombar-item[hidden] { display: none; }
+    .bottombar-item svg { width: 22px; height: 22px; }
+    .bottombar-item.is-active { color: var(--accent); }
+
     .textus-modal-overlay {
       position: fixed; inset: 0;
       background: rgba(15,15,16,0.45);
@@ -532,10 +565,10 @@
       <span class="topnav-logo" id="nav-logo">·</span>
       <span id="nav-venue-name">Reservas</span>
     </a>
+    <!-- Diseño 27-nov: «Horario · Paquetes». Clases y citas se eligen dentro de la portada («Clases | Citas»). -->
     <nav class="topnav-links" id="nav-links" aria-label="Secciones del sitio">
-      <a href="" data-route="appointments" data-requires="appointments">Citas</a>
-      <a href="" data-route="classes" data-requires="classes" hidden>Clases</a>
-      <a href="" data-route="packs" data-requires="packs" hidden>Comprar paquetes</a>
+      <a href="" data-route="book">Horario</a>
+      <a href="" data-route="packs" data-requires="packs" hidden>Paquetes</a>
     </nav>
     <button class="topnav-cta" id="nav-account" type="button">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
@@ -561,9 +594,8 @@
 
       <!-- Default drawer (landing, classes, packs) — site navigation. -->
       <div class="drawer-default">
-        <a class="drawer-link" href="" data-route="appointments" data-requires="appointments">Citas</a>
-        <a class="drawer-link" href="" data-route="classes" data-requires="classes" hidden>Clases</a>
-        <a class="drawer-link" href="" data-route="packs" data-requires="packs" hidden>Comprar paquetes</a>
+        <a class="drawer-link" href="" data-route="book">Horario</a>
+        <a class="drawer-link" href="" data-route="packs" data-requires="packs" hidden>Paquetes</a>
         <button class="drawer-link is-cta" id="drawer-account" type="button">Mi cuenta</button>
       </div>
 
@@ -622,6 +654,27 @@
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
     <span>Envíanos un mensaje</span>
   </button>
+
+  <!-- Diseño 27-nov: en el celular (< 640 px) una barra fija abajo, como una app: Horario · Paquetes · Mi cuenta. -->
+  <nav class="bottombar" id="bottombar" aria-label="Accesos rápidos" hidden>
+    <a class="bottombar-item" href="" data-route="book">
+      <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M5 5h14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2Z"/><path d="M16 3v4M8 3v4M3 10h18"/></svg>
+      <span>Horario</span>
+    </a>
+    <a class="bottombar-item" href="" data-route="packs" data-requires="packs" hidden>
+      <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8 12 3 3 8v8l9 5 9-5V8Z"/><path d="M3 8l9 5 9-5"/><path d="M12 13v8"/></svg>
+      <span>Paquetes</span>
+    </a>
+    <!-- W1: abre el chat; sale sólo con el aviso de que el negocio recibe mensajes (avoqado:chat-availability). -->
+    <button class="bottombar-item" id="bottombar-chat" type="button" hidden>
+      <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+      <span>Escríbenos</span>
+    </button>
+    <button class="bottombar-item" id="bottombar-account" type="button">
+      <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4a4 4 0 1 0 0 8 4 4 0 0 0 0-8Z"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>
+      <span>Mi cuenta</span>
+    </button>
+  </nav>
 
 <div class="page">
     <div class="shell">
@@ -807,17 +860,15 @@
       var drawerVenueName = document.getElementById('drawer-venue-name')
       if (drawerVenueName) drawerVenueName.textContent = displayName
 
+      // Diseño 27-nov: «Horario» es la portada (clases o citas se eligen dentro, con «Clases | Citas»); «Paquetes» abre la
+      // lista encima de lo que la clienta esté viendo (ver el oyente de abajo). `#packs` queda para las ligas viejas.
       function buildHref(route) {
-        if (route === 'appointments') return '/' + slug + '/appointments'
-        if (route === 'classes') return '/' + slug + '/classes'
         if (route === 'packs') return '/' + slug + '#packs'
         return '/' + slug
       }
       function activeRoute() {
-        if (flowType === 'appointments') return 'appointments'
-        if (flowType === 'classes') return 'classes'
         if (window.location.hash === '#packs') return 'packs'
-        return null // landing
+        return 'book'
       }
       var activeNow = activeRoute()
       function applyActive(scope) {
@@ -827,9 +878,13 @@
           a.classList.toggle('is-active', route === activeNow)
         })
       }
+      var bottombar = document.getElementById('bottombar')
       applyActive(nav)
       applyActive(document.getElementById('drawer'))
+      applyActive(bottombar)
       nav.hidden = false
+      bottombar.hidden = false
+      document.body.classList.add('con-bottombar')
 
       // ===== Check-in del kiosco =========================================
 
@@ -1040,10 +1095,23 @@
         if (nav) nav.style.display = 'none'
         document.body.classList.add('flow-checkin')
 
+        // Íconos de trazo (los mismos 24×24, 1.75 y puntas redondas que Icono.tsx del widget); nada de emojis.
+        var ICONOS = {
+          enlace: '<path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/>',
+          check: '<path d="M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18Z"/><path d="M8 12.5l3 3 5-6"/>',
+          persona: '<path d="M12 4a4 4 0 1 0 0 8 4 4 0 0 0 0-8Z"/><path d="M4 21a8 8 0 0 1 16 0"/>',
+          reloj: '<path d="M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18Z"/><path d="M12 7v5l3 2"/>',
+          alerta: '<path d="M10.3 4 2.7 17.5A2 2 0 0 0 4.4 20.5h15.2a2 2 0 0 0 1.7-3L13.7 4a2 2 0 0 0-3.4 0Z"/><path d="M12 9.5v4"/><path d="M12 17h.01"/>',
+          globo: '<path d="M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18Z"/><path d="M3 12h18"/><path d="M12 3c2.5 2.6 3.8 5.6 3.8 9s-1.3 6.4-3.8 9c-2.5-2.6-3.8-5.6-3.8-9S9.5 5.6 12 3Z"/>'
+        }
+        function ico(nombre) {
+          return '<svg aria-hidden="true" width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">' + ICONOS[nombre] + '</svg>'
+        }
+
         function screen(icon, title, body, extraHtml) {
           mount.innerHTML =
             '<div class="empty" style="padding:48px 24px;text-align:center">' +
-              '<div style="font-size:44px;line-height:1;margin-bottom:16px">' + icon + '</div>' +
+              '<div style="line-height:1;margin-bottom:16px">' + ico(icon) + '</div>' +
               '<p class="empty-title">' + title + '</p>' +
               '<p>' + body + '</p>' +
               (extraHtml || '') +
@@ -1051,7 +1119,7 @@
         }
 
         if (!qr && (!challengeId || !secret)) {
-          screen('🔗', 'Este enlace está incompleto',
+          screen('enlace', 'Este enlace está incompleto',
             'Vuelve a escanear el código de la pantalla. Si sigue igual, pide ayuda en el mostrador.')
           return
         }
@@ -1097,7 +1165,7 @@
         }
 
         function send(token) {
-          screen('⏳', 'Un momento…', 'Estamos registrando tu llegada.')
+          screen('reloj', 'Un momento…', 'Estamos registrando tu llegada.')
           // En local se apunta al server de desarrollo; publicado, a producción.
           var host = window.location.hostname
           var isLocal = host === 'localhost' || host === '127.0.0.1'
@@ -1116,7 +1184,7 @@
               var code = (out.body && (out.body.code || (out.body.error && out.body.error.code))) || ''
               if (out.status >= 200 && out.status < 300) {
                 var again = out.body && out.body.outcome === 'ALREADY_CHECKED_IN'
-                screen('✅', again ? 'Ya estabas registrado' : '¡Listo, llegaste!',
+                screen('check', again ? 'Ya estabas registrado' : '¡Listo, llegaste!',
                   again ? 'Tu llegada ya estaba anotada. Puedes pasar.' : 'Anotamos tu llegada. Que disfrutes tu clase.')
                 return
               }
@@ -1126,34 +1194,34 @@
                 // Su sesión no probó su celular (contraseña vieja): que entre con el código. El portal ofrece salir y volver.
                 askLogin('Para registrar tu llegada, entra con el código que te mandamos por WhatsApp o a tu correo.')
               } else if (code === 'CHECK_IN_NOT_FOUND' && qr) {
-                screen('🙋', 'No encontramos una reservación tuya para ahora',
+                screen('persona', 'No encontramos una reservación tuya para ahora',
                   'El registro se abre 20 minutos antes de tu clase. Si te apuntó recepción o reservaste con otro número, teclea tu teléfono en la pantalla.')
               } else if (code === 'CHECK_IN_CHALLENGE_EXPIRED') {
-                screen('⌛', 'Este código ya venció', 'Vuelve a escanear el de la pantalla: se renueva solo cada pocos minutos.')
+                screen('reloj', 'Este código ya venció', 'Vuelve a escanear el de la pantalla: se renueva solo cada pocos minutos.')
               } else if (code === 'CHECK_IN_ALREADY_CLAIMED') {
-                screen('🙋', 'Ese código ya lo usó alguien más', 'Pide uno nuevo en la pantalla y vuelve a escanear.')
+                screen('persona', 'Ese código ya lo usó alguien más', 'Pide uno nuevo en la pantalla y vuelve a escanear.')
               } else if (code === 'CHECK_IN_OUTSIDE_WINDOW') {
-                screen('🕒', 'Todavía es temprano', 'El check-in se abre 20 minutos antes de tu clase. Vuelve a intentarlo en un rato.')
+                screen('reloj', 'Todavía es temprano', 'El check-in se abre 20 minutos antes de tu clase. Vuelve a intentarlo en un rato.')
               } else if (code === 'CUSTOMER_APPROVAL_PENDING') {
-                screen('⏳', 'Tu cuenta está en revisión', 'El negocio todavía no la aprueba. Pregunta en el mostrador.')
+                screen('reloj', 'Tu cuenta está en revisión', 'El negocio todavía no la aprueba. Pregunta en el mostrador.')
               } else if (code === 'CUSTOMER_APPROVAL_REJECTED' || code === 'CUSTOMER_TOKEN_VENUE_MISMATCH') {
-                screen('🙋', 'Necesitamos ayuda del mostrador', 'Muestra esta pantalla a alguien del equipo.')
+                screen('persona', 'Necesitamos ayuda del mostrador', 'Muestra esta pantalla a alguien del equipo.')
               } else if (out.status === 401) {
                 askLogin()
               } else if (out.status === 429) {
-                screen('🐢', 'Demasiados intentos', 'Espera un minuto y vuelve a escanear.')
+                screen('alerta', 'Demasiados intentos', 'Espera un minuto y vuelve a escanear.')
               } else {
-                screen('🙋', 'No pudimos registrarte', 'Pide ayuda en el mostrador: te anotan en un segundo.')
+                screen('persona', 'No pudimos registrarte', 'Pide ayuda en el mostrador: te anotan en un segundo.')
               }
             })
             .catch(function () {
-              screen('📶', 'Sin conexión', 'Revisa tu señal y vuelve a escanear el código.')
+              screen('globo', 'Sin conexión', 'Revisa tu señal y vuelve a escanear el código.')
             })
         }
 
         function askLogin(texto) {
           var antes = readToken()
-          screen('👋', 'Identifícate para continuar', texto || 'Entra con tu teléfono o correo y seguimos con tu check-in.',
+          screen('persona', 'Identifícate para continuar', texto || 'Entra con tu teléfono o correo y seguimos con tu check-in.',
             '<div id="checkin-portal" style="margin-top:20px"></div>')
           var host = document.createElement('avoqado-portal')
           host.setAttribute('venue', venueSlug)
@@ -1200,6 +1268,9 @@
       if (textusFab) textusFab.addEventListener('click', openVenueChat)
       var drawerTextus = document.getElementById('drawer-textus-row')
       if (drawerTextus) drawerTextus.addEventListener('click', openVenueChat)
+      // W1: en el celular la burbuja se esconde y «Escríbenos» de la barra de abajo abre el chat.
+      var bottombarChat = document.getElementById('bottombar-chat')
+      if (bottombarChat) bottombarChat.addEventListener('click', openVenueChat)
 
       // Hide the "message us" pill + drawer row when the venue can't actually be
       // reached (server says no relay and no phone → the chat form would just
@@ -1212,6 +1283,8 @@
         var canMessage = !e || !e.detail || e.detail.canMessage !== false
         if (textusFab) textusFab.style.display = canMessage ? '' : 'none'
         if (drawerTextus) drawerTextus.style.display = canMessage ? '' : 'none'
+        // «Escríbenos» de la barra sale sólo con el «sí» explícito: sin el dato, la barra queda como antes.
+        if (bottombarChat) bottombarChat.hidden = !(e && e.detail && e.detail.canMessage === true)
       })
 
       // ----- Body flow class sync on client-side navigation ----------------
@@ -1229,6 +1302,7 @@
         activeNow = activeRoute()
         applyActive(nav)
         applyActive(drawer)
+        applyActive(bottombar)
         // The widget follows the URL too. Its `flow-type` used to be set only at first paint, so after «Citas» and the
         // browser's back button the page went back to the narrow landing while the widget kept the booking wizard
         // (founder, 18-nov). Deferred so the widget never re-renders inside its own click handler (it pushState'd).
@@ -1266,6 +1340,9 @@
       // `avoqado:open-chat`); the widget's internal shadow-DOM FAB would be
       // a visual duplicate, so we suppress it here.
       el.setAttribute('hide-chat-fab', 'true')
+      // Diseño 27-nov: ésta es la página propia del negocio: el widget pinta arriba su identidad (portada, logo, nombre,
+      // dirección, «Escríbenos») y deja la liga en manos de la página (`avoqado:navigate`, abajo).
+      el.setAttribute('show-identity', 'true')
       // Square-style /appointments forces light theme regardless of system
       // preference; everything else honors auto. We set this BEFORE attaching
       // the element so the first paint is already light.
@@ -1318,6 +1395,41 @@
       }
       document.getElementById('nav-account').addEventListener('click', callShowAccount)
       document.getElementById('drawer-account').addEventListener('click', callShowAccount)
+      document.getElementById('bottombar-account').addEventListener('click', callShowAccount)
+
+      // La barra de abajo sólo se ve en el celular (< 640 px, la misma regla que su CSS). Mientras se ve, el widget recibe su
+      // alto en `--avq-toast-offset` (las variables de CSS entran a su sombra) y su aviso (Toast) sube encima de ella; sin
+      // barra se quita y el aviso queda a 16 px, como siempre. Sin `matchMedia` (navegador muy viejo) no se toca nada.
+      var barraEnCelular = window.matchMedia ? window.matchMedia('(max-width: 639px)') : null
+      function avisoSobreLaBarra() {
+        if (barraEnCelular && barraEnCelular.matches && !bottombar.hidden) {
+          el.style.setProperty('--avq-toast-offset', (bottombar.offsetHeight || 68) + 'px')
+        } else {
+          el.style.removeProperty('--avq-toast-offset')
+        }
+      }
+      if (barraEnCelular) {
+        if (barraEnCelular.addEventListener) barraEnCelular.addEventListener('change', avisoSobreLaBarra)
+        else if (barraEnCelular.addListener) barraEnCelular.addListener(avisoSobreLaBarra)
+        // Girar el celular o un área segura distinta cambian el alto de la barra.
+        window.addEventListener('resize', avisoSobreLaBarra)
+      }
+      avisoSobreLaBarra()
+
+      // Diseño 27-nov: «Clases | Citas» (o la portada al abrir) pide cambiar de flujo. La página es dueña de su liga: la cambia
+      // aquí (`replace` cuando la eligió la portada sola, para no dejar /<negocio> en el historial) y, con el oyente de
+      // `avq:locationchange` de arriba, el `flow-type` del widget, que empieza ese flujo limpio. Un widget pegado en otro
+      // sitio no lleva `show-identity` y nunca pide esto: la URL de ese sitio no se toca.
+      el.addEventListener('avoqado:navigate', function (e) {
+        var d = e && e.detail
+        var flow = d && d.flow
+        if (flow !== 'appointments' && flow !== 'classes') return
+        var path = '/' + slug + '/' + flow
+        if (window.location.pathname.replace(/\/+$/, '') === path) return
+        try {
+          history[d.replace ? 'replaceState' : 'pushState']({}, '', path + window.location.search)
+        } catch (err) { /* sin historial: el widget ya cambió de flujo por dentro */ }
+      })
       var drawerSigninAppts = document.getElementById('drawer-signin-appointments')
       if (drawerSigninAppts) drawerSigninAppts.addEventListener('click', callShowAccount)
 
@@ -1383,9 +1495,10 @@
       })
       // Diseño 18-nov: con una sola cabecera, «Comprar paquetes» (arriba y en el menú) dentro de la reserva abre la lista de
       // paquetes AHÍ MISMO, como hacía el botón «Comprar créditos»: ir a la portada perdía lo que llevaba elegido.
+      // Diseño 27-nov: «Paquetes» (arriba, en el menú y en la barra de abajo) abre la lista en cualquier pantalla de la reserva.
       document.addEventListener('click', function (e) {
         var a = e.target && e.target.closest ? e.target.closest('a[data-route="packs"]') : null
-        if (!a || flowType !== 'appointments') return
+        if (!a || e.button > 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return
         e.preventDefault()
         if (drawer.classList.contains('open')) closeDrawer()
         if (typeof el.showCreditPacks === 'function') el.showCreditPacks()
@@ -1426,31 +1539,18 @@
       // its host element with { name, address, phone, hours }. We read it here
       // and populate the drawer rows. If the event never fires (offline, error),
       // the drawer still renders with the slug-derived name + static defaults.
-      // Diseño 18-nov: el widget avisa si no hay clases agendadas en 30 días; entonces «Clases» se esconde de la cabecera y el menú.
-      el.addEventListener('avoqado:classes-availability', function (e) {
-        if (!e || !e.detail || e.detail.hayClases !== false) return
-        document.querySelectorAll('[data-requires="classes"]').forEach(function (x) { x.setAttribute('hidden', '') })
-      })
       el.addEventListener('avoqado:venue-loaded', function (e) {
         var info = e && e.detail && e.detail.venue
         if (!info) return
         if (drawerVenueName && info.name) drawerVenueName.textContent = info.name
         if (navVenue && info.name) navVenue.textContent = info.name
 
-        // Hide "Clases" nav link (header + drawer) when the venue has no
-        // class-type products. Capability flag comes from the widget when it
-        // resolves venueInfo. Defensive default: keep hidden if missing.
-        var hasClasses = info.hasClasses === true
-        document.querySelectorAll('[data-requires="classes"]').forEach(function (el) {
-          if (hasClasses) el.removeAttribute('hidden')
-          else el.setAttribute('hidden', '')
-        })
-        // D684b: el widget avisa `hasAppointments: false` sólo cuando el negocio da clases y nada más; sin el dato (widget viejo) o con
-        // `true`, «Citas» se ve como antes.
-        var hasAppointments = info.hasAppointments !== false
-        document.querySelectorAll('[data-requires="appointments"]').forEach(function (el) {
-          if (hasAppointments) el.removeAttribute('hidden')
-          else el.setAttribute('hidden', '')
+        // Diseño 27-nov: la portada se llama «Horario» en un negocio que sólo da clases y «Reservar» si también (o sólo) da
+        // citas, como las maquetas. Ya no hay ligas «Citas» y «Clases»: se eligen dentro, con «Clases | Citas». Sin el dato,
+        // «Reservar», que sirve para todo.
+        var soloClases = info.hasClasses === true && info.hasAppointments === false
+        document.querySelectorAll('a[data-route="book"] span, #nav-links a[data-route="book"], .drawer-default a[data-route="book"]').forEach(function (x) {
+          x.textContent = soloClases ? 'Horario' : 'Reservar'
         })
 
         // Apply the venue brand color to the host page chrome (topnav "Mi

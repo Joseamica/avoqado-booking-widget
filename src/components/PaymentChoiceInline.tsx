@@ -3,6 +3,7 @@ import type { CustomerCreditBalance, Product, UpfrontPolicy } from '../types'
 import type { TFunction } from '../i18n'
 import { precio } from '../lib/precio'
 import { avisoDelIlimitado, cubreLugares } from '../lib/credits'
+import { Icono, type NombreIcono } from './ui/Icono'
 
 /** What the customer picked. The widget reads this on submit:
  *  - 'credits' + balanceIds[]: every service maps to a balance, redeem from each
@@ -209,14 +210,14 @@ export function PaymentChoiceInline({
             packName: leadBalance.packName,
             balanceIdsByProduct,
           })}
-          icon="💳"
+          icon="tarjeta"
           title={tx.credits}
           hint={creditsHint}
         />
         <Option
           selected={isCashSelected}
           onClick={() => onChange({ kind: 'cash' })}
-          icon="🏦"
+          icon="banco"
           title={tx.cash}
           hint={tx.cashHint(formatPriceMXN(cashTotal))}
         />
@@ -234,7 +235,7 @@ function Option({
 }: {
   selected: boolean
   onClick: () => void
-  icon: string
+  icon: NombreIcono
   title: string
   hint: string
 }) {
@@ -272,7 +273,7 @@ function Option({
         fontSize: '16px',
         filter: selected ? 'brightness(1.1)' : undefined,
       }}>
-        {icon}
+        <Icono nombre={icon} size={18} />
       </span>
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontSize: '14px', fontWeight: '600', color: 'var(--avq-fg, #111827)' }}>

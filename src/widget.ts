@@ -7,25 +7,43 @@ import { createShadowContainer, readCommonAttrs } from './shared-styles'
 import { OrderApp } from './order/components/OrderApp'
 import { OrderStoreContext, createOrderStore, type OrderStore } from './order/store'
 import { leerSesion } from './lib/sesionDeCliente'
+import { createT } from './i18n'
 
 // ==================== <avoqado-booking> ====================
 // Full all-in-one widget (booking flow + portal + credit packs)
 
+/**
+ * hz:nube0000:na4160b6: el estado del widget (negocio, paso, sesión de la clienta) es UNO para toda la página. Con dos
+ * `<avoqado-booking>` de dos negocios, el segundo pisaba al primero (nombre, encabezado y sesión). Hasta que el estado sea
+ * por instancia, el primero que entra manda y uno de OTRO negocio no se monta: enseña la liga a su página de reservas.
+ * ponytail: un negocio por página; el estado por instancia (o el iframe de la Fase 2) lo quitaría.
+ */
+const widgetsDeReservas = new Set<AvoqadoBookingWidget>()
+function negocioQueMandaEnLaPagina(): string | null {
+  for (const w of widgetsDeReservas) if (w.isConnected) return w.getAttribute('venue') ?? ''
+  return null
+}
+
 class AvoqadoBookingWidget extends HTMLElement {
   private _container: HTMLDivElement | null = null
+  private _cedido = false
 
   static get observedAttributes() {
-    return ['venue', 'locale', 'theme', 'accent-color', 'mode', 'service-id', 'button-text', 'flow-type', 'hide-venue-header', 'hide-chat-fab']
+    return ['venue', 'locale', 'theme', 'accent-color', 'mode', 'service-id', 'button-text', 'flow-type', 'hide-venue-header', 'hide-chat-fab', 'show-identity']
   }
 
   connectedCallback() {
     const { container } = createShadowContainer(this)
     this._container = container
+    widgetsDeReservas.add(this)
     this._render()
   }
 
   disconnectedCallback() {
+    widgetsDeReservas.delete(this)
     if (this._container) render(null, this._container)
+    // Si mandaba éste, el que seguía (y estaba cedido) ya puede montarse.
+    for (const w of widgetsDeReservas) if (w._cedido) w._render()
   }
 
   attributeChangedCallback() {
@@ -69,12 +87,27 @@ class AvoqadoBookingWidget extends HTMLElement {
       flowType,
       hideVenueHeader: this.getAttribute('hide-venue-header') === 'true',
       hideChatFab: this.getAttribute('hide-chat-fab') === 'true',
+      showIdentity: this.getAttribute('show-identity') === 'true',
       hostElement: this,
     }
   }
 
   private _render() {
     if (!this._container) return
+    const venue = this.getAttribute('venue') ?? ''
+    const manda = negocioQueMandaEnLaPagina()
+    this._cedido = manda !== null && manda !== venue
+    if (this._cedido) {
+      // Sin readCommonAttrs: ligaría la sesión de la clienta a ESTE negocio y le quitaría la suya al que manda.
+      const t = createT(this.getAttribute('locale') === 'en' ? 'en' : 'es')
+      render(
+        h('p', { style: { margin: 0, padding: '16px', fontSize: '15px', lineHeight: 1.5 } },
+          t('widget.otroNegocioEnLaPagina'), ' ',
+          h('a', { href: `https://book.avoqado.io/${encodeURIComponent(venue)}`, target: '_blank', rel: 'noopener' }, t('widget.abrirSuPagina'))),
+        this._container,
+      )
+      return
+    }
     render(h(App, this.getProps()), this._container)
   }
 }

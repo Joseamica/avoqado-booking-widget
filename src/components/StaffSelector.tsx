@@ -1,6 +1,7 @@
 import { h } from 'preact'
 import type { PublicBookingStaff } from '../types'
 import type { TFunction } from '../i18n'
+import { Icono } from './ui/Icono'
 
 interface StaffSelectorProps {
   staff: PublicBookingStaff[]
@@ -54,7 +55,7 @@ export function StaffSelector({ staff, selectedStaffId, onSelect, onNext, t }: S
                   <img src={option.photoUrl} alt="" style={{ width: '42px', height: '42px', borderRadius: '50%', objectFit: 'cover', flexShrink: 0 }} />
                 ) : (
                   <span style={{ width: '42px', height: '42px', borderRadius: '50%', display: 'grid', placeItems: 'center', flexShrink: 0, background: 'var(--avq-muted, #f3f4f6)', fontSize: '13px', fontWeight: '700' }}>
-                    {option ? <Initials name={label} /> : '✓'}
+                    {option ? <Initials name={label} /> : <Icono nombre="check" size={18} />}
                   </span>
                 )}
                 <span style={{ fontSize: '14px', fontWeight: '600' }}>{label}</span>

@@ -9,6 +9,7 @@ import { formatMXN } from '../money'
 import { abandonPending, clearAbandon, clearLastOrder, loadLastOrder, markAbandon } from '../session'
 import { soltarCompraConTarjeta } from '../attempt'
 import { OrderStoreContext } from '../store'
+import { Icono } from '../../components/ui/Icono'
 import { isFinalStatus, type OnlineOrderStatus, type Tracking } from '../types'
 import { focusLost } from './focus'
 import { Notice, type NoticeIcon } from './StoreStatusBanner'
@@ -529,7 +530,7 @@ export function TrackingScreen() {
         {tracking.orderNumber && folioPaid && (
           <>
             <div class="avq-o-paid">
-              <span class="avq-o-paid__stamp">✓ {t('tracking.folio.stamp')}</span>
+              <span class="avq-o-paid__stamp"><Icono nombre="check" size={14} /> {t('tracking.folio.stamp')}</span>
               <span class="avq-o-paid__n">{tracking.orderNumber}</span>
               <span class="avq-o-paid__items">{tracking.items.map(it => (it.quantity > 1 ? `${it.quantity} × ${it.name}` : it.name)).join(' · ')}</span>
               <span class="avq-o-paid__who">{paidWho}</span>

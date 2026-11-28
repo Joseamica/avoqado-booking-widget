@@ -123,7 +123,7 @@ from the URL and mounts `<avoqado-booking>` accordingly:
 
 | URL | Behavior |
 |-----|----------|
-| `book.avoqado.io/<slug>`               | Unified landing — two-CTA picker (Citas / Clases) + Comprar paquetes tab |
+| `book.avoqado.io/<slug>`               | Portada (diseño 27-nov): con clases va directo al horario (con «Clases \| Citas» si también hay citas) y la página reemplaza la liga por `/classes` o `/appointments` (`avoqado:navigate`); sin clases y con paquetes, la portada de dos pestañas de antes |
 | `book.avoqado.io/<slug>/appointments`  | Appointments-only wizard |
 | `book.avoqado.io/<slug>/classes`       | Date-first list of class sessions (Square pattern) |
 

@@ -3,6 +3,8 @@ import type { CreditPackPublic } from '../types'
 import type { TFunction } from '../i18n'
 import { Spinner } from './ui/Spinner'
 import { precio } from '../lib/precio'
+import { ordenarPaquetes } from '../lib/paquetes'
+import { EtiquetaDestacada, LineaDePrecio, atributosDePaquete, esDestacado } from './ui/PaqueteExtras'
 
 interface CreditPackBannerProps {
   packs: CreditPackPublic[]
@@ -32,13 +34,16 @@ export function CreditPackBanner({ packs, onBuy, buyingPackId, t }: CreditPackBa
         border: '1px solid var(--avq-border, #e8eaed)',
         borderRadius: '14px', overflow: 'hidden',
       }}>
-        {packs.map((pack, idx) => {
+        {ordenarPaquetes(packs).map((pack, idx) => {
           const isBuying = buyingPackId === pack.id
           return (
-            <div key={pack.id} style={{
+            <div key={pack.id} {...atributosDePaquete(pack)} style={{
               padding: '16px',
+              boxShadow: esDestacado(pack) ? 'inset 0 0 0 2px var(--avq-accent, #6366f1)' : 'none',
+              display: 'flex', flexDirection: 'column', gap: '10px',
               borderTop: idx > 0 ? '1px solid var(--avq-border, #e8eaed)' : 'none',
             }}>
+              <EtiquetaDestacada pack={pack} />
               {/* Pack name + price */}
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '10px', gap: '12px' }}>
                 <div style={{ flex: 1, minWidth: 0 }}>
@@ -71,6 +76,8 @@ export function CreditPackBanner({ packs, onBuy, buyingPackId, t }: CreditPackBa
                 </span>
               </div>
 
+              <LineaDePrecio pack={pack} packs={packs} t={t} />
+
               {/* Items as inline pill chips (no "Incluye:" prefix — chips speak for themselves) */}
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '14px' }}>
                 {pack.items.map(item => (
@@ -96,7 +103,7 @@ export function CreditPackBanner({ packs, onBuy, buyingPackId, t }: CreditPackBa
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <span style={{ fontSize: '11px', color: 'var(--avq-muted-fg, #6b7280)' }}>
                   {pack.validityDays
-                    ? t('creditPacks.validity', { days: pack.validityDays })
+                    ? t(pack.validityDays === 1 ? 'creditPacks.validityOne' : 'creditPacks.validity', { days: pack.validityDays })
                     : t('creditPacks.noExpiry')}
                 </span>
                 <button
@@ -105,8 +112,8 @@ export function CreditPackBanner({ packs, onBuy, buyingPackId, t }: CreditPackBa
                   disabled={isBuying}
                   style={{
                     display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                    padding: '7px 18px', borderRadius: '999px',
-                    fontSize: '13px', fontWeight: '600',
+                    padding: '14px 24px', minHeight: '52px', borderRadius: '999px',
+                    fontSize: '16px', fontWeight: '600',
                     background: 'var(--avq-accent, #6366f1)', color: '#fff',
                     border: 'none',
                     cursor: isBuying ? 'not-allowed' : 'pointer',

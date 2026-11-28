@@ -86,7 +86,7 @@ export function CheckoutModal({ slug, negocio, onEntro, entroComo, paquete, onIr
         style={{
           position: 'relative',
           background: 'var(--avq-bg, #ffffff)', borderRadius: '18px',
-          padding: '24px', width: '100%', maxWidth: '380px', maxHeight: 'calc(100vh - 32px)', overflowY: 'auto',
+          padding: '24px', width: '100%', maxWidth: '380px', maxHeight: 'calc(100dvh - 32px)', overflowY: 'auto', overscrollBehavior: 'contain',
           boxShadow: '0 20px 50px -12px color-mix(in srgb, #000 30%, transparent)',
           border: '1px solid var(--avq-border, #e8eaed)',
         }}

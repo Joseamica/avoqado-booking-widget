@@ -17,6 +17,8 @@ import { alCambiarLaPagina, epocaDe, paginaDe, soltarLaPagina, type SesionEmitid
 import { FOLIO_CAMBIO, trackingUrl, type FolioCambioDetail } from '../order/events'
 import { formatTime } from '../order/hours'
 import { precio } from '../lib/precio'
+import { ordenarPaquetes } from '../lib/paquetes'
+import { EtiquetaDestacada, LineaDePrecio, atributosDePaquete, esDestacado } from './ui/PaqueteExtras'
 import { hayIlimitado, saldoRestante, venceEl } from '../lib/credits'
 
 interface CustomerPortalProps {
@@ -1256,12 +1258,15 @@ export function CustomerPortal({
             border: '1px solid var(--avq-border, #e8eaed)',
             borderRadius: '14px', overflow: 'hidden',
           }}>
-            {packs.map((pack, idx) => (
-              <div key={pack.id} style={{
+            {ordenarPaquetes(packs).map((pack, idx) => (
+              <div key={pack.id} {...atributosDePaquete(pack)} style={{
                 padding: '16px',
+                boxShadow: esDestacado(pack) ? 'inset 0 0 0 2px var(--avq-accent, #6366f1)' : 'none',
+                display: 'flex', flexDirection: 'column', gap: '10px',
                 borderTop: idx > 0 ? '1px solid var(--avq-border, #e8eaed)' : 'none',
               }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '10px', gap: '12px' }}>
+                <EtiquetaDestacada pack={pack} />
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: '12px' }}>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontSize: '15px', fontWeight: '600', color: 'var(--avq-fg, #111827)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{pack.name}</div>
                     {pack.description && (
@@ -1278,6 +1283,8 @@ export function CustomerPortal({
                     <span style={{ fontSize: '11px', color: 'var(--avq-muted-fg, #6b7280)', fontWeight: '500', marginLeft: '4px' }}>{pack.currency}</span>
                   </span>
                 </div>
+
+                <LineaDePrecio pack={pack} packs={packs} t={t} />
 
                 {/* Pack items as inline chips */}
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '14px' }}>
@@ -1302,7 +1309,7 @@ export function CustomerPortal({
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <span style={{ fontSize: '11px', color: 'var(--avq-muted-fg, #6b7280)' }}>
                     {pack.validityDays
-                      ? t('portal.packValidity', { days: String(pack.validityDays) })
+                      ? t(pack.validityDays === 1 ? 'portal.packValidityOne' : 'portal.packValidity', { days: String(pack.validityDays) })
                       : t('portal.packNoExpiry')}
                   </span>
                   <button
@@ -1311,7 +1318,7 @@ export function CustomerPortal({
                     disabled={!!checkoutLoading}
                     style={{
                       display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                      padding: '7px 18px', borderRadius: '999px', fontSize: '13px', fontWeight: '600',
+                      padding: '14px 24px', minHeight: '52px', borderRadius: '999px', fontSize: '16px', fontWeight: '600',
                       background: 'var(--avq-accent, #6366f1)', color: '#fff',
                       border: 'none', cursor: checkoutLoading ? 'not-allowed' : 'pointer',
                       opacity: checkoutLoading ? 0.6 : 1,

@@ -21,10 +21,10 @@ it('expires an already elapsed retention once without throwing or renewing it', 
 it('uses the existing TTL and expires once at zero', async () => {
   slotHoldExpiresAt.value = Date.now() + 2000
   const onExpired = vi.fn()
-  render(<PaymentStepHeader locale="es" kind="class" onExpired={onExpired} />)
-  expect(screen.getByText('Clase reservada durante 0:02')).toBeTruthy()
+  render(<PaymentStepHeader locale="es" kind="appointment" onExpired={onExpired} />)
+  expect(screen.getByText('Cita reservada durante 0:02')).toBeTruthy()
   await act(async () => { await vi.advanceTimersByTimeAsync(2000) })
-  expect(screen.getByText('Clase reservada durante 0:00')).toBeTruthy()
+  expect(screen.getByText('Cita reservada durante 0:00')).toBeTruthy()
   expect(onExpired).toHaveBeenCalledTimes(1)
   await act(async () => { await vi.advanceTimersByTimeAsync(2000) })
   expect(onExpired).toHaveBeenCalledTimes(1)
@@ -46,4 +46,20 @@ it('does not consume expiry on a fractional second before the authoritative time
   expect(slotHoldExpiresAt.value).toBe(expiry)
   await act(async () => { await vi.advanceTimersByTimeAsync(3000) })
   expect(onExpired).toHaveBeenCalledTimes(1)
+})
+
+it('Task 13: una clase no enseña «Clase reservada durante» (el SERVIDOR no aparta nada): ni reloj, ni apartado visual, ni vence', async () => {
+  const onExpired = vi.fn()
+  const { container } = render(<PaymentStepHeader locale="es" kind="class" onExpired={onExpired} />)
+  expect(container.textContent).not.toMatch(/reservada durante|\d:\d\d/)
+  expect(slotHoldExpiresAt.value).toBeNull()
+  await act(async () => { await vi.advanceTimersByTimeAsync(11 * 60 * 1000) })
+  expect(onExpired).not.toHaveBeenCalled()
+  expect(container.textContent).not.toMatch(/reservada durante/)
+})
+
+it('Task 13: en citas sigue igual (el reloj visual de 10:00 cuando no hay apartado)', () => {
+  render(<PaymentStepHeader locale="es" kind="appointment" />)
+  expect(screen.getByText('Cita reservada durante 10:00')).toBeTruthy()
+  expect(slotHoldExpiresAt.value).toBe(Date.now() + 10 * 60 * 1000)
 })

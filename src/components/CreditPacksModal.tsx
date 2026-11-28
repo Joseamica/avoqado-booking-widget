@@ -1,7 +1,10 @@
 import { h } from 'preact'
+import { useEffect } from 'preact/hooks'
 import type { CreditPackPublic } from '../types'
 import type { TFunction } from '../i18n'
 import { precio } from '../lib/precio'
+import { ordenarPaquetes } from '../lib/paquetes'
+import { EtiquetaDestacada, LineaDePrecio, atributosDePaquete, bordeDePaquete } from './ui/PaqueteExtras'
 
 interface CreditPacksModalProps {
   packs: CreditPackPublic[]
@@ -34,7 +37,7 @@ export function CreditPacksModal({
     ? {
       title: 'Buy credits',
       empty: 'No packs available right now.',
-      validity: (d: number) => `Valid for ${d} days`,
+      validity: (d: number) => `Valid for ${d} ${d === 1 ? 'day' : 'days'}`,
       noExpiry: 'No expiration',
       buy: 'Buy',
       processing: 'Processing…',
@@ -42,17 +45,39 @@ export function CreditPacksModal({
     : {
       title: 'Comprar créditos',
       empty: 'No hay paquetes disponibles ahora mismo.',
-      validity: (d: number) => `Válido por ${d} días`,
+      validity: (d: number) => `Válido por ${d} ${d === 1 ? 'día' : 'días'}`,
       noExpiry: 'Sin expiración',
       buy: 'Comprar',
       processing: 'Procesando…',
     }
+
+  // En el celular, que el dedo mueva la lista y no la página de atrás (hz:d46b99a0:D6). En iOS `overflow: hidden` no
+  // basta: Safari seguía moviendo la página (la barra crecía y encogía, la hoja saltaba) y jalar hacia abajo la recargaba.
+  // Se fija el cuerpo en su lugar y al cerrar se regresa a donde estaba.
+  useEffect(() => {
+    const raiz = document.documentElement
+    const cuerpo = document.body.style
+    const y = window.scrollY
+    const antes = { overflow: raiz.style.overflow, position: cuerpo.position, top: cuerpo.top, width: cuerpo.width }
+    raiz.style.overflow = 'hidden'
+    cuerpo.position = 'fixed'
+    cuerpo.top = `-${y}px`
+    cuerpo.width = '100%'
+    return () => {
+      raiz.style.overflow = antes.overflow
+      cuerpo.position = antes.position
+      cuerpo.top = antes.top
+      cuerpo.width = antes.width
+      if (y) window.scrollTo(0, y)
+    }
+  }, [])
 
   return (
     <div
       role="dialog"
       aria-modal="true"
       aria-label={tx.title}
+      class="avq-credit-packs-modal-overlay"
       onClick={(e) => { if (e.target === e.currentTarget) onClose() }}
       style={{
         position: 'fixed', inset: 0, zIndex: 250,
@@ -61,10 +86,13 @@ export function CreditPacksModal({
         animation: 'avq-fadeIn 0.15s ease both',
       }}
     >
+      {/* hz:d46b99a0:D6: en el celular «vh» mide la pantalla sin las barras del navegador y el último paquete quedaba
+          debajo de ellas; «dvh» mide lo que sí se ve («vh» queda de respaldo para navegadores viejos). */}
       <style>{`
+        .avq-credit-packs-modal { max-height: 92vh; max-height: 92dvh; overscroll-behavior: contain; }
         @media (min-width: 640px) {
           .avq-credit-packs-modal-overlay { align-items: center !important; }
-          .avq-credit-packs-modal { border-radius: 16px !important; max-height: 88vh !important; }
+          .avq-credit-packs-modal { border-radius: 16px !important; max-height: 88vh !important; max-height: 88dvh !important; }
         }
       `}</style>
       <div
@@ -75,12 +103,15 @@ export function CreditPacksModal({
           borderRadius: '16px 16px 0 0',
           padding: '20px 20px calc(20px + env(safe-area-inset-bottom))',
           boxShadow: '0 -8px 32px rgba(15,15,16,0.16)',
-          maxHeight: '92vh',
           overflowY: 'auto',
           display: 'flex', flexDirection: 'column', gap: '14px',
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        {/* El título y la ✕ se quedan arriba al deslizar: siempre se puede cerrar. */}
+        <div style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          position: 'sticky', top: 0, zIndex: 1, background: 'var(--avq-bg, #fff)', padding: '4px 0 8px',
+        }}>
           <h3 style={{
             margin: 0, fontSize: '18px', fontWeight: '700',
             color: 'var(--avq-fg, #111827)', letterSpacing: '-0.3px',
@@ -109,18 +140,20 @@ export function CreditPacksModal({
             {tx.empty}
           </p>
         ) : (
-          packs.map(pack => {
+          ordenarPaquetes(packs).map(pack => {
             const isBuying = buyingPackId === pack.id
             return (
               <div
                 key={pack.id}
+                {...atributosDePaquete(pack)}
                 style={{
-                  border: '1px solid var(--avq-border, #e8eaed)',
+                  border: bordeDePaquete(pack),
                   borderRadius: '12px',
                   padding: '16px',
                   display: 'flex', flexDirection: 'column', gap: '10px',
                 }}
               >
+                <EtiquetaDestacada pack={pack} />
                 <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '12px' }}>
                   <div style={{ minWidth: 0 }}>
                     <div style={{ fontSize: '15px', fontWeight: '700', color: 'var(--avq-fg, #111827)' }}>
@@ -140,6 +173,7 @@ export function CreditPacksModal({
                     {formatPrice(pack.price, pack.currency)}
                   </span>
                 </div>
+                <LineaDePrecio pack={pack} packs={packs} t={t} />
                 {pack.items.length > 0 && (
                   <ul style={{
                     listStyle: 'none', margin: 0, padding: 0,
@@ -166,12 +200,11 @@ export function CreditPacksModal({
                     onClick={() => onBuy(pack.id)}
                     disabled={isBuying}
                     style={{
-                      padding: '10px 18px',
+                      padding: '14px 24px', minHeight: '52px', fontSize: '16px',
                       background: 'var(--avq-accent, #2563eb)',
                       color: '#ffffff',
                       border: 0,
                       borderRadius: '10px',
-                      fontSize: '13px',
                       fontWeight: '600',
                       cursor: isBuying ? 'wait' : 'pointer',
                       opacity: isBuying ? 0.6 : 1,

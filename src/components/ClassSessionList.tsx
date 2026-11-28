@@ -1,42 +1,60 @@
-import { h } from 'preact'
+import { h, type ComponentChildren } from 'preact'
 import { useEffect, useMemo, useState } from 'preact/hooks'
 import type { Product, PublicClassSessionSlot } from '../types'
 import type { TFunction } from '../i18n'
 import * as api from '../api/booking'
 import { branding } from '../state/booking'
 import { Spinner } from './ui/Spinner'
-import { CapacityBadge } from './CapacityBadge'
 import { CalendarView } from './CalendarView'
-import { InstructorAvatar } from './InstructorAvatar'
-import { precio } from '../lib/precio'
+import { ListaDelHorario } from './ListaDelHorario'
+import type { CubreSesion, MiReserva, PrecioDeLaFila } from './ListaDelHorario'
+import { etiquetaDePrecio } from '../lib/paquetes'
 
-/** MXN price formatter — mirrors AppointmentSummarySidebar/ServiceSelector. */
-function formatPriceMXN(amount: number): string {
-  return precio(amount) // diseño 18-nov: un solo formato (src/lib/precio.ts)
-}
-
-/** Render minutes as "1 h", "45 min", "1 h 30 min". */
-function formatDurationMin(min: number): string {
-  if (min <= 0) return ''
-  const h = Math.floor(min / 60)
-  const m = min % 60
-  if (h === 0) return `${m} min`
-  if (m === 0) return `${h} h`
-  return `${h} h ${m} min`
-}
-
+/** La vista que eligió la clienta («calendar» es la Semana); se guarda con la misma llave de siempre. */
 const VIEW_STORAGE_KEY = 'avq_classes_view'
 type ClassesView = 'list' | 'calendar'
 
-function getStoredView(): ClassesView {
-  if (typeof window === 'undefined') return 'list'
+/** Desde este ancho el horario abre en Semana si no hay preferencia guardada. */
+const SEMANA_DESDE = '(min-width: 768px)'
+/** En el celular (≤ 640 px) no caben siete columnas: siempre la lista con tira de días, sin «Semana | Lista». */
+const CELULAR = '(max-width: 640px)'
+
+function consultar(consulta: string): boolean {
+  try {
+    return typeof window !== 'undefined' && typeof window.matchMedia === 'function' && window.matchMedia(consulta).matches
+  } catch { return false }
+}
+
+function getStoredView(): ClassesView | null {
   try {
     const v = localStorage.getItem(VIEW_STORAGE_KEY)
-    return v === 'calendar' ? 'calendar' : 'list'
-  } catch { return 'list' }
+    return v === 'calendar' || v === 'list' ? v : null
+  } catch { return null }
 }
 function setStoredView(v: ClassesView) {
   try { localStorage.setItem(VIEW_STORAGE_KEY, v) } catch { /* */ }
+}
+/** La preferencia guardada gana; sin ella, Semana en pantallas de 768 px o más y Lista en las demás. */
+function vistaInicial(): ClassesView {
+  return getStoredView() ?? (consultar(SEMANA_DESDE) ? 'calendar' : 'list')
+}
+
+/** Sigue una media query (al girar el teléfono o cambiar el tamaño de la ventana). */
+function useConsulta(consulta: string): boolean {
+  const [coincide, setCoincide] = useState(() => consultar(consulta))
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return
+    const mq = window.matchMedia(consulta)
+    const cambio = () => setCoincide(mq.matches)
+    cambio()
+    if (typeof mq.addEventListener === 'function') mq.addEventListener('change', cambio)
+    else mq.addListener?.(cambio)
+    return () => {
+      if (typeof mq.removeEventListener === 'function') mq.removeEventListener('change', cambio)
+      else mq.removeListener?.(cambio)
+    }
+  }, [consulta])
+  return coincide
 }
 
 interface ClassSessionListProps {
@@ -55,6 +73,17 @@ interface ClassSessionListProps {
   /** All venue products — used to resolve price/credit cost per row, since the
    *  range availability endpoint doesn't include them. */
   products?: Product[]
+  /** ¿Un paquete de la clienta cubre la sesión? Entonces la fila dice «Incluida en tu paquete». Por default, no. */
+  cubreSesion?: CubreSesion
+  /** Su reserva en la sesión: «Reservada · lugar N», y una clase llena suya se puede tocar. Por default, ninguna. */
+  miReserva?: MiReserva
+  /** Task 10: lo que va debajo del título y arriba de los días («Hola, Ana · tienes 4 sesiones de Lagree · …»). */
+  franja?: ComponentChildren
+  /**
+   * Task 10: la ventana de fechas que pide el horario (al montarse y cada vez que crece). Sus reservas se leen con las MISMAS
+   * `dateFrom`/`dateTo`: el SERVIDOR las lee con la misma función, así que toda clase suya del horario sale en esa lectura.
+   */
+  onVentana?: (ventana: { dateFrom: string; dateTo: string }) => void
   t: TFunction
 }
 
@@ -66,68 +95,35 @@ const PAGE_DAYS = 30
 const MAX_DAYS = 60
 
 /**
- * Format a YYYY-MM-DD date string against today/tomorrow in the venue's TZ,
- * falling back to a localized weekday + month-day label.
- *
- * Pure: takes the customer's `now` (UTC ms), the date string to format, and
- * the timezone. Avoids hidden Date.now() reads so the component is testable.
+ * La ventana que pide el horario: desde hoy (en la zona que se enseña) y `dias` más, con el tope del SERVIDOR. Task 12 relee una
+ * clase con la ventana que el horario avisó (`onVentana`); ésta es la de arranque, por si no avisó ninguna.
  */
-export function formatDateHeading(
-  dateStr: string,
-  nowMs: number,
-  timezone: string,
-  locale: 'en' | 'es',
-  t: TFunction,
-): string {
-  // Normalize "today" + "tomorrow" in venue tz so the labels match what the
-  // customer actually sees on their wall calendar.
-  const todayStr = new Date(nowMs).toLocaleDateString('en-CA', { timeZone: timezone })
-  const tmr = new Date(nowMs + 24 * 60 * 60 * 1000)
-  const tmrStr = tmr.toLocaleDateString('en-CA', { timeZone: timezone })
-  if (dateStr === todayStr) return t('classList.today')
-  if (dateStr === tmrStr) return t('classList.tomorrow')
-  // Square style: "Miércoles, 6 de mayo de 2026" — full weekday + day + month + year.
-  const d = new Date(`${dateStr}T12:00:00Z`)
-  const localeStr = locale === 'es' ? 'es-MX' : 'en-US'
-  return d.toLocaleDateString(localeStr, {
-    weekday: 'long',
-    day: 'numeric',
-    month: 'long',
-    year: 'numeric',
-    timeZone: timezone,
-  }).replace(/^\w/, c => c.toUpperCase())
-}
-
-/** Format an HH:MM time stamp from an ISO string in the venue tz. */
-function formatTimeOfDay(iso: string, timezone: string, locale: 'en' | 'es'): string {
-  const d = new Date(iso)
-  const localeStr = locale === 'es' ? 'es-MX' : 'en-US'
-  return d.toLocaleTimeString(localeStr, {
-    hour: 'numeric',
-    minute: '2-digit',
-    hour12: locale === 'en',
-    timeZone: timezone,
-  })
-}
-
-/** Convert an ISO startsAt to a YYYY-MM-DD bucket key in the venue tz. */
-function isoToVenueDate(iso: string, timezone: string): string {
-  return new Date(iso).toLocaleDateString('en-CA', { timeZone: timezone })
+export function ventanaDesdeHoy(timezone: string, dias: number = INITIAL_DAYS): { dateFrom: string; dateTo: string } {
+  const todayVenue = new Date().toLocaleDateString('en-CA', { timeZone: timezone })
+  const toDate = new Date(`${todayVenue}T00:00:00Z`)
+  toDate.setUTCDate(toDate.getUTCDate() + Math.min(dias, MAX_DAYS))
+  return { dateFrom: todayVenue, dateTo: toDate.toISOString().slice(0, 10) }
 }
 
 /**
- * Date-first list of upcoming class sessions across all CLASS products of a venue.
- * Mirrors the Square Classes booking page — sticky day headers, capacity badges,
- * tap-to-book directly into the form step. Used when flowType=clases.
+ * Horario de las clases de un negocio (diseño 27-nov, `portada-v3`): en pantallas anchas, la semana tipo calendario
+ * (`CalendarView`); en el celular, la lista con tira de días (`ListaDelHorario`). Tocar una clase la abre (`onSelect`);
+ * una llena sólo si ya es suya. Used when flowType=classes.
  */
-export function ClassSessionList({ venueSlug, timezone, onSelect, onExit, venuePhone, onBuyPack, products, t }: ClassSessionListProps) {
+export function ClassSessionList({
+  venueSlug, timezone, onSelect, onExit, venuePhone, onBuyPack, products, cubreSesion, miReserva, franja, onVentana, t,
+}: ClassSessionListProps) {
   const [slots, setSlots] = useState<PublicClassSessionSlot[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [windowDays, setWindowDays] = useState(INITIAL_DAYS)
   const [refetchKey, setRefetchKey] = useState(0)
-  const [view, setView] = useState<ClassesView>(getStoredView)
+  /** Último día que de verdad llegó (no el pedido): sólo hasta ahí un día vacío es «Sin clases». */
+  const [cargadoHasta, setCargadoHasta] = useState<string | null>(null)
+  const [view, setView] = useState<ClassesView>(vistaInicial)
   function pickView(v: ClassesView) { setView(v); setStoredView(v) }
+  const celular = useConsulta(CELULAR)
+  const vista: ClassesView = celular ? 'list' : view
 
   // Filter state — per-chip dropdown selection. Empty = "all".
   const [classFilter, setClassFilter] = useState<string>('')
@@ -135,17 +131,12 @@ export function ClassSessionList({ venueSlug, timezone, onSelect, onExit, venueP
   const [openChip, setOpenChip] = useState<null | 'class' | 'instructor' | 'rooms'>(null)
 
   // Compute the date range based on the window. Today's date in the venue tz.
-  const { dateFrom, dateTo, atMaxWindow } = useMemo(() => {
-    const todayVenue = new Date().toLocaleDateString('en-CA', { timeZone: timezone })
-    const fromDate = new Date(`${todayVenue}T00:00:00Z`)
-    const toDate = new Date(fromDate)
-    toDate.setUTCDate(toDate.getUTCDate() + Math.min(windowDays, MAX_DAYS))
-    return {
-      dateFrom: todayVenue,
-      dateTo: toDate.toISOString().slice(0, 10),
-      atMaxWindow: windowDays >= MAX_DAYS,
-    }
-  }, [timezone, windowDays])
+  const { dateFrom, dateTo, atMaxWindow } = useMemo(
+    () => ({ ...ventanaDesdeHoy(timezone, windowDays), atMaxWindow: windowDays >= MAX_DAYS }),
+    [timezone, windowDays],
+  )
+
+  useEffect(() => { onVentana?.({ dateFrom, dateTo }) }, [dateFrom, dateTo])
 
   useEffect(() => {
     let cancelled = false
@@ -155,6 +146,8 @@ export function ClassSessionList({ venueSlug, timezone, onSelect, onExit, venueP
       .then(res => {
         if (cancelled) return
         setSlots(res.slots)
+        // Si el SERVIDOR recortó el rango, cuenta lo que dice que mandó.
+        setCargadoHasta(res.dateTo && res.dateTo < dateTo ? res.dateTo : dateTo)
       })
       .catch(err => {
         if (cancelled) return
@@ -191,21 +184,8 @@ export function ClassSessionList({ venueSlug, timezone, onSelect, onExit, venueP
     })
   }, [slots, classFilter, instructorFilter])
 
-  // Group filtered slots by venue-local date. Server already sorts by startsAt,
-  // so the groups + each group's items are pre-ordered.
-  const groupedByDate = useMemo(() => {
-    const map = new Map<string, PublicClassSessionSlot[]>()
-    for (const slot of filteredSlots) {
-      const dateKey = isoToVenueDate(slot.startsAt, timezone)
-      const bucket = map.get(dateKey)
-      if (bucket) bucket.push(slot)
-      else map.set(dateKey, [slot])
-    }
-    return Array.from(map.entries())
-  }, [filteredSlots, timezone])
-
   const nowMs = Date.now()
-  const locale: 'en' | 'es' = (t('classList.today') === 'Today' ? 'en' : 'es')
+  const masDias = atMaxWindow ? undefined : () => setWindowDays(w => Math.min(w + PAGE_DAYS, MAX_DAYS))
 
   // Look up Product by id so each row can render price + duration without a
   // separate fetch. The range availability endpoint intentionally returns the
@@ -215,6 +195,19 @@ export function ClassSessionList({ venueSlug, timezone, onSelect, onExit, venueP
     if (products) for (const p of products) m.set(p.id, p)
     return m
   }, [products])
+
+  /** «$325 · clase suelta», «Incluida en tu paquete», «Con paquete» (sólo se reserva con paquete) o nada (sin precios, o sin monto). */
+  function precioDe(slot: PublicClassSessionSlot): PrecioDeLaFila | null {
+    const product = productById.get(slot.productId)
+    const incluida = cubreSesion ? cubreSesion(slot) : false
+    const texto = etiquetaDePrecio(t, {
+      precio: product?.price != null ? Number(product.price) : null,
+      showPrices: branding.value.showPrices,
+      incluida,
+      soloConPaquete: product?.requireCreditForBooking === true,
+    })
+    return texto ? { texto, incluida } : null
+  }
 
   if (loading && slots.length === 0) {
     return (
@@ -332,38 +325,19 @@ export function ClassSessionList({ venueSlug, timezone, onSelect, onExit, venueP
   }
 
   return (
-    <div class="avq-animate-in">
-      {/* Section header — title + display toggle (List / Calendar) */}
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '12px', marginBottom: '14px', flexWrap: 'wrap' }}>
-        <div>
-          <h2 style={{ fontSize: '17px', fontWeight: '600', color: 'var(--avq-fg, #111827)', margin: '0 0 4px' }}>
-            {t('classList.title')}
-          </h2>
-          <p style={{ fontSize: '13px', color: 'var(--avq-muted-fg, #6b7280)', margin: 0 }}>
-            {t('classList.subtitle')}
-          </p>
-        </div>
-        {/* Square-style "Display | List/Calendar" pill — outline-only, neutral
-         * surface, no icons. Active state inverts to dark fill. */}
-        <div style={{
-          display: 'inline-flex', alignItems: 'center',
-          padding: '4px',
-          background: 'var(--avq-bg, #ffffff)',
-          border: '1px solid var(--avq-border, #e8eaed)',
-          borderRadius: '8px',
-          gap: '2px',
-        }}>
-          <span style={{
-            padding: '0 8px 0 6px',
-            fontSize: '12px', fontWeight: '600',
-            color: 'var(--avq-muted-fg, #6b7280)',
-          }}>
-            {t('classList.viewLabel') /* falls back gracefully if key absent */}
-          </span>
-          <ToggleBtn active={view === 'list'} onClick={() => pickView('list')} label={t('classList.viewList')} />
-          <ToggleBtn active={view === 'calendar'} onClick={() => pickView('calendar')} label={t('classList.viewCalendar')} />
-        </div>
+    <div class="avq-horario avq-animate-in">
+      {/* Diseño 27-nov (portada-v3): título y «Semana | Lista»; en el celular sólo la lista con su tira de días. */}
+      <div class="avq-horario-cabeza">
+        <h2 class="avq-horario-titulo">{t('classList.title')}</h2>
+        {!celular && (
+          <div class="avq-horario-vistas" role="group" aria-label={t('reservaClases.horario.vista')}>
+            <VistaBtn activa={vista === 'calendar'} onClick={() => pickView('calendar')} etiqueta={t('reservaClases.horario.semana')} />
+            <VistaBtn activa={vista === 'list'} onClick={() => pickView('list')} etiqueta={t('reservaClases.horario.lista')} />
+          </div>
+        )}
       </div>
+
+      {franja}
 
       {/* Filter chips with dropdowns. Container used to have overflowX:auto
        * for horizontal scroll on narrow viewports, but the CSS spec quirk
@@ -371,7 +345,7 @@ export function ClassSessionList({ venueSlug, timezone, onSelect, onExit, venueP
        * was clipping the dropdown menu below each chip. Switched to
        * flex-wrap so chips wrap on small widths and the dropdown is free
        * to render outside the row. */}
-      <div style={{ margin: '0 0 18px', position: 'relative' }}>
+      <div class="avq-horario-filtros" style={{ position: 'relative' }}>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', padding: '0 0 4px' }}>
           <FilterChip
             label={classFilter || t('classList.filterClasses')}
@@ -393,6 +367,7 @@ export function ClassSessionList({ venueSlug, timezone, onSelect, onExit, venueP
           />
           {/* Rooms filter stays placeholder until Venue.rooms is in the schema */}
           <span
+            class="avq-filtro"
             style={{
               display: 'inline-flex', alignItems: 'center', gap: '6px',
               padding: '7px 12px', borderRadius: '999px',
@@ -411,170 +386,70 @@ export function ClassSessionList({ venueSlug, timezone, onSelect, onExit, venueP
         </div>
       </div>
 
-      {view === 'calendar' ? (
-        <CalendarView slots={filteredSlots} timezone={timezone} onSelect={onSelect} nowMs={nowMs} t={t} />
+      {/* Las fechas de más no llegaron (sin red, error): lo que ya estaba se sigue viendo, y se puede reintentar. */}
+      {error && slots.length > 0 && (
+        <div class="avq-horario-error" role="alert">
+          <span>{t('reservaClases.horario.noSeCargaron')}</span>
+          <button type="button" onClick={() => setRefetchKey(k => k + 1)}>{t('actions.retry')}</button>
+        </div>
+      )}
+
+      {vista === 'calendar' ? (
+        <CalendarView
+          slots={filteredSlots}
+          timezone={timezone}
+          onSelect={onSelect}
+          nowMs={nowMs}
+          miReserva={miReserva}
+          mostrarDuracion={branding.value.showDuration}
+          ultimoDia={cargadoHasta ?? undefined}
+          pedidoHasta={dateTo}
+          cargando={loading}
+          onNecesitaMasDias={masDias}
+          t={t}
+        />
       ) : (
-      /* Square-style date-grouped list: bold day headers + borderless rows with
-       * a subtle divider. Each row: instructor/product circle + class name +
-       * "$price · time · duration" meta line. Capacity badge on the right. */
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '32px' }}>
-        {groupedByDate.map(([dateKey, daySlots]) => (
-          <div key={dateKey}>
-            <h3 style={{
-              margin: '0 0 16px',
-              fontSize: '17px',
-              fontWeight: '700',
-              color: 'var(--avq-fg, #111827)',
-              letterSpacing: '-0.01em',
-              textTransform: 'capitalize',
-            }}>
-              {formatDateHeading(dateKey, nowMs, timezone, locale, t)}
-            </h3>
-
-            <div>
-              {daySlots.map((slot, idx) => {
-                const isFull = !slot.available || (slot.remaining ?? 0) === 0
-                const instructorName = slot.instructor
-                  ? `${slot.instructor.firstName} ${slot.instructor.lastName}`.trim()
-                  : null
-                const product = productById.get(slot.productId)
-                const price = product?.price != null ? Number(product.price) : null
-                const durationMin = Math.round(
-                  (new Date(slot.endsAt).getTime() - new Date(slot.startsAt).getTime()) / 60000,
-                )
-                const startTime = formatTimeOfDay(slot.startsAt, timezone, locale)
-                // Compose "$25 · 8:00 AM · 1h 45min". Each segment is optional —
-                // skip price when product unresolved or null (variable pricing).
-                const metaParts: string[] = []
-                if (branding.value.showPrices && price != null) metaParts.push(formatPriceMXN(price))
-                metaParts.push(startTime)
-                if (branding.value.showDuration && durationMin > 0) metaParts.push(formatDurationMin(durationMin))
-                const onClick = () => { if (!isFull) onSelect(slot) }
-                return (
-                  <button
-                    key={slot.classSessionId ?? slot.startsAt}
-                    type="button"
-                    onClick={onClick}
-                    disabled={isFull}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '16px',
-                      padding: '16px 0',
-                      borderTop: idx === 0 ? 'none' : '1px solid var(--avq-border, #f1f3f5)',
-                      background: 'transparent',
-                      border: idx === 0 ? 'none' : undefined,
-                      borderBottom: 'none',
-                      borderLeft: 'none',
-                      borderRight: 'none',
-                      cursor: isFull ? 'not-allowed' : 'pointer',
-                      opacity: isFull ? 0.55 : 1,
-                      textAlign: 'left',
-                      width: '100%',
-                      transition: 'background 0.15s ease',
-                    }}
-                    onMouseEnter={e => {
-                      if (!isFull) (e.currentTarget as HTMLButtonElement).style.background = 'var(--avq-muted, #f8f9fb)'
-                    }}
-                    onMouseLeave={e => {
-                      (e.currentTarget as HTMLButtonElement).style.background = 'transparent'
-                    }}
-                  >
-                    {/* Leading visual: product thumbnail if uploaded, else
-                     * instructor avatar — both render as a 44px circle so the
-                     * baseline stays aligned across mixed rows. */}
-                    {slot.productImageUrl ? (
-                      <img
-                        src={slot.productImageUrl}
-                        alt=""
-                        style={{
-                          width: '44px', height: '44px', borderRadius: '50%', flexShrink: 0,
-                          objectFit: 'cover',
-                          background: 'var(--avq-muted, #f8f9fb)',
-                        }}
-                        onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none' }}
-                      />
-                    ) : (
-                      <div style={{ flexShrink: 0 }}>
-                        <InstructorAvatar instructor={slot.instructor} size={44} />
-                      </div>
-                    )}
-
-                    {/* Class info — Square pattern: name bold on row 1, meta line gray on row 2 */}
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{
-                        fontSize: '15px',
-                        fontWeight: '600',
-                        color: 'var(--avq-fg, #111827)',
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        whiteSpace: 'nowrap',
-                        lineHeight: 1.3,
-                      }}>
-                        {slot.productName}
-                      </div>
-                      <div style={{
-                        fontSize: '13px',
-                        color: 'var(--avq-muted-fg, #6b7280)',
-                        marginTop: '4px',
-                        lineHeight: 1.4,
-                        display: 'flex',
-                        flexWrap: 'wrap',
-                        alignItems: 'center',
-                        gap: '6px',
-                      }}>
-                        <span>{metaParts.join(' · ')}</span>
-                        {instructorName && (
-                          <>
-                            <span aria-hidden="true">·</span>
-                            <span>{t('classList.withInstructor', { name: instructorName })}</span>
-                          </>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Capacity badge — uniform across the widget via CapacityBadge */}
-                    <div style={{ flexShrink: 0 }}>
-                      <CapacityBadge
-                        capacity={slot.capacity}
-                        enrolled={slot.enrolled}
-                        size="sm"
-                        t={t}
-                      />
-                    </div>
-                  </button>
-                )
-              })}
-            </div>
-          </div>
-        ))}
-      </div>
+        <ListaDelHorario
+          slots={filteredSlots}
+          timezone={timezone}
+          nowMs={nowMs}
+          onSelect={onSelect}
+          precioDe={precioDe}
+          miReserva={miReserva}
+          mostrarDuracion={branding.value.showDuration}
+          onMasFechas={masDias}
+          cargando={loading}
+          t={t}
+        />
       )}
-
-      {/* Load more — only when not already at the server cap, only on list view */}
-      {view === 'list' && !atMaxWindow && (
-        <button
-          type="button"
-          onClick={() => setWindowDays(w => Math.min(w + PAGE_DAYS, MAX_DAYS))}
-          disabled={loading}
-          style={{
-            width: '100%',
-            marginTop: '20px',
-            padding: '11px',
-            borderRadius: '12px',
-            border: '1px solid var(--avq-border, #e8eaed)',
-            background: 'transparent',
-            fontSize: '13px',
-            fontWeight: '500',
-            color: 'var(--avq-muted-fg, #6b7280)',
-            cursor: loading ? 'not-allowed' : 'pointer',
-            opacity: loading ? 0.6 : 1,
-            transition: 'background 0.15s ease, border-color 0.15s ease',
-          }}
-        >
-          {loading ? t('classList.loading') : t('classList.loadMore')}
-        </button>
-      )}
+      <style>{`
+        .avq-horario-cabeza { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
+        .avq-horario-titulo { margin: 0; font-size: 20px; font-weight: 700; color: var(--avq-fg, #111827); letter-spacing: -0.01em; }
+        .avq-horario-vistas { display: inline-flex; gap: 6px; }
+        .avq-horario-vista { min-height: 36px; padding: 7px 14px; border-radius: 999px; border: 0; font: inherit; font-size: 13px;
+          font-weight: 600; cursor: pointer; background: var(--avq-muted, #f5f5f4); color: var(--avq-muted-fg, #78716c);
+          transition: background 0.15s ease, color 0.15s ease; }
+        .avq-horario-vista[aria-pressed="true"] { background: var(--avq-fg, #1c1917); color: var(--avq-bg, #ffffff); }
+        .avq-horario-filtros { margin: 0 0 18px; }
+        .avq-horario-error { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+          margin: 0 0 16px; padding: 12px 14px; border-radius: 12px; font-size: 14px;
+          border: 1px solid var(--avq-warning-border, #fde68a); background: var(--avq-warning-bg, #fffbeb); color: var(--avq-warning-fg, #92400e); }
+        .avq-horario-error button { min-height: 40px; padding: 0 14px; border-radius: 999px; border: 1px solid currentColor;
+          background: transparent; color: inherit; font: inherit; font-weight: 600; cursor: pointer; }
+        /* W1 (banco, 27-nov): pegado en otro sitio, el widget enseña su burbuja del chat fija abajo (24 px del borde, ~46 px de
+           alto) y tapaba el «Reservar» de la última fila. Con la burbuja a la vista el horario deja abajo su alto + 16 px. En la
+           página propia no hay burbuja del widget (\`hide-chat-fab\`; «Escríbenos» va en su barra de abajo) y no se suma nada. */
+        .avq-root:has(.avq-chat-fab) .avq-horario { padding-bottom: 88px; }
+        /* Celular (≤ 640 px): título de 26 px, controles de 52 px y bloques separados 24 px. */
+        @media (max-width: 640px) {
+          .avq-horario-cabeza { margin-bottom: 16px; }
+          .avq-horario-titulo { font-size: 26px; }
+          .avq-horario-filtros { margin-bottom: 24px; }
+          .avq-horario-filtros .avq-filtro { min-height: 52px !important; font-size: 16px !important; padding: 0 16px !important; }
+          .avq-horario-error { margin-bottom: 24px; font-size: 16px; }
+          .avq-horario-error button { min-height: 52px; }
+        }
+      `}</style>
     </div>
   )
 }
@@ -600,6 +475,7 @@ function FilterChip({
     <span style={{ position: 'relative', flexShrink: 0 }}>
       <button
         type="button"
+        class="avq-filtro"
         onClick={onToggle}
         aria-expanded={open}
         style={{
@@ -677,34 +553,11 @@ function DropdownItem({ label, active, onClick }: { label: string; active: boole
   )
 }
 
-function ToggleBtn({
-  active,
-  onClick,
-  label,
-}: {
-  active: boolean
-  onClick: () => void
-  label: string
-}) {
+/** «Semana» / «Lista»: botones con `aria-pressed`, como «Clases | Citas». */
+function VistaBtn({ activa, onClick, etiqueta }: { activa: boolean; onClick: () => void; etiqueta: string }) {
   return (
-    <button
-      type="button"
-      role="tab"
-      aria-selected={active}
-      onClick={onClick}
-      style={{
-        border: 0,
-        background: active ? 'var(--avq-fg, #111827)' : 'transparent',
-        color: active ? 'var(--avq-bg, #ffffff)' : 'var(--avq-fg, #111827)',
-        padding: '5px 12px',
-        fontSize: '12px',
-        fontWeight: active ? '600' : '500',
-        cursor: 'pointer',
-        borderRadius: '6px',
-        transition: 'background 0.15s ease, color 0.15s ease',
-      }}
-    >
-      {label}
+    <button type="button" class="avq-horario-vista" aria-pressed={activa} onClick={onClick}>
+      {etiqueta}
     </button>
   )
 }

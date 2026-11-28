@@ -49,6 +49,17 @@ export const selectedStaffId = signal<string | null>(null)
 export const selectedDate = signal<string | null>(null)   // YYYY-MM-DD
 export const selectedSlot = signal<PublicSlot | null>(null)
 export const selectedSpotIds = signal<string[]>([])
+/**
+ * Task 11: la clienta ya tenía lugar en esta clase y tocó «Reservar otro lugar para alguien» en su detalle. Guarda el
+ * `classSessionId` de ESA clase (con `selectedSlot`, el resto del flujo también es compartido); el pedido al SERVIDOR no cambia.
+ * Task 13 lo lee con `esOtroLugarEnLaClase()` para decir «Otro lugar en esta clase» y no ofrecer el Ilimitado (es personal).
+ */
+export const otroLugarEnLaClase = signal<string | null>(null)
+/** La marca de «otro lugar» sólo vale mientras la clase elegida sea la misma en que se tocó. */
+export function esOtroLugarEnLaClase(): boolean {
+  const id = otroLugarEnLaClase.value
+  return id !== null && id === selectedSlot.value?.classSessionId
+}
 /** Add-on / customization picks tied to a specific service in the multi-service
  *  appointment. Each entry has productId so a modifier group attached to two
  *  different services can be picked independently. Cleared on resetBooking,
@@ -494,6 +505,7 @@ export function resetBooking(venueData: PublicVenueInfo) {
   const config = getStepConfig(visible.length > 1, staffSelectionEnabled)
   selectedSlot.value = null
   selectedSpotIds.value = []
+  otroLugarEnLaClase.value = null
   selectedProducts.value = []
   selectedStaffId.value = null
   selectedModifiers.value = []

@@ -93,6 +93,18 @@ export interface ReservationBranding {
   showPrices: boolean
 }
 
+/**
+ * Política de cancelación pública del negocio (la misma lista blanca que manda el SERVIDOR en
+ * `GET /public/venues/:slug/info`). Con ella se escribe la línea de política; sin ella no se enseña ninguna.
+ */
+export type PublicCancellationPolicy = {
+  allowCustomerCancel: boolean
+  minHoursBeforeStart: number | null
+  creditRefundMode: 'NEVER' | 'ALWAYS' | 'TIME_BASED'
+  creditFreeRefundHoursBefore: number
+  creditLateRefundPercent: number
+}
+
 export interface PublicVenueInfo {
   name: string
   slug: string
@@ -151,6 +163,8 @@ export interface PublicVenueInfo {
    * the widget treats the venue as chargeable (previous behavior).
    */
   canCharge?: boolean
+  /** Política de cancelación real. Un SERVIDOR viejo no la manda; `null` si sus datos no están completos. */
+  cancellationPolicy?: PublicCancellationPolicy | null
   /**
    * Scheduling window the venue admin configured. Optional so older/cached
    * payloads still type-check (fall back to sane defaults when absent).
@@ -303,6 +317,18 @@ export interface PublicBookingResult {
    * what the customer owes when they arrive. Show a "pay at venue" banner.
    */
   owesAtVenue?: boolean
+  /**
+   * Task 1b: sólo con canje, el saldo del paquete canjeado DESPUÉS de canjear (leído en la misma transacción; `remaining: 0` si usó
+   * la última). Un SERVIDOR viejo no lo manda. En un Ilimitado `remaining`/`original` son internos (≈99,998/99,999): nunca se enseñan.
+   */
+  creditBalance?: {
+    balanceId: string
+    packName: string
+    remaining: number
+    original: number
+    unlimited: boolean
+    expiresAt: string | null
+  }
 }
 
 // Credit Pack types for public widget
@@ -313,6 +339,9 @@ export interface CreditPackPublic {
   price: number
   currency: string
   validityDays?: number
+  /** Etiqueta opcional del paquete (un SERVIDOR viejo no la manda). */
+  badgeText?: string | null
+  badgeIcon?: string | null
   items: {
     id: string
     productId: string
@@ -390,6 +419,10 @@ export interface PublicReservationDetail {
     quantity: number
     price: number
   }[]
+  /** Task 1b, sólo en una reserva de clase: el nombre de la clase, su coach y los lugares GUARDADOS (nunca re-buscados en el mapa). */
+  className?: string
+  instructorName?: string | null
+  spotIds?: string[]
 }
 
 /**
@@ -422,6 +455,10 @@ export interface WidgetProps {
    *  modal via the `avoqado:open-chat` window event; third-party embeds keep
    *  the shadow-DOM FAB so chat works without a host-page button. */
   hideChatFab?: boolean
+  /** Diseño 27-nov: la página propia de reservas (book.avoqado.io) pinta arriba la identidad del negocio (portada, logo,
+   *  nombre, dirección y «Escríbenos») y es dueña de su liga: «Clases | Citas» le pide cambiarla con `avoqado:navigate`.
+   *  Pegado en el sitio de otro negocio (sin el atributo) no se pinta la identidad ni se toca la URL de ese sitio. */
+  showIdentity?: boolean
   hostElement: HTMLElement
 }
 
@@ -514,6 +551,33 @@ export interface CustomerPortalData {
 
 /** S13: una página de «Mi cuenta» (20 por omisión; `nextCursor` = hay más). */
 export interface PaginaDeMiCuenta<T> { items: T[]; total: number; nextCursor: string | null }
+
+/**
+ * Task 10: una reserva de clase de la clienta del token en la ventana del horario (`GET …/customer/class-reservations`). Sólo las
+ * vivas: `PENDING`, `CONFIRMED` y `CHECKED_IN`.
+ */
+export interface MiReservaDeClase {
+  classSessionId: string
+  /** Los lugares guardados en la reserva (el número que se enseña). */
+  spotIds: string[]
+  confirmationCode: string
+  cancelSecret: string
+  /** El inicio de la CLASE (el mismo que el horario), no la copia guardada en la reserva. */
+  startsAt: string
+  status: 'PENDING' | 'CONFIRMED' | 'CHECKED_IN'
+  /** `PENDING` = falta pagar el depósito; `null` = sin depósito. */
+  depositStatus: string | null
+  /** Se pagó con un saldo Ilimitado. */
+  usedUnlimited: boolean
+}
+/** Una página (100, la impone el SERVIDOR; `nextCursor` = hay más). */
+export interface PaginaDeMisReservasDeClase {
+  reservations: MiReservaDeClase[]
+  total: number
+  nextCursor: string | null
+  /** Clases de la ventana donde ya usó su Ilimitado (también terminadas o «No asistió»): no se marcan como reservadas. */
+  unlimitedUsedSessionIds?: string[]
+}
 export type EstadoDeTarjeta = 'ACTIVA' | 'BLOQUEADA' | 'DESACTIVADA' | 'VENCIDA'
 /** `venceEl`: `yyyy-MM-dd` en la zona del negocio. `codigo`: sólo ACTIVA y con contacto probado. */
 export interface MiTarjeta { id: string; last4: string; saldo: number; venceEl: string | null; codigo: string | null; estado: EstadoDeTarjeta; disponible: boolean }

@@ -4,6 +4,7 @@ import type { CustomerCreditBalance, Product, UpfrontPolicy } from '../types'
 import type { TFunction } from '../i18n'
 import { precio } from '../lib/precio'
 import { avisoDelIlimitado, cubreLugares, venceEl } from '../lib/credits'
+import { Icono } from './ui/Icono'
 
 interface PaymentSelectorProps {
   product: Product
@@ -123,7 +124,7 @@ export function PaymentSelector({
             style={paymentOptionStyle(true)}
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-              <span style={iconBadgeStyle('success')}>💳</span>
+              <span style={iconBadgeStyle('success')}><Icono nombre="tarjeta" /></span>
               <div style={{ textAlign: 'left', flex: 1 }}>
                 <div style={{ fontSize: '14px', fontWeight: '600', color: 'var(--avq-fg, #111827)' }}>
                   {/* D687: un pase no tiene «créditos»: «Usar mi pase (…)». */}
@@ -149,7 +150,7 @@ export function PaymentSelector({
         {/* D679: el Ilimitado no paga 2+ lugares; se dice, sin «te faltan» ni su número */}
         {acceptsCredits && ilimitadoNoCubre && (
           <div role="status" style={{ ...paymentOptionStyle(true, true), cursor: 'default', display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <span style={iconBadgeStyle('warning')}>👤</span>
+            <span style={iconBadgeStyle('warning')}><Icono nombre="persona" /></span>
             <span style={{ fontSize: '13px', fontWeight: '600', color: 'var(--avq-fg, #111827)', textAlign: 'left' }}>
               {avisoDelIlimitado(t, ilimitadoNoCubre, startsAt, timezone)}
             </span>
@@ -164,7 +165,7 @@ export function PaymentSelector({
             style={paymentOptionStyle(false, true)}
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-              <span style={iconBadgeStyle('warning')}>⚠️</span>
+              <span style={iconBadgeStyle('warning')}><Icono nombre="alerta" /></span>
               <div style={{ textAlign: 'left', flex: 1 }}>
                 <div style={{ fontSize: '14px', fontWeight: '600', color: 'var(--avq-fg, #111827)' }}>
                   {t('payment.creditsInsufficient')}
@@ -188,7 +189,7 @@ export function PaymentSelector({
             style={paymentOptionStyle(false, true)}
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-              <span style={iconBadgeStyle('accent')}>📦</span>
+              <span style={iconBadgeStyle('accent')}><Icono nombre="paquete" /></span>
               <div style={{ textAlign: 'left', flex: 1 }}>
                 <div style={{ fontSize: '14px', fontWeight: '600', color: 'var(--avq-fg, #111827)' }}>
                   {t('payment.buyPack')}
@@ -210,7 +211,7 @@ export function PaymentSelector({
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
               <span style={iconBadgeStyle(effectivePolicy === 'required' ? 'accent' : 'neutral')}>
-                {effectivePolicy === 'required' ? '💳' : '🏪'}
+                <Icono nombre={effectivePolicy === 'required' ? 'tarjeta' : 'tienda'} />
               </span>
               <div style={{ textAlign: 'left', flex: 1 }}>
                 <div style={{ fontSize: '14px', fontWeight: '600', color: 'var(--avq-fg, #111827)' }}>

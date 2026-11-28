@@ -37,7 +37,7 @@ export function Input({ id, type = 'text', value, placeholder, onInput, onChange
       onFocus={() => setFocused(true)}
       onBlur={() => setFocused(false)}
       style={{
-        height: '46px', width: '100%', borderRadius: '12px',
+        height: 'var(--avq-campo-alto, 46px)', width: '100%', borderRadius: '12px', // `--avq-campo-alto`: como `--avq-btn-alto` del botón
         padding: '0 14px', fontSize: '15px',
         border: error
           ? '1.5px solid #ef4444'

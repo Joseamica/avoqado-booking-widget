@@ -56,7 +56,21 @@ interface AppointmentSummarySidebarProps {
    *  precio variable. El precio se determinará en la cita y no se incluye en el
    *  total."). Optional — omit when no variable-priced product is selected. */
   totalsNote?: string
+  /**
+   * Task 13 (fix r1): una clase con `showPrices` apagado (o sin precio): ni el precio del renglón, ni «Variable», ni los totales.
+   * Nunca un «$0» que no es real. Citas no lo usa.
+   */
+  sinPrecios?: boolean
+  /** Con `sinPrecios`, lo que se dice en lugar del precio (ola final W5: «Incluida en tu paquete» al pagar con paquete). */
+  leyendaSinPrecio?: string
   t: TFunction
+}
+
+/** Task 16: minutos reales de una sesión de clase (`endsAt − startsAt`); si falta o no es válida, `fallback` (lo de siempre). */
+export function duracionDeSesion(slot: { startsAt?: string; endsAt?: string } | null | undefined, fallback: number): number {
+  if (!slot?.startsAt || !slot?.endsAt) return fallback
+  const min = (new Date(slot.endsAt).getTime() - new Date(slot.startsAt).getTime()) / 60000
+  return Number.isFinite(min) && min > 0 ? Math.round(min) : fallback
 }
 
 export function AppointmentSummarySidebar({
@@ -79,6 +93,8 @@ export function AppointmentSummarySidebar({
   dueToday,
   dueAtVenue,
   totalsNote,
+  sinPrecios = false,
+  leyendaSinPrecio,
   t,
 }: AppointmentSummarySidebarProps) {
   const [expanded, setExpanded] = useState(true)
@@ -87,7 +103,9 @@ export function AppointmentSummarySidebar({
   const hasVariable = products.some(p => p.price == null)
   const priceLabel = isEmpty
     ? null
-    : totalPrice != null && totalPrice > 0
+    : sinPrecios
+      ? (leyendaSinPrecio ?? null)
+      : totalPrice != null && totalPrice > 0
       ? `${hasVariable ? '+' : ''}${formatPriceMXN(totalPrice)}`
       : t('summary.variablePrice')
 
@@ -224,6 +242,7 @@ export function AppointmentSummarySidebar({
                     product={product}
                     isLast={idx === products.length - 1}
                     onEdit={onEditProduct ? () => onEditProduct(product) : undefined}
+                    sinPrecio={sinPrecios}
                     t={t}
                   />
                 ))}
@@ -234,7 +253,7 @@ export function AppointmentSummarySidebar({
       </div>
 
       {/* Totals block — only on the payment step */}
-      {showTotals && (
+      {showTotals && !sinPrecios && (
         <div style={{
           border: '1px solid var(--avq-border, #e8eaed)',
           borderRadius: '12px',
@@ -300,11 +319,13 @@ function SummaryRow({
   product,
   isLast,
   onEdit,
+  sinPrecio = false,
   t,
 }: {
   product: Product
   isLast: boolean
   onEdit?: () => void
+  sinPrecio?: boolean
   t: TFunction
 }) {
   const priceLabel = product.price == null
@@ -345,13 +366,15 @@ function SummaryRow({
             {product.name}
           </div>
         </div>
-        <span style={{
-          fontSize: '13px',
-          color: product.price == null ? 'var(--avq-muted-fg, #6b7280)' : 'var(--avq-fg, #111827)',
-          whiteSpace: 'nowrap',
-        }}>
-          {priceLabel}
-        </span>
+        {!sinPrecio && (
+          <span style={{
+            fontSize: '13px',
+            color: product.price == null ? 'var(--avq-muted-fg, #6b7280)' : 'var(--avq-fg, #111827)',
+            whiteSpace: 'nowrap',
+          }}>
+            {priceLabel}
+          </span>
+        )}
         {onEdit && (
           <button
             type="button"

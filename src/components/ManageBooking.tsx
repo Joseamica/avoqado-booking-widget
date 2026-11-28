@@ -1,4 +1,5 @@
 import { h } from 'preact'
+import type { ComponentChildren } from 'preact'
 import { useState, useEffect, useRef } from 'preact/hooks'
 import type { PublicReservationDetail, PublicVenueInfo } from '../types'
 import type { TFunction } from '../i18n'
@@ -23,6 +24,16 @@ interface ManageBookingProps {
   paymentUnfinished?: boolean
   /** D681: regresó por la liga «atrás» de Stripe (`cancel_url`). Sólo cambia el texto: el lugar lo suelta el aviso de Stripe. */
   paymentCancelled?: boolean
+  /**
+   * Task 14: al volver de Stripe, una reserva de CLASE ya `CONFIRMED` y con el depósito `PAID` enseña «¡Tu lugar está apartado!»
+   * (lo que pinta esta función) en vez de «Gestionar». Pendiente, fallida, vencida o reembolsada: «Gestionar» como hoy, con su espera
+   * y sus avisos. `verGestion` deja ver «Gestionar» de esta reserva.
+   */
+  confirmacionDeClase?: (reservation: PublicReservationDetail, verGestion: () => void) => ComponentChildren
+  /** Fix r1 #1: esa pantalla ya se enseñó para ESTA reserva (se lee al abrir): volver desde «Mi cuenta» abre «Gestionar». */
+  confirmacionYaVista?: boolean
+  /** Fix r1 #1: se enseñó la pantalla de «Listo» de esta reserva. */
+  onConfirmacionVista?: () => void
 }
 
 const statusConfig: Record<string, { bg: string; text: string }> = {
@@ -34,8 +45,12 @@ const statusConfig: Record<string, { bg: string; text: string }> = {
   NO_SHOW: { bg: '#ffedd5', text: '#9a3412' },
 }
 
-export function ManageBooking({ venueSlug, cancelSecret, timezone, locale = 'es', venueInfo, t, onBack, depositReturn = false, paymentUnfinished = false, paymentCancelled = false }: ManageBookingProps) {
+export function ManageBooking({ venueSlug, cancelSecret, timezone, locale = 'es', venueInfo, t, onBack, depositReturn = false, paymentUnfinished = false, paymentCancelled = false, confirmacionDeClase, confirmacionYaVista = false, onConfirmacionVista }: ManageBookingProps) {
   const [reservation, setReservation] = useState<PublicReservationDetail | null>(null)
+  // Se lee al abrir (no después): marcarla vista mientras se ve no la quita de la pantalla; al volver de «Mi cuenta», «Gestionar».
+  const yaVista = useRef(confirmacionYaVista)
+  yaVista.current = confirmacionYaVista
+  const [verGestion, setVerGestion] = useState(confirmacionYaVista)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [showCancel, setShowCancel] = useState(false)
@@ -110,6 +125,7 @@ export function ManageBooking({ venueSlug, cancelSecret, timezone, locale = 'es'
 
   useEffect(() => {
     setReservation(null)
+    setVerGestion(yaVista.current)
     setShowCancel(false)
     setShowReschedule(false)
     setCancelReason('')
@@ -142,6 +158,12 @@ export function ManageBooking({ venueSlug, cancelSecret, timezone, locale = 'es'
   // por la liga de pago hecho lee «Estamos confirmando». Con la reserva y el depósito aún pendientes, cualquiera otro lee que falta
   // su pago (y, si volvió por «atrás», que no se completó). Con cualquier otro estado del depósito (pagado, reembolsado, vencido…)
   // manda ese estado.
+  const conConfirmacion = !!(
+    confirmacionDeClase && depositReturn && !verGestion && reservation?.className
+    && reservation.status === 'CONFIRMED' && reservation.depositStatus === 'PAID'
+  )
+  useEffect(() => { if (conConfirmacion) onConfirmacionVista?.() }, [conConfirmacion])
+
   const returnedPaid = depositReturn && !paymentUnfinished
   const awaitingPayment = reservation?.status === 'PENDING' && reservation.depositStatus === 'PENDING' && !returnedPaid
 
@@ -177,13 +199,19 @@ export function ManageBooking({ venueSlug, cancelSecret, timezone, locale = 'es'
     )
   }
 
+  if (conConfirmacion && confirmacionDeClase) {
+    return <>{confirmacionDeClase(reservation, () => setVerGestion(true))}</>
+  }
+
   const isCancelled = reservation.status === 'CANCELLED'
   const startDate = new Date(reservation.startsAt)
   const endDate = new Date(reservation.endsAt)
   const dateLocale = locale === 'en' ? 'en-US' : 'es-MX'
-  const dateStr = startDate.toLocaleDateString(dateLocale, {
+  // Sólo la primera letra en mayúscula: con `text-transform: capitalize` salía «Jueves, 8 De Octubre De 2026» (Task 14).
+  const fecha = startDate.toLocaleDateString(dateLocale, {
     weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', timeZone: timezone,
   })
+  const dateStr = fecha.charAt(0).toLocaleUpperCase() + fecha.slice(1)
   const timeStr = `${startDate.toLocaleTimeString(dateLocale, { hour: '2-digit', minute: '2-digit', timeZone: timezone })} - ${endDate.toLocaleTimeString(dateLocale, { hour: '2-digit', minute: '2-digit', timeZone: timezone })}`
 
   const sc = statusConfig[reservation.status] ?? statusConfig.COMPLETED
@@ -259,7 +287,7 @@ export function ManageBooking({ venueSlug, cancelSecret, timezone, locale = 'es'
             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--avq-muted-fg, #6b7280)" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
           </div>
           <div>
-            <p style={{ margin: 0, fontSize: '14px', fontWeight: '500', color: 'var(--avq-fg, #111827)', textTransform: 'capitalize' }}>{dateStr}</p>
+            <p style={{ margin: 0, fontSize: '14px', fontWeight: '500', color: 'var(--avq-fg, #111827)' }}>{dateStr}</p>
             <p style={{ margin: '2px 0 0', fontSize: '13px', color: 'var(--avq-muted-fg, #6b7280)' }}>{timeStr}</p>
           </div>
         </div>
