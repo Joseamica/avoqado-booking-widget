@@ -20,8 +20,11 @@ describe('Comprar créditos en el celular', () => {
     document.documentElement.style.overflow = 'auto'
     const { unmount } = render(<CreditPacksModal packs={[pack('a', 30)]} buyingPackId={null} onBuy={fn} onClose={fn} locale="es" t={t} />)
     expect(document.documentElement.style.overflow).toBe('hidden')
+    // iOS: el cuerpo se fija para que Safari no mueva la página ni la recargue al jalar.
+    expect(document.body.style.position).toBe('fixed')
     unmount()
     expect(document.documentElement.style.overflow).toBe('auto')
+    expect(document.body.style.position).toBe('')
   })
 
   it('la altura usa lo que sí se ve (dvh), no la pantalla con las barras', () => {
