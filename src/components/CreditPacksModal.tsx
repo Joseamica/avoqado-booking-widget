@@ -51,12 +51,25 @@ export function CreditPacksModal({
       processing: 'Procesando…',
     }
 
-  // En el celular, que el dedo mueva la lista y no la página de atrás (hz:d46b99a0:D6).
+  // En el celular, que el dedo mueva la lista y no la página de atrás (hz:d46b99a0:D6). En iOS `overflow: hidden` no
+  // basta: Safari seguía moviendo la página (la barra crecía y encogía, la hoja saltaba) y jalar hacia abajo la recargaba.
+  // Se fija el cuerpo en su lugar y al cerrar se regresa a donde estaba.
   useEffect(() => {
     const raiz = document.documentElement
-    const antes = raiz.style.overflow
+    const cuerpo = document.body.style
+    const y = window.scrollY
+    const antes = { overflow: raiz.style.overflow, position: cuerpo.position, top: cuerpo.top, width: cuerpo.width }
     raiz.style.overflow = 'hidden'
-    return () => { raiz.style.overflow = antes }
+    cuerpo.position = 'fixed'
+    cuerpo.top = `-${y}px`
+    cuerpo.width = '100%'
+    return () => {
+      raiz.style.overflow = antes.overflow
+      cuerpo.position = antes.position
+      cuerpo.top = antes.top
+      cuerpo.width = antes.width
+      if (y) window.scrollTo(0, y)
+    }
   }, [])
 
   return (
@@ -94,7 +107,11 @@ export function CreditPacksModal({
           display: 'flex', flexDirection: 'column', gap: '14px',
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        {/* El título y la ✕ se quedan arriba al deslizar: siempre se puede cerrar. */}
+        <div style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          position: 'sticky', top: 0, zIndex: 1, background: 'var(--avq-bg, #fff)', padding: '4px 0 8px',
+        }}>
           <h3 style={{
             margin: 0, fontSize: '18px', fontWeight: '700',
             color: 'var(--avq-fg, #111827)', letterSpacing: '-0.3px',
