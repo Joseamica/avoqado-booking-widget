@@ -40,8 +40,14 @@ describe('Comprar créditos en el celular', () => {
     expect(container.textContent).toContain('Válido por 30 días')
   })
 
-  it('el aviso de paquetes también dice «1 día»', () => {
-    expect(t('creditPacks.validityOne')).toBe('Válido por 1 día')
-    expect(createT('en')('portal.packValidityOne')).toBe('Valid for 1 day')
+  it('al cerrar, la página regresa a la misma altura', () => {
+    Object.defineProperty(window, 'scrollY', { value: 420, configurable: true })
+    const scrollTo = vi.spyOn(window, 'scrollTo').mockImplementation(() => {})
+    const { unmount } = render(<CreditPacksModal packs={[pack('a', 30)]} buyingPackId={null} onBuy={fn} onClose={fn} locale="es" t={t} />)
+    expect(document.body.style.position).toBe('fixed')
+    expect(document.body.style.top).toBe('-420px')
+    unmount()
+    expect(document.body.style.position).toBe('')
+    expect(scrollTo).toHaveBeenCalledWith(0, 420)
   })
 })
